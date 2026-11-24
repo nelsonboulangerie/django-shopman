@@ -1,0 +1,1297 @@
+{
+  "summary": {
+    "home-375": {
+      "perguntas": 6,
+      "repetidas": 0,
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "scrollHorizontal": false,
+      "menorFonte": 14,
+      "menorContraste": 5.38,
+      "reprovadosAA": [],
+      "abaixoDe14": [],
+      "vazandoNaLateral": []
+    },
+    "home-375-aberta": {
+      "perguntas": 6,
+      "repetidas": 0,
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "scrollHorizontal": false,
+      "menorFonte": 14,
+      "menorContraste": 5.38,
+      "reprovadosAA": [],
+      "abaixoDe14": [],
+      "vazandoNaLateral": []
+    },
+    "home-desktop": {
+      "perguntas": 6,
+      "repetidas": 0,
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "scrollHorizontal": false,
+      "menorFonte": 14,
+      "menorContraste": 5.38,
+      "reprovadosAA": [],
+      "abaixoDe14": [],
+      "vazandoNaLateral": []
+    },
+    "home-desktop-aberta": {
+      "perguntas": 6,
+      "repetidas": 0,
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "scrollHorizontal": false,
+      "menorFonte": 14,
+      "menorContraste": 5.38,
+      "reprovadosAA": [],
+      "abaixoDe14": [],
+      "vazandoNaLateral": []
+    },
+    "faq-375": {
+      "perguntas": 21,
+      "repetidas": 0,
+      "verTodas": null,
+      "scrollHorizontal": false,
+      "menorFonte": 14,
+      "menorContraste": 5.38,
+      "reprovadosAA": [],
+      "abaixoDe14": [],
+      "vazandoNaLateral": []
+    }
+  },
+  "report": {
+    "home-375": {
+      "viewport": 375,
+      "questions": [
+        "Vocês fazem entrega?",
+        "Quais são os horários de funcionamento?",
+        "Onde vocês ficam?",
+        "Como posso pagar?",
+        "Posso encomendar para outro dia?",
+        "Os produtos têm alérgenos?"
+      ],
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "pageScrollWidth": 375,
+      "rows": [
+        {
+          "text": "Dúvidas frequentes",
+          "tag": "h2",
+          "fontSize": 20,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Respostas diretas para você decidir o próximo passo.",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês fazem entrega?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Fazemos entrega. Para confirmar se o endereço está na á",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Quais são os horários de funcionamento?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Fechado agora. Abrimos amanhã às 9h. Segunda a Sábado: 9h às",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Onde vocês ficam?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Ficamos em Av. Madre Leônia Milito, 446 - Bela Suíça, Londri",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como posso pagar?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Você paga com Pix ou cartão.",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Posso encomendar para outro dia?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Ao finalizar o pedido, você escolhe o dia, com até 30 d",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Os produtos têm alérgenos?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Somos uma padaria: trabalhamos com farinha de trigo todos os",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Ver todas as perguntas",
+          "tag": "a",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 85,
+          "right": 290,
+          "overflowX": false
+        }
+      ]
+    },
+    "home-375-aberta": {
+      "viewport": 375,
+      "questions": [
+        "Vocês fazem entrega?",
+        "Quais são os horários de funcionamento?",
+        "Onde vocês ficam?",
+        "Como posso pagar?",
+        "Posso encomendar para outro dia?",
+        "Os produtos têm alérgenos?"
+      ],
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "pageScrollWidth": 375,
+      "rows": [
+        {
+          "text": "Dúvidas frequentes",
+          "tag": "h2",
+          "fontSize": 20,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Respostas diretas para você decidir o próximo passo.",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês fazem entrega?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Fazemos entrega. Para confirmar se o endereço está na á",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Quais são os horários de funcionamento?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Fechado agora. Abrimos amanhã às 9h. Segunda a Sábado: 9h às",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Onde vocês ficam?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Ficamos em Av. Madre Leônia Milito, 446 - Bela Suíça, Londri",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como posso pagar?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Você paga com Pix ou cartão.",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Posso encomendar para outro dia?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Ao finalizar o pedido, você escolhe o dia, com até 30 d",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Os produtos têm alérgenos?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Somos uma padaria: trabalhamos com farinha de trigo todos os",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Ver todas as perguntas",
+          "tag": "a",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 85,
+          "right": 290,
+          "overflowX": false
+        }
+      ]
+    },
+    "home-desktop": {
+      "viewport": 1280,
+      "questions": [
+        "Vocês fazem entrega?",
+        "Quais são os horários de funcionamento?",
+        "Onde vocês ficam?",
+        "Como posso pagar?",
+        "Posso encomendar para outro dia?",
+        "Os produtos têm alérgenos?"
+      ],
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "pageScrollWidth": 1280,
+      "rows": [
+        {
+          "text": "Dúvidas frequentes",
+          "tag": "h2",
+          "fontSize": 20,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Respostas diretas para você decidir o próximo passo.",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês fazem entrega?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Fazemos entrega. Para confirmar se o endereço está na á",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Quais são os horários de funcionamento?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Fechado agora. Abrimos amanhã às 9h. Segunda a Sábado: 9h às",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Onde vocês ficam?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Ficamos em Av. Madre Leônia Milito, 446 - Bela Suíça, Londri",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Como posso pagar?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Você paga com Pix ou cartão.",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Posso encomendar para outro dia?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Ao finalizar o pedido, você escolhe o dia, com até 30 d",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Os produtos têm alérgenos?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Somos uma padaria: trabalhamos com farinha de trigo todos os",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Ver todas as perguntas",
+          "tag": "a",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 538,
+          "right": 742,
+          "overflowX": false
+        }
+      ]
+    },
+    "home-desktop-aberta": {
+      "viewport": 1280,
+      "questions": [
+        "Vocês fazem entrega?",
+        "Quais são os horários de funcionamento?",
+        "Onde vocês ficam?",
+        "Como posso pagar?",
+        "Posso encomendar para outro dia?",
+        "Os produtos têm alérgenos?"
+      ],
+      "verTodas": {
+        "text": "Ver todas as perguntas",
+        "href": "/faq"
+      },
+      "pageScrollWidth": 1280,
+      "rows": [
+        {
+          "text": "Dúvidas frequentes",
+          "tag": "h2",
+          "fontSize": 20,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Respostas diretas para você decidir o próximo passo.",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês fazem entrega?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Fazemos entrega. Para confirmar se o endereço está na á",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Quais são os horários de funcionamento?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Fechado agora. Abrimos amanhã às 9h. Segunda a Sábado: 9h às",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Onde vocês ficam?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Ficamos em Av. Madre Leônia Milito, 446 - Bela Suíça, Londri",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Como posso pagar?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Você paga com Pix ou cartão.",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Posso encomendar para outro dia?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Ao finalizar o pedido, você escolhe o dia, com até 30 d",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Os produtos têm alérgenos?",
+          "tag": "button",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Somos uma padaria: trabalhamos com farinha de trigo todos os",
+          "tag": "div",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 192,
+          "right": 1088,
+          "overflowX": false
+        },
+        {
+          "text": "Ver todas as perguntas",
+          "tag": "a",
+          "fontSize": 14,
+          "weight": "500",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 538,
+          "right": 742,
+          "overflowX": false
+        }
+      ]
+    },
+    "faq-375": {
+      "viewport": 375,
+      "questions": [
+        "Vocês fazem entrega?",
+        "Quais são os horários de funcionamento?",
+        "Onde vocês ficam?",
+        "Como posso pagar?",
+        "Posso encomendar para outro dia?",
+        "Os produtos têm alérgenos?",
+        "Como falar com vocês?",
+        "O que é fermentação natural (levain)?",
+        "Vocês têm opções sem glúten? E quanto a alérgenos?",
+        "Como faço um pedido pelo site?",
+        "Preciso criar uma conta? Como faço para entrar?",
+        "Quais formas de pagamento vocês aceitam?",
+        "Posso encomendar para outro dia? Preciso pagar antes?",
+        "Por que um produto aparece como indisponível?",
+        "Como funciona a lista de espera de uma fornada?",
+        "Como funciona o botão Me avise?",
+        "Como acompanho meu pedido?",
+        "Posso cancelar meu pedido?",
+        "Posso pedir CPF na nota fiscal?",
+        "Vocês estão no iFood?",
+        "Vocês têm programa de fidelidade?"
+      ],
+      "verTodas": null,
+      "pageScrollWidth": 375,
+      "rows": [
+        {
+          "text": "Vocês fazem entrega?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 182,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Fazemos entrega. Para confirmar se o endereço está na á",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Quais são os horários de funcionamento?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 323,
+          "overflowX": false
+        },
+        {
+          "text": "Segunda a Sábado: 9h às 18h; Domingo: Fechado",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Onde vocês ficam?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 158,
+          "overflowX": false
+        },
+        {
+          "text": "Ficamos em Av. Madre Leônia Milito, 446 - Bela Suíça, Londri",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como posso pagar?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 167,
+          "overflowX": false
+        },
+        {
+          "text": "Você paga com Pix ou cartão.",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Posso encomendar para outro dia?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 276,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Ao finalizar o pedido, você escolhe o dia, com até 30 d",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Os produtos têm alérgenos?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 228,
+          "overflowX": false
+        },
+        {
+          "text": "Somos uma padaria: trabalhamos com farinha de trigo todos os",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como falar com vocês?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 191,
+          "overflowX": false
+        },
+        {
+          "text": "Você pode falar conosco por telefone (43) 3323-1997 ou e-mai",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "O que é fermentação natural (levain)?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 298,
+          "overflowX": false
+        },
+        {
+          "text": "Levain é o fermento natural feito só de farinha e água, que ",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês têm opções sem glúten? E quanto a alérgenos?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 327,
+          "overflowX": false
+        },
+        {
+          "text": "Não temos. Somos uma padaria e trabalhamos com farinha de tr",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como faço um pedido pelo site?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 256,
+          "overflowX": false
+        },
+        {
+          "text": "Navegue pelo cardápio e adicione os itens à sacola; a dispon",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Preciso criar uma conta? Como faço para entrar?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 327,
+          "overflowX": false
+        },
+        {
+          "text": "Você vê o cardápio à vontade; para finalizar um pedido, pedi",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Quais formas de pagamento vocês aceitam?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 327,
+          "overflowX": false
+        },
+        {
+          "text": "No site, aceitamos Pix e cartão. O cartão é processado por u",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Posso encomendar para outro dia? Preciso pagar antes?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 327,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Na finalização do pedido, escolha outra data; o calendá",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Por que um produto aparece como indisponível?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 327,
+          "overflowX": false
+        },
+        {
+          "text": "Nossa produção é artesanal, feita em fornadas ao longo do di",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como funciona a lista de espera de uma fornada?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 327,
+          "overflowX": false
+        },
+        {
+          "text": "Quando um item aparece em lista de espera, a próxima fornada",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como funciona o botão Me avise?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 267,
+          "overflowX": false
+        },
+        {
+          "text": "Quando um produto está indisponível, toque em Me avise. Avis",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Como acompanho meu pedido?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 256,
+          "overflowX": false
+        },
+        {
+          "text": "Depois de enviar o pedido, você acompanha cada etapa na pági",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Posso cancelar meu pedido?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 230,
+          "overflowX": false
+        },
+        {
+          "text": "Sim, enquanto o pedido ainda não foi pago e não entrou em pr",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Posso pedir CPF na nota fiscal?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 251,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Na loja, é só informar seu CPF no caixa na hora da comp",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês estão no iFood?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 184,
+          "overflowX": false
+        },
+        {
+          "text": "Sim, também recebemos pedidos pelo iFood. Lá, o preço e o pa",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        },
+        {
+          "text": "Vocês têm programa de fidelidade?",
+          "tag": "span",
+          "fontSize": 16,
+          "weight": "600",
+          "contrast": 11.27,
+          "aa": true,
+          "left": 16,
+          "right": 281,
+          "overflowX": false
+        },
+        {
+          "text": "Sim. Os pedidos concluídos com a sua conta acumulam pontos e",
+          "tag": "p",
+          "fontSize": 14,
+          "weight": "400",
+          "contrast": 5.38,
+          "aa": true,
+          "left": 16,
+          "right": 359,
+          "overflowX": false
+        }
+      ]
+    }
+  }
+}
