@@ -86,6 +86,12 @@ NICE_TEMPLATE_COPY = {
     # recusado (sacola, recebimento, pagamento) refaz a decisão, e quem responde é este molde; a sombra
     # não executa efeito e não o vê, por isso ele precisa de frase da Nice (sem ela, sairia o inglês do pacote).
     "inform_limitation.offer_team": "CONCIERGE_ENGINE_OFFER_TEAM",
+    # Os degraus de baixo dos efeitos (#3412): o efeito aconteceu, mas o que se diria depois dele não se leu.
+    # Aprovadas pelo dono em 23/11 ("Pronto, a sacola foi atualizada." e "Pedido {order} registrado.
+    # Acompanhar: {track}"); a do recebimento derivada das aprovadas, acatada por ele.
+    "change_cart.done_receipt": "CONCIERGE_ENGINE_CART_UPDATED_SHORT",
+    "set_fulfillment.updated": "CONCIERGE_ENGINE_FULFILLMENT_UPDATED",
+    "commit_order.done_order": "CONCIERGE_ENGINE_ORDER_PLACED_SHORT",
 }
 
 #: As frases da forma de pagamento: as MESMAS de hoje, com o espaço do motor (``{payment_method}``, as
@@ -214,6 +220,11 @@ def done_text(value) -> str:
     return "Pronto" if str(value) == "success" else str(value)
 
 
+def noted_text(value) -> str:
+    """O recebimento anotado, dito como a casa diz o "Combinado" do recebimento."""
+    return "Combinado" if str(value) == "success" else str(value)
+
+
 def items_text(value) -> str:
     """As linhas da sacola como hoje (``tools.render_result``): "2 × “Croissant”: R$ 24,00"."""
     from decimal import Decimal
@@ -323,7 +334,8 @@ def nice_formatters(conversation=None) -> dict:
     from conversational_commerce.engine.format import DEFAULT_FORMATTERS
 
     money = dict.fromkeys(("price", "price_a", "price_b", "total"), money_text)  # o dinheiro do pacote, em reais
-    return {**DEFAULT_FORMATTERS, **money, "track": track_text, "done": done_text, "items": items_text,
+    return {**DEFAULT_FORMATTERS, **money, "track": track_text, "done": done_text, "noted": noted_text,
+            "items": items_text,
             "fulfillment": fulfillment_text, "conditions": conditions_text, "owner": owner_text,
             "deadline": deadline_text,
             "date": date_text,
@@ -476,7 +488,8 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
             ToolContext(conversation=conversation, channel_ref=channel_ref))),
         staff=NiceStaff(), store=ShopmanStore(), clock=ShopmanClock(ctx), outcomes=ShopmanOutcomes())
     return Engine(ports, profile, rules=NiceRules(), resolve_content=resolve_text, subject_of=subject_for(conversation),
-                  house_templates=nice_templates(), bodies=bodies, formatters=nice_formatters(conversation),
+                  house_templates=nice_templates(), house_voice_only=True, bodies=bodies,
+                  formatters=nice_formatters(conversation),
                   ledger=receipt_ledger(ctx), commitments=commitment_ledger(ctx),
                   memory=memory_store(ctx, subject_of(conversation.pk)), exposures=exposure_ledger(ctx))
 
@@ -491,20 +504,103 @@ class Verdict:
     template_ids: tuple[str | None, ...] = ()
 
 
+#: O que a sombra não consegue preencher na parte de um efeito que ela não executa (``shadow:effect_not_executed``):
+#: o recibo que não existe, o "feito" sem recibo e o fato lido depois do efeito. Só isso se tolera, e só na
+#: parte do próprio efeito; o resto segura como sempre.
+SHADOW_EFFECT_GAPS = frozenset({"receipt_not_in_evidence", "action_without_receipt", "fact_not_in_evidence"})
+#: O desfecho "ainda em andamento" (``effect.pending``) não tem frase da Nice: as frases ``wait.*`` esperam
+#: o dono (#3328). Ele não entra no que a sombra exige; se acontecer no ar, o porteiro de voz segura.
+PENDING_TEMPLATE = "effect.pending"
+#: A recusa no ponto de efeito refaz a decisão, e quem responde é a limitação comum.
+REFUSAL_TEMPLATE = "inform_limitation.offer_team"
+
+
+def effect_outcomes(move: str) -> frozenset[str]:
+    """Os moldes de todos os desfechos do efeito: o sucesso, os degraus, a falha e as recusas próprias."""
+    from conversational_commerce.engine.moves import registry
+
+    module = registry().get(move)
+    if module is None or not getattr(module, "EFFECT", False):
+        return frozenset()
+    found = {template.template_id for template in module.TEMPLATES} | {REFUSAL_TEMPLATE}
+    return frozenset(found - {PENDING_TEMPLATE})
+
+
 def judge(result, *, enabled: frozenset[str], approved: frozenset[str]) -> Verdict:
-    """O turno em sombra pode ir ao vivo? Classe ligada para cada movimento, molde da Nice para cada parte."""
+    """O turno em sombra pode ir ao vivo? Classe ligada para cada movimento, molde da Nice para cada parte.
+
+    O turno com efeito se julga pelos MOLDES (#3410): a sombra não executa o efeito, e a parte dele sai
+    sem o recibo. Pode ir ao vivo se cada desfecho possível do efeito tem frase da Nice e se o que falta
+    na sombra é só o que ela não pode ter (``SHADOW_EFFECT_GAPS``, na parte do efeito). No ar, o porteiro
+    de voz (``house_voice_only``) segura o que sair fora disso.
+    """
     moves = tuple(result.chosen_moves)
     reply = getattr(result, "reply", None)
     template_ids = tuple(reply.template_ids) if reply is not None else ()
-    if not moves or reply is None or not reply.text:
+    if not moves or reply is None:
         return Verdict(False, "no_reply", moves, template_ids)
     off = sorted({move for move in moves if CLASS_OF_MOVE.get(move) not in enabled})
     if off:
         return Verdict(False, f"class_off:{','.join(off)}", moves, template_ids)
-    missing = sorted({str(t) for t in template_ids if t not in approved})
+    effects = sorted({move for move in moves if effect_outcomes(move)})
+    needed = set(template_ids).union(*(effect_outcomes(move) for move in effects))
+    missing = sorted({str(t) for t in needed if t not in approved})
     if missing:
         return Verdict(False, f"no_nice_template:{','.join(missing)}", moves, template_ids)
+    if reply.text:
+        return Verdict(True, "", moves, template_ids)
+    if not effects:
+        return Verdict(False, "no_reply", moves, template_ids)
+    parts = list(reply.verification.parts)
+    blocking = sorted({f.code for f in reply.verification.findings
+                       if f.code not in SHADOW_EFFECT_GAPS or f.part is None or f.part >= len(parts)
+                       or parts[f.part].move not in effects})
+    if blocking:
+        return Verdict(False, f"held:{','.join(blocking)}", moves, template_ids)
     return Verdict(True, "", moves, template_ids)
+
+
+
+#: O recuo da casa depois de um efeito feito cuja resposta segurou: diz só o que o recibo sustenta (foi
+#: anotado) e promete a confirmação, que a equipe cumpre pelo cartão (``EFFECT_HELD_ALERT``).
+EFFECT_HELD_COPY = "CONCIERGE_ENGINE_EFFECT_HELD"
+EFFECT_HELD_ALERT = "concierge_effect_unconfirmed"
+#: O prazo da promessa "já te confirmo": o cartão conta até ele no sino do Gestor.
+EFFECT_HELD_MINUTES = 10
+
+
+def answer_after_effect(conversation, result) -> None:
+    """Efeito feito e resposta segurada: o cliente ouve o recuo, e a equipe recebe o cartão com prazo."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    from . import house_rules, service
+
+    actions = sorted({command.action for command in result.commands})
+    decision = getattr(result.decision, "decision_id", "") or ""
+    text = (service.copy_message(EFFECT_HELD_COPY) or "").strip()
+    sent = None
+    if text:
+        receipts = frozenset({house_rules.ORDER} if "commit_order" in actions else {house_rules.CART})
+        sent = service.send_out_of_turn(conversation, text, receipts=receipts, send_key=f"held:{decision}")
+    create_operator_alert(
+        type=EFFECT_HELD_ALERT, severity="warning",
+        message=(f"A Concierge fez {', '.join(actions)} e não conseguiu confirmar ao cliente. "
+                 "Confirme os detalhes por aqui."),
+        stamp_dedupe=False, order_ref=getattr(conversation, "last_order_ref", "") or "",
+        conversation_id=conversation.pk, owner_role="atendimento",
+        respond_by=timezone.now() + timedelta(minutes=EFFECT_HELD_MINUTES),
+    )
+    if sent is None:
+        logger.warning("concierge.turn_framework.held_after_effect_unsent conversation=%s", conversation.pk)
+
+
+def _findings(result) -> list[str]:
+    reply = getattr(result, "reply", None)
+    return [f.code for f in reply.verification.findings] if reply is not None else []
 
 
 def _raw(message) -> dict:
@@ -536,6 +632,14 @@ def run(conversation, message, *, channel=None, interrupted=None):
             return None
         result = live.turn(live.ports.clock.ctx, _raw(message), interrupted=interrupted)
         if result.outcome != "answered" or getattr(result, "exposure", None) is None:
+            if any(receipt.status == "success" for receipt in result.receipts):
+                # O efeito aconteceu e a mensagem segurou (o porteiro de voz, uma referência que não resolve, o
+                # pendente sem frase). O caminho de hoje NÃO responde, porque refaria o que já foi feito; e nunca
+                # termina em silêncio: o recuo da casa, lastreado só no recibo, e um cartão para a equipe cumprir.
+                logger.warning("concierge.turn_framework.held_after_effect conversation=%s outcome=%s findings=%s",
+                               conversation.pk, result.outcome, _findings(result))
+                answer_after_effect(conversation, result)
+                return result
             logger.info("concierge.turn_framework.not_sent conversation=%s outcome=%s fallbacks=%s",
                         conversation.pk, result.outcome, list(result.fallbacks))
             return None

@@ -84,6 +84,23 @@ CART_REFUSALS = {
 }
 
 
+def _current_epoch(ctx: TrustedContext, command: ActionCommand) -> int:
+    """A época de posse VIGENTE do episódio que decidiu o comando, lida na fonte (o ``ShopmanStore``).
+
+    A época é a do episódio do motor: sobe quando a equipe assume e quando devolve (``workflow.machine``,
+    ``OWNER_CHANGE``). Não é a cerca do turno da casa (``turn_fence``, que sobe a cada mensagem), e nunca
+    é a do próprio comando: a guarda do Core compara as duas, e um comando decidido antes de uma troca de
+    posse (retomado num turno seguinte, N13) sai ``authority_revoked``. Episódio que não se lê: revogado.
+    """
+    from shopman.shop.conversational.store import ShopmanStore
+
+    episode_id = getattr(command, "episode_id", None)
+    episode = ShopmanStore().load_episode(ctx, episode_id) if episode_id else None
+    if episode is None:
+        raise PortError(ErrorCode.AUTHORITY_REVOKED, "o episódio que decidiu o comando não se lê")
+    return int(episode.ownership.epoch)
+
+
 @dataclass
 class ConciergeEffectSite:
     """Pedido, desconto, cancelamento e acréscimo da conversa de ``tool_context``."""
@@ -104,15 +121,16 @@ class ConciergeEffectSite:
             current = lock_turn_authority(conversation, channel_ref=self.tool_context.channel_ref if cart else None)
         except TurnRevoked as revoked:
             raise PortError(ErrorCode.AUTHORITY_REVOKED, f"a posse da conversa mudou ({revoked})") from revoked
+        epoch = _current_epoch(ctx, command)
         target = command.targets[0]
         if cart and command.action in NEW_CART_ACTIONS and target == new_cart_ref(conversation.pk):
             # A sacola nova desta conversa: nasce no efeito. Se outra parte do turno já a criou,
             # o efeito cai nela, a mesma sacola presa ao telefone.
-            return Reading(ownership_epoch=current.turn_fence, versions={target: 0})
+            return Reading(ownership_epoch=epoch, versions={target: 0})
         if not cart:
             if own_order(conversation, target) is None:
                 raise PortError(ErrorCode.OBJECT_FORBIDDEN, "pedido que não é do cliente da conversa")
-            return Reading(ownership_epoch=current.turn_fence)
+            return Reading(ownership_epoch=epoch)
         if not current.session_key or target != current.session_key:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         session = (
@@ -123,7 +141,7 @@ class ConciergeEffectSite:
         if session is None:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         terms_ref = str((current.quote or {}).get("token") or "") or None if command.action == "commit_order" else None
-        return Reading(ownership_epoch=current.turn_fence, versions={target: session.rev}, terms_ref=terms_ref)
+        return Reading(ownership_epoch=epoch, versions={target: session.rev}, terms_ref=terms_ref)
 
     def apply(self, ctx: TrustedContext, command: ActionCommand) -> Done:
         from .service import TurnRevoked

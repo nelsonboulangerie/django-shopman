@@ -162,6 +162,10 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
                                                 "é só dizer \"sem complemento\"."),
     "set_payment.not_offered": "Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {payment_method}",
     "set_delivery_address.ask_mode": "Você vai retirar aqui na loja ou prefere entrega?",
+    # Os degraus de baixo dos efeitos (#3412), aprovados em 23/11.
+    "change_cart.done_receipt": "{done}, a sacola foi atualizada.",
+    "set_fulfillment.updated": "{noted}, atualizei o recebimento.",
+    "commit_order.done_order": "Pedido {order} registrado. Acompanhar: {track}",
     # Aprovada pelo dono em 23/11 (#3408): a limitação que o efeito recusado no ar faz dizer.
     "inform_limitation.offer_team": "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?",
 }
@@ -251,56 +255,38 @@ def test_the_order_templates_are_today_phrases(shop):
     assert say("set_fulfillment.done_time", mode="pickup", date=tomorrow, time="16:00") == \
         "Combinado: retirada amanhã às 16h."
     assert turn_framework.time_text("16:30") == "16h30"
-    # O que não tem frase de hoje fica fora: o turno segue o caminho de hoje (a hora sem janela, o resumo,
-    # o "total mudou" com o total, a sacola e o pedido registrado esperam a palavra do dono).
-    for missing in ("set_fulfillment.updated",):
-        assert missing not in found, missing
+    # Os degraus de baixo (#3412): o efeito aconteceu, sem o que dizer depois dele. Frases aprovadas em 23/11.
+    formatters = turn_framework.nice_formatters()
+    assert found["set_fulfillment.updated"].text.replace("{noted}", formatters["noted"]("success")) == \
+        "Combinado, atualizei o recebimento."
+    assert found["change_cart.done_receipt"].text.replace("{done}", formatters["done"]("success")) == \
+        "Pronto, a sacola foi atualizada."
+    assert found["commit_order.done_order"].text == "Pedido {order} registrado. Acompanhar: {track}"
 
 
 def test_a_window_the_house_grid_does_not_know_never_leaks(shop):
     assert turn_framework.window_text("manha") == "horário a confirmar"
 
 
-@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
-def test_an_effect_refused_on_air_says_the_nice_limitation_never_the_package_english(shop, sent, monkeypatch):
-    """#3408: a sombra não executa efeito; no ar, o efeito recusado refaz a decisão, e quem responde é a limitação."""
-    import dataclasses
-    import json
+def test_the_judge_reads_an_effect_turn_by_its_templates():
+    from conversational_commerce.reply.verify import Finding
 
-    from conversational_commerce.contracts.errors import ErrorCode
+    def shadow(findings, *, template="set_payment.done", move="set_payment"):
+        part = SimpleNamespace(move=move)
+        verification = SimpleNamespace(findings=tuple(findings), parts=(part,))
+        return SimpleNamespace(chosen_moves=[move], reply=SimpleNamespace(
+            text=None, template_ids=(template,), verification=verification))
 
-    from shopman.shop.conversational.commerce_execute import Done
-    from shopman.storefront.concierge import model_reader
-    from shopman.storefront.concierge.effect_site import ConciergeEffectSite
-    from shopman.storefront.tests.test_concierge_model_reader import FakeAI
-
-    pix = json.dumps({"acts": [{"act": "choose_payment", "span": "pix", "product": "", "qty": 0, "change": "",
-                                "day": "", "mode": "", "time": "", "payment": "pix"}]})
-    real = model_reader.NiceReader
-    monkeypatch.setattr(model_reader, "NiceReader", lambda: real(client=FakeAI(raw=pix), model="m", gate=lambda t: ""))
-
-    def refuse(self, command):
-        return Done(False, refusal=ErrorCode.FACT_UNAVAILABLE.value)  # o sistema de registro diz não, só no ar
-
-    monkeypatch.setattr(ConciergeEffectSite, "_set_payment", refuse)
-    # O pedido na conversa (P08) ainda espera o dono no perfil do ar: aqui, aprovado só em memória.
-    from shopman.storefront.concierge import profile
-
-    build = profile.build_profile
-
-    def approved(**kwargs):
-        built = build(**kwargs)
-        lines = tuple(dataclasses.replace(line, state="approved", decided_at=line.decided_at or "2026-11-23T00:00:00.000000Z")
-                      if line.id == "commerce.order_in_conversation" else line for line in built.lines)
-        return dataclasses.replace(built, lines=lines)
-
-    monkeypatch.setattr(profile, "build_profile", approved)
-    conversation, message = _inbound("pix")
-    # O motor do ar, direto: a sombra não executa efeito, e é só no ar que o sistema de registro recusa.
-    live = turn_framework.build_engine(conversation, channel=_channel())
-    result = live.turn(live.ports.clock.ctx, turn_framework._raw(message))
-    # Quem recusa no ar (a concessão ou o sistema de registro), a decisão refeita é a limitação.
-    assert result.outcome == "answered" and result.chosen_moves == ["inform_limitation"]
-    assert result.reply.template_ids == ("inform_limitation.offer_team",)
-    assert result.text == "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?"
-    assert sent == [result.text]  # a frase da Nice, pelo envio de hoje; nunca o inglês do pacote
+    outcomes = turn_framework.effect_outcomes("set_payment")
+    assert "effect.pending" not in outcomes and {"set_payment.done", "effect.failed"} <= outcomes
+    approved = frozenset(outcomes)
+    gap = [Finding("receipt_not_in_evidence", 0, "method")]
+    assert turn_framework.judge(shadow(gap), enabled=frozenset({"order"}), approved=approved).eligible
+    # Um desfecho sem frase da Nice: não vai ao ar.
+    without_failure = approved - {"effect.failed"}
+    assert turn_framework.judge(shadow(gap), enabled=frozenset({"order"}), approved=without_failure).reason == (
+        "no_nice_template:effect.failed")
+    # Outro achado, que não é o que a sombra não pode ter: segura.
+    other = gap + [Finding("number_without_fact", 0)]
+    assert turn_framework.judge(shadow(other), enabled=frozenset({"order"}), approved=approved).reason == (
+        "held:number_without_fact")

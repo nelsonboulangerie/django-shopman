@@ -84,8 +84,10 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
              {"date": SlotSpec(("receipt:success",), "date")}),
     Template("set_fulfillment.done_mode", "1", "set_fulfillment", "Done: noted as {mode}.",
              {"mode": SlotSpec(("receipt:success",), "mode")}),
-    Template("set_fulfillment.updated", "1", "set_fulfillment", "Done: your order details are updated ({ref}).",
-             {"ref": SlotSpec(("receipt:success",), "effect")}),
+    # Degrau de baixo do recebimento: o efeito aconteceu sem dia, janela ou hora para dizer. O estado do recibo
+    # (``noted``) é o lastro, e nada além dele; a referência interna do alvo nunca vai ao cliente.
+    Template("set_fulfillment.updated", "2", "set_fulfillment", "{noted} Your order details are updated.",
+             {"noted": SlotSpec(("receipt:success",))}),
     # O pedido pelo recibo, o total pelo pedido lido depois do efeito, e onde acompanhar (o mesmo recibo,
     # que a casa formata como o caminho dela para o pedido).
     # A forma de pagamento escolhida (``engine/moves/set_payment.py``), dita pelo recibo.
