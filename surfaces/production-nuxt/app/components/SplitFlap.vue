@@ -12,8 +12,9 @@ const props = withDefaults(
     align?: "left" | "right";
     pulse?: number; // incrementar re-gira as palhetas até o MESMO valor —
     // o tique periódico dos painéis reais (mais honesto que piscar).
+    upper?: boolean; // a hora da casa guarda o "h" minúsculo ("6h42")
   }>(),
-  { chars: 0, align: "left", pulse: 0 },
+  { chars: 0, align: "left", pulse: 0, upper: true },
 );
 
 const FLAP_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -39,7 +40,7 @@ function later(fn: () => void, ms: number) {
 }
 
 function targetChars(): string[] {
-  const raw = (props.value ?? "").toUpperCase();
+  const raw = props.upper ? (props.value ?? "").toUpperCase() : (props.value ?? "");
   const width = props.chars || raw.length || 1;
   const clipped = raw.slice(0, width);
   const pad = " ".repeat(Math.max(0, width - clipped.length));

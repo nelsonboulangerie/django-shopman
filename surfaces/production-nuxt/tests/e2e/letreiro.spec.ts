@@ -1,11 +1,12 @@
 // WP-F04 · Letreiro a dois metros (J-P8): a estação abre o Letreiro numa TV de
-// 1920 × 1080 e num tablet de 1024; a linha se lê de longe, a massa aparece em
-// quilo e, sem conexão, o aviso com a hora da leitura é a maior coisa da tela.
+// 1920 × 1080 e num tablet de 1024; a linha se lê de longe (36px na TV), a massa
+// aparece em quilo, a hora guarda o "h" minúsculo e, sem conexão, o aviso diz a
+// hora da leitura.
 import { expect, test, type Page } from "@playwright/test";
 
 const SCREENS: Record<string, { minRowPx: number }> = {
-  // 5vh numa TV de 1080 = 54 px; a largura dos nomes do dia pode segurar um pouco.
-  "chromium-tv-full-hd": { minRowPx: 40 },
+  // 36px numa TV de 1080; a largura dos nomes do dia pode segurar um pouco.
+  "chromium-tv-full-hd": { minRowPx: 32 },
   "chromium-tablet-landscape": { minRowPx: 20 },
 };
 
@@ -50,6 +51,9 @@ test("lê produto, quantidade com a unidade certa, hora e situação", async ({
   await expect(
     page.getByRole("article", { name: "Croissant Manteiga: 120 unidades às 7h, Previsto" }),
   ).toBeVisible();
+  // A hora da casa: "h" minúsculo nas palhetas, como no resto da suíte.
+  const eta = dough.locator('.flap-word[aria-label="6h"] .flap-cell');
+  await expect(eta.filter({ hasText: /^h$/ })).toHaveCount(1);
 
   const { minRowPx } = SCREENS[testInfo.project.name]!;
   expect(await rowFontPx(page)).toBeGreaterThanOrEqual(minRowPx);
@@ -88,10 +92,12 @@ test("sem conexão, o quadro fica e o aviso diz de quando é", async ({
   );
   await expect(page.locator("[data-board-row]").first()).toBeVisible();
 
+  // No tamanho de aviso (o dono: não precisa gritar), legível no balcão.
   const noticePx = await notice.evaluate((el) =>
     Number.parseFloat(getComputedStyle(el).fontSize),
   );
-  expect(noticePx).toBeGreaterThan(await rowFontPx(page));
+  expect(noticePx).toBeGreaterThanOrEqual(14);
+  expect(noticePx).toBeLessThanOrEqual(await rowFontPx(page));
 
   await testInfo.attach(`letreiro-sem-conexao-${testInfo.project.name}`, {
     body: await page.screenshot(),

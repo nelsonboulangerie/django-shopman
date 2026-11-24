@@ -3,14 +3,14 @@
 // · página à parte, sem o chrome do backstage (o link de entrada vive na
 //   aba "Painel" da UI normal); botão de tela cheia para a TV;
 // · tipografia Oswald (grotesca condensada de painel), DUAS escalas apenas:
-//   display (título · relógio · aviso) e linha (todas as palhetas). As duas
-//   crescem com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha
-//   se lê a dois metros (WP-F04). A largura só limita quando os nomes do dia
-//   não caberiam;
+//   display (título · relógio) e linha (todas as palhetas). As duas crescem
+//   com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha tem 36px
+//   e se lê a dois metros (WP-F04). A largura só limita quando os nomes do dia
+//   não caberiam; a hora guarda o "h" minúsculo ("6h42");
 // · NOME do produto nas palhetas (SKU saiu), na largura do maior nome do dia;
 //   quantidade com a unidade que a projeção traz ("12 UN", "18,5 KG");
 // · sem conexão, o último quadro fica no ar e o aviso, com a hora da leitura,
-//   é a maior coisa da tela;
+//   é o primeiro conteúdo da tela, no tamanho de aviso;
 // · atrasado não pisca: as palhetas RE-GIRAM periodicamente até o mesmo
 //   valor, como os painéis mecânicos reais fazem;
 // · ordem de aeroporto: cronológica pelo horário — status muda cor, nunca
@@ -239,7 +239,7 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
       <div class="flex items-baseline justify-between gap-6">
         <h1 class="board-title">Letreiro</h1>
         <ClientOnly>
-          <SplitFlap :value="clock" :chars="5" class="board-display" />
+          <SplitFlap :value="clock" :chars="5" :upper="false" align="right" class="board-display" />
         </ClientOnly>
       </div>
     </header>
@@ -247,7 +247,7 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
     <section
       class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 md:px-8"
     >
-      <!-- Sem conexão: a maior coisa da tela, primeiro conteúdo abaixo do topo,
+      <!-- Sem conexão: primeiro conteúdo abaixo do topo, em âmbar cheio,
            com a hora da leitura que continua no ar. Some quando a leitura
            seguinte dá certo; o X fecha, e ele volta enquanto a causa durar. -->
       <div
@@ -318,6 +318,7 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
               <SplitFlap
                 :value="row.eta_display"
                 :chars="ETA_CHARS"
+                :upper="false"
                 align="right"
                 class="board-flap"
                 :class="
@@ -382,17 +383,18 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   --board-amber: #f2c46b;
   --board-cyan: #6fa0c0;
 
-  /* DUAS escalas, e só: display (título · relógio · aviso) e linha (palhetas).
-     Crescem com a altura da tela (5vh: 54px numa TV de 1080, contra os 24px do teto
-     antigo). A largura entra só como limite: o total de palhetas da linha
-     (`--row-chars`, medido no dia) × 0,87em (célula + vão) mais a moldura fixa
-     (margens, bordas e vãos entre colunas, ~11rem) cabe em 100vw. */
+  /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). A linha
+     cresce com a altura da tela até 36px (2,25rem, uma TV de 1080 lida a 2 m;
+     decisão do dono: média, sem exagero). A largura entra só como limite: o total
+     de palhetas da linha (`--row-chars`, medido no dia) × 0,87em (célula + vão)
+     mais a moldura fixa (margens, bordas e vãos entre colunas, ~11rem) cabe em
+     100vw. */
   --row-chars: 42;
   --row-chars-narrow: 24;
-  --scale-display: clamp(1.9rem, 6.5vh, 5rem);
+  --scale-display: clamp(1.9rem, 4.4vh, 3rem);
   --scale-row: max(
     1rem,
-    min(5vh, calc((100vw - 11rem) / (var(--row-chars) * 0.87)))
+    min(2.25rem, 3.4vh, calc((100vw - 11rem) / (var(--row-chars) * 0.87)))
   );
   --scale-label: clamp(0.85rem, 1.9vh, 1.4rem);
 
@@ -400,7 +402,9 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
     radial-gradient(120% 90% at 50% 0%, #2b1d16 0%, var(--board-bg) 60%),
     var(--board-bg);
   color: var(--board-text);
-  font-family: var(--font-sans);
+  /* Oswald, a grotesca condensada de painel que o dono escolheu para o Letreiro
+     (mais estreita que a fonte da suíte, como a palheta real). */
+  font-family: Oswald, "Arial Narrow", "Helvetica Neue", sans-serif;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
@@ -448,10 +452,10 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   text-transform: none;
 }
 
-/* O aviso de conexão: alto contraste (âmbar cheio, letra escura), na escala do
-   título, maior que qualquer palheta. */
+/* O aviso de conexão: alto contraste (âmbar cheio, letra escura), no tamanho de
+   aviso, o dos rótulos (decisão do dono: não precisa gritar). */
 .board-stale {
-  font-size: var(--scale-display);
+  font-size: max(1rem, var(--scale-label));
   font-weight: 600;
   line-height: 1.1;
   padding: 0.3em 0.5em;
@@ -460,10 +464,11 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   color: var(--board-bg);
 }
 .board-stale-icon {
-  width: 1em;
-  height: 1em;
+  width: 1.2em;
+  height: 1.2em;
 }
-/* O X na pele do aviso: letra escura sobre o âmbar, alvo do tamanho da letra (≥ 44px). */
+/* O X na pele do aviso: letra escura sobre o âmbar, alvo de 44px e ícone do
+   tamanho do do kit (20px), nunca menor que a letra. */
 .board-stale-close {
   /* Na escala do aviso (o botão traz fonte pequena de controle). */
   font-size: inherit;
@@ -482,8 +487,8 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
 }
 .board-stale-close :deep(.iconify),
 .board-stale-close :deep(svg) {
-  width: 0.75em;
-  height: 0.75em;
+  width: max(1.25rem, 1em);
+  height: max(1.25rem, 1em);
 }
 
 .board-key {
