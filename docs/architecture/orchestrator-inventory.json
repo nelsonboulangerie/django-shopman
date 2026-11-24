@@ -13749,6 +13749,20 @@
       ]
     },
     {
+      "path": "shopman/shop/services/phone_confirmation.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "identity.phone-confirmation"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/services/pickup_turn.py",
       "touchpoints": [
         "service"
