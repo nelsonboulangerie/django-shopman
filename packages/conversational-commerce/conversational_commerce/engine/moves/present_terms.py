@@ -70,11 +70,13 @@ def reply(state, need):
     if missing:
         code, known = missing[0], {t.template_id for t in TEMPLATES}
         needs = ("fact", state.requirements_key(state.subject.cart_ref))
+        asks_options = state.asks_condition_options(need, (code,))
         listed = f"present_terms.needs_{code}_options"
-        if state.asks_condition_options(need, (code,)) and len(state.offered(state.subject.cart_ref, code)) > 1 \
-                and listed in known:
+        if asks_options and len(state.offered(state.subject.cart_ref, code)) > 1 and listed in known:
             return PartSpec(MOVE, listed, {f"{code}_options": needs})  # pediu as opções: todas, e a pergunta de qual
-        if state.declines_condition(need, (code,)) and f"present_terms.needs_{code}_declined" in known:
+        # "Outro" com uma opção só é "essa não": o que falta, sem ela, como o "não".
+        if (state.declines_condition(need, (code,)) or asks_options) \
+                and f"present_terms.needs_{code}_declined" in known:
             return PartSpec(MOVE, f"present_terms.needs_{code}_declined")  # recusou a opção: o que falta, sem ela
         if len(state.offered(state.subject.cart_ref, code)) > 1 and f"present_terms.needs_{code}_many" in known:
             return PartSpec(MOVE, f"present_terms.needs_{code}_many", {code: needs})  # mais de uma opção

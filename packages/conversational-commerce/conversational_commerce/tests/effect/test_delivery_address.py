@@ -314,12 +314,13 @@ def test_another_after_the_list_a_new_address_still_closes():
     assert address.reply.template_ids[-1] == "present_terms.confirm"  # o fechamento seguiu
 
 
-def test_another_with_a_single_saved_address_offers_it_again():
-    steps = (CLOSE, ANOTHER)
+def test_another_with_a_single_saved_address_is_not_this_one():
+    """ "Outro" com um endereço só no cadastro: não há lista; é "esse não", e pergunta o endereço como o "não"."""
+    steps = (CLOSE, ANOTHER, YES)
     turn_engine, world = engine(steps=steps, world=_saved_world("Rua do Cadastro 10"))
-    _close, again = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
-    assert again.reply.template_ids == ("present_terms.needs_delivery_address_saved",)
-    assert again.commands == ()
+    _close, again, yes = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert again.reply.template_ids == ("present_terms.needs_delivery_address_saved_declined",)
+    assert again.commands == () and yes.commands == () and "cart-1" not in world.state.address
 
 
 def test_another_without_the_condition_question_lists_nothing():

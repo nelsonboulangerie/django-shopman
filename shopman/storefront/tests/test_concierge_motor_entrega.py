@@ -396,6 +396,41 @@ def test_the_name_of_a_saved_address_never_reaches_the_ai(conversation, monkeypa
     assert _fields(understanding) == [("give_address", {})] and ai.requests == []
 
 
+@pytest.mark.parametrize(("text", "expected"), [
+    ("outro", True), ("Quero outro", True), ("outro endereço", True), ("um outro, por favor", True),
+    ("quais?", True), ("quais são os meus endereços cadastrados?", True),
+    ("não, outro endereço", False), ("outro croissant", False), ("o do trabalho", False), ("sim", False)])
+def test_another_to_the_saved_offer_is_read_without_the_ai(conversation, monkeypatch, text, expected):
+    from types import SimpleNamespace
+
+    from shopman.storefront.concierge import address
+    from shopman.storefront.concierge.model_reader import asks_saved_options
+
+    _session(fulfillment_type="delivery")
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [SimpleNamespace(pk=7), SimpleNamespace(pk=9)])
+    assert asks_saved_options(conversation, text) is expected
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [SimpleNamespace(pk=7)])
+    assert asks_saved_options(conversation, text) is expected  # um só: o motor diz "esse não" e pede o endereço
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [])
+    assert asks_saved_options(conversation, text) is False  # sem cadastro não há oferta
+
+
+def test_the_list_says_every_offered_address_and_holds_if_one_changed(conversation, monkeypatch):
+    from shopman.shop.conversational.commerce_read import saved_address_ref
+    from shopman.storefront.concierge import address
+    from shopman.storefront.tests.test_concierge_troca_no_turno import _saved
+
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True), _saved(9, "Avenida Brasil", "200", "")]
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: list(saved))
+    refs = [saved_address_ref("sess-1", item) for item in saved]
+    formatters = turn_framework.nice_formatters(conversation)
+    assert _say("present_terms.needs_delivery_address_saved_options", formatters,
+                delivery_address_saved_options=refs) == address.saved_listing(saved)
+    saved[1].route, saved[1].formatted_address = "Rua Nova", "Rua Nova, 200"  # mudou depois da oferta
+    with pytest.raises(UnresolvedReference):
+        formatters["delivery_address_saved_options"](refs)
+
+
 def test_yes_and_no_to_the_saved_address_offer_are_read_not_taken_as_address(conversation, monkeypatch):
     from types import SimpleNamespace
 
