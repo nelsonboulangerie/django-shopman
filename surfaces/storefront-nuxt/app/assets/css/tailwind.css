@@ -646,6 +646,21 @@
     .shop-dock-reserve {
       padding-bottom: calc(14rem + env(safe-area-inset-bottom));
     }
+
+    /* Quando o cartão fixo não deixa espaço para a página (#3573: a fonte do sistema a
+     * 200 % faz cabeçalho, cartão e navegação tomarem dois terços da tela), ele desce
+     * para o fluxo, no fim do conteúdo. A regra e a medida: `presentation/actionDock`
+     * e `useActionDockFit`. O `bottom` continua declarado: é dele que a medida lê a
+     * distância que o cartão teria até a base se voltasse a flutuar. A reserva da
+     * página encolhe para o que a navegação pede. */
+    .shop-action-dock.shop-action-dock--in-flow {
+      position: static;
+      margin-top: 1.5rem;
+    }
+
+    .shop-dock-reserve:has(.shop-action-dock--in-flow) {
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    }
   }
 
   /* O respiro lateral acompanha o do `.shop-container`, que muda em `sm`. */
