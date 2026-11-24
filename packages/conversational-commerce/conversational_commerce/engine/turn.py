@@ -84,7 +84,7 @@ from conversational_commerce.ledger import (
     staff_deadline,
     staff_owner,
 )
-from conversational_commerce.ledger.commitments import window_seconds
+from conversational_commerce.ledger.commitments import Entry, window_seconds
 from conversational_commerce.memory import MemoryStore
 from conversational_commerce.policy import DecisionInput, decide
 from conversational_commerce.policy.advisor import adheres_to_declared_need
@@ -200,6 +200,8 @@ def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
     value = dialogue.get(CLOSING_KEY)
     return (cart_ref is not None and isinstance(value, Mapping) and value.get("cart") == cart_ref
             and value.get("epoch") == epoch)
+#: Quantas vezes o tick tenta o aviso de um prazo vencido que não saiu (segurado ou falhado) antes de desistir.
+NOTIFY_ATTEMPTS = 3
 #: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
 MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
 
@@ -1250,8 +1252,12 @@ class Engine:
         now = clock.now()
         line = read_line(self.profile, ESCALATION_LINE)
         results = []
+        # Avisos que não saíram num tick anterior (segurado ou falhado), antes que o due marque prazos novos.
+        pending = [entry for entry in self.commitments.open_entries(ctx.tenant, ctx.environment)
+                   if not entry.notified and "customer_notify_failed" in self.commitments.events_of(entry.commitment_id)]
         for entry in self.commitments.due(now, ctx.tenant, ctx.environment):
             cid = entry.commitment_id
+            pending = [other for other in pending if other.commitment_id != cid]
             self.commitments.note("deadline_passed", cid, now, entry.commitment.deadline.at)
             episode = store.load_episode(ctx, entry.commitment.episode_id)
             records, steps = [], []
@@ -1277,14 +1283,35 @@ class Engine:
                     store.commit_transition(ctx, Transition(episode=new_episode, expected_version=episode.version),
                                             tuple(records), ())
                 continue
+            results.append(self._notify_overdue(ctx, entry, episode, now, records, steps))
+        for entry in pending:
+            # O prazo já foi tratado; só o aviso ao cliente não saiu da outra vez. Tenta de novo, sem reescalar.
+            episode = store.load_episode(ctx, entry.commitment.episode_id)
+            results.append(self._notify_overdue(ctx, entry, episode, now, [], []))
+        return tuple(results)
+
+    def _notify_overdue(self, ctx: TrustedContext, entry: Entry, episode: Episode, now: str,
+                        records: list, steps: list) -> TurnResult:
+        """Avisa o cliente do prazo vencido. Avisado só com o aviso enviado: segurado ou falhado, ele não soube."""
+        cid = entry.commitment_id
+        state = self._resume_state(entry, now)
+        state.commitments[cid] = entry.commitment
+        state.waiting[entry.need.need_id] = cid
+        result = self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
+                               records=tuple(records), steps=steps)
+        if result.outcome == "answered" and result.exposure is not None:
             entry.notified = True
             self.commitments.note("customer_notified", cid, now)
-            state = self._resume_state(entry, now)
-            state.commitments[cid] = entry.commitment
-            state.waiting[entry.need.need_id] = cid
-            results.append(self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
-                                         records=tuple(records), steps=steps))
-        return tuple(results)
+            return result
+        reason = result.fallbacks[0] if result.fallbacks else result.outcome
+        if self.commitments.events_of(cid).count("customer_notify_failed") + 1 >= NOTIFY_ATTEMPTS:
+            # Tentou e não saiu: para de tentar, registrado, em vez de repetir a cada tick para sempre.
+            entry.notified = True
+            self.commitments.note("customer_notify_failed", cid, now, reason)
+            self.commitments.note("customer_notify_gave_up", cid, now, reason)
+        else:
+            self.commitments.note("customer_notify_failed", cid, now, reason)
+        return result
 
     def _due(self, episode: Episode) -> tuple[Wait, ...]:
         now = self.ports.clock.now()
