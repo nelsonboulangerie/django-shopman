@@ -661,6 +661,19 @@ def test_cash_in_the_channel_config_never_reaches_the_conversation(ctx):
     assert {"code": "payment_method", "value": "pix"} in _fulfillment_conditions({}, CHANNEL)
 
 
+def test_the_summary_echoes_the_said_hour_only_while_the_day_and_the_window_are_the_same():
+    """O resumo ecoa a hora que o cliente disse ("às 16h") com a janela gravada; janela ou dia trocados depois
+    (pelo site, pelo PDV) deixam a hora para trás e o resumo volta à janela."""
+    from shopman.shop.conversational.commerce_read import _fulfillment_conditions
+
+    said = {"time": "16:00", "date": "2026-11-25", "slot": "slot-15"}
+    data = {"delivery_date": "2026-11-25", "delivery_time_slot": "slot-15", "delivery_time_said": said}
+    assert {"code": "fulfillment_time", "value": "16:00"} in _fulfillment_conditions(data)
+    for changed in ({"delivery_time_slot": "slot-12"}, {"delivery_date": "2026-11-26"}):
+        codes = [c["code"] for c in _fulfillment_conditions({**data, **changed})]
+        assert "fulfillment_window" in codes and "fulfillment_time" not in codes
+
+
 def test_set_fulfillment_validates_the_slot_like_the_site(ctx):
     tools.set_item(ctx, SKU, 1)
     bad = tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-99", "")

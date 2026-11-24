@@ -171,8 +171,7 @@ class FakeCommerceRead(FakeBase):
             fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup"),
                          **({"address_ref": self.state.address[cart_ref]["ref"]}
                             if cart_ref in self.state.address else {})},
-            conditions=([{"code": "payment_method", "value": self.state.payment[cart_ref]}]
-                        if cart_ref in self.state.payment else []),
+            conditions=self._conditions(cart_ref),
             valid_until=self.clock.at(TERMS_VALIDITY_SECONDS),
         ))
         self.quotes[terms.hash] = terms
@@ -185,6 +184,26 @@ class FakeCommerceRead(FakeBase):
                                                         price_minor=self.state.items[ref].price_minor + 50)
             self.state.versions[cart_ref] = version + 1
         return terms
+
+    def _conditions(self, cart_ref: str) -> list[dict]:
+        """O dia, a janela e a hora combinados e a forma de pagamento, como o sistema de registro os declara.
+
+        A janela é a da grade da casa quando o mundo a conhece (``window``); sem ela, a hora dita. A hora dita
+        vai também à parte (``fulfillment_time``): o resumo a ecoa. Sem o dia e a janela, o resumo dizia só
+        "Retirada", e o do sistema de registro diz o quando (ensaio, 24/11).
+        """
+        chosen = self.state.fulfillment.get(cart_ref, {})
+        found = []
+        if chosen.get("date"):
+            found.append({"code": "fulfillment_date", "value": chosen["date"]})
+            window = chosen.get("window") or chosen.get("time")
+            if window:
+                found.append({"code": "fulfillment_window", "value": window})
+            if chosen.get("time"):
+                found.append({"code": "fulfillment_time", "value": chosen["time"]})
+        if cart_ref in self.state.payment:
+            found.append({"code": "payment_method", "value": self.state.payment[cart_ref]})
+        return found
 
     def read_order(self, ctx: TrustedContext, ref: str) -> Fact:
         order = self.state.orders.get(ref)

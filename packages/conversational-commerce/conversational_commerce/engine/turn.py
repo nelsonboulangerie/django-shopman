@@ -286,6 +286,29 @@ def _with_change_receipts(state, chosen, by_need, specs):
     return out
 
 
+#: Os recibos das condições do pedido: o recebimento, o endereço e o pagamento combinados no turno.
+CONDITION_MOVES = frozenset({"set_fulfillment", "set_delivery_address", "set_payment"})
+CART_SUMMARY_TEMPLATE = "change_cart.done"
+
+
+def _summary_after_conditions(specs):
+    """O resumo do carrinho vem depois do que se combinou no mesmo turno ("retirada amanhã às 16h").
+
+    O resumo diz o estado do turno inteiro (os itens e o total), e a voz da casa pode terminá-lo com o convite
+    para continuar ("Quer mais alguma coisa?"). Na ordem das partes da fala, o combinado saía depois do convite
+    (ensaio no ar, cartão 1, 24/11). As demais partes (a pergunta do fechamento, o aviso) seguem onde estavam.
+    """
+    at = next((index for index, spec in enumerate(specs)
+               if spec.move == "change_cart" and spec.template_id == CART_SUMMARY_TEMPLATE), None)
+    if at is None:
+        return specs
+    after = specs[at + 1:]
+    agreed = [spec for spec in after if spec.move in CONDITION_MOVES]
+    if not agreed:
+        return specs
+    return [*specs[:at], *agreed, specs[at], *(spec for spec in after if spec.move not in CONDITION_MOVES)]
+
+
 def _distinct(specs):
     """A mesma parte (movimento, molde e lastros iguais) sai uma vez: as linhas do mesmo comando têm uma resposta só."""
     seen, found = set(), []
@@ -1030,8 +1053,8 @@ class Engine:
         moves = registry()
 
         # Passo 7: dizer e verificar.
-        specs = _distinct(_with_change_receipts(state, chosen, by_need,
-                                                [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen]))
+        specs = _distinct(_summary_after_conditions(_with_change_receipts(
+            state, chosen, by_need, [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen])))
         reply = None
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}

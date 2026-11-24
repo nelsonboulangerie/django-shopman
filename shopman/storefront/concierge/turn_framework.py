@@ -338,6 +338,9 @@ def conditions_text(value, resolve=_no_address) -> str:
     if found.get("fulfillment_date"):
         slot = found.get("fulfillment_window")
         label = window_label(str(slot), for_customer=True) if slot else ""
+        if found.get("fulfillment_time"):
+            # A hora que o cliente disse, dentro da janela gravada: "às 16h", não "a partir das 15h" (24/11).
+            label = f"às {time_text(found['fulfillment_time'])}"
         text = f": {_summary_when(str(found['fulfillment_date']), label)}"
     if found.get("delivery_address"):
         from .tools import _display_text
