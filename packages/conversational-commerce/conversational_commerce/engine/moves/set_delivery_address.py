@@ -47,10 +47,10 @@ ANSWERS_CONDITIONS = ("delivery_address_saved",)
 
 
 def _source(state, need) -> str:
-    """De onde vem o endereço: a fala (``content_ref``), ou a opção aceita pelo "sim" (a referência opaca)."""
-    if state.answers_condition(need):
-        options = state.offered(state.subject.cart_ref, state.pending_condition() or "")
-        return str(options[0]) if options else ""
+    """De onde vem o endereço: a fala (``content_ref``), ou a opção OFERECIDA na pergunta a que o "sim" responde
+    (a referência opaca, com o resumo do endereço que o cliente viu)."""
+    if state.answers_condition(need, ANSWERS_CONDITIONS):
+        return str((state.condition_question or {}).get("ref") or "")
     return state.content_ref or ""
 
 
@@ -60,7 +60,7 @@ def _by_reference(state, need) -> bool:
 
 
 def propose(state, need):
-    if not (need.act == ACT or state.answers_condition(need)) or len(need.readings) != 1 \
+    if not (need.act == ACT or state.answers_condition(need, ANSWERS_CONDITIONS)) or len(need.readings) != 1 \
             or state.subject.cart_ref is None or need.need_id in state.refused:
         return None
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE,

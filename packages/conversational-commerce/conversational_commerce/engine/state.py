@@ -112,8 +112,9 @@ class TurnState:
     closing: bool = False
     # A referência protegida do conteúdo do evento (spec 01): o endereço se lê por ela, nunca pelo texto.
     content_ref: str | None = None
-    # As necessidades cujo "sim" respondeu à condição pendente de sim ou não (``answers_condition``).
-    answered_conditions: set[str] = field(default_factory=set)
+    # A pergunta da condição de sim ou não que o fechamento fez (``turn.CONDITION_KEY``): a pergunta, o código e a
+    # opção oferecida. Só deste carrinho e desta época.
+    condition_question: dict | None = None
     # Algum movimento de efeito foi escolhido neste turno (executado ou não, inclusive em sombra).
     effect_chosen: bool = False
     # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
@@ -158,40 +159,31 @@ class TurnState:
         O "não" à condição que se responde com sim ou não ("entregamos no endereço do cadastro?") não é
         desistir: é recusar aquela opção, e o fechamento segue (``declines_condition``)."""
         return self.declines_offer(need) or (self.offer is None and self.closing and need.act == "deny"
-                                             and not self.declines_condition(need))
+                                             and not self.declines_condition(need) and not self._alternative(need))
 
-    def pending_condition(self) -> str | None:
-        """A condição que o fechamento no ar pergunta: a primeira que falta, com o fechamento pendente."""
-        missing = self.missing_conditions()
-        return missing[0] if self.closing and self.offer is None and missing else None
+    def _alternative(self, need: NeedSpec) -> bool:
+        """Outra necessidade da mesma fala muda o carrinho ("não, o do trabalho"): o "não" é correção, não recusa."""
+        return any(other.need_id != need.need_id and other.act in CHANGE_ACTS for other in self.needs)
 
-    def _yes_no_condition(self) -> str | None:
-        """A condição pendente que se responde com sim ou não, e que tem opção a aceitar.
+    def _answers_condition_question(self, need: NeedSpec, codes) -> bool:
+        """A resposta curta é À pergunta da condição que o fechamento fez (``condition_question``), do código pedido."""
+        asked = self.condition_question
+        if not asked or need.answers_question != asked.get("question_id"):
+            return False
+        if codes is not None and asked.get("code") not in codes:
+            return False
+        return not self._alternative(need)
 
-        Quem a declara é o movimento que a cumpre (``ANSWERS_CONDITIONS``): a forma de pagamento não é
-        pergunta de sim ou não (são duas formas), o endereço do cadastro é ("entregamos nele?")."""
-        from .moves import yes_no_conditions
+    def answers_condition(self, need: NeedSpec, codes=None) -> bool:
+        """O "sim" à pergunta da condição de sim ou não ("entregamos no endereço do cadastro?"): aceita a opção
+        OFERECIDA naquela pergunta (``condition_question["ref"]``), nunca a que o fato diria agora.
 
-        code = self.pending_condition()
-        if code is None or code not in yes_no_conditions() or not self.offered(self.subject.cart_ref, code):
-            return None
-        return code
+        ``codes``: as condições do movimento que pergunta; ``None`` para quem só precisa saber se é resposta."""
+        return need.act == "affirm" and self._answers_condition_question(need, codes)
 
-    def answers_condition(self, need: NeedSpec) -> bool:
-        """O "sim" à condição pendente de sim ou não: aceita a primeira opção que o fato oferece.
-
-        Lembrado no turno (``answered_conditions``): depois do efeito a condição já não falta, e o mesmo "sim"
-        continua sendo a resposta a ela (os termos voltam, ``changed_under_offer``)."""
-        if need.need_id in self.answered_conditions:
-            return True
-        if need.act == "affirm" and self._yes_no_condition() is not None:
-            self.answered_conditions.add(need.need_id)
-            return True
-        return False
-
-    def declines_condition(self, need: NeedSpec) -> bool:
-        """O "não" à condição pendente de sim ou não: recusa a opção, e o fechamento pergunta o que falta."""
-        return need.act == "deny" and self._yes_no_condition() is not None
+    def declines_condition(self, need: NeedSpec, codes=None) -> bool:
+        """O "não" à pergunta da condição: recusa a opção, e o fechamento pergunta o que falta sem ela."""
+        return need.act == "deny" and self._answers_condition_question(need, codes)
 
     def has_fresh_terms(self) -> bool:
         """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
