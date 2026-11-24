@@ -2282,14 +2282,77 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
 # ── Resolver ───────────────────────────────────────────────────────────
 
-_DB_CACHE: dict[str, dict[tuple[str, str], CopyEntry]] | None = None
+#: A copy é lida em todo processo (``web-storefront``, ``web-operator``, worker),
+#: mas editada só no Admin, que mora em outro processo. Por isso o memo local de
+#: cada processo obedece a duas coisas:
+#:
+#: - uma **versão** no cache compartilhado do Django (Valkey em produção), trocada
+#:   a cada gravação (:func:`invalidate_cache`). Quem lê confere a versão uma vez
+#:   por request (``request_memo``) e, se mudou, relê o banco;
+#: - um **teto de idade** (:data:`LOCAL_MEMO_TTL`). Se o cache compartilhado cair,
+#:   ou alguém gravar por fora do ORM, o memo vence sozinho: copy velha dura no
+#:   máximo isso, nunca até o próximo deploy.
+COPY_VERSION_CACHE_KEY = "shopman:omotenashi_copy:version"
+LOCAL_MEMO_TTL = 60.0  # segundos
+
+#: A versão não pôde ser lida (cache compartilhado fora do ar).
+_UNREACHABLE = object()
+
+
+class _ProcessMemo:
+    """O memo de copy deste processo: as linhas ativas, de qual versão e de quando."""
+
+    __slots__ = ("rows", "version", "loaded_at")
+
+    def __init__(self) -> None:
+        self.rows: dict[str, dict[tuple[str, str], CopyEntry]] | None = None
+        self.version: object = None
+        self.loaded_at = 0.0
+
+    def is_fresh(self, version: object, now: float) -> bool:
+        if self.rows is None or now - self.loaded_at >= LOCAL_MEMO_TTL:
+            return False
+        # Sem versão legível, só o teto de idade decide.
+        return version is _UNREACHABLE or version == self.version
+
+    def clear(self) -> None:
+        self.rows = None
+
+
+_memo = _ProcessMemo()
+
+
+def _read_shared_version() -> object:
+    from django.core.cache import cache
+
+    try:
+        return cache.get(COPY_VERSION_CACHE_KEY)
+    except Exception:
+        logger.error(
+            "omotenashi.copy: cache compartilhado ilegível; a copy editada no Admin "
+            "pode levar até %ss para chegar a este processo",
+            int(LOCAL_MEMO_TTL),
+            exc_info=True,
+        )
+        return _UNREACHABLE
+
+
+def _shared_version() -> object:
+    """A versão da copy no cache compartilhado, lida uma vez por request."""
+    from shopman.shop.request_memo import memoized
+
+    return memoized(COPY_VERSION_CACHE_KEY, _read_shared_version)
 
 
 def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
-    """Load all active DB overrides into memory. Lazily built, invalidated on save."""
-    global _DB_CACHE
-    if _DB_CACHE is not None:
-        return _DB_CACHE
+    """As linhas ativas do banco, do memo do processo enquanto ele valer."""
+    import time
+
+    memo = _memo
+    version = _shared_version()
+    now = time.monotonic()
+    if memo.is_fresh(version, now):
+        return memo.rows
 
     cache: dict[str, dict[tuple[str, str], CopyEntry]] = {}
     try:
@@ -2305,14 +2368,52 @@ def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
         # Model not migrated yet, or DB not reachable — fall back to defaults.
         logger.debug("omotenashi.copy: DB cache load failed, using defaults", exc_info=True)
 
-    _DB_CACHE = cache
+    memo.rows = cache
+    memo.version = version
+    memo.loaded_at = now
     return cache
 
 
+def _publish_new_version() -> None:
+    import uuid
+
+    from django.core.cache import cache
+
+    from shopman.shop.request_memo import forget
+
+    _memo.clear()
+    forget(COPY_VERSION_CACHE_KEY)
+    try:
+        # Ficha nova, não contador: uma chave despejada e recriada nunca repete
+        # uma versão que algum processo ainda guarda.
+        cache.set(COPY_VERSION_CACHE_KEY, uuid.uuid4().hex, timeout=None)
+    except Exception:
+        logger.error(
+            "omotenashi.copy: não consegui publicar a versão nova da copy; os outros "
+            "processos só a veem quando o memo deles vencer (até %ss)",
+            int(LOCAL_MEMO_TTL),
+            exc_info=True,
+        )
+
+
 def invalidate_cache() -> None:
-    """Invalidate the in-process DB cache. Hooked on model save/delete."""
-    global _DB_CACHE
-    _DB_CACHE = None
+    """Faz todo processo reler a copy do banco. Chame depois de gravar ``OmotenashiCopy``.
+
+    Ligado ao ``post_save``/``post_delete`` do modelo; quem grava sem sinal
+    (``QuerySet.update()``, ação em lote do Admin) chama direto. Este processo
+    esquece o memo na hora; a versão compartilhada muda quando a transação
+    confirma, para que nenhum outro processo releia o banco antes do commit e
+    guarde o texto velho sob a versão nova.
+    """
+    from django.db import transaction
+
+    _memo.clear()
+    if transaction.get_connection().in_atomic_block:
+        transaction.on_commit(_publish_new_version)
+    else:
+        # Fora de transação não há commit a esperar (e ``on_commit`` abriria
+        # conexão só para descobrir isso).
+        _publish_new_version()
 
 
 def resolve_copy(
