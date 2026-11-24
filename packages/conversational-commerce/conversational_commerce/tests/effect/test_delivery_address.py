@@ -173,3 +173,117 @@ def test_the_pending_close_is_bound_to_the_cart_and_the_epoch():
     assert not closing_in(dialogue, "cart-1", 3)  # a conversa mudou de dono: o fechamento não passa
     assert not closing_in(dialogue, "cart-2", 2)
     assert not closing_in({CLOSING_KEY: "cart-1"}, "cart-1", 2)  # forma antiga não vale
+
+
+# ── o endereço do cadastro: a condição que se responde com sim ou não (#3421) ────────────────────
+
+
+def _saved_world(*saved, methods=("card",)):
+    world = _delivery_world(methods)
+    world.state.saved_addresses["cart-1"] = list(saved)
+    return world
+
+
+NO = _step("no", {"act": "deny"})
+
+
+def test_a_customer_with_a_saved_address_is_offered_it_first():
+    turn_engine, world = engine(steps=(CLOSE,), world=_saved_world("Rua do Cadastro 10"))
+    result = turn_engine.turn(CTX, CLOSE.message)
+    assert result.reply.template_ids == ("present_terms.needs_delivery_address_saved",)
+    assert "saved:cart-1:0:" in result.text  # o neutro do pacote mostra a referência; o texto é da casa
+    assert "Rua do Cadastro" not in result.text  # P17: o endereço nunca entra pelo motor
+
+
+def test_more_than_one_saved_address_uses_the_many_template():
+    turn_engine, world = engine(steps=(CLOSE,), world=_saved_world("Rua A 1", "Rua B 2"))
+    assert turn_engine.turn(CTX, CLOSE.message).reply.template_ids == (
+        "present_terms.needs_delivery_address_saved_many",)
+
+
+def test_yes_to_the_saved_address_takes_it_and_returns_to_the_terms():
+    steps = (CLOSE, YES, _step("yes-again", {"act": "affirm"}))
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua do Cadastro 10"))
+    close, accepted, placed = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    [command] = accepted.commands
+    assert command.action == "set_delivery_address"
+    assert dict(command.parameters) == {"source": "saved:cart-1:0:ruadocadastro10"}
+    assert world.state.address["cart-1"]["text"] == "Rua do Cadastro 10"
+    assert accepted.reply.template_ids[-1] == "present_terms.confirm"  # o "sim" voltou aos termos
+    assert [c.action for c in placed.commands] == ["commit_order"]  # e o "sim" seguinte fecha o pedido
+
+
+def test_no_to_the_saved_address_asks_for_another_without_ending_the_close():
+    steps = (CLOSE, NO, ADDRESS)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua do Cadastro 10"))
+    close, declined, address = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert declined.reply.template_ids == ("present_terms.needs_delivery_address_saved_declined",)
+    assert declined.commands == ()
+    assert [c.action for c in address.commands] == ["set_delivery_address"]
+    assert world.state.address["cart-1"]["text"] == "Rua das Flores 120"
+    assert address.reply.template_ids[-1] == "present_terms.confirm"  # o fechamento seguiu
+
+
+def test_yes_to_the_payment_question_is_not_an_answer():
+    """A forma de pagamento não é pergunta de sim ou não: o "sim" não escolhe pix."""
+    world = FakeWorld()
+    world.state.payment_methods = ("pix", "card")
+    steps = (CLOSE, YES)
+    turn_engine, world = engine(steps=steps, world=world)
+    _close, yes = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert yes.commands == () and "cart-1" not in world.state.payment
+
+
+
+# ── a revisão do #3455: o "sim" preso à pergunta, ao movimento e à opção oferecida ─────────────
+
+
+def test_yes_is_bound_to_the_condition_question_not_to_any_later_question():
+    """Oferecido o endereço do cadastro, a Nice pergunta outra coisa (o cliente disse algo que ela não entendeu):
+    o "sim" seguinte responde à pergunta nova, nunca grava o endereço."""
+    unclear = _step("unclear", {"act": "unknown"})
+    steps = (CLOSE, unclear, YES)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua do Cadastro 10"))
+    _close, asked, yes = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert asked.chosen_moves == ["ask_clarification"]
+    assert yes.commands == () and "cart-1" not in world.state.address
+
+
+def test_yes_takes_the_offered_address_even_if_the_book_changed():
+    """O "sim" aceita a opção OFERECIDA. Se o cadastro mudou depois da oferta, a referência não casa e nada
+    se grava com um endereço que o cliente não viu."""
+    steps = (CLOSE, YES)
+    world = _saved_world("Rua do Cadastro 10")
+    turn_engine, world = engine(steps=steps, world=world)
+    results = run_journey(turn_engine, CTX, list(steps[:1]))
+    world.state.saved_addresses["cart-1"] = ["Rua Nova 99"]  # o cadastro mudou entre a oferta e o "sim"
+    yes = run_journey(turn_engine, CTX, list(steps[1:]))[0].result
+    assert results and [dict(c.parameters) for c in yes.commands] == [{"source": "saved:cart-1:0:ruadocadastro10"}]
+    assert "cart-1" not in world.state.address  # a referência oferecida não casa com o cadastro de agora
+
+
+def test_no_with_another_address_in_the_same_message_is_the_choice():
+    """ "Não, entrega na Rua das Flores 120": o "não" é correção; ganha o endereço dito, e o fechamento segue."""
+    both = JourneyStep(message=j4.message("no-other", "Rua das Flores 120"),
+                       understanding={"acts": [{"act": "deny"}, {"act": "give_address"}]},
+                       expect_moves=(), expect_text=(), advance_seconds=30)
+    steps = (CLOSE, both)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua do Cadastro 10"))
+    _close, chose = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert [c.action for c in chose.commands] == ["set_delivery_address"]
+    assert world.state.address["cart-1"]["text"] == "Rua das Flores 120"
+    assert "acknowledge.terms_declined" not in chose.reply.template_ids
+    assert "present_terms.needs_delivery_address_saved_declined" not in chose.reply.template_ids
+
+
+def test_the_condition_answer_is_only_for_the_move_that_declares_it():
+    from conversational_commerce.engine.state import NeedSpec, TurnState
+
+    state = TurnState.__new__(TurnState)
+    state.needs = (NeedSpec("n1", "affirm", answers_question="q-1"),)
+    state.condition_question = {"question_id": "q-1", "code": "delivery_address_saved", "ref": "saved:x"}
+    need = state.needs[0]
+    assert state.answers_condition(need, ("delivery_address_saved",))
+    assert not state.answers_condition(need, ("payment_method",))  # outro movimento não responde a esta pergunta
+    other = NeedSpec("n1", "affirm", answers_question="q-2")
+    assert not state.answers_condition(other, ("delivery_address_saved",))  # outra pergunta

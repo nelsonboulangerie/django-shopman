@@ -82,6 +82,11 @@ NICE_TEMPLATE_COPY = {
     "set_delivery_address.not_located": "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED",
     # O endereço sem a entrega combinada: a pergunta de hoje do fechamento, "retirada ou entrega?".
     "set_delivery_address.ask_mode": "CONCIERGE_CLOSE_ASK_FULFILLMENT",
+    # O endereço do cadastro primeiro (dono, 25/09): a MESMA oferta de hoje (``address.saved_offer``), com uma
+    # opção ou mais; o "não" a ela pergunta o endereço com a frase de hoje (#3421).
+    "present_terms.needs_delivery_address_saved": "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER",
+    "present_terms.needs_delivery_address_saved_many": "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER_MANY",
+    "present_terms.needs_delivery_address_saved_declined": "CONCIERGE_CLOSE_ASK_ADDRESS",
     # A limitação: recusada em 22/11, com frase nova aprovada pelo dono em 23/11 (#3408). No ar, o efeito
     # recusado (sacola, recebimento, pagamento) refaz a decisão, e quem responde é este molde; a sombra
     # não executa efeito e não o vê, por isso ele precisa de frase da Nice (sem ela, sairia o inglês do pacote).
@@ -361,7 +366,39 @@ def address_words_text(value) -> str:
 
 def _address_formatters(conversation, partial) -> dict:
     resolve = address_resolver(conversation) if conversation is not None else _no_address
-    return {"address": address_text(resolve), "conditions": partial(conditions_text, resolve=resolve)}
+    return {"address": address_text(resolve), "conditions": partial(conditions_text, resolve=resolve),
+            "delivery_address_saved": saved_address_text(conversation)}
+
+
+def saved_address_text(conversation):
+    """O endereço do cadastro que a oferta diz ("Rua X, 120 - Centro"), pela referência opaca da primeira opção.
+
+    Só o desta conversa: a referência presa à sacola dela, e o endereço do cadastro do cliente dela. Qualquer
+    outra coisa levanta ``UnresolvedReference``, e a mensagem segura (spec 06). O texto existe só no envio.
+    """
+    from conversational_commerce.reply import UnresolvedReference
+
+    def text(value) -> str:
+        from shopman.shop.conversational.commerce_read import parse_saved_address_ref, saved_address_digest
+
+        from .address import saved_addresses, short_line
+
+        options = list(value) if isinstance(value, (list, tuple)) else [value]
+        ref = str(options[0]) if options else ""
+        key = getattr(conversation, "session_key", "") or ""
+        parsed = parse_saved_address_ref(ref, key) if conversation is not None else None
+        if parsed is None:
+            raise UnresolvedReference(ref)
+        chosen = next((saved for saved in saved_addresses(conversation.customer_ref or "")
+                       if str(saved.pk) == parsed[0]), None)
+        if chosen is not None and saved_address_digest(key, chosen) != parsed[1]:
+            chosen = None  # o endereço mudou: a oferta nunca diz outro no lugar
+        line = short_line(chosen) if chosen is not None else ""
+        if not line:
+            raise UnresolvedReference(ref)
+        return line
+
+    return text
 
 ENVIRONMENT = "live"
 
@@ -571,29 +608,6 @@ EFFECT_HELD_ALERT = "concierge_effect_unconfirmed"
 EFFECT_HELD_MINUTES = 10
 
 
-def today_closing_does_better(conversation, rehearsal) -> str:
-    """O turno que o fechamento de hoje faz e o motor ainda não: a entrega escolhida por quem tem endereço salvo.
-
-    O fechamento de hoje oferece primeiro o endereço do cadastro (decisão do dono, 25/09/2026) e entende o "sim"
-    a essa oferta; o motor ainda não tem esse fluxo (``present_terms.needs_delivery_address_saved`` sem frase, e
-    o "sim" que responde à condição pendente vem no PR seguinte). Até lá, esse turno é do caminho de hoje.
-    """
-    from shopman.orderman.models import Session
-
-    from .address import saved_addresses
-
-    decision = getattr(rehearsal, "decision", None)
-    chosen = [decision.candidates[i] for i in decision.chosen] if decision is not None else []
-    if not any(c.move == "set_fulfillment" and dict(c.content).get("mode") == "delivery" for c in chosen):
-        return ""
-    session = Session.objects.filter(session_key=conversation.session_key).first() if conversation.session_key \
-        else None
-    structured = ((session.data if session is not None else None) or {}).get("delivery_address_structured")
-    if isinstance(structured, dict) and structured.get("formatted_address"):
-        return ""  # o endereço já está na sacola: nada a oferecer
-    return "saved_address_offer" if saved_addresses(conversation.customer_ref or "") else ""
-
-
 def send_voiced_parts(conversation, result, voice: frozenset[str]) -> bool:
     """Rede de segurança: depois do efeito, a parte cujo molde não tem frase da Nice CAI, e o resto sai.
 
@@ -697,10 +711,6 @@ def run(conversation, message, *, channel=None, interrupted=None):
         verdict = judge(rehearsal, enabled=enabled, approved=frozenset(shadow.house_templates))
         if not verdict.eligible:
             logger.info("concierge.turn_framework.legacy conversation=%s reason=%s", conversation.pk, verdict.reason)
-            return None
-        today = today_closing_does_better(conversation, rehearsal)
-        if today:
-            logger.info("concierge.turn_framework.legacy conversation=%s reason=%s", conversation.pk, today)
             return None
         live = build_engine(conversation, environment=ENVIRONMENT, channel=channel)
         if live is None:

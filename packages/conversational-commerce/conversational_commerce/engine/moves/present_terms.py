@@ -34,6 +34,15 @@ TEMPLATES = (
              {"delivery_address_details": SlotSpec(("fact",), "delivery_address_details")}),
     Template("present_terms.needs_delivery_complement", "1", MOVE,
              "Is there a complement (apartment, block)? If not, just say \"no complement\"."),
+    # A entrega de quem tem endereço no cadastro: o cadastro primeiro (sim ou não), por referência opaca (P17).
+    Template("present_terms.needs_delivery_address_saved", "1", MOVE,
+             "Shall we deliver to your saved address, {delivery_address_saved}?",
+             {"delivery_address_saved": SlotSpec(("fact",), "delivery_address_saved")}),
+    Template("present_terms.needs_delivery_address_saved_many", "1", MOVE,
+             "Shall we deliver to your saved address, {delivery_address_saved}? If you prefer another saved "
+             "address, tell me which.",
+             {"delivery_address_saved": SlotSpec(("fact",), "delivery_address_saved")}),
+    Template("present_terms.needs_delivery_address_saved_declined", "1", MOVE, "What is the delivery address?"),
     Template("present_terms.needs", "1", MOVE, "Before I can place the order I still need: {missing}.",
              {"missing": SlotSpec(("fact",), "missing")}),
     Template("present_terms.changed", "1", MOVE,
@@ -55,9 +64,14 @@ def reply(state, need):
     # "Os termos mudaram" só quando o ponto de efeito recusou; termos vencidos ou "sim" fora de ordem: termos de novo.
     missing = state.missing_conditions()
     if missing:
+        code, known = missing[0], {t.template_id for t in TEMPLATES}
         needs = ("fact", state.requirements_key(state.subject.cart_ref))
-        if f"present_terms.needs_{missing[0]}" in {t.template_id for t in TEMPLATES}:
-            return PartSpec(MOVE, f"present_terms.needs_{missing[0]}", {missing[0]: needs})
+        if state.declines_condition(need, (code,)) and f"present_terms.needs_{code}_declined" in known:
+            return PartSpec(MOVE, f"present_terms.needs_{code}_declined")  # recusou a opção: o que falta, sem ela
+        if len(state.offered(state.subject.cart_ref, code)) > 1 and f"present_terms.needs_{code}_many" in known:
+            return PartSpec(MOVE, f"present_terms.needs_{code}_many", {code: needs})  # mais de uma opção
+        if f"present_terms.needs_{code}" in known:
+            return PartSpec(MOVE, f"present_terms.needs_{code}", {code: needs})
         return PartSpec(MOVE, "present_terms.needs", {"missing": needs})
     key = ("fact", state.terms_key(state.subject.cart_ref))
     if need.need_id in state.refused:

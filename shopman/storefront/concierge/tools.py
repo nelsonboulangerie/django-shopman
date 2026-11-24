@@ -977,6 +977,7 @@ def set_fulfillment(
     use_saved_address: bool = False,
     saved_address_label: str = "",
     list_saved_addresses: bool = False,
+    saved_address_pk: int | None = None,
 ) -> dict:
     """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
 
@@ -986,8 +987,8 @@ def set_fulfillment(
     recusa (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
 
     O endereço é montado na conversa (``concierge/address.py``): pelo
-    endereço do cadastro do cliente (``use_saved_address``, o padrão, ou
-    ``saved_address_label``), pela localização enviada no WhatsApp
+    endereço do cadastro do cliente (``use_saved_address``, o padrão, ``saved_address_label``,
+    ou ``saved_address_pk``, o endereço exato que o motor ofereceu e o cliente aceitou), pela localização enviada no WhatsApp
     (``use_shared_location``), pelo texto (``address``) ou pelas partes ditas
     depois (rua, número, complemento, bairro, CEP, cidade, UF), por cima do
     que já está na sacola. O resultado traz ``address_question``: o que ainda
@@ -1076,7 +1077,8 @@ def set_fulfillment(
                     "ou escrever o endereço com rua, número, bairro e CEP?",
                 )
         said_parts = any(str(v or "").strip() for v in parts.values())
-        wants_saved = pin is None and not address and (use_saved_address or str(saved_address_label or "").strip())
+        wants_saved = pin is None and not address and (
+            use_saved_address or str(saved_address_label or "").strip() or saved_address_pk is not None)
         data = session.data or {}
         current = data.get("delivery_address_structured") if data.get("fulfillment_type") == "delivery" else None
         asks_nothing = pin is None and not address and not said_parts and not current and not wants_saved
@@ -1093,7 +1095,11 @@ def set_fulfillment(
                     "Não há endereço no seu cadastro. Pode enviar a localização pelo WhatsApp ou escrever "
                     "rua, número, bairro e CEP.",
                 )
-            saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
+            if saved_address_pk is not None:
+                # O endereço exato, do cadastro DESTE cliente; nunca "o padrão" escolhido aqui.
+                saved_choice = next((saved for saved in saved_list if saved.pk == saved_address_pk), None)
+            else:
+                saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
             if saved_choice is None:
                 if list_saved_addresses and not wants_saved:
                     prefix = ""

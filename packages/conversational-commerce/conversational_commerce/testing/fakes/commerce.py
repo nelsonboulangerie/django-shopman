@@ -211,7 +211,14 @@ class FakeCommerceRead(FakeBase):
         if self.state.fulfillment.get(cart_ref, {}).get("mode") == "delivery":
             # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
             address = self.state.address.get(cart_ref)
-            if address is None:
+            saved = self.state.saved_addresses.get(cart_ref) or []
+            if address is None and saved:
+                # Quem tem cadastro ouve primeiro o endereço do cadastro (sim ou não), por referência opaca.
+                value["missing"].append("delivery_address_saved")
+                # A referência leva um resumo do endereço (a loja usa um hash): o cadastro mudado não casa mais.
+                value["delivery_address_saved"] = [f"saved:{cart_ref}:{n}:{_digest(text)}"
+                                                   for n, text in enumerate(saved)]
+            elif address is None:
                 value["missing"].append("delivery_address")
                 value["delivery_address"] = []
             elif address["missing"]:
@@ -289,8 +296,8 @@ class FakeCommerceExecute(FakeBase):
         if command.action == "set_delivery_address":
             # O sistema de registro lê o texto pela referência; um número na fala é o endereço inteiro,
             # sem número falta o número (a régua sintética do que falta). O recibo leva só a referência.
-            text = _content(command.parameters["source"])
             cart = command.targets[0]
+            text = self._address_text(cart, command.parameters["source"])
             ref = f"addr-{cart}"
             self.state.address[cart] = {"text": text, "ref": ref,
                                         "missing": [] if any(ch.isdigit() for ch in text) else ["number"]}
@@ -353,18 +360,31 @@ class FakeCommerceExecute(FakeBase):
             raise PortError(ErrorCode.EFFECT_UNKNOWN, "caiu depois do efeito; reconcilie com a mesma chave")
         return receipt
 
+    def _address_text(self, cart: str, source) -> str:
+        """O endereço pela fonte: o texto da fala, ou o do cadastro (``saved:<carrinho>:<n>``) só deste carrinho."""
+        source = str(source or "")
+        if source.startswith(f"saved:{cart}:"):
+            saved = self.state.saved_addresses.get(cart) or []
+            index, _, digest = source[len(f"saved:{cart}:"):].partition(":")
+            if not index.isdigit() or int(index) >= len(saved):
+                return ""
+            text = saved[int(index)]
+            return text if _digest(text) == digest else ""  # o endereço mudou desde a oferta: não vale
+        return _content(source)
+
     def _refusal(self, command: ActionCommand) -> ErrorCode | None:
         """O conteúdo do comando que o sistema de registro recusa, antes de qualquer efeito."""
         if command.action == "set_payment":
             method = command.parameters.get("method")
             return None if method in self.state.payment_methods else ErrorCode.INVALID_CONTENT
         if command.action == "set_delivery_address":
-            if set(command.parameters) != {"source"} or not _content(command.parameters.get("source")):
+            if set(command.parameters) != {"source"} or \
+                    not self._address_text(command.targets[0], command.parameters.get("source")):
                 return ErrorCode.INVALID_CONTENT
             mode = self.state.fulfillment.get(command.targets[0], {}).get("mode")
             if mode != "delivery":
                 return ErrorCode.FACT_UNAVAILABLE  # sem entrega combinada, o endereço não tem onde cair
-            text = _content(command.parameters["source"])
+            text = self._address_text(command.targets[0], command.parameters["source"])
             if "nowhere" in text:
                 return ErrorCode.INVALID_CONTENT  # não se localiza (sintético)
             return ErrorCode.FULFILLMENT_UNAVAILABLE if "far away" in text else None  # fora da área (sintético)
@@ -412,6 +432,11 @@ class FakeCommerceExecute(FakeBase):
                                     error={"code": "provider_unavailable", "retry": "never"})
         self.by_key[key] = (command.content_hash, receipt)
         return receipt
+
+
+def _digest(text: str) -> str:
+    """Um resumo do texto do endereço (no mundo falso, as letras e números; a loja usa um hash)."""
+    return "".join(ch for ch in text.lower() if ch.isalnum())
 
 
 def _content(source) -> str:

@@ -118,7 +118,7 @@ from conversational_commerce.workflow import (
 from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
-from .moves import registry, templates
+from .moves import registry, templates, yes_no_conditions
 from .state import NeedSpec, Subject, TurnState
 
 PRODUCER = Producer(name="conversational-commerce", version="engine-1")
@@ -178,6 +178,21 @@ EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "set_delivery_address", "
 #: ``{"cart": <carrinho>, "epoch": <época do episódio>}``. Vale só para o mesmo carrinho e a mesma época
 #: (a conversa que mudou de dono não herda o fechamento), e cai com o "não" do cliente.
 CLOSING_KEY = "terms_closing"
+
+
+#: A pergunta da condição de sim ou não que o fechamento fez ("entregamos no endereço do cadastro?"), no estado
+#: de diálogo: ``{"question_id", "code", "ref", "cart", "epoch"}``. ``ref`` é a opção OFERECIDA (a que o cliente
+#: viu); o "sim" aceita essa, nunca a que o fato diria depois. Cai com o fechamento e com a resposta.
+CONDITION_KEY = "terms_condition_question"
+
+
+def condition_in(dialogue: dict, cart_ref: str | None, epoch: int) -> dict | None:
+    """A pergunta da condição no ar, deste carrinho e desta época."""
+    value = dialogue.get(CONDITION_KEY)
+    if cart_ref is None or not isinstance(value, Mapping) or value.get("cart") != cart_ref \
+            or value.get("epoch") != epoch:
+        return None
+    return dict(value)
 
 
 def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
@@ -867,6 +882,8 @@ class Engine:
                           needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer,
                           closing=closing_in(previous_dialogue, subject.cart_ref, epoch),
                           content_ref=event.content_ref)
+        if state.closing:
+            state.condition_question = condition_in(previous_dialogue, subject.cart_ref, epoch)
         for need in needs:
             if state.answers_offer(need):
                 state.confirmation_problems[need.need_id] = confirmation_problem(
@@ -883,7 +900,11 @@ class Engine:
             dialogue.pop(OFFER_KEY, None)
         if CLOSING_KEY in dialogue and (not state.closing or any(state.declines_terms(n) for n in needs)):
             # O fechamento de outro carrinho ou de outra época não vale; o "não" do cliente o encerra.
-            dialogue = {key: value for key, value in dialogue.items() if key != CLOSING_KEY}
+            dialogue = {key: value for key, value in dialogue.items() if key not in (CLOSING_KEY, CONDITION_KEY)}
+        if CONDITION_KEY in dialogue and (state.condition_question is None or answered_question == (
+                state.condition_question or {}).get("question_id")):
+            # A pergunta da condição foi respondida (ou não vale mais): sai do ar.
+            dialogue = {key: value for key, value in dialogue.items() if key != CONDITION_KEY}
 
         snapshot = self._snapshot(ctx, episode, trace_id, event.id, state, dialogue)
         decision = self._decide(state, needs, snapshot, trace_id)
@@ -945,8 +966,18 @@ class Engine:
         if presented is not None and not held and state.missing_conditions():
             # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
             dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch}}
+            code = state.missing_conditions()[0]
+            options = state.offered(subject.cart_ref, code)
+            asked_code = any(str(t).startswith(f"present_terms.needs_{code}") and not str(t).endswith("_declined")
+                             for t in reply.template_ids)
+            if code in yes_no_conditions() and options and asked_code:
+                # A pergunta de sim ou não fica no ar, com a opção oferecida: o "sim" responde a ESTA pergunta.
+                question_id = clock.new_id("q")
+                dialogue = ask(dialogue, question_id=question_id, need_id=presented.need_id, epoch=epoch)
+                dialogue[CONDITION_KEY] = {"question_id": question_id, "code": code, "ref": str(options[0]),
+                                           "cart": subject.cart_ref, "epoch": epoch}
         if presented is not None and not held and not state.missing_conditions():
-            dialogue = {key: value for key, value in dialogue.items() if key != CLOSING_KEY}
+            dialogue = {key: value for key, value in dialogue.items() if key not in (CLOSING_KEY, CONDITION_KEY)}
             # Termos que o cliente não viu (mensagem segurada) não esperam confirmação; nem os que ainda pedem
             # uma condição obrigatória (a parte perguntou por ela, e os termos não foram apresentados).
             terms = state.terms[subject.cart_ref]

@@ -259,14 +259,14 @@ class ShopmanCommerceRead:
             data = (session.data if session is not None else None) or {}
             delivery = data.get("fulfillment_type") == "delivery"
             # O cadastro do cliente também é fonte: se não se lê, não se sabe se ele tem endereço salvo.
-            has_saved = delivery and self._has_saved_address(ctx)
+            saved = self._saved_address_refs(ctx, cart_ref) if delivery else []
         except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
             logger.warning("conversational.requirements: fonte falhou", exc_info=True)
             return Unknown(reason="source_failed")
         value: dict = {"missing": []}
         if delivery:
             # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
-            value.update(_address_requirements(data, has_saved=has_saved))
+            value.update(_address_requirements(data, saved=saved))
             value["missing"] = [code for code in ADDRESS_CODES if code in value]
         chosen = str((data.get("payment") or {}).get("method") or "")
         if chosen not in methods and len(methods) > 1:
@@ -274,14 +274,21 @@ class ShopmanCommerceRead:
         value["payment_method"] = methods
         return self._known(value, "shop:channel_config")
 
-    def _has_saved_address(self, ctx: TrustedContext) -> bool:
-        """O cliente do sujeito tem endereço cadastrado (só o dele: a posse diz quem é)."""
+    def _saved_address_refs(self, ctx: TrustedContext, cart_ref: str) -> list[str]:
+        """Os endereços do cadastro do cliente do sujeito (só o dele: a posse diz quem é), por referência opaca.
+
+        ``saved-address:<sacola>:<id>``, na ordem em que o fechamento oferece (o padrão primeiro, depois o
+        mais recente, ``address.saved_addresses``). O texto nunca sai daqui (P17): quem o diz é o formatador
+        de referência da casa, no envio.
+        """
         customer = self.ownership.customer(ctx)
         if not customer:
-            return False
+            return []
         from shopman.guestman.services import address as address_service
 
-        return bool(address_service.addresses(customer))
+        found = sorted(address_service.addresses(customer),
+                       key=lambda saved: (not saved.is_default, -saved.updated_at.timestamp(), saved.pk))
+        return [saved_address_ref(cart_ref, saved) for saved in found]
 
     def _hold_minutes(self) -> int:
         """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal).
@@ -361,18 +368,50 @@ def address_ref(cart_ref: str, data: dict) -> str:
     return f"address:{cart_ref}:{digest[:16]}"
 
 
-def _address_requirements(data: dict, *, has_saved: bool = False) -> dict:
+#: Os campos que dizem QUAL é o endereço do cadastro: mudou um, a referência oferecida não vale mais.
+_SAVED_ADDRESS_FIELDS = ("formatted_address", "route", "street_number", "complement", "neighborhood", "city",
+                         "state_code", "postal_code")
+
+
+def saved_address_ref(cart_ref: str, saved) -> str:
+    """A referência opaca de um endereço do cadastro: a sacola, o id e um resumo do endereço.
+
+    P17: o texto nunca vai a contrato; vai um resumo de mão única, salgado pela sacola. O "sim" aceita a
+    referência OFERECIDA; se o endereço foi editado depois da oferta, o resumo não casa e nada se grava com
+    um endereço que o cliente não viu (``parse_saved_address_ref`` + ``saved_address_digest``).
+    """
+    return f"saved-address:{cart_ref}:{saved.pk}:{saved_address_digest(cart_ref, saved)}"
+
+
+def saved_address_digest(cart_ref: str, saved) -> str:
+    import hashlib
+    import json
+
+    said = {field: str(getattr(saved, field, "") or "") for field in _SAVED_ADDRESS_FIELDS}
+    return hashlib.sha256(f"{cart_ref}|{json.dumps(said, sort_keys=True)}".encode()).hexdigest()[:16]
+
+
+def parse_saved_address_ref(ref: str, cart_ref: str) -> tuple[str, str] | None:
+    """O id e o resumo de uma referência do cadastro desta sacola, ou ``None``."""
+    prefix = f"saved-address:{cart_ref}:"
+    if not cart_ref or not str(ref).startswith(prefix):
+        return None
+    pk, _, digest = str(ref)[len(prefix):].partition(":")
+    return (pk, digest) if pk and digest else None
+
+
+def _address_requirements(data: dict, *, saved=()) -> dict:
     """O que falta no endereço da entrega, pela régua da nota (a MESMA da pergunta de hoje, ``address.question``).
 
     Sem endereço, quem tem endereço cadastrado ouve PRIMEIRO esse endereço (decisão do dono, 25/09/2026):
-    é outra condição (``delivery_address_saved``), que o fechamento de hoje oferece; o motor não tem
-    molde para ela e o turno segue o caminho de hoje.
+    é outra condição (``delivery_address_saved``), com os endereços do cadastro por referência opaca. Ela se
+    responde com sim ou não: o "sim" aceita o primeiro (o padrão), o "não" pede outro endereço.
     """
     from shopman.shop.services import delivery_fiscal_identity as identity
 
     structured = data.get("delivery_address_structured")
     if not isinstance(structured, dict) or not structured.get("formatted_address"):
-        return {"delivery_address_saved": []} if has_saved else {"delivery_address": []}
+        return {"delivery_address_saved": list(saved)} if saved else {"delivery_address": []}
     gaps = [gap for gap in identity.recipient_gaps(tax_id="", address=structured)
             if gap.field == identity.ADDRESS_FIELD]
     if gaps:
