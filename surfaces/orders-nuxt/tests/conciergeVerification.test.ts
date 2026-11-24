@@ -10,6 +10,9 @@ import {
   ANSWER_MAX_LENGTH,
   ANSWER_PLACEHOLDER,
   ANSWER_SENT,
+  giveBackAction,
+  GIVE_BACK_FAILED,
+  GIVEN_BACK,
   isFinalAnswerError,
   TAKE_OVER_FAILED,
   TAKEN_OVER,
@@ -151,5 +154,42 @@ describe("promotionToast (WP-15)", () => {
     expect(promotionToast({ warning: "A resposta cita um dia." })).toMatchObject({
       color: "warning", description: "A resposta cita um dia.",
     });
+  });
+});
+
+describe("cartão do handoff da Concierge (#3578)", () => {
+  const HANDOFF: AlertProjection = {
+    ...CARD,
+    pk: 41,
+    type: "concierge_handoff",
+    severity: "error",
+    message: "“Boa tarde, ainda estão aí?”",
+    actions: [
+      {
+        ref: "give-back:41",
+        kind: "give_back_to_concierge",
+        label: "Devolver à Concierge",
+        enabled: true,
+        href: "/api/v1/backstage/alerts/41/concierge-handoff/give-back/",
+        source_alert_effect: "resolves",
+      },
+      { ref: "acknowledge:41", kind: "acknowledge_alert", label: "Visto", enabled: true, href: "/api/v1/backstage/alerts/41/ack/" },
+    ],
+  };
+
+  it("o gesto direto do cartão é devolver a conversa à Concierge", () => {
+    const inbox = { ...operatorAlertToInbox(HANDOFF), ...verificationInbox(HANDOFF) };
+    expect(inbox.actLabel).toBe("Devolver à Concierge");
+    expect(giveBackAction(HANDOFF)?.href).toBe("/api/v1/backstage/alerts/41/concierge-handoff/give-back/");
+  });
+
+  it("sem o gesto do servidor, nada é oferecido", () => {
+    expect(giveBackAction({ ...HANDOFF, actions: [] })).toBeNull();
+    expect(giveBackAction(CARD)).toBeNull();
+  });
+
+  it("as frases do desfecho", () => {
+    expect(GIVEN_BACK).toBe("A Concierge voltou a responder nesta conversa.");
+    expect(GIVE_BACK_FAILED).toBe("Não deu para devolver a conversa. Tente de novo.");
   });
 });

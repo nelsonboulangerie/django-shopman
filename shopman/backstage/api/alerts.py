@@ -329,6 +329,50 @@ class ConciergeVerificationTakeOverView(APIView):
         return _verify_response(pk, result)
 
 
+_HANDOFF_ALERT_TYPE = "concierge_handoff"
+_GIVE_BACK_OUTCOMES = {
+    "not_found": (404, "Esta conversa não está mais no aviso."),
+    "not_with_team": (409, "A conversa já voltou para a Concierge."),
+    "not_returned": (409, "Não deu para devolver a conversa agora. Tente de novo."),
+    "unavailable": (503, "A Concierge não está ligada nesta instalação."),
+}
+_GIVE_BACK_RESPONSE = inline_serializer(
+    name="ConciergeHandoffGiveBackResponse",
+    fields={"ok": serializers.BooleanField(), "pk": serializers.IntegerField()},
+)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Give the conversation with the team back to the Concierge",
+        request=None,
+        responses={200: _GIVE_BACK_RESPONSE},
+    ),
+)
+class ConciergeHandoffGiveBackView(APIView):
+    """O "Devolver à Concierge" do cartão do handoff (#3578): a conversa com a equipe volta à Concierge,
+    e o cartão fecha. A mesma devolução do Admin."""
+
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop import concierge_verification
+
+        visible = OperatorAlert.objects.filter(
+            pk=pk, type=_HANDOFF_ALERT_TYPE, resolved_at__isnull=True,
+            audience__in=alert_service.visible_alert_audiences(request.user),
+        ).exists()
+        if not visible:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        result = concierge_verification.give_back(pk, actor=alert_service._actor_ref(request.user) or "operador")
+        if not result.ok:
+            status, detail = _GIVE_BACK_OUTCOMES.get(result.code, (409, "Não deu para concluir. Atualize os avisos."))
+            return Response({"detail": detail, "error": {"code": result.code}}, status=status)
+        return Response({"ok": True, "pk": pk})
+
+
 _PROMOTE_OUTCOMES = {
     "not_found": (404, "Esta pergunta não está mais na conversa."),
     "not_answered": (409, "Só a pergunta respondida vira pergunta frequente, e esta conversa já tem outra pergunta."),

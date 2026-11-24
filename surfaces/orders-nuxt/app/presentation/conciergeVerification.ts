@@ -59,6 +59,16 @@ export function isFinalAnswerError(code: string | undefined | null): boolean {
 
 type Action = AlertProjection["actions"][number];
 
+// A conversa parada com a equipe (#3578): o cartão do handoff a devolve à Concierge ali mesmo.
+export const GIVE_BACK_KIND = "give_back_to_concierge";
+export const GIVEN_BACK = "A Concierge voltou a responder nesta conversa.";
+export const GIVE_BACK_FAILED = "Não deu para devolver a conversa. Tente de novo.";
+
+/** O "Devolver à Concierge" do cartão do handoff, quando o servidor o oferece. */
+export function giveBackAction(alert: AlertProjection): Action | null {
+  return alert.actions?.find((action) => action.kind === GIVE_BACK_KIND && action.enabled) ?? null;
+}
+
 export const LIVE_CHAT_KIND = "open_live_chat";
 export const CONFIGURE_LIVE_CHAT_KIND = "configure_live_chat";
 

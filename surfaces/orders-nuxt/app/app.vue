@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { operatorAlertToInbox } from "../../operator-kit/app/presentation/suiteChrome";
-import { verificationInbox } from "~/presentation/conciergeVerification";
+import { giveBackAction, verificationInbox } from "~/presentation/conciergeVerification";
 import { gestorSwitcherSections } from "~/presentation/gestorSections";
 import { gestorSupportContext } from "~/presentation/supportContext";
 
@@ -122,6 +122,7 @@ const {
   activeCount,
   ack,
   accept,
+  giveBack,
   isAccepting,
   answerVerification,
   takeOverVerification,
@@ -137,10 +138,13 @@ provideOperatorInboxAlerts(() => ({
     const alert = alerts.value.find((item) => item.pk === key);
     if (alert) return ack(alert);
   },
-  // O gesto direto do aviso (P2-19: "Aceitar" no pedido parado sem aceite).
+  // O gesto direto do aviso: "Aceitar" no pedido parado sem aceite (P2-19), ou "Devolver à Concierge"
+  // na conversa parada com a equipe (#3578).
   act: async (key) => {
     const alert = alerts.value.find((item) => item.pk === key);
-    if (alert) await accept(alert);
+    if (!alert) return;
+    if (giveBackAction(alert)) await giveBack(alert);
+    else await accept(alert);
   },
   answer: async (key, text) => {
     const alert = alerts.value.find((item) => item.pk === key);

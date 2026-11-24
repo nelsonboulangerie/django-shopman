@@ -757,6 +757,8 @@ def _alert_actions(
         actions.append(_accept_order_action(alert))
     if alert.type == "concierge_verify":
         actions.extend(_concierge_verification_actions(alert))
+    if alert.type == "concierge_handoff" and alert.resolved_at is None:
+        actions.append(_give_back_action(alert))
     live_chat = live_chat_href(alert)
     if live_chat:
         # A resposta é no Live Chat (o principal); a conversa no Admin fica como segunda saída.
@@ -794,6 +796,39 @@ def _alert_actions(
             )
         )
     return tuple(actions)
+
+
+#: O gesto do cartão do handoff (#3578): a conversa parada com a equipe volta à Concierge ali mesmo.
+GIVE_BACK_LABEL = "Devolver à Concierge"
+
+
+def _give_back_action(alert) -> ProductionActionProjection:
+    return ProductionActionProjection(
+        ref=f"give-back:{alert.pk}",
+        kind="give_back_to_concierge",
+        label=GIVE_BACK_LABEL,
+        priority=5,
+        enabled=True,
+        reason="",
+        method="POST",
+        href=f"/api/v1/backstage/alerts/{alert.pk}/concierge-handoff/give-back/",
+        payload_schema="",
+        expected_rev=alert.rev,
+        idempotency=ProductionActionIdempotencyProjection(
+            required=False,
+            key_scope="",
+        ),
+        confirmation=ProductionActionConfirmationProjection(
+            required=False,
+            reason_required=False,
+            title="",
+            confirm_label="Devolver",
+        ),
+        approval_requirement=None,
+        source_alert_ref=str(alert.pk),
+        source_alert_effect="resolves",
+        proof="",
+    )
 
 
 def _open_context_action(
