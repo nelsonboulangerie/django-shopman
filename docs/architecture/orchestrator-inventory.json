@@ -7882,7 +7882,9 @@
             "build_delivery_minimum_progress",
             "build_free_delivery_progress",
             "build_minimum_order_progress",
+            "items_phrase",
             "logger",
+            "open_elsewhere",
             "reservation_lapsed_at",
             "reserved_until",
             "shop_rule_q"

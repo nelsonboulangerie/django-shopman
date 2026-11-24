@@ -178,6 +178,29 @@ class UpsellSuggestionProjection:
 
 
 @dataclass(frozen=True)
+class OpenElsewhereProjection:
+    """A sacola aberta da mesma cliente em outro canal (OC-17, C06).
+
+    A loja AVISA que ela existe; não sincroniza nem mescla. Sai só para quem
+    entrou com o próprio dispositivo (força ``device``): link encaminhado não
+    entrega a conta (S1), nem o que está na sacola de outro canal. Sem chave de
+    sessão: a sacola do outro canal é identificada pelo canal.
+
+    ``bring`` é a ação de trazer a sacola para cá. Nasce DESLIGADA: quem a liga é
+    a passagem entre canais (``session_transfer``, OC-15/OC-16/OC-18). Enquanto
+    ``enabled`` é falso, a tela não oferece o gesto (X1).
+    """
+
+    channel: str
+    channel_label: str
+    items_count: int
+    items_phrase: str
+    subtotal_q: int
+    subtotal_display: str
+    bring: Action
+
+
+@dataclass(frozen=True)
 class CartProjection:
     """Full projection for the storefront cart."""
 
@@ -284,6 +307,9 @@ class CartProjection:
     # ``None`` com reserva viva (a sacola diz até quando guarda) ou sem reserva
     # vencida de item que está na sacola.
     reservation_lapsed_display: str | None = None
+    # Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
+    # sincronização. Vazio para visitante, para link encaminhado e sem outra sacola.
+    open_elsewhere: tuple[OpenElsewhereProjection, ...] = ()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -348,6 +374,7 @@ def build_cart(
         reserved_until_iso=_iso(reserved_until),
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         reservation_lapsed_display=_lapsed_display(lapsed_at),
+        open_elsewhere=_open_elsewhere(request, channel_ref),
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -765,6 +792,36 @@ def _money(value_q: int | None) -> str:
     return f"R$ {format_money(int(value_q))}"
 
 
+def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhereProjection, ...]:
+    """As outras sacolas abertas da cliente que entrou com o próprio dispositivo."""
+    from shopman.storefront.identity import get_authenticated_customer, knows_only_the_number
+
+    if getattr(request, "customer", None) is None or knows_only_the_number(request):
+        return ()
+    customer = get_authenticated_customer(request)
+    if customer is None:
+        return ()
+    return tuple(
+        OpenElsewhereProjection(
+            channel=entry.channel_ref,
+            channel_label=entry.channel_name,
+            items_count=entry.items_count if isinstance(entry.items_count, int) else entry.lines_count,
+            items_phrase=cart_data.items_phrase(entry),
+            subtotal_q=entry.subtotal_q,
+            subtotal_display=_money(entry.subtotal_q),
+            bring=Action(
+                ref="bring_cart",
+                kind="mutation",
+                label="Trazer esta sacola para cá",
+                priority="secondary",
+                enabled=False,
+                reason="A passagem da sacola entre canais ainda não está ligada.",
+            ),
+        )
+        for entry in cart_data.open_elsewhere(customer.ref, channel_ref)
+    )
+
+
 def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
     """Título e mensagem do estado vazio, por momento e audiência.
 
@@ -844,6 +901,7 @@ __all__ = [
     "DiscountLineProjection",
     "FreeDeliveryProgressProjection",
     "MinimumOrderProgressProjection",
+    "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
     "present_cart_date_mismatch",

@@ -763,12 +763,45 @@ def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
     }
 
 
+def _open_elsewhere(ctx: ToolContext) -> list[dict]:
+    """As sacolas abertas deste cliente nos outros canais (OC-17, C06).
+
+    Só leitura: a Nice diz que a outra sacola existe e não a toca, nem junta com
+    esta. O dono é o ``customer_ref`` da conversa (vínculo verificado), nunca o
+    telefone (X7).
+    """
+    from shopman.shop.projections.cart import items_phrase, open_elsewhere
+
+    ref = ctx.conversation.customer_ref
+    if not ref:
+        return []
+    return [
+        {
+            "channel": entry.channel_ref,
+            "where": "no site" if entry.channel_ref == _storefront_ref() else f"no {entry.channel_name}",
+            "items": items_phrase(entry),
+            "subtotal": _money(entry.subtotal_q),
+        }
+        for entry in open_elsewhere(ref, ctx.channel_ref)
+    ]
+
+
+def _with_open_elsewhere(ctx: ToolContext, result: dict) -> dict:
+    elsewhere = _open_elsewhere(ctx)
+    if elsewhere:
+        result["open_elsewhere"] = elsewhere
+    return result
+
+
 def view_cart(ctx: ToolContext) -> dict:
     """A sacola desta conversa, com totais e o que falta para fechar."""
     session = _open_session(ctx)
     if session is None:
-        return {"ok": True, "empty": True, "count": 0, "lines": [], "total": _money(0), "fulfillment": _fulfillment_payload({})}
-    return {"ok": True, **_cart_payload(ctx, session)}
+        return _with_open_elsewhere(
+            ctx,
+            {"ok": True, "empty": True, "count": 0, "lines": [], "total": _money(0), "fulfillment": _fulfillment_payload({})},
+        )
+    return _with_open_elsewhere(ctx, {"ok": True, **_cart_payload(ctx, session)})
 
 
 def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
@@ -1226,7 +1259,9 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
 
     session = _open_session(ctx)
     if session is None or not (session.items or []):
-        return {"ok": True, "ready": False, "missing": ["items"], "message": "A sacola está vazia."}
+        return _with_open_elsewhere(
+            ctx, {"ok": True, "ready": False, "missing": ["items"], "message": "A sacola está vazia."}
+        )
 
     from shopman.shop.services import cart as cart_service
     if order_notes is not None:
@@ -1293,6 +1328,8 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         "payment_methods": [{"ref": m, "label": PAYMENT_LABELS.get(m, m)} for m in methods],
         "payment_method": selected,
     }
+    # Fora do ``payload``: o resumo (e o orçamento que ele grava) é só desta sacola.
+    _with_open_elsewhere(ctx, result)
     if payload.get("suggestion"):
         # Uma sugestão por CONVERSA. Medido em 04/09: Pain Grillé num recap, Água no
         # seguinte; a regra do prompt ("uma vez, nunca de novo") precisa do código.
@@ -2375,8 +2412,28 @@ def copy_texts(result: dict) -> list[str]:
     return texts
 
 
+def _open_elsewhere_rows(result: dict) -> list[str]:
+    """Uma linha por sacola aberta em outro canal: avisa, não sincroniza (OC-17)."""
+    rows = []
+    for entry in result.get("open_elsewhere") or []:
+        where = _display_text(entry.get("where", ""))
+        rows.append(
+            f"{where[:1].upper()}{where[1:]}, você tem outra sacola aberta, "
+            f"com {_display_text(entry.get('items', ''))} ({_display_text(entry.get('subtotal', ''))}); "
+            "ela fica lá, separada desta conversa."
+        )
+    return rows
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre nunca entra na resposta."""
+    text = _render_facts(name, result)
+    if name in {"view_cart", "review_order"} and result.get("ok") and result.get("open_elsewhere"):
+        return "\n".join(part for part in (text, *_open_elsewhere_rows(result)) if part)
+    return text
+
+
+def _render_facts(name: str, result: dict) -> str:
     if not result.get("ok"):
         return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
     if result.get("message") and (
