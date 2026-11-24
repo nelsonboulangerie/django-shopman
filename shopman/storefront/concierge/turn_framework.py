@@ -87,6 +87,8 @@ NICE_TEMPLATE_COPY = {
     "present_terms.needs_delivery_address_saved": "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER",
     "present_terms.needs_delivery_address_saved_many": "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER_MANY",
     "present_terms.needs_delivery_address_saved_declined": "CONCIERGE_CLOSE_ASK_ADDRESS",
+    # O "outro" à oferta (#3454): a MESMA lista de hoje (``address.saved_listing``), cada endereço pela referência.
+    "present_terms.needs_delivery_address_saved_options": "CONCIERGE_ENGINE_SAVED_ADDRESS_LIST",
     # A limitação: recusada em 22/11, com frase nova aprovada pelo dono em 23/11 (#3408). No ar, o efeito
     # recusado (sacola, recebimento, pagamento) refaz a decisão, e quem responde é este molde; a sombra
     # não executa efeito e não o vê, por isso ele precisa de frase da Nice (sem ela, sairia o inglês do pacote).
@@ -367,36 +369,61 @@ def address_words_text(value) -> str:
 def _address_formatters(conversation, partial) -> dict:
     resolve = address_resolver(conversation) if conversation is not None else _no_address
     return {"address": address_text(resolve), "conditions": partial(conditions_text, resolve=resolve),
-            "delivery_address_saved": saved_address_text(conversation)}
+            "delivery_address_saved": saved_address_text(conversation),
+            "delivery_address_saved_options": saved_addresses_text(conversation)}
+
+
+def _saved_of(conversation, ref: str):
+    """O endereço do cadastro pela referência opaca: só o desta conversa (a referência presa à sacola dela, o
+    cadastro do cliente dela) e só se ainda é o que a referência resume. Qualquer outra coisa levanta
+    ``UnresolvedReference``, e a mensagem segura (spec 06)."""
+    from conversational_commerce.reply import UnresolvedReference
+
+    from shopman.shop.conversational.commerce_read import parse_saved_address_ref, saved_address_digest
+
+    from .address import saved_addresses, short_line
+
+    key = getattr(conversation, "session_key", "") or ""
+    parsed = parse_saved_address_ref(ref, key) if conversation is not None else None
+    if parsed is None:
+        raise UnresolvedReference(ref)
+    chosen = next((saved for saved in saved_addresses(conversation.customer_ref or "")
+                   if str(saved.pk) == parsed[0]), None)
+    if chosen is not None and saved_address_digest(key, chosen) != parsed[1]:
+        chosen = None  # o endereço mudou: nunca se diz outro no lugar
+    if chosen is None or not short_line(chosen):
+        raise UnresolvedReference(ref)
+    return chosen
 
 
 def saved_address_text(conversation):
     """O endereço do cadastro que a oferta diz ("Rua X, 120 - Centro"), pela referência opaca da primeira opção.
-
-    Só o desta conversa: a referência presa à sacola dela, e o endereço do cadastro do cliente dela. Qualquer
-    outra coisa levanta ``UnresolvedReference``, e a mensagem segura (spec 06). O texto existe só no envio.
-    """
-    from conversational_commerce.reply import UnresolvedReference
-
+    O texto existe só no envio."""
     def text(value) -> str:
-        from shopman.shop.conversational.commerce_read import parse_saved_address_ref, saved_address_digest
-
-        from .address import saved_addresses, short_line
+        from .address import short_line
 
         options = list(value) if isinstance(value, (list, tuple)) else [value]
-        ref = str(options[0]) if options else ""
-        key = getattr(conversation, "session_key", "") or ""
-        parsed = parse_saved_address_ref(ref, key) if conversation is not None else None
-        if parsed is None:
-            raise UnresolvedReference(ref)
-        chosen = next((saved for saved in saved_addresses(conversation.customer_ref or "")
-                       if str(saved.pk) == parsed[0]), None)
-        if chosen is not None and saved_address_digest(key, chosen) != parsed[1]:
-            chosen = None  # o endereço mudou: a oferta nunca diz outro no lugar
-        line = short_line(chosen) if chosen is not None else ""
-        if not line:
-            raise UnresolvedReference(ref)
-        return line
+        return short_line(_saved_of(conversation, str(options[0]) if options else ""))
+
+    return text
+
+
+def saved_addresses_text(conversation):
+    """Todos os endereços do cadastro que o fato oferece, como a lista de hoje (``address.saved_listing``): a
+    etiqueta (se houver) e a rua, separados por ponto e vírgula. Um que não se resolve segura a mensagem inteira."""
+    def text(value) -> str:
+        from .address import saved_tag, short_line
+
+        options = list(value) if isinstance(value, (list, tuple)) else [value]
+        rows = []
+        for ref in options:
+            saved = _saved_of(conversation, str(ref))
+            rows.append(f"{saved_tag(saved)}: {short_line(saved)}" if saved_tag(saved) else short_line(saved))
+        if not rows:
+            from conversational_commerce.reply import UnresolvedReference
+
+            raise UnresolvedReference("")
+        return "; ".join(rows)
 
     return text
 

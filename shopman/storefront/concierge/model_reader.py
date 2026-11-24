@@ -54,6 +54,8 @@ PAYMENT_ACT = "choose_payment"
 #: O ato do motor que diz "esta fala traz o endereço". Sem campo: o endereço se lê na casa, no texto
 #: original, dentro do efeito (P17). A IA vê só o texto redigido ("[endereço omitido]").
 ADDRESS_ACT = "give_address"
+#: O pedido das opções da pergunta no ar ("outro"): só pelo portão da casa, nunca pela IA (sem descrição).
+OPTIONS_ACT = "ask_options"
 
 #: Atos que o portão do Jev pode entregar sem a IA: nenhum pede campo.
 FIELDLESS = frozenset({"greet", "thank", "ask_hours", "request_human", "cancel_order", "affirm", "deny",
@@ -272,9 +274,8 @@ def _cart_lines(conversation) -> list[dict]:
 _ADDRESS_DETAIL_CODES = frozenset({"delivery_address_details", "delivery_complement", "delivery_address_saved"})
 
 
-def address_detail_pending(conversation) -> bool:
-    """O fechamento espera um pedaço do endereço da entrega (o número, o CEP, o bairro, o complemento) ou a
-    resposta à oferta do endereço do cadastro (que pode ser o nome dele)."""
+def _address_pending(conversation) -> tuple[set[str], int]:
+    """O que o fechamento da entrega ainda espera do endereço, e quantos endereços o cliente tem no cadastro."""
     from shopman.orderman.models import Session
 
     from shopman.shop.conversational.commerce_read import _address_requirements
@@ -282,13 +283,39 @@ def address_detail_pending(conversation) -> bool:
     from .address import saved_addresses
 
     if conversation is None or not conversation.session_key:
-        return False
+        return set(), 0
     session = Session.objects.filter(session_key=conversation.session_key).first()
     data = (session.data if session is not None else None) or {}
     if data.get("fulfillment_type") != "delivery":
-        return False
+        return set(), 0
     saved = tuple(item.pk for item in saved_addresses(conversation.customer_ref or ""))
-    return bool(_ADDRESS_DETAIL_CODES & set(_address_requirements(data, saved=saved)))
+    return set(_address_requirements(data, saved=saved)), len(saved)
+
+
+def address_detail_pending(conversation) -> bool:
+    """O fechamento espera um pedaço do endereço da entrega (o número, o CEP, o bairro, o complemento) ou a
+    resposta à oferta do endereço do cadastro (que pode ser o nome dele)."""
+    return bool(_ADDRESS_DETAIL_CODES & _address_pending(conversation)[0])
+
+
+#: "Outro", "quero outro", "outro endereço", "quais?": a resposta à oferta do endereço do cadastro que pede
+#: outro dele, sem nome e sem endereço. Com "não" junto não entra: "não, outro endereço" pode ser um endereço novo.
+_ASKS_OPTIONS_RE = re.compile(
+    r"^(?:(?:quero|prefiro|pode ser|seria|manda(?:r)? (?:pra|para|no|em)|entrega(?:r)? (?:no|em))\s+)?"
+    r"(?:(?:um|o|no|em)\s+)?outro(?:\s+endereco)?(?:\s+(?:cadastrado|do cadastro))?(?:,?\s+por favor)?$"
+    r"|^quais(?:\s+sao)?(?:\s+(?:os|meus|os meus))?(?:\s+enderecos)?(?:\s+cadastrados)?$")
+
+
+def asks_saved_options(conversation, text: str) -> bool:
+    """A fala só pede outro endereço do cadastro, com a oferta no ar. Com dois ou mais, o motor lista; com um,
+    é "esse não", e o motor pergunta o endereço."""
+    from .address import _fold
+
+    folded = _fold(text).rstrip("?!. ")
+    if not folded or not _ASKS_OPTIONS_RE.match(folded):
+        return False
+    pending, saved = _address_pending(conversation)
+    return "delivery_address_saved" in pending and saved > 0
 
 
 def address_answer(conversation, text: str) -> bool:
@@ -444,6 +471,10 @@ class NiceReader:
             return self._understanding(ctx, request, [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],
                                        GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         conversation = self._conversation if self._conversation is not None else _conversation(ctx)
+        if OPTIONS_ACT in (request.allowed_acts or ()) and asks_saved_options(conversation, text):
+            # "Outro" à oferta do endereço do cadastro: pede a lista, sem a IA (o motor lista por referência, P17).
+            return self._understanding(ctx, request, [{"act": OPTIONS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
+                                       GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         if ADDRESS_ACT in allowed and address_answer(conversation, text):
             # O pedaço de endereço que o fechamento pediu: sem IA, o texto fica na casa (P17).
             return self._understanding(ctx, request, [{"act": ADDRESS_ACT, "fields": {}, "confidence": UNAVAILABLE}],

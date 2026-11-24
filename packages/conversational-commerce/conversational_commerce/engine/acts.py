@@ -31,10 +31,12 @@ ACTS: tuple[str, ...] = (
     "accept_offers",
     "affirm",
     "deny",
+    "ask_options",
     "unknown",
 )
 COURTESY_ACTS = frozenset({"greet", "thank"})
-ANSWER_ACTS = frozenset({"affirm", "deny"})
+# ``ask_options`` responde à pergunta da condição pedindo as opções ("outro", "quais?"): nem sim, nem não.
+ANSWER_ACTS = frozenset({"affirm", "deny", "ask_options"})
 # O cliente declara o que quer da casa: vira memória declarada (F10), e a resposta é cortesia.
 DECLARATION_ACTS = frozenset({"decline_offers", "accept_offers"})
 QUERY_ACTS = frozenset({"ask_hours", "ask_price", "ask_item"})
@@ -91,6 +93,7 @@ TEST_RULES = LocalRules(
         "cancel_order": (r"\bcancel\b",),
         "affirm": (r"^\s*(yes|yeah|ok)\b",),
         "deny": (r"^\s*no\b",),
+        "ask_options": (r"^\s*(another( one)?|which ones)\s*\??\s*$",),
         "request_human": (r"\b(talk|speak) to (a |an )?(person|human|someone)\b",),
         "ask_recommendation": (r"\bcan you (suggest|recommend)\b", r"\bwhat do you recommend\b"),
         "decline_offers": (r"\bno (more )?suggestions\b", r"\bstop suggesting\b"),
