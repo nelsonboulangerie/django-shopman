@@ -35,6 +35,8 @@ CHANNEL = "whatsapp"
 #: Uma leitura pela IA do perfil por turno (P04, D-040): o portão do Jev e a cortesia não contam,
 #: e o gasto passa pelo freio da casa (``ai_governor``). Estouro cai para a regra local.
 MODEL_CALLS_PER_TURN = 1
+#: Os turnos recentes que vão ao leitor com a fala (ADR-051): a pergunta no ar e o que veio antes dela.
+READING_CONTEXT_TURNS = 3
 
 # P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge. ``wait`` é o aviso do prazo
 # vencido de um compromisso com a equipe (K22, ``Engine.tick``): sem ele, o aviso nunca saía (#3417).
@@ -203,7 +205,7 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
                      "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS,
                      "after_hours_contingency": "inform_when_team_returns"},
         limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": MODEL_CALLS_PER_TURN,
-                "max_spend": {"amount_minor": 0, "currency": "BRL"}},
+                "max_spend": {"amount_minor": 0, "currency": "BRL"}, "reading_context_turns": READING_CONTEXT_TURNS},
         privacy={"purposes": ("service",), "retention_days": _retention(measured), "fields_by_recipient": {}},
     )
 

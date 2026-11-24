@@ -55,16 +55,16 @@ def _act(act, span="", product="", qty=0, change="", day="", mode="", time=""):
             "time": time}
 
 
-def _request(text, allowed=ACTS):
+def _request(text, allowed=ACTS, context=None):
     return InterpretRequest(request=ModelRequest(purpose="interpret", data_class="redacted",
                                                  budget={"max_calls": 1, "max_spend": {"amount_minor": 0,
                                                                                        "currency": "BRL"}}),
-                            event_id="evt-1", content_ref=f"text:{text}", allowed_acts=allowed)
+                            event_id="evt-1", content_ref=f"text:{text}", allowed_acts=allowed, context=context)
 
 
-def _read(text, ai, *, allowed=ACTS, gate=lambda text: ""):
+def _read(text, ai, *, allowed=ACTS, gate=lambda text: "", context=None):
     reader = NiceReader(client=ai, model="deepseek-flash", gate=gate, today=TODAY)
-    return reader.interpret(CTX, _request(text, allowed))
+    return reader.interpret(CTX, _request(text, allowed, context))
 
 
 def _fields(understanding):
@@ -225,6 +225,51 @@ def test_without_jev_the_gate_never_answers(monkeypatch):
 
     monkeypatch.setattr(triage, "jev_enabled", lambda: False)
     assert model_reader.jev_gate("que horas abre?") == ""
+
+
+# ── a leitura com contexto (ADR-051) ────────────────────────────────────────────────────
+
+
+def _asked(code, expected, recent=()):
+    from conversational_commerce.ports import PendingQuestion, ReadingContext
+
+    return ReadingContext(pending=PendingQuestion(kind="condition", code=code), expected_acts=expected, recent=recent)
+
+
+def test_with_the_pickup_time_asked_the_gate_does_not_decide_alone_and_the_ai_reads_in_context(conversation):
+    """Ensaio no ar (24/11): a Nice perguntou o horário da retirada, e o Jev leu "vou buscar às 16h" como o horário
+    da loja. Com a pergunta no ar, o ato do portão fora do esperado não decide: a IA lê com o contexto, e a leitura
+    do portão vai junto como alternativa, para o motor conferir."""
+    ai = FakeAI([{"act": "choose_fulfillment", "span": "vou buscar às 16h", "mode": "pickup", "time": "16:00"}])
+    understanding, consumption = _read("vou buscar às 16h", ai, allowed=WITH_FULFILLMENT, gate=lambda t: "ask_hours",
+                                       context=_asked("delivery_time_slot", ("choose_fulfillment",)))
+    assert _fields(understanding) == [("choose_fulfillment", {"mode": "pickup", "time": "16:00"})]
+    assert [[a.act for a in alt.acts] for alt in understanding.alternatives] == [["ask_hours"]]
+    assert consumption.calls == 1
+    content = ai.requests[0]["messages"][0]["content"]
+    assert "A Nice acabou de perguntar o horário da retirada" in content and "choose_fulfillment" in content
+    assert "horário da retirada" not in ai.requests[0]["system"][0]["text"]  # o sistema segue igual, no cache
+
+
+def test_the_gate_still_answers_when_its_act_answers_the_question(conversation):
+    ai = FakeAI(error=AssertionError("a IA não devia ser chamada"))
+    understanding, consumption = _read("sim", ai, gate=lambda t: "affirm",
+                                       context=_asked("delivery_address_saved", ("give_address", "affirm", "deny")))
+    assert _fields(understanding) == [("affirm", {})] and consumption.calls == 0
+
+
+def test_the_recent_turns_go_to_the_ai_redacted_and_by_what_the_nice_asked(conversation, menu, cart):
+    from conversational_commerce.ports import RecentTurn
+
+    recent = (RecentTurn(role="customer", content_ref="text:quero 2 croissants pra amanhã"),
+              RecentTurn(role="agent", template_ids=("present_terms.needs_fulfillment_type",)))
+    ai = FakeAI([{"act": "choose_fulfillment", "span": "vou buscar", "mode": "pickup"}])
+    _read("vou buscar", ai, allowed=WITH_FULFILLMENT,
+          context=_asked("fulfillment_type", ("choose_fulfillment",), recent))
+    content = ai.requests[0]["messages"][0]["content"]
+    assert "- Cliente: quero 2 croissants pra amanhã" in content
+    assert "- Nice: perguntou se o cliente vai retirar na loja ou receber em casa" in content
+    assert content.index("Conversa até aqui") < content.index("<<<")  # o contexto antes da fala, nunca dentro
 
 
 # ── a queda para a regra local ──────────────────────────────────────────────────────────

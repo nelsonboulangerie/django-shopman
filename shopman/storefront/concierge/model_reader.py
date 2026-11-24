@@ -165,10 +165,59 @@ def system_prompt(allowed: tuple[str, ...]) -> str:
     )
 
 
-def build_request(text: str, *, allowed: tuple[str, ...], cart_note: str = "", model: str = "") -> dict:
+#: O que a Nice perguntou, por código da pergunta no ar (ADR-051): o leitor lê a fala como resposta a isto.
+PENDING_TEXT = {
+    "fulfillment_date": "para quando é o pedido (o dia)",
+    "fulfillment_type": "se o cliente vai retirar na loja ou receber em casa",
+    "delivery_time_slot": "o horário da retirada",
+    "delivery_window": "a janela da entrega",
+    "payment_method": "como o cliente prefere pagar",
+    "delivery_address": "o endereço da entrega",
+    "delivery_address_details": "o que falta no endereço da entrega (número, bairro, CEP)",
+    "delivery_complement": "o complemento do endereço da entrega",
+    "delivery_address_saved": "se a entrega vai no endereço do cadastro",
+    "terms": "se pode registrar o pedido do resumo",
+}
+
+
+def conversation_note(context, resolve=None) -> str:
+    """A conversa em volta da fala, para a IA (ADR-051): a pergunta da Nice no ar e as últimas falas do cliente,
+    redigidas como a fala do turno (P17). Vazio sem contexto. É dado, nunca instrução."""
+    from .observation_privacy import redact_observation_text
+
+    if context is None:
+        return ""
+    lines = []
+    for turn in context.recent:
+        if turn.role == "customer" and turn.content_ref and resolve is not None:
+            said = redact_observation_text(resolve(turn.content_ref)).text.strip()
+            if said:
+                lines.append(f"- Cliente: {said}")
+        elif turn.role == "agent":
+            asked = next((PENDING_TEXT[code] for template in turn.template_ids
+                          for code in (str(template).removeprefix("present_terms.needs_"),)
+                          if str(template).startswith("present_terms.needs_") and code in PENDING_TEXT), "")
+            asked = asked or (PENDING_TEXT["terms"] if "present_terms.confirm" in turn.template_ids else "")
+            lines.append(f"- Nice: perguntou {asked}" if asked else "- Nice: respondeu")
+    note = "Conversa até aqui (da casa, não do cliente):\n" + "\n".join(lines) if lines else ""
+    pending = context.pending
+    if pending is not None and pending.code in PENDING_TEXT:
+        expected = ", ".join(context.expected_acts) or "nenhum"
+        asked = (f"A Nice acabou de perguntar {PENDING_TEXT[pending.code]}. Uma fala curta (\"16h\", \"pix\", "
+                 f"\"sim\", \"o do trabalho\") responde a essa pergunta, com os atos {expected}, a menos que o "
+                 "cliente mude de assunto.")
+        note = f"{note}\n\n{asked}" if note else asked
+    return note
+
+
+def build_request(text: str, *, allowed: tuple[str, ...], cart_note: str = "", model: str = "",
+                  context_note: str = "") -> dict:
     content = f"Mensagem do cliente:\n<<<\n{text}\n>>>"
     if cart_note:
         content = f"Sacola do cliente agora (da casa, não do cliente):\n{cart_note}\n\n{content}"
+    if context_note:
+        # Na mensagem, não no sistema: o prompt do sistema fica igual entre turnos e segue no cache.
+        content = f"{context_note}\n\n{content}"
     return {
         "model": model,
         "max_tokens": 700,
@@ -466,8 +515,14 @@ class NiceReader:
             # A localização do WhatsApp é o endereço da entrega: sem texto, sem IA.
             return self._understanding(ctx, request, [{"act": ADDRESS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
                                        GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
+        context = getattr(request, "context", None)
+        expected = set(context.expected_acts) if context is not None else set()
+        pending = context.pending if context is not None else None
         gated = self._gate(text) if text else ""
-        if gated and gated in allowed:
+        gated = gated if gated in allowed else ""
+        if gated and (pending is None or gated in expected):
+            # O portão decide sozinho sem pergunta no ar, ou quando o ato dele responde a ela ("sim" à pergunta de
+            # sim ou não). Fora disso, a conversa contradiz a frase isolada, e a IA lê com o contexto (ADR-051).
             return self._understanding(ctx, request, [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],
                                        GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         conversation = self._conversation if self._conversation is not None else _conversation(ctx)
@@ -487,7 +542,8 @@ class NiceReader:
         started = time.perf_counter()
         try:
             response = client.messages.create(**build_request(redacted, allowed=allowed,
-                                                              cart_note=cart_note(lines), model=model))
+                                                              cart_note=cart_note(lines), model=model,
+                                                              context_note=conversation_note(context, resolve_text)))
         except Exception as exc:  # rede, cota, chave, freio, tempo: vale a regra local
             logger.warning("concierge.model_reader.read_failed exception_type=%s", type(exc).__name__)
             self.last_error = f"{type(exc).__name__}: {exc}"[:300]
@@ -524,15 +580,21 @@ class NiceReader:
                 fields = {}
             acts.append({"act": reading.act, "fields": fields, "confidence": UNAVAILABLE})
         consumption = Consumption(model=Producer(name=READER.name, version=model or PURPOSE), calls=1, cost=NO_PRICE)
-        return self._understanding(ctx, request, acts or [{"act": "unknown", "fields": {}, "confidence": UNAVAILABLE}],
-                                   READER), consumption
+        acts = acts or [{"act": "unknown", "fields": {}, "confidence": UNAVAILABLE}]
+        alternatives = ()
+        if gated and gated not in {act["act"] for act in acts}:
+            # O portão e a IA discordam: as duas leituras vão ao motor, e a conferência de coerência decide (ADR-051).
+            alternatives = ({"acts": [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],
+                             "confidence": UNAVAILABLE},)
+        return self._understanding(ctx, request, acts, READER, alternatives), consumption
 
     @staticmethod
-    def _understanding(ctx, request, acts, reader) -> Understanding:
+    def _understanding(ctx, request, acts, reader, alternatives=()) -> Understanding:
         return Understanding(
             id=f"und-{request.event_id}", tenant=ctx.tenant, environment=ctx.environment,
             trace_id=f"trace-{request.event_id}", occurred_at=instant(datetime.now(UTC)), producer=reader,
-            event_id=request.event_id, acts=acts, signals={"friction": "unknown", "risk": "unknown"}, reader=reader)
+            event_id=request.event_id, acts=acts, alternatives=alternatives,
+            signals={"friction": "unknown", "risk": "unknown"}, reader=reader)
 
     def draft(self, ctx, request, plan):
         raise PortError("capability_missing", "a Nice não redige por modelo (corte C1)")
