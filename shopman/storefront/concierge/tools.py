@@ -2086,47 +2086,40 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
             "message": "Continue pelo site; confirme seu acesso para abrir dados pessoais."}
     if destination == "checkout" and not (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False):
         return _error("transfer_disabled", "Sua sacola está preservada aqui. A continuação desta sacola no site ainda não está disponível.")
+    from shopman.shop.services import session_transfer
+
     try:
         from shopman.doorman.models import AccessLink
         from shopman.doorman.services.access_link import AccessLinkService
 
-        from shopman.shop.services import remote_mutations
-        current = Conversation.objects.get(pk=ctx.conversation.pk)
-        source_key = current.session_key or (current.flags or {}).get("web_transfer_key", "")
-        def prepare_access():
-            # Mint é local. Qualquer falha reverte transferência e holds.
-            with transaction.atomic():
-                current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
-                _assert_authority(ctx)
-                web_key = _copy_cart_to_web(ctx) if destination == "checkout" else ""
-                metadata = {
-                    "next": path,
-                    "conversation_id": ctx.conversation.pk,
-                    "transport": _transport_scope(ctx),
-                }
-                if web_key:
-                    metadata["cart_session_key"] = web_key
-                result = AccessLinkService.create_token(info, audience=AccessLink.Audience.WEB_GENERAL,
-                    source=AccessLink.Source.API, metadata=metadata)
-                if result is None or not result.success or not result.url:
-                    raise ValueError("access_link_unavailable")
-                if destination == "checkout":
-                    flags = dict(current.flags or {})
-                    flags["web_transfer_key"] = source_key
-                    Conversation.objects.filter(pk=current.pk).update(flags=flags)
-                return {"ok": True, "url": result.url, "logged_in": True, "cart_carried": bool(web_key),
-                    "order_ref": order_ref, "resource_ref": web_key or order_ref,
-                    "expires_at": str(getattr(result, "expires_at", "") or "")}, 200
-        if destination == "checkout":
-            if not source_key:
-                return _error("no_cart", "Não há sacola para transferir. Consulte seus pedidos para continuar uma compra registrada.")
-            fingerprint = remote_mutations.mutation_fingerprint({"customer_ref": current.customer_ref,
-                "phone": current.phone, "source_key": source_key, "destination": _storefront_ref()})
-            receipt = remote_mutations.run_idempotent_mutation(scope=f"concierge.transfer:{current.pk}",
-                key=source_key, fingerprint=fingerprint, execute=prepare_access)
-            return receipt.response_body
-        return prepare_access()[0]
-
+        # Mint é local. Oferecer não toca a sacola: quem a leva é o aceite, na troca
+        # do link (``session_transfer.accept``); até lá ela segue aberta aqui.
+        with transaction.atomic():
+            current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
+            _assert_authority(ctx)
+            metadata = {
+                "next": path,
+                "conversation_id": ctx.conversation.pk,
+                "transport": _transport_scope(ctx),
+            }
+            carried = None
+            if destination == "checkout":
+                carried = session_transfer.offer(
+                    ctx.channel_ref, current.session_key, _storefront_ref(),
+                    customer_ref=current.customer_ref, actor="concierge",
+                )
+                metadata[session_transfer.TRANSFER_METADATA_KEY] = carried.as_metadata()
+            result = AccessLinkService.create_token(info, audience=AccessLink.Audience.WEB_GENERAL,
+                source=AccessLink.Source.API, metadata=metadata)
+            if result is None or not result.success or not result.url:
+                raise ValueError("access_link_unavailable")
+        return {"ok": True, "url": result.url, "logged_in": True, "cart_carried": carried is not None,
+            "order_ref": order_ref, "resource_ref": carried.offer_id if carried else order_ref,
+            "expires_at": str(getattr(result, "expires_at", "") or "")}
+    except session_transfer.TransferRefused as refused:
+        if refused.code == "no_cart":
+            return _error("no_cart", "Não há sacola para transferir. Consulte seus pedidos para continuar uma compra registrada.")
+        return _error(refused.code, refused.message)
     except Exception:
         ctx.conversation.refresh_from_db()
         logger.exception("concierge.send_web_link failed")
@@ -2137,66 +2130,6 @@ def _auth_customer_info(ctx: ToolContext):
     from shopman.shop.services.auth import identity_by_customer_ref
 
     return identity_by_customer_ref(ctx.conversation.customer_ref)
-
-
-def _copy_cart_to_web(ctx: ToolContext) -> str:
-    """Transferência conservadora: qualquer conflito reverte origem, destino e reservas."""
-    from shopman.orderman.models import Session
-
-    from shopman.shop import product_options
-    from shopman.shop.services import cart as cart_service
-    from shopman.shop.services import sessions
-    if not (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False):
-        raise ValueError("transfer_disabled")
-    source = _open_session(ctx)
-    if source is None or not source.items:
-        raise ValueError("no_cart")
-    base_revision = source.rev
-    with transaction.atomic():
-        Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
-        source = Session.objects.select_for_update().get(pk=source.pk)
-        _assert_authority(ctx)
-        if source.rev != base_revision or source.state != "open":
-            raise ValueError("revision_conflict")
-        web_ref = _storefront_ref()
-        # G05 precisa decidir conflito de carrinhos: jamais abandonar o existente.
-        if ctx.conversation.phone and Session.objects.filter(channel_ref=web_ref, state="open", handle_type="phone", handle_ref=ctx.conversation.phone).exists():
-            raise ValueError("destination_conflict")
-        from shopman.shop.projections.cart import build_cart
-        source_total_q = build_cart(source.session_key, ctx.channel_ref).grand_total_q
-        # Liberação e nova reserva acontecem na mesma transação: ninguém observa
-        # estoque liberado entre elas, e toda recusa restaura os holds originais.
-        sessions.abandon_session(session_key=source.session_key, channel_ref=ctx.channel_ref)
-        web_key = None
-        for item in source.items:
-            if item.get("sku") == "__DELIVERY_FEE__":
-                continue
-            qty = Decimal(str(item.get("qty") or 0))
-            from shopman.orderman.models import SessionItem
-            precision = Decimal(1).scaleb(-SessionItem._meta.get_field("qty").decimal_places)
-            if not qty.is_finite() or qty <= 0 or qty != qty.quantize(precision):
-                raise ValueError("unsupported_quantity")
-            # A escolha da linha (sabor, adicionais) viaja como ``[{group, ref}]``
-            # e é conferida de novo contra o cadastro; recusa reverte a transferência.
-            _, web_key = cart_service.add_item(session_key=web_key, channel_ref=web_ref,
-                origin_channel=_transport_origin(ctx), sku=str(item["sku"]), qty=qty,
-                unit_price_q=int(item.get("unit_price_q") or 0), name=str(item.get("name") or ""),
-                options=product_options.selection_of(product_options.line_options(item)))
-        values = {key: value for key, value in source.data.items() if key in {
-            "customer", "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
-            "delivery_time_slot", "order_notes", "coupon_code", "is_gift", "recipient", "gift_message", "gift_hide_values",
-        }}
-        target = sessions.modify_session(session_key=web_key, channel_ref=web_ref,
-            ops=[{"op": "set_data", "path": key, "value": value} for key, value in values.items()])
-        from shopman.shop.projections.cart import build_cart
-        if source_total_q != build_cart(web_key, web_ref).grand_total_q:
-            raise ValueError("commercial_revision_conflict")
-        if len(target.items) != len(source.items):
-            raise ValueError("incomplete_transfer")
-        # Sem assign_phone_handle: essa função abandona carrinho concorrente.
-        Conversation.objects.filter(pk=ctx.conversation.pk).update(session_key="")
-        ctx.conversation.session_key = ""
-        return web_key
 
 
 def notify_when_available(ctx: ToolContext, sku: str) -> dict:

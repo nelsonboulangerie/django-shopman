@@ -16879,6 +16879,65 @@
       "out_of_extraction": false
     },
     {
+      "id": "shop.services-session-transfer",
+      "question": "A sacola aberta num canal pode passar a outro canal agora, para esta pessoa, e o que chega diferente?",
+      "owner": "order.session-transfer",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.session_transfer:accept",
+      "authoritative_symbols": [
+        "shopman.shop.services.session_transfer:accept"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/session_transfer.py",
+          "symbols": [
+            "CARRIED_CART_METADATA_KEY",
+            "REFUSAL_MESSAGES",
+            "STRENGTH_DEVICE",
+            "TRANSFER_METADATA_KEY",
+            "TransferDestination",
+            "TransferOffer",
+            "TransferReceipt",
+            "TransferRefused",
+            "_COMMERCIAL_KEYS",
+            "_DELIVERY_FEE_SKU",
+            "_DELIVERY_KEYS",
+            "_GIFT_KEYS",
+            "_adopt_in_place",
+            "_authorize",
+            "_carried_data",
+            "_destination_carts",
+            "_lock_principal",
+            "_owner_ref",
+            "_rebuild",
+            "accept",
+            "carried_offer",
+            "offer"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "orderman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_session_transfer.py::test_c01_cart_arrives_on_the_site_and_only_one_stays_alive",
+        "shopman/shop/tests/test_session_transfer.py::test_x4_the_same_acceptance_again_returns_the_same_receipt",
+        "shopman/shop/tests/test_session_transfer.py::test_x5_revision_changed_after_the_offer_is_refused_as_source_changed",
+        "shopman/shop/tests/test_session_transfer.py::test_destination_with_items_is_a_conflict_and_never_merges"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
       "id": "shop.services-sku-namespace",
       "question": "Um SKU é uma coisa só — e o porteiro da coerência dele mora aqui?",
       "owner": "catalog.sku-coherence",

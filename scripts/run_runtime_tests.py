@@ -43,6 +43,9 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # Session anonimizada é um selo irreversível: writers atrasados esperam
     # a trava e não podem restaurar handle, customer/data ou meta pessoal.
     "shopman/shop/tests/test_session_privacy_fence_postgres.py",
+    # Transferência de sacola entre canais (OC-15): o aceite e a edição na origem
+    # disputam a mesma linha; quem trava primeiro decide, sem reserva em dobro.
+    "shopman/shop/tests/test_session_transfer_postgres.py",
     # Eventos operacionais continuam depois da retenção do pedido, mas um
     # writer stale não pode recolocar note/reason após a anonimização.
     "shopman/shop/tests/test_order_event_privacy_fence_postgres.py",
