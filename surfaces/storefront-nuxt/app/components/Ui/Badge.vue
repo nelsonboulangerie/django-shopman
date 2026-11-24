@@ -40,6 +40,10 @@
         ghost: "text-foreground [a&]:hover:bg-accent/50 border-transparent bg-transparent",
         error:
           "bg-destructive focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90 border-transparent text-white",
+        // Selo de promoção (dono, 24/11/2026: "B nos dois", card e produto): a cor da
+        // promoção a ~10% com o texto na cor da promoção, leve, sem perder o sinal.
+        // As cores moram em `.shop-badge-promotion` (tailwind.css), com o tom do escuro.
+        promotion: "shop-badge-promotion border-transparent",
       },
       disabled: {
         true: "cursor-not-allowed opacity-50",

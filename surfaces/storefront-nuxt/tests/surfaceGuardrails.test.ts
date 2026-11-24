@@ -1670,6 +1670,21 @@ describe('customer surface never names the reason behind unavailability', () => 
     expect(line).not.toContain('address')
   })
 
+  it('promotion badges use the light promotion style on the card and the product page (B, 24/11/2026)', () => {
+    // O dono escolheu "B nos dois": a cor da promoção a ~10% com o texto na cor da
+    // promoção, no card e no produto. O burgundy cheio voltaria a pesar.
+    for (const file of ['app/components/ProductTile.vue', 'app/pages/produto/[sku].vue']) {
+      const source = read(file)
+      expect(source).toMatch(/v-for="adjustment in [\w.]+\.quote\.adjustments" :key="adjustment\.code" variant="promotion"/)
+    }
+    expect(read('app/presentation/fomo.ts')).toContain("variant: 'promotion'")
+    expect(read('app/components/Ui/Badge.vue')).toContain('promotion: "shop-badge-promotion border-transparent"')
+    const css = read('app/assets/css/tailwind.css')
+    expect(css).toContain('.shop-badge-promotion {')
+    // No escuro, a cor da promoção como letra dava 2,8:1: o texto é clareado.
+    expect(css).toMatch(/\.dark \.shop-badge-promotion \{[^}]*white 50%/)
+  })
+
   it('shows one label for every unavailable cause on the product page', () => {
     const pdp = read('app/pages/produto/[sku].vue')
 
