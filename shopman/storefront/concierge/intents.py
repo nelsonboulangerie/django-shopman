@@ -911,7 +911,10 @@ def _weak_match(act: Act, conversation, items: list[dict]) -> bool:
     if not distinctive or not items:
         return False
     for item in items:
-        said = _fold(" ".join(str(item.get(key) or "") for key in ("name", "description", "collection")))
+        said = _fold(" ".join([
+            *(str(item.get(key) or "") for key in ("name", "description", "collection")),
+            *(item.get("keywords") or ()),
+        ]))
         for word in {word_stem(w) for w in re.findall(r"[a-z0-9]+", said) if len(w) >= 3}:
             # "franceses" é "francês": basta um prefixo comum de quatro letras ou mais.
             if any(d == word or (min(len(d), len(word)) >= 4 and (d.startswith(word) or word.startswith(d)))
@@ -962,16 +965,32 @@ SPELLING_CUTOFF = 0.85
 _ASKED_SEPARATOR = re.compile(r"\s*[,;+]\s*|\s+(?:e|ou)\s+", re.IGNORECASE)
 
 
-def _menu_names(channel_ref: str) -> list[str]:
-    """Os nomes do cardápio do canal (vazio quando o cardápio não abre)."""
+def _menu_words(channel_ref: str) -> list[str]:
+    """Os nomes do cardápio do canal e as palavras-chave de cada produto (vazio quando o
+    cardápio não abre).
+
+    A palavra-chave é como o cliente chama o produto por outro nome (dono, 24/11/2026:
+    "Folhado de maçã se refere claramente ao Chausson"), e o erro de escrita se corrige
+    contra ela como contra o nome.
+    """
     from shopman.storefront.presentation.catalog import build_catalog
 
     try:
         catalog = build_catalog(channel_ref=channel_ref)
     except Exception:
-        logger.warning("concierge.intents.menu_names_failed channel=%s", channel_ref, exc_info=True)
+        logger.warning("concierge.intents.menu_words_failed channel=%s", channel_ref, exc_info=True)
         return []
-    return [str(item.name or "") for item in catalog.items]
+    names = [str(item.name or "") for item in catalog.items]
+    keywords = [str(tag).replace("-", " ") for item in catalog.items for tag in (item.tags or ())]
+    return names + sorted(set(keywords) - set(names))
+
+
+def _item_words(item: dict) -> set[str]:
+    """As palavras (radicais) que dizem o que o item é: o nome e as palavras-chave dele."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    said = _fold(" ".join([item.get("name") or "", *(item.get("keywords") or ())]))
+    return {word_stem(word) for word in re.findall(r"[a-z0-9]+", said)}
 
 
 def _distinctive(text: str) -> set[str]:
@@ -987,14 +1006,22 @@ def _distinctive(text: str) -> set[str]:
 
 
 def _named_by(items: list[dict], words: list[str]) -> list[dict]:
-    """Os itens que levam no NOME uma das palavras (a corrigida é o que o cliente pediu)."""
+    """Os itens que levam no nome ou nas palavras-chave uma das palavras (a corrigida é o
+    que o cliente pediu)."""
     from shopman.storefront.presentation.public_information import word_stem
 
     wanted = {word_stem(word) for word in words}
-    return [
-        item for item in items
-        if wanted & {word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))}
-    ]
+    return [item for item in items if wanted & _item_words(item)]
+
+
+def _holding_all(items: list[dict], asked: str) -> list[dict]:
+    """Os itens que levam TODAS as palavras que distinguem o pedido, no nome ou nas
+    palavras-chave ("folhado de maçã": o Chausson, não o Folhado de Frango nem o Croissant).
+
+    Vazio quando nenhum leva todas, ou quando o pedido não tem palavra que distingue.
+    """
+    wanted = _distinctive(asked)
+    return [item for item in items if wanted <= _item_words(item)] if wanted else []
 
 
 def asked_pieces(asked: str, menu_names: list[str]) -> list[str]:
@@ -1237,7 +1264,7 @@ def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemRea
     )
     if not query.strip():
         return None
-    names = _menu_names(tools_module._catalog_channel_ref(context("").channel_ref))
+    names = _menu_words(tools_module._catalog_channel_ref(context("").channel_ref))
     query, corrected = spelled_as_menu(query, names)
     if corrected:
         # "dois croassant", "um ciabata": o nome como o cliente escreve é o do cardápio.
@@ -1248,6 +1275,14 @@ def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemRea
     if corrected:
         named = _named_by(items, corrected)
         items = named or items
+    if len(_distinctive(query)) > 1 and items:
+        # Duas palavras que distinguem: vale o item que leva as duas, no nome ou nas palavras-
+        # chave ("folhados de maca" é o Chausson aux Pommes). Nenhum leva as duas: só fica quem
+        # leva uma delas no NOME. A palavra-chave sozinha não basta: "pão italiano grande" não é
+        # a Ciabatta só porque ela tem "italiano" nas palavras-chave.
+        items = _holding_all(items, query) or [
+            item for item in items if _distinctive(query) & _item_words({"name": item.get("name")})
+        ]
     if not items:
         return None
     if _weak_match(act, conversation, items):
@@ -1591,12 +1626,10 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     def menu() -> list[str]:
         nonlocal names
         if names is None:
-            names = _menu_names(catalog_ref)
+            names = _menu_words(catalog_ref)
         return names
 
     def search(act: Act, *, consult: bool = False, piece: bool = False) -> PartReply:
-        from shopman.storefront.presentation.public_information import word_stem
-
         from . import dialogue
 
         if consult and act.act == PRODUCT and not act.product and _points_back(act.span):
@@ -1653,16 +1686,17 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 result = {**result, "items": named, "count": len(named)}
         if uncovered_by_faq:
             result = {**result, "found": False}
-        partial = (
-            piece and act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found")
+        searched = (
+            act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found")
             and result.get("items") and not result.get("overview")
-            and not any(
-                _distinctive(act.product or act.span) <= {
-                    word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))
-                }
-                for item in result["items"]
-            )
         )
+        holding = _holding_all(list(result.get("items") or []), act.product or act.span) if searched else []
+        if holding and len(_distinctive(act.product or act.span)) > 1:
+            # Duas palavras que distinguem, e só alguns itens levam as duas no nome ou nas
+            # palavras-chave: são eles. "folhado de maçã" é o Chausson aux Pommes (keywords
+            # "folhado", "maca"), não o Croissant nem o Folhado de Frango, que levam só uma.
+            result = {**result, "items": holding, "count": len(holding)}
+        partial = piece and searched and not holding and bool(_distinctive(act.product or act.span))
         not_in_menu = not partial and (
             act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found") and not result.get("overview")
             and _weak_match(act, conversation, list(result.get("items") or []))
