@@ -460,6 +460,8 @@ class RetentionReceiptLineSerializer(serializers.Serializer):
     name = serializers.CharField()
     qty_display = serializers.CharField()
     value_display = serializers.CharField()
+    calculation_display = serializers.CharField()
+    retained_display = serializers.CharField()
 
 
 class RetentionReceiptRowSerializer(serializers.Serializer):

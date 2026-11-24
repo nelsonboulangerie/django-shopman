@@ -53,6 +53,9 @@ def paes(shop):
     world.product("BOLO", price_q=3000)
     world.lot("CROIS")
     world.lot("BOLO")
+    # A casa produz os dois (ficha ativa): a perda deles tem retenção (DEV-2026-089).
+    world.produced("CROIS")
+    world.produced("BOLO")
 
 
 def _today_at(slot: str) -> dict:
@@ -69,7 +72,7 @@ def test_policy_defaults_are_the_house_rule():
 
 
 def test_policy_reads_the_shop_block_and_ignores_garbage(shop):
-    shop.defaults = {"no_show": {"tolerance_minutes": 30, "cutoff_minutes_before_close": "x", "paid_waits_cutoff": "sim"}}
+    shop.defaults = {"no_show": {**shop.defaults["no_show"], "tolerance_minutes": 30, "cutoff_minutes_before_close": "x", "paid_waits_cutoff": "sim"}}
     shop.save(update_fields=["defaults"])
 
     policy = resolve_no_show_policy()
@@ -137,7 +140,7 @@ def test_paid_order_only_releases_at_the_closing_of_the_agreed_day(paes, relogio
 
 
 def test_paid_cutoff_can_come_before_closing(paes, relogio, shop):
-    shop.defaults = {"no_show": {"cutoff_minutes_before_close": 30}}
+    shop.defaults = {"no_show": {**shop.defaults["no_show"], "cutoff_minutes_before_close": 30}}
     shop.save(update_fields=["defaults"])
     relogio(14)
     order = world.ready_order("NS-PAID-CUT", [("CROIS", 1, 935)], data=_today_at("15:00-15:30"))
@@ -150,7 +153,7 @@ def test_paid_cutoff_can_come_before_closing(paes, relogio, shop):
 
 
 def test_paid_order_follows_the_unpaid_rule_when_the_house_turns_the_cutoff_off(paes, relogio, shop):
-    shop.defaults = {"no_show": {"paid_waits_cutoff": False}}
+    shop.defaults = {"no_show": {**shop.defaults["no_show"], "paid_waits_cutoff": False}}
     shop.save(update_fields=["defaults"])
     relogio(14)
     order = world.ready_order("NS-PAID-OFF", [("CROIS", 1, 935)], data=_today_at("15:00-15:30"))
@@ -236,7 +239,7 @@ def _on_account(order, amount_q: int | None = None, *, customer_ref: str = "CLI-
 
 
 def test_house_account_order_with_open_debt_can_be_closed_as_not_picked_up(paes, relogio):
-    """A conta da casa entra no gesto (#2697): o que se perdeu fica como dívida, o resto sai da conta."""
+    """A conta da casa entra no gesto (#2697): o retido fica como dívida, o resto sai da conta."""
     from shopman.shop.services import payment
 
     relogio(10)
@@ -248,22 +251,22 @@ def test_house_account_order_with_open_debt_can_be_closed_as_not_picked_up(paes,
 
     relogio(19, 5)
     preview = no_show.preview(order)
-    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
-    assert preview["money_sentence"] == "R$ 18,70 saem da conta do cliente. R$ 30,00 continuam nela, pelo que se perdeu."
-    assert "Tiramos R$ 18,70 da sua conta na loja" in preview["customer_text"]
-    assert "R$ 30,00 continuam na conta" in preview["customer_text"]
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 3670, 1200)
+    assert preview["money_sentence"] == "R$ 36,70 saem da conta do cliente. R$ 12,00 continuam nela, conforme os Termos do serviço."
+    assert "Tiramos R$ 36,70 da sua conta na loja" in preview["customer_text"]
+    assert "R$ 12,00 continuam na conta" in preview["customer_text"]
 
     block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
     assert block["on_account"] is True
     order.refresh_from_db()
-    # O que o ``on_cancelled`` faz com o dinheiro: a dívida fica com o valor da perda.
+    # O que o ``on_cancelled`` faz com o dinheiro: a dívida fica com o retido.
     payment.refund(order)
-    assert payment.open_account_debt_q(order) == 3000
+    assert payment.open_account_debt_q(order) == 1200
     event = order.events.get(type="account_debt_reduced")
-    assert event.payload["amount_q"] == 1870
+    assert event.payload["amount_q"] == 3670
     # De novo (retry do cancelamento): nada sai duas vezes.
     payment.refund(order)
-    assert payment.open_account_debt_q(order) == 3000
+    assert payment.open_account_debt_q(order) == 1200
 
 
 def test_house_account_order_with_everything_back_on_sale_leaves_nothing_owed(paes, relogio):
@@ -292,9 +295,9 @@ def test_house_account_already_settled_is_refused_with_a_clear_reason(paes, relo
 
 
 def test_mixed_sale_takes_the_debt_out_first(paes, relogio):
-    """Venda mista (#3151): R$ 20,00 na conta e R$ 28,70 em dinheiro. Volta R$ 18,70
-    (o croissant); se perdem R$ 30,00 (o bolo). A conta sai primeiro: nenhum dinheiro
-    volta, R$ 1,30 continuam na conta e o dinheiro inteiro fica com a loja."""
+    """Venda mista (#3151): R$ 20,00 na conta e R$ 28,70 em dinheiro. Volta o croissant
+    (R$ 18,70) e 60% do bolo perdido; a loja retém R$ 12,00 (40% do bolo). A conta sai
+    primeiro: os R$ 20,00 saem dela, R$ 16,70 voltam em dinheiro e R$ 12,00 ficam."""
     from shopman.payman import PaymentService
 
     from shopman.shop.services import payment
@@ -312,23 +315,24 @@ def test_mixed_sale_takes_the_debt_out_first(paes, relogio):
 
     relogio(19, 5)
     preview = no_show.preview(order)
-    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 3670, 1200)
     assert preview["money_sentence"] == (
-        "R$ 18,70 saem da conta do cliente. R$ 1,30 continuam na conta e R$ 28,70 ficam com a loja, pelo que se perdeu."
+        "R$ 20,00 saem da conta do cliente. R$ 16,70 em dinheiro ficam a devolver no caixa do PDV. "
+        "R$ 12,00 ficam com a loja, conforme os Termos do serviço."
     )
     assert preview["customer_text"] == (
-        "O pedido ficou pronto e não foi retirado. Tiramos R$ 18,70 da sua conta na loja, pelo que ainda pôde "
-        "voltar à venda. R$ 1,30 continuam na sua conta e R$ 28,70 ficaram com a loja, como dizem os Termos. "
+        "O pedido ficou pronto e não foi retirado. Tiramos R$ 20,00 da sua conta na loja e vamos devolver "
+        "R$ 16,70 pelo mesmo meio de pagamento. R$ 12,00 ficaram com a loja, conforme os Termos do serviço. "
         "O recibo desse valor está no link do pedido."
     )
 
     block = no_show.mark_not_picked_up(order, actor="ana", approved_by="gerente")
-    assert (block["from_account_q"], block["money_q"], block["debt_left_q"], block["kept_q"]) == (1870, 0, 130, 2870)
+    assert (block["from_account_q"], block["money_q"], block["debt_left_q"], block["kept_q"]) == (2000, 1670, 0, 1200)
     order.refresh_from_db()
     payment.refund(order)
     payment.refund(order)  # retry do cancelamento: nada sai duas vezes
-    assert payment.open_account_debt_q(order) == 130
-    assert [p for p in payment.pending_cash_refunds() if p.order_ref == order.ref] == []
+    assert payment.open_account_debt_q(order) == 0
+    assert [p.amount_q for p in payment.pending_cash_refunds() if p.order_ref == order.ref] == [1670]
 
 
 def test_account_customer_text_says_what_left_the_account():
@@ -339,7 +343,7 @@ def test_account_customer_text_says_what_left_the_account():
         "O pedido ficou pronto e não foi retirado. Tiramos R$ 9,35 da sua conta na loja."
     )
     assert no_show_reason.customer_text(nothing) == (
-        "O pedido ficou pronto e não foi retirado. O valor continua na sua conta na loja, como dizem os Termos."
+        "O pedido ficou pronto e não foi retirado. O valor continua na sua conta na loja, conforme os Termos do serviço."
     )
 
 
@@ -471,7 +475,9 @@ def test_stock_with_no_way_to_know_the_expiry_goes_back_on_sale(shop, relogio):
 
 
 def _line(destiny: str, value_q: int) -> dict:
-    return {"destiny": destiny, "value_q": value_q}
+    """Uma linha de item feito aqui, já com o retido da regra de 40% (DEV-2026-089)."""
+    line = {"destiny": destiny, "value_q": value_q, "produced": True}
+    return {**line, "retained_q": no_show.line_retained_q(line, 40)}
 
 
 @pytest.mark.parametrize(
@@ -479,18 +485,18 @@ def _line(destiny: str, value_q: int) -> dict:
     [
         # Tudo volta à venda: o cliente recebe tudo.
         ([_line("restock", 1870), _line("restock", 3000)], 4870, (4870, 0)),
-        # Tudo se perdeu: a loja fica com tudo.
-        ([_line("loss", 1870), _line("loss", 3000)], 4870, (0, 4870)),
-        # Misto: volta o valor das linhas que voltam.
-        ([_line("restock", 1870), _line("loss", 3000)], 4870, (1870, 3000)),
+        # Tudo se perdeu: a loja fica com 40% de cada perda (748 + 1200).
+        ([_line("loss", 1870), _line("loss", 3000)], 4870, (2922, 1948)),
+        # Misto: volta o que volta à venda e 60% da perda.
+        ([_line("restock", 1870), _line("loss", 3000)], 4870, (3670, 1200)),
         # Não pago: nada a devolver, nada retido.
         ([_line("restock", 1870), _line("loss", 3000)], 0, (0, 0)),
-        # Pagou só um sinal, menor que a perda: a loja fica com o sinal todo.
+        # Pagou só um sinal, menor que o retido: a loja fica com o sinal todo.
         ([_line("restock", 1870), _line("loss", 3000)], 1000, (0, 1000)),
-        # Sinal maior que a perda: a loja fica com a perda, o resto volta.
-        ([_line("restock", 1870), _line("loss", 3000)], 4000, (1000, 3000)),
+        # Sinal maior que o retido: a loja fica com o retido, o resto volta.
+        ([_line("restock", 1870), _line("loss", 3000)], 4000, (2800, 1200)),
         # Pagou a mais (pedido reduzido depois de pago): o excedente volta junto.
-        ([_line("restock", 1870), _line("loss", 3000)], 6000, (3000, 3000)),
+        ([_line("restock", 1870), _line("loss", 3000)], 6000, (4800, 1200)),
         # Tudo volta e havia excedente: volta tudo o que entrou.
         ([_line("restock", 1870)], 2500, (2500, 0)),
     ],
@@ -525,9 +531,9 @@ def test_preview_says_everything_before_the_gesture_and_writes_nothing(paes, rel
     assert preview["allowed"] is True
     assert preview["block_reason"] == ""
     assert [(line["sku"], line["destiny"]) for line in preview["lines"]] == [("CROIS", "restock"), ("BOLO", "loss")]
-    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 1870, 3000)
+    assert (preview["paid_q"], preview["refund_q"], preview["retained_q"]) == (4870, 3670, 1200)
     assert preview["money_sentence"] == (
-        "R$ 18,70 serão estornados ao Pix do cliente. R$ 30,00 ficam com a loja, pelo que se perdeu."
+        "R$ 36,70 serão estornados ao Pix do cliente. R$ 12,00 ficam com a loja, conforme os Termos do serviço."
     )
     assert preview["customer_text"] == no_show_reason.customer_text(preview)
     assert preview["revision"] == no_show.revision(order)
@@ -573,8 +579,9 @@ def test_money_sentence_for_unpaid_and_for_everything_lost(paes, relogio):
     assert no_show.preview(unpaid, now=world.at(19))["money_sentence"] == (
         "O pedido não foi pago: não há dinheiro a devolver."
     )
+    # O croissant perdido é feito aqui: a loja retém 40% (R$ 3,74) e o resto volta.
     assert no_show.preview(lost, now=world.at(19))["money_sentence"] == (
-        "Nada volta ao cliente: R$ 9,35 ficam com a loja, pelo que se perdeu."
+        "R$ 5,61 serão estornados ao Pix do cliente. R$ 3,74 ficam com a loja, conforme os Termos do serviço."
     )
 
 
@@ -599,11 +606,14 @@ def test_command_writes_the_block_and_cancels_with_its_own_reason(paes, relogio)
     assert order.data["no_show"] == block
     assert block["at"] == moment.isoformat()
     assert (block["actor"], block["approved_by"]) == ("ana", "gerente")
-    assert (block["paid_q"], block["refund_q"], block["retained_q"]) == (4870, 1870, 3000)
+    assert (block["paid_q"], block["refund_q"], block["retained_q"]) == (4870, 3670, 1200)
     assert block["lines"] == [
-        {"line_id": "L1", "sku": "CROIS", "name": "Crois", "qty": "2", "destiny": "restock", "reason": "", "value_q": 1870},
-        {"line_id": "L2", "sku": "BOLO", "name": "Bolo", "qty": "1", "destiny": "loss", "reason": "no_stock", "value_q": 3000},
+        {"line_id": "L1", "sku": "CROIS", "name": "Crois", "qty": "2", "destiny": "restock", "reason": "",
+         "value_q": 1870, "produced": True, "retained_q": 0},
+        {"line_id": "L2", "sku": "BOLO", "name": "Bolo", "qty": "1", "destiny": "loss", "reason": "no_stock",
+         "value_q": 3000, "produced": True, "retained_q": 1200},
     ]
+    assert block["retention"] == {"percent": 40, "decided_at": "2026-11-24", "provisional": True}
 
 
 def test_command_before_the_time_is_refused_and_writes_nothing(paes, relogio):
@@ -682,13 +692,13 @@ def test_not_picked_up_is_not_a_reason_the_operator_picks():
         ),
         (
             {"paid_q": 3000, "refund_q": 0, "retained_q": 3000},
-            "O pedido ficou pronto e não foi retirado. O valor ficou com a loja, como dizem os Termos. "
+            "O pedido ficou pronto e não foi retirado. O valor ficou com a loja, conforme os Termos do serviço. "
             "O recibo desse valor está no link do pedido.",
         ),
         (
             {"paid_q": 4870, "refund_q": 1870, "retained_q": 3000},
-            "O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento, "
-            "pelo que ainda pôde voltar à venda. R$ 30,00 ficaram com a loja, como dizem os Termos. "
+            "O pedido ficou pronto e não foi retirado. Vamos devolver R$ 18,70 pelo mesmo meio de pagamento. "
+            "R$ 30,00 ficaram com a loja, conforme os Termos do serviço. "
             "O recibo desse valor está no link do pedido.",
         ),
         # Não pago: nenhuma frase de dinheiro.
@@ -751,6 +761,7 @@ def test_combo_decides_each_component_and_splits_the_value_by_price(shop, relogi
     """O croissant vencido do combo vira perda; o café, que ainda vende, volta."""
     relogio(10)
     order = _combo("NS-COMBO", crois_qty=1, crois_expires=timezone.localdate(), paid=True)
+    world.produced("CROIS")
 
     lines = no_show.line_decisions(order, now=world.at(8, days=1))
 
@@ -762,7 +773,8 @@ def test_combo_decides_each_component_and_splits_the_value_by_price(shop, relogi
     assert all(line["combo"] == {"line_id": "L1", "sku": "COMBO", "name": "Combo"} for line in lines)
     # O valor do combo inteiro, nem um centavo a mais ou a menos.
     assert sum(line["value_q"] for line in lines) == 1200
-    assert no_show.money_split(lines, 1200) == (480, 720)
+    # O croissant é feito aqui: a loja retém 40% da parte dele (R$ 2,88), o resto volta.
+    assert no_show.money_split(no_show.apply_retention(lines, 40), 1200) == (912, 288)
 
 
 def test_combo_whose_components_all_go_back_returns_everything(shop, relogio):

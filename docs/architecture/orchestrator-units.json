@@ -20182,7 +20182,10 @@
             "BLOCK",
             "NoShowPolicy",
             "_minutes",
-            "resolve_no_show_policy"
+            "resolve_no_show_policy",
+            "TERMS_RETENTION_CAP_PERCENT",
+            "RetentionRule",
+            "_retention"
           ]
         }
       ],
@@ -20239,6 +20242,7 @@
     {
       "entrypoint_kind": "symbol",
       "domains": [
+        "craftsman",
         "offerman",
         "orderman"
       ],
@@ -20317,7 +20321,9 @@
             "RetentionReceipt",
             "_format_tax_id",
             "_moment",
-            "retention_receipt"
+            "retention_receipt",
+            "apply_retention",
+            "line_retained_q"
           ]
         }
       ],

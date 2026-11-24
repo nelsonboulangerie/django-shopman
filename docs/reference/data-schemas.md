@@ -842,14 +842,17 @@ services que ele chama leem o bloco.
 | `at` | `string` (ISO datetime) | Quando o gesto foi feito |
 | `actor` | `string` | Quem operava a tela |
 | `approved_by` | `string` | O Gerente que assinou (PIN ou crachá) |
-| `lines[].destiny` | `"restock"` \| `"loss"` | `restock`: a linha volta à venda, no MESMO lote de onde saiu, e o cliente recebe `value_q`. `loss`: vira perda de estoque com motivo, e a loja fica com `value_q`. Decidido pelo servidor (`no_show.decide_destiny`) |
+| `lines[].destiny` | `"restock"` \| `"loss"` | `restock`: a linha volta à venda, no MESMO lote de onde saiu, e o cliente recebe `value_q`. `loss`: vira perda de estoque com motivo, e a loja retém `retained_q` dela. Decidido pelo servidor (`no_show.decide_destiny`) |
 | `lines[].reason` | `string` | Por que é perda: `made_to_order` (ficha vigente "Na hora"), `no_stock` (sem reserva de estoque baixada: não há o que devolver ao balcão), `lot_expired` (o lote venceu na hora do gesto). Vazio em `restock` |
 | `lines[].qty` | `string` (decimal) | A quantidade da linha |
 | `lines[].line_id`, `lines[].combo` | `string`, `dict` | O combo vira uma linha por componente (#2697): `line_id` é `"<linha>:<sku>"`, o destino é o de cada componente e `value_q` é a parte do valor do combo rateada pelo preço de tabela vezes a quantidade (o resíduo no último). `combo` = `{line_id, sku, name}` do combo de onde o componente veio; ausente na linha que não é combo |
 | `lines[].value_q` | `int` | O valor da linha: `unit_price_q × qty` sobre `order_composition.effective_items` (o mesmo cálculo da devolução) |
+| `lines[].produced` | `bool` | A casa produz o SKU (ficha ativa). A revenda (`false`) volta inteira mesmo quando vira perda (DEV-2026-089) |
+| `lines[].retained_q` | `int` | O que a loja retém da linha: `retention.percent` de `value_q`, arredondado ao centavo, SÓ em linha `loss` e `produced` (`no_show.line_retained_q`); zero no resto. O recibo do valor retido mostra a conta por linha ("40% de R$ 30,00") |
+| `retention` | `dict` | A regra que valeu no gesto, copiada de `Shop.defaults["no_show"]["retention"]`: `{percent, decided_at, provisional}` (40, "2026-11-24", `true` desde a decisão do dono de 24/11/2026). Sem regra na loja (ou acima do teto dos Termos, `TERMS_RETENTION_CAP_PERCENT`), o gesto recusa e o bloco não nasce |
 | `paid_q` | `int` | O que estava capturado na hora do gesto (`payment.captured_balance_q`) |
-| `refund_q` | `int` | Soma das linhas `restock`, limitada a `paid_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
-| `retained_q` | `int` | `paid_q − refund_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
+| `refund_q` | `int` | `paid_q − retained_q`: volta ao cliente pelo meio em que entrou (gateway estorna sozinho; dinheiro e maquininha ficam pendentes no PDV) |
+| `retained_q` | `int` | Soma de `lines[].retained_q`, limitada a `paid_q`: fica com a loja. É a régua de `payment.retained_q`: num cancelado com este bloco, o devolvível é `capturado − retido`, e a conciliação aceita saldo capturado igual ao retido |
 | `from_account_q`, `money_q`, `debt_left_q`, `kept_q` | `int` | Venda MISTA, parte na conta da casa e parte em outra forma (#3151): a DÍVIDA sai primeiro (decisão da coordenação, 21/11/2026). Do devolvível, `from_account_q` sai da conta e só `money_q` volta em dinheiro; do retido, `debt_left_q` continua na conta e `kept_q` fica com a loja (`no_show.account_split`). Ausentes fora da venda mista |
 | `on_account` | `bool` | Venda SÓ na conta da casa (#2697): `paid_q` é a dívida em aberto do pedido (`payment.open_account_debt_q`), `refund_q` sai da conta (`payment.reduce_account_debt`, evento `account_debt_reduced`) e `retained_q` continua devido. A conta já acertada e a venda que mistura a conta com outra forma não passam pelo gesto |
 
@@ -2135,6 +2138,7 @@ preservadas.
 | `no_show.tolerance_minutes` | `int` (>= 0) | `60` | Pedido NÃO pago libera em `hora combinada + tolerância`; sem hora combinada, em `ready_at + tolerância` |
 | `no_show.cutoff_minutes_before_close` | `int` (>= 0) | `0` | Pedido PAGO libera no corte do dia combinado: o fechamento da loja naquele dia (`business_calendar.selling_hours_for`) menos estes minutos. Dia combinado já passado: liberado. Dia sem expediente declarado: vale a régua do não pago |
 | `no_show.paid_waits_cutoff` | `bool` | `true` | `false`: o pago segue a mesma régua do não pago |
+| `no_show.retention` | `dict` | **sem padrão** | Quanto a loja retém dos itens FEITOS para a encomenda não retirada: `{"percent": 40, "decided_at": "2026-11-24", "provisional": true}` (DEV-2026-089, decisão do dono; gravado pela `shop.0140` e pelo seed). A revenda e o que volta à venda voltam inteiros. Sem a regra, ou com `percent` fora de 0 a 100 ou acima do teto dos Termos (`TERMS_RETENTION_CAP_PERCENT`, 40), o gesto do não retirado recusa com o motivo |
 
 ### Produção — `Shop.defaults["production"]`
 

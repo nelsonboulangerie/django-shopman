@@ -1165,7 +1165,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         required=False,
         widget=UnfoldBooleanSwitchWidget,
         help_text=(
-            "Ligado, o pedido pago só libera no corte do dia combinado, como dizem os Termos "
+            "Ligado, o pedido pago só libera no corte do dia combinado, conforme os Termos do serviço "
             "(\"até o fim do expediente\"). Desligado, o pago segue a mesma tolerância do não pago."
         ),
     )

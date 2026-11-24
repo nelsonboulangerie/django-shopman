@@ -299,6 +299,9 @@ class RetentionReceiptLineProjection:
     name: str
     qty_display: str
     value_display: str
+    #: "40% de R$ 89,00": o cálculo que dá ``retained_display``.
+    calculation_display: str
+    retained_display: str
 
 
 @dataclass(frozen=True)
@@ -690,7 +693,11 @@ def _present_retention_receipt(receipt) -> RetentionReceiptProjection | None:
         ),
         lines=tuple(
             RetentionReceiptLineProjection(
-                name=line.name, qty_display=f"Quantidade: {line.qty}", value_display=money(line.value_q),
+                name=line.name,
+                qty_display=f"Quantidade: {line.qty}",
+                value_display=money(line.value_q),
+                calculation_display=f"{line.percent}% de {money(line.value_q)}",
+                retained_display=money(line.retained_q),
             )
             for line in receipt.lines
         ),

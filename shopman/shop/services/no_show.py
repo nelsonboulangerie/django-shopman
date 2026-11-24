@@ -14,7 +14,11 @@ do lifecycle não muda, e os services que ele já chama leem o bloco.
   ``restock`` volta ao MESMO lote de onde saiu; a linha ``loss`` vira perda com
   motivo;
 - **dinheiro** (``payment.retained_q``): o devolvível de um cancelado com o
-  bloco é ``capturado − retido``, no gateway, no dinheiro e na maquininha;
+  bloco é ``capturado − retido``, no gateway, no dinheiro e na maquininha. O
+  retido é um percentual do valor dos itens FEITOS para a encomenda que viraram
+  perda (``Shop.defaults["no_show"]["retention"]``, 40% provisório desde
+  24/11/2026, DEV-2026-089); a revenda volta inteira, e o que volta à venda
+  também;
 - **aviso ao cliente** (``policies/no_show_reason``, por
   ``cancel_reasons.customer_text``): diz para onde o dinheiro foi.
 
@@ -91,6 +95,9 @@ class LineFacts:
     #: O lote de onde a linha saiu não chega ao próximo dia de venda
     #: (:func:`next_selling_day`): vencido, ou vence hoje com a loja já fechada.
     lot_expired: bool
+    #: A casa produz o SKU (ficha ativa). Não decide o destino: decide se a perda
+    #: da linha tem retenção (a revenda volta inteira).
+    produced: bool = False
 
 
 def decide_destiny(facts: LineFacts) -> tuple[str, str]:
@@ -155,10 +162,15 @@ def _sku_facts(order, skus: list[str], *, now: datetime) -> dict[str, LineFacts]
     Um SKU por vez, para que o combo decida cada componente pelos fatos dele
     (#2697): o croissant vencido do combo não leva o café junto para a perda.
     """
+    from shopman.craftsman.models import Recipe
+
     from shopman.shop.adapters import get_adapter
     from shopman.shop.services import made_to_order
 
     recipes = made_to_order.made_to_order_recipes(sorted(set(skus)))
+    produced = set(
+        Recipe.objects.filter(output_sku__in=sorted(set(skus)), is_active=True).values_list("output_sku", flat=True)
+    )
     entries = _hold_entries(order)
     lots = get_adapter("stock").hold_lot_facts(
         [entry["hold_id"] for entry in entries], on=next_selling_day(now)
@@ -174,6 +186,7 @@ def _sku_facts(order, skus: list[str], *, now: datetime) -> dict[str, LineFacts]
             made_to_order=sku in recipes,
             stock_fulfilled=bool(held) and all(fact.get("fulfilled") for fact in held),
             lot_expired=any(fact.get("expired") for fact in held),
+            produced=sku in produced,
         )
     return facts
 
@@ -268,6 +281,7 @@ def line_decisions(order, *, now: datetime | None = None) -> list[dict]:
                 "destiny": destiny,
                 "reason": why,
                 "value_q": value_q,
+                "produced": facts[item.sku].produced,
             })
             continue
         combo_name = item.name or item.sku
@@ -281,6 +295,7 @@ def line_decisions(order, *, now: datetime | None = None) -> list[dict]:
                 "destiny": destiny,
                 "reason": why,
                 "value_q": comp_value,
+                "produced": facts[sku].produced,
                 "combo": {"line_id": item.line_id, "sku": item.sku, "name": combo_name},
             })
     return lines
@@ -295,12 +310,30 @@ def _is_itself(item, expanded) -> bool:
 # ── O dinheiro ───────────────────────────────────────────────────────────────
 
 
-def money_split(lines: list[dict], paid_q: int) -> tuple[int, int]:
-    """``(refund_q, retained_q)``: a loja fica com o valor do que se perdeu, e só com ele.
+def line_retained_q(line: dict, percent: int) -> int:
+    """Quanto a loja retém desta linha: ``percent`` do valor, só da perda produzida aqui.
 
-    A cláusula dos Termos tem duas metades, e a conta parte da segunda: "o que
-    se perdeu fica com a loja". O retido é o valor das linhas perdidas, limitado
-    ao que foi de fato capturado; TODO o resto do capturado volta ao cliente.
+    Termos (24/11/2026): "os itens de revenda voltam inteiros; dos itens feitos
+    para a encomenda, retemos até 40% do valor para cobrir o custo de produção".
+    O que volta à venda não custou nada à loja e volta inteiro também.
+    Arredonda ao centavo mais próximo.
+    """
+    if line.get("destiny") != LOSS or not line.get("produced"):
+        return 0
+    return (int(line.get("value_q") or 0) * int(percent) + 50) // 100
+
+
+def apply_retention(lines: list[dict], percent: int) -> list[dict]:
+    """As linhas com o retido de cada uma (``retained_q``), para o bloco e o recibo."""
+    return [{**line, "retained_q": line_retained_q(line, percent)} for line in lines]
+
+
+def money_split(lines: list[dict], paid_q: int) -> tuple[int, int]:
+    """``(refund_q, retained_q)``: a loja fica com o retido das linhas, e só com ele.
+
+    O retido de cada linha é o de :func:`line_retained_q` (gravado em
+    ``retained_q`` por :func:`apply_retention`), e a soma é limitada ao que foi
+    de fato capturado; TODO o resto do capturado volta ao cliente.
 
     Partir do retido (e não do devolvível) é o que protege os dois lados fora do
     caso redondo: quem pagou só um sinal não leva de volta o valor do que se
@@ -309,8 +342,8 @@ def money_split(lines: list[dict], paid_q: int) -> tuple[int, int]:
     zero.
     """
     paid_q = max(0, int(paid_q or 0))
-    loss_q = sum(int(line["value_q"]) for line in lines if line["destiny"] == LOSS)
-    retained_q = min(paid_q, max(0, loss_q))
+    kept_q = sum(int(line.get("retained_q") or 0) for line in lines)
+    retained_q = min(paid_q, max(0, kept_q))
     return paid_q - retained_q, retained_q
 
 
@@ -337,11 +370,11 @@ def money_sentence(order, *, paid_q: int, refund_q: int, retained_q: int) -> str
     if paid_q <= 0:
         return "O pedido não foi pago: não há dinheiro a devolver."
     if refund_q <= 0:
-        return f"Nada volta ao cliente: R$ {format_money(retained_q)} ficam com a loja, pelo que se perdeu."
+        return f"Nada volta ao cliente: R$ {format_money(retained_q)} ficam com a loja, conforme os Termos do serviço."
     back = f"R$ {format_money(refund_q)} {_refund_destination(order)}"
     if retained_q <= 0:
         return back
-    return f"{back} R$ {format_money(retained_q)} ficam com a loja, pelo que se perdeu."
+    return f"{back} R$ {format_money(retained_q)} ficam com a loja, conforme os Termos do serviço."
 
 
 def _account_sentence(*, refund_q: int, retained_q: int) -> str:
@@ -349,11 +382,11 @@ def _account_sentence(*, refund_q: int, retained_q: int) -> str:
     if refund_q <= 0 and retained_q <= 0:
         return "Nada a mexer na conta do cliente: este pedido não deve nada."
     if refund_q <= 0:
-        return f"Nada sai da conta do cliente: R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
+        return f"Nada sai da conta do cliente: R$ {format_money(retained_q)} continuam nela, conforme os Termos do serviço."
     out = f"R$ {format_money(refund_q)} saem da conta do cliente."
     if retained_q <= 0:
         return out
-    return f"{out} R$ {format_money(retained_q)} continuam nela, pelo que se perdeu."
+    return f"{out} R$ {format_money(retained_q)} continuam nela, conforme os Termos do serviço."
 
 
 def _money_destination(order) -> str:
@@ -385,7 +418,7 @@ def _mixed_sentence(order, *, from_account_q: int, money_q: int, debt_left_q: in
     if kept_q > 0:
         stay.append(f"R$ {format_money(kept_q)} ficam com a loja")
     if stay:
-        parts.append(f"{' e '.join(stay)}, pelo que se perdeu.")
+        parts.append(f"{' e '.join(stay)}, conforme os Termos do serviço.")
     return " ".join(parts) or "Nada a devolver: este pedido não deve nem pagou nada."
 
 
@@ -431,7 +464,7 @@ def eligibility_reason(order) -> str:
         return "A conta deste pedido já foi acertada: o não retirado dele é com o Dono."
     if not order.can_transition_to(Order.Status.CANCELLED):
         return "Este canal não permite encerrar um pedido pronto como não retirado."
-    return ""
+    return resolve_no_show_policy().retention_refusal()
 
 
 def _on_account(order) -> bool:
@@ -587,7 +620,9 @@ def block_reason(order, *, now: datetime | None = None) -> str:
 
 def _plan(order, *, now: datetime) -> dict:
     """As linhas e o dinheiro do gesto, como seriam gravados agora."""
-    lines = line_decisions(order, now=now)
+    retention = resolve_no_show_policy().retention
+    percent = retention.percent if retention is not None else 0
+    lines = apply_retention(line_decisions(order, now=now), percent)
     paid_q = _paid_q(order)
     known = paid_q is not None
     refund_q, retained_q = money_split(lines, paid_q or 0)
@@ -597,6 +632,11 @@ def _plan(order, *, now: datetime) -> dict:
         "refund_q": refund_q,
         "retained_q": retained_q,
         "payment_known": known,
+        "retention": (
+            {"percent": retention.percent, "decided_at": retention.decided_at, "provisional": retention.provisional}
+            if retention is not None
+            else {}
+        ),
         "on_account": _on_account(order),
         "split": account_split(order, refund_q=refund_q, retained_q=retained_q) if _mixed_account(order) else {},
     }
@@ -700,6 +740,8 @@ def mark_not_picked_up(
             "paid_q": plan["paid_q"],
             "refund_q": plan["refund_q"],
             "retained_q": plan["retained_q"],
+            # A regra que valeu no gesto: o recibo e a auditoria leem daqui.
+            "retention": plan["retention"],
             # Venda só em conta: ``paid_q`` é a dívida, e ``refund_q`` sai da conta.
             "on_account": plan["on_account"],
             # Venda mista: quanto sai da conta, quanto volta em dinheiro e o que fica.
@@ -778,16 +820,20 @@ RECEIPT_TITLE = "Recibo de valor retido"
 
 #: O que o valor é, numa frase. "Multa" é a palavra do contador e dos Termos.
 RECEIPT_NATURE = (
-    "Multa por encomenda paga e não retirada, conforme os Termos. "
+    "Multa por encomenda paga e não retirada, conforme os Termos do serviço. "
     "Sem entrega de mercadoria, não há venda."
 )
 
 
 @dataclass(frozen=True)
 class RetainedLine:
+    """Uma linha retida: o valor dela e quanto a loja ficou (``percent`` de ``value_q``)."""
+
     name: str
     qty: str
     value_q: int
+    retained_q: int
+    percent: int
 
 
 @dataclass(frozen=True)
@@ -850,14 +896,18 @@ def retention_receipt(order) -> RetentionReceipt | None:
     mixed = "kept_q" in block
     shop = Shop.load()
     customer = (order.data or {}).get("customer") or {}
+    rule = block.get("retention") if isinstance(block.get("retention"), dict) else {}
+    percent = int(rule.get("percent") or 0)
     lines = tuple(
         RetainedLine(
             name=str(line.get("name") or line.get("sku") or ""),
             qty=str(line.get("qty") or ""),
             value_q=int(line.get("value_q") or 0),
+            retained_q=int(line.get("retained_q") or 0),
+            percent=percent,
         )
         for line in block.get("lines") or ()
-        if isinstance(line, dict) and line.get("destiny") == LOSS
+        if isinstance(line, dict) and int(line.get("retained_q") or 0) > 0
     )
     return RetentionReceipt(
         order_ref=order.ref,
@@ -894,7 +944,9 @@ __all__ = [
     "decide_destiny",
     "eligibility_reason",
     "is_candidate",
+    "apply_retention",
     "line_decisions",
+    "line_retained_q",
     "mark_not_picked_up",
     "money_sentence",
     "money_split",

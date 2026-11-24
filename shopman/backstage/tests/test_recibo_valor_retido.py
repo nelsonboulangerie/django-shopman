@@ -38,6 +38,9 @@ def mundo(monkeypatch):
     world.product("BOLO", price_q=3000)
     world.lot("CROIS")
     world.lot("BOLO")
+    # A casa produz os dois (ficha ativa): a perda deles tem retenção (DEV-2026-089).
+    world.produced("CROIS")
+    world.produced("BOLO")
     moment = world.at(19, 5)
     monkeypatch.setattr(timezone, "now", lambda: moment)
 
@@ -82,8 +85,8 @@ def test_o_recibo_le_o_que_o_gesto_gravou():
     assert receipt.legal_name == "Padaria de Teste Ltda"
     assert receipt.tax_id == "12.345.678/0001-95"
     assert receipt.customer_name == "Ana"
-    assert (receipt.paid_q, receipt.refund_q, receipt.retained_q) == (4870, 1870, 3000)
-    assert [(line.name, line.value_q) for line in receipt.lines] == [("Bolo", 3000)]
+    assert (receipt.paid_q, receipt.refund_q, receipt.retained_q) == (4870, 3670, 1200)
+    assert [(line.name, line.value_q, line.percent, line.retained_q) for line in receipt.lines] == [("Bolo", 3000, 40, 1200)]
     assert receipt.closed_at is not None
     assert receipt.nature.endswith("não há venda.")
 
@@ -145,9 +148,12 @@ def test_a_pagina_do_pedido_mostra_o_recibo():
     assert shown is not None
     assert shown.title == no_show.RECEIPT_TITLE
     assert shown.issuer_lines == ("Padaria de Teste Ltda", "CNPJ 12.345.678/0001-95")
-    assert shown.retained_display == "R$ 30,00"
+    assert shown.retained_display == "R$ 12,00"
+    assert [(line.name, line.value_display, line.calculation_display, line.retained_display) for line in shown.lines] == [
+        ("Bolo", "R$ 30,00", "40% de R$ 30,00", "R$ 12,00"),
+    ]
     assert [(row.label, row.value_display) for row in shown.money_rows] == [
-        ("Pago", "R$ 48,70"), ("Devolvido a você", "R$ 18,70"),
+        ("Pago", "R$ 48,70"), ("Devolvido a você", "R$ 36,70"),
     ]
     assert shown.not_fiscal == "Não é documento fiscal."
 
@@ -165,7 +171,8 @@ def test_o_papel_diz_quem_emite_o_valor_e_que_nao_e_nota():
     assert "CNPJ 12.345.678/0001-95" in text
     assert "Recibo de valor retido" in text
     assert "Pedido RET-PAPEL" in text
-    assert "RETIDO R$ 30,00" in text
+    assert "RETIDO R$ 12,00" in text
+    assert "40% de R$ 30,00" in text
     assert "Devolvido ao cliente" in text
     assert "Não é documento fiscal." in text
     assert "2a VIA" not in text
@@ -187,7 +194,7 @@ def test_a_rota_compoe_o_recibo_e_a_segunda_impressao_e_segunda_via(client, gest
 
     assert first.status_code == 200, first.content
     assert first.json()["reprint"] is False
-    assert "RETIDO R$ 30,00" in base64.b64decode(first.json()["payload_b64"]).decode(ENCODING)
+    assert "RETIDO R$ 12,00" in base64.b64decode(first.json()["payload_b64"]).decode(ENCODING)
     assert second.json()["reprint"] is True
 
 

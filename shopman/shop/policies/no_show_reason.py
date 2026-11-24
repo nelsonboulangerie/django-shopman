@@ -7,8 +7,10 @@ não veio buscar. Por isso a chave nasce aqui, fora da lista que o operador
 escolhe; ``services/cancel_reasons`` só a conhece para resolver rótulo e texto.
 
 O texto diz o destino do dinheiro a partir do bloco ``order.data["no_show"]``,
-porque a regra é "o dinheiro segue o produto": o que voltou à venda é devolvido,
-o que se perdeu fica com a loja, como dizem os Termos.
+com a regra dos Termos (24/11/2026, DEV-2026-089): a revenda e o que volta à venda
+voltam inteiros, e dos itens feitos para a encomenda a loja retém até 40%. A
+frase diz quanto volta e quanto fica, e não o porquê de cada centavo: a conta
+linha a linha está no recibo.
 
 Voz da casa: frase inteira com ponto final (entra no ``{status_note}`` do aviso
 ``order_cancelled``, entre "foi cancelado." e "Qualquer dúvida…"), sem
@@ -41,7 +43,7 @@ def customer_text(no_show: dict | None, *, receipt_hint: bool = True) -> str:
 
     - nada foi pago: só o fato, sem frase de dinheiro;
     - tudo volta: quanto, e que vai voltar pelo mesmo meio de pagamento;
-    - nada volta (tudo se perdeu): o valor ficou com a loja, como dizem os Termos;
+    - nada volta (tudo se perdeu): o valor ficou com a loja, conforme os Termos do serviço;
     - volta uma parte: as duas metades, para o cliente não procurar a diferença.
     """
     block = no_show if isinstance(no_show, dict) else {}
@@ -80,15 +82,15 @@ def _money_text(block: dict) -> str:
     if "from_account_q" in block:
         return _mixed_text(block)
     if refund_q <= 0:
-        return f"{BASE_TEXT} O valor ficou com a loja, como dizem os Termos."
+        return f"{BASE_TEXT} O valor ficou com a loja, conforme os Termos do serviço."
     # "Vamos devolver", no futuro, de propósito: quando o aviso sai, o gateway
     # só recebeu o pedido de estorno, e dinheiro e maquininha ainda esperam o
     # gesto de alguém da casa no PDV. "Devolvemos" afirmaria o que não aconteceu.
     refund = f"Vamos devolver R$ {format_money(refund_q)} pelo mesmo meio de pagamento"
     if retained_q > 0:
         return (
-            f"{BASE_TEXT} {refund}, pelo que ainda pôde voltar à venda. "
-            f"R$ {format_money(retained_q)} ficaram com a loja, como dizem os Termos."
+            f"{BASE_TEXT} {refund}. "
+            f"R$ {format_money(retained_q)} ficaram com a loja, conforme os Termos do serviço."
         )
     return f"{BASE_TEXT} {refund}."
 
@@ -102,12 +104,12 @@ def _account_text(*, refund_q: int, retained_q: int) -> str:
     from shopman.utils.monetary import format_money
 
     if refund_q <= 0:
-        return f"{BASE_TEXT} O valor continua na sua conta na loja, como dizem os Termos."
+        return f"{BASE_TEXT} O valor continua na sua conta na loja, conforme os Termos do serviço."
     out = f"Tiramos R$ {format_money(refund_q)} da sua conta na loja"
     if retained_q > 0:
         return (
-            f"{BASE_TEXT} {out}, pelo que ainda pôde voltar à venda. "
-            f"R$ {format_money(retained_q)} continuam na conta, como dizem os Termos."
+            f"{BASE_TEXT} {out}. "
+            f"R$ {format_money(retained_q)} continuam na conta, conforme os Termos do serviço."
         )
     return f"{BASE_TEXT} {out}."
 
@@ -132,9 +134,9 @@ def _mixed_text(block: dict) -> str:
         stay.append(f"R$ {format_money(kept)} ficaram com a loja")
     out = BASE_TEXT
     if back:
-        out += " " + " ".join(back) + (", pelo que ainda pôde voltar à venda." if stay else ".")
+        out += " " + " ".join(back) + "."
     if stay:
-        out += " " + " e ".join(stay) + ", como dizem os Termos."
+        out += " " + " e ".join(stay) + ", conforme os Termos do serviço."
     return out
 
 

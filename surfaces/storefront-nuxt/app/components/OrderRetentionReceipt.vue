@@ -30,12 +30,15 @@ defineProps<{ receipt: RetentionReceipt }>()
       <p v-if="receipt.closed_display" class="shop-meta">{{ receipt.closed_display }}</p>
 
       <ul v-if="receipt.lines.length" class="space-y-1 border-t pt-2" data-retention-receipt-lines>
-        <li v-for="(line, index) in receipt.lines" :key="index" class="flex items-start justify-between gap-3 text-sm">
-          <span class="min-w-0 break-words">
-            {{ line.name }}
-            <span class="block shop-meta">{{ line.qty_display }}</span>
-          </span>
-          <span class="shrink-0 shop-price">{{ line.value_display }}</span>
+        <li v-for="(line, index) in receipt.lines" :key="index" class="space-y-1 text-sm" data-retention-receipt-line>
+          <div class="flex items-start justify-between gap-3">
+            <span class="min-w-0 break-words">{{ line.name }}</span>
+            <span class="shrink-0 shop-price">{{ line.value_display }}</span>
+          </div>
+          <div class="flex items-start justify-between gap-3 shop-meta">
+            <span>{{ line.qty_display }} · {{ line.calculation_display }}</span>
+            <span class="shrink-0 shop-price" data-retention-receipt-line-retained>{{ line.retained_display }}</span>
+          </div>
         </li>
       </ul>
 

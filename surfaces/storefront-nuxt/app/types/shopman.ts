@@ -1305,7 +1305,8 @@ export interface RetentionReceipt {
   order_line: string
   commitment_display: string
   closed_display: string
-  lines: { name: string, qty_display: string, value_display: string }[]
+  // "40% de R$ 89,00" em `calculation_display`, e o resultado em `retained_display`.
+  lines: { name: string, qty_display: string, value_display: string, calculation_display: string, retained_display: string }[]
   money_rows: { label: string, value_display: string }[]
   retained_label: string
   retained_display: string

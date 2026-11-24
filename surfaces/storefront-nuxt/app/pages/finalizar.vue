@@ -2818,9 +2818,9 @@ useSeoMeta({
                    cláusula dos Termos, palavra por palavra: `tests/legalUnclaimedOrder.test.ts`
                    reprova se uma mudar sem a outra. -->
               <p v-if="showUnclaimedOrderRule" class="mt-3 shop-meta" data-review-unclaimed-rule>
-                Pedido não retirado até o fim do expediente do dia combinado: o que ainda puder
-                voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
-                loja.
+                Pedido não retirado até o fim do expediente do dia combinado: os itens de revenda
+                voltam inteiros; dos itens feitos para a encomenda, retemos até 40% do valor para
+                cobrir o custo de produção, e o restante volta pelo mesmo meio de pagamento.
                 <NuxtLink to="/termos#pickup-and-delivery" target="_blank" class="underline underline-offset-2">Termos de uso</NuxtLink>
               </p>
             </div>

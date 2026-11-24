@@ -37,6 +37,10 @@ _MOCK_ADAPTERS = override_settings(
 #: Croissant (2 × R$ 9,35 = R$ 18,70) com estoque baixado: volta à venda.
 #: Bolo (R$ 30,00) sem estoque baixado: perda. Total R$ 48,70.
 CROIS_Q, BOLO_Q = 1870, 3000
+#: A loja retém 40% do bolo, que é feito aqui (DEV-2026-089): R$ 12,00. Volta o resto.
+KEPT_Q = 1200
+BACK_Q = CROIS_Q + BOLO_Q - KEPT_Q  # R$ 36,70
+LOST_BACK_Q = BOLO_Q - KEPT_Q  # só o bolo perdido: R$ 18,00 voltam
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +50,9 @@ def mundo():
     world.product("BOLO", price_q=3000)
     world.lot("CROIS")
     world.lot("BOLO")
+    # A casa produz os dois (ficha ativa): a perda deles tem retenção (DEV-2026-089).
+    world.produced("CROIS")
+    world.produced("BOLO")
 
 
 @pytest.fixture
@@ -123,13 +130,13 @@ def test_gateway_refunds_only_what_goes_back_on_sale(method, fim_do_expediente, 
 
     order = _not_picked_up(order, django_capture_on_commit_callbacks)
 
-    assert order.data["no_show"]["refund_q"] == CROIS_Q
-    assert order.data["no_show"]["retained_q"] == BOLO_Q
-    assert world.refunded_q(order.ref) == CROIS_Q
-    assert _net_q(intent) == BOLO_Q
+    assert order.data["no_show"]["refund_q"] == BACK_Q
+    assert order.data["no_show"]["retained_q"] == KEPT_Q
+    assert world.refunded_q(order.ref) == BACK_Q
+    assert _net_q(intent) == KEPT_Q
     # O estorno entrou no histórico com o valor parcial.
     (event,) = order.events.filter(type="payment.refunded")
-    assert event.payload["amount_q"] == CROIS_Q
+    assert event.payload["amount_q"] == BACK_Q
 
 
 @_MOCK_ADAPTERS
@@ -142,8 +149,8 @@ def test_gateway_refund_is_not_repeated_when_the_cancellation_runs_again(fim_do_
     payment_service.refund(order)
     payment_service.refund(order)
 
-    assert world.refunded_q(order.ref) == CROIS_Q
-    assert _net_q(intent) == BOLO_Q
+    assert world.refunded_q(order.ref) == BACK_Q
+    assert _net_q(intent) == KEPT_Q
 
 
 @_MOCK_ADAPTERS
@@ -159,15 +166,15 @@ def test_gateway_refunds_everything_when_everything_goes_back(fim_do_expediente,
 
 
 @_MOCK_ADAPTERS
-def test_gateway_refunds_nothing_when_everything_was_lost(fim_do_expediente, django_capture_on_commit_callbacks):
+def test_gateway_refunds_sixty_percent_when_everything_was_lost(fim_do_expediente, django_capture_on_commit_callbacks):
     order = _order("NS-GW-TUDO-PERDA", back=False)
     intent = world.pay(order, "pix")
 
     order = _not_picked_up(order, django_capture_on_commit_callbacks)
 
-    assert (order.data["no_show"]["refund_q"], order.data["no_show"]["retained_q"]) == (0, BOLO_Q)
-    assert world.refunded_q(order.ref) == 0
-    assert _net_q(intent) == BOLO_Q
+    assert (order.data["no_show"]["refund_q"], order.data["no_show"]["retained_q"]) == (LOST_BACK_Q, KEPT_Q)
+    assert world.refunded_q(order.ref) == LOST_BACK_Q
+    assert _net_q(intent) == KEPT_Q
 
 
 @_MOCK_ADAPTERS
@@ -181,9 +188,10 @@ def test_customer_page_money_outcome_counts_only_what_goes_back(fim_do_expedient
     lost = _not_picked_up(lost, django_capture_on_commit_callbacks)
 
     money = payment_service.cancelled_money(mixed)
-    assert (money.outcome, money.amount_q, money.method) == ("refunded", CROIS_Q, "pix")
-    # Nada volta: não há devolução a contar; quem explica é o texto do motivo.
-    assert payment_service.cancelled_money(lost) is None
+    assert (money.outcome, money.amount_q, money.method) == ("refunded", BACK_Q, "pix")
+    # Só o bolo, perdido: volta 60% dele, e a página conta essa devolução.
+    money = payment_service.cancelled_money(lost)
+    assert (money.outcome, money.amount_q) == ("refunded", LOST_BACK_Q)
 
 
 # ── Dinheiro: a pendência de devolver só tem o devolvível ────────────────────
@@ -200,7 +208,7 @@ def test_cash_pending_refund_is_only_what_goes_back(fim_do_expediente, django_ca
     # Cancelar não devolve dinheiro: fica a pendência, e só do devolvível.
     assert world.refunded_q(order.ref) == 0
     (pending,) = payment_service.pending_cash_refunds()
-    assert (pending.order_ref, pending.amount_q) == (order.ref, CROIS_Q)
+    assert (pending.order_ref, pending.amount_q) == (order.ref, BACK_Q)
     # O PDV diz por que o dinheiro volta (#2696): não é uma venda cancelada.
     assert pending.reason == "not_picked_up"
     assert payment_service.REFUND_REASON_LABELS[pending.reason] == "Pedido não retirado"
@@ -209,21 +217,21 @@ def test_cash_pending_refund_is_only_what_goes_back(fim_do_expediente, django_ca
 
     operator = get_user_model().objects.create_user(username="caixa-ns", password="x")
     shift = cash.open_shift(operator=operator, float_q=10000)
-    assert payment_service.refund_cash(order, shift=shift, actor=operator) == CROIS_Q
+    assert payment_service.refund_cash(order, shift=shift, actor=operator) == BACK_Q
 
     # O retido fica na gaveta, e a pendência some.
-    assert _net_q(intent) == BOLO_Q
+    assert _net_q(intent) == KEPT_Q
     assert payment_service.pending_cash_refunds() == []
     assert payment_service.refund_cash(order, shift=shift, actor=operator) == 0
 
 
-def test_cash_has_nothing_pending_when_everything_was_lost(fim_do_expediente, django_capture_on_commit_callbacks):
+def test_cash_pending_is_sixty_percent_when_everything_was_lost(fim_do_expediente, django_capture_on_commit_callbacks):
     order = _order("NS-CASH-PERDA", back=False)
     world.pay(order, "cash")
 
     _not_picked_up(order, django_capture_on_commit_callbacks)
 
-    assert payment_service.pending_cash_refunds() == []
+    assert [p.amount_q for p in payment_service.pending_cash_refunds()] == [LOST_BACK_Q]
 
 
 # ── Maquininha: estornar só o devolvível ─────────────────────────────────────
@@ -236,28 +244,27 @@ def test_card_machine_refund_due_is_only_what_goes_back(fim_do_expediente, djang
     order = _not_picked_up(order, django_capture_on_commit_callbacks)
 
     assert world.refunded_q(order.ref) == 0
-    assert payment_service.card_machine_refund_due(order) == (CROIS_Q, [intent])
+    assert payment_service.card_machine_refund_due(order) == (BACK_Q, [intent])
     (pending,) = payment_service.pending_card_machine_refunds()
-    assert (pending.order_ref, pending.amount_q) == (order.ref, CROIS_Q)
+    assert (pending.order_ref, pending.amount_q) == (order.ref, BACK_Q)
     assert pending.reason == "not_picked_up"
     # O aviso do Gestor manda estornar o valor certo.
     alert = OperatorAlert.objects.get(type=payment_service.CARD_MACHINE_REFUND_ALERT, order_ref=order.ref)
-    assert "R$ 18,70" in alert.message
+    assert "R$ 36,70" in alert.message
 
-    assert payment_service.record_card_machine_refund(order, actor="ana") == CROIS_Q
-    assert _net_q(intent) == BOLO_Q
+    assert payment_service.record_card_machine_refund(order, actor="ana") == BACK_Q
+    assert _net_q(intent) == KEPT_Q
     assert payment_service.card_machine_refund_due(order) == (0, [])
     assert payment_service.pending_card_machine_refunds() == []
 
 
-def test_card_machine_has_nothing_due_when_everything_was_lost(fim_do_expediente, django_capture_on_commit_callbacks):
+def test_card_machine_due_is_sixty_percent_when_everything_was_lost(fim_do_expediente, django_capture_on_commit_callbacks):
     order = _order("NS-MAQ-PERDA", back=False)
-    world.pay(order, "credit")
+    intent = world.pay(order, "credit")
 
     order = _not_picked_up(order, django_capture_on_commit_callbacks)
 
-    assert payment_service.card_machine_refund_due(order) == (0, [])
-    assert not OperatorAlert.objects.filter(type=payment_service.CARD_MACHINE_REFUND_ALERT, order_ref=order.ref).exists()
+    assert payment_service.card_machine_refund_due(order) == (LOST_BACK_Q, [intent])
 
 
 # ── Não pago ─────────────────────────────────────────────────────────────────

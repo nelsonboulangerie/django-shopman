@@ -481,6 +481,10 @@ def retention_receipt(receipt, *, verify_url: str = "", reprint: bool = False) -
             for pedaco in _wrap(line.name, COLUMNS):
                 out += _line(pedaco)
             out += _pair(f"  Quantidade: {line.qty}", f"R$ {format_money(line.value_q)}")
+            # O cálculo à vista: quem confere não precisa saber a regra de cor.
+            out += _pair(
+                f"  {line.percent}% de R$ {format_money(line.value_q)}", f"R$ {format_money(line.retained_q)}"
+            )
         out += _rule()
 
     if receipt.mixed:
