@@ -231,8 +231,11 @@ def test_ler_o_cardapio_do_dia_nao_escreve_nada():
     with _frozen(OPEN_AT_10):
         _world()
         before = (Session.objects.count(), Hold.objects.count())
-        assert Client().get(CATALOG, {"date": THURSDAY.isoformat()}).status_code == 200
+        resp = Client().get(CATALOG, {"date": THURSDAY.isoformat()})
+        assert resp.status_code == 200
         assert (Session.objects.count(), Hold.objects.count()) == before
+        # X14: a leitura do dia é a rota canônica, nunca cacheável na borda.
+        assert "public" not in resp.get("Cache-Control", "")
 
 
 # ── a data vai para a sacola ───────────────────────────────────────────
