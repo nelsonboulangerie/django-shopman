@@ -230,6 +230,52 @@ def coherence(acts, expected) -> str:
     return "suspect"
 
 
+@dataclass(frozen=True, slots=True)
+class Conference:
+    """O conflito de leitura que vai ao verificador: a classe, as candidatas (a do leitor primeiro) e os atos que
+    respondem à pergunta no ar (vazio sem pergunta)."""
+
+    found: str
+    candidates: tuple[Alternative, ...]
+    expected: frozenset[str]
+
+
+def plan_conference(acts, alternatives, context: ReadingContext | None) -> Conference | None:
+    """O que vai ao verificador (ADR-051): a leitura ``suspect`` diante da pergunta no ar, ou leitores que
+    discordam em ato, com ou sem pergunta no ar. ``None``: nada a conferir, a leitura segue."""
+    names = {act.act for act in acts}
+    expected = frozenset(context.expected_acts) if context is not None and context.pending is not None else frozenset()
+    found = coherence(acts, expected)
+    differing = [alternative for alternative in alternatives if {act.act for act in alternative.acts} != names]
+    if found != "suspect" and not differing:
+        return None
+    return Conference(found=found + (":disagreement" if differing else ""),
+                      candidates=(Alternative(acts=acts, confidence=UNRATED), *differing), expected=expected)
+
+
+def in_doubt(conference: Conference, *, confirmed_before: bool = False, closing: bool = False) -> dict:
+    """O que o turno faz quando o verificador não escolhe (nunca chuta).
+
+    Com pergunta no ar, a candidata que a responde vai à confirmação ("é isso?"); sem candidata que responda, a
+    pergunta do fechamento volta. Sem pergunta no ar, a leitura do leitor vai à confirmação.
+
+    ``confirmed_before``: o turno anterior já perguntou "é isso?" e a resposta deu dúvida de novo. A confirmação
+    não se repete em seguida (coordenação, 24/11): com o fechamento em curso (``closing``), a pergunta dele volta;
+    sem ele, o agente pede para o cliente dizer de outro jeito (``ask_clarification.more``).
+    """
+    if confirmed_before:
+        return {"reask": True} if closing else {"more": True}
+    if not conference.expected:
+        chosen = conference.candidates[0].acts
+    else:
+        answering = next((candidate for candidate in conference.candidates
+                          if {act.act for act in candidate.acts} & conference.expected), None)
+        if answering is None:
+            return {"reask": True}
+        chosen = tuple(act for act in answering.acts if act.act in conference.expected)
+    return {"confirm": {"acts": [{"act": act.act, "fields": dict(act.fields)} for act in chosen]}}
+
+
 def confirmation_in(dialogue: Mapping[str, Any], epoch: int) -> Mapping[str, Any] | None:
     value = dialogue.get(CONFIRM_KEY)
     return value if isinstance(value, Mapping) and value.get("epoch") == epoch and value.get("acts") else None
@@ -538,27 +584,20 @@ class Engine:
             if "deny" in names:
                 fallbacks.append("conference:denied")
                 return understanding, {"reask": True}
-            return understanding, None  # mudou de assunto: a confirmação sai do ar
-        if self.profile.limits.max_adjudications_per_turn <= 0 or context is None or context.pending is None \
-                or event.content_ref is None:
+            # Outra resposta: a confirmação sai do ar, e a fala passa pela conferência como qualquer outra; se der
+            # dúvida de novo, o "é isso?" não se repete em seguida.
+        if self.profile.limits.max_adjudications_per_turn <= 0 or context is None or event.content_ref is None:
             return understanding, None
-        expected = set(context.expected_acts)
-        found = coherence(acts, expected)
-        differing = [alternative for alternative in understanding.alternatives
-                     if {act.act for act in alternative.acts} != names]
-        if found != "suspect" and not differing:
+        conference = plan_conference(acts, understanding.alternatives, context)
+        if conference is None:
             return understanding, None
-        fallbacks.append(f"conference:{found}" + (":disagreement" if differing else ""))
-        candidates = [Alternative(acts=acts, confidence=UNRATED), *differing]
+        fallbacks.append(f"conference:{conference.found}")
+        candidates = list(conference.candidates)
         choice = self._adjudicate(ctx, event, context, candidates, budget, fallbacks)
         if choice is not None:
             return dataclasses.replace(understanding, acts=list(candidates[choice].acts), alternatives=()), None
-        answering = next((candidate for candidate in candidates if {act.act for act in candidate.acts} & expected),
-                         None)
-        if answering is None:
-            return understanding, {"reask": True}
-        return understanding, {"confirm": {"acts": [{"act": act.act, "fields": dict(act.fields)}
-                                                    for act in answering.acts if act.act in expected]}}
+        closing = bool(context.open_conditions) or OFFER_KEY in dialogue
+        return understanding, in_doubt(conference, confirmed_before=confirming is not None, closing=closing)
 
     def _adjudicate(self, ctx: TrustedContext, event: InteractionEvent, context: ReadingContext, candidates: list,
                     budget: TurnBudget, fallbacks: list[str]) -> int | None:
@@ -1093,8 +1132,12 @@ class Engine:
         if conference is not None:
             # A conferência não aplicou leitura nenhuma: o turno só pergunta "é isso?", ou devolve a pergunta do
             # fechamento pelos termos (a mesma frase da casa, que pede o que ainda falta).
-            needs = ((NeedSpec("n1", "unknown", confirm=conference["confirm"]),) if "confirm" in conference
-                     else (NeedSpec("n1", "place_order"),))
+            if "confirm" in conference:
+                needs = (NeedSpec("n1", "unknown", confirm=conference["confirm"]),)
+            elif "more" in conference:
+                needs = (NeedSpec("n1", "unknown"),)  # "pode me dizer de outro jeito?"
+            else:
+                needs = (NeedSpec("n1", "place_order"),)
             answered_question = answer_refers_to(previous_dialogue, epoch)
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,

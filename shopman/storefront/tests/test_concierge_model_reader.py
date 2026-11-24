@@ -272,6 +272,23 @@ def test_the_recent_turns_go_to_the_ai_redacted_and_by_what_the_nice_asked(conve
     assert content.index("Conversa até aqui") < content.index("<<<")  # o contexto antes da fala, nunca dentro
 
 
+def test_with_the_conversation_going_the_gate_does_not_decide_alone_even_without_a_question(conversation):
+    """No ar: "quero 2 croissants", "pra amanhã", "vou buscar às 16h", sem pergunta no ar. Com falas recentes, o
+    Jev não decide sozinho: a IA lê, e a leitura dele vai junto. No começo da conversa e na cortesia, decide."""
+    from conversational_commerce.ports import ReadingContext, RecentTurn
+
+    going = ReadingContext(recent=(RecentTurn(role="customer", content_ref="text:pra amanhã"),))
+    ai = FakeAI([{"act": "choose_fulfillment", "span": "vou buscar às 16h", "mode": "pickup", "time": "16:00"}])
+    understanding, _ = _read("vou buscar às 16h", ai, allowed=WITH_FULFILLMENT, gate=lambda t: "ask_hours",
+                             context=going)
+    assert [a.act for a in understanding.acts] == ["choose_fulfillment"]
+    assert [[a.act for a in alt.acts] for alt in understanding.alternatives] == [["ask_hours"]]
+    silent = FakeAI(error=AssertionError("a IA não devia ser chamada"))
+    assert _fields(_read("que horas abre?", silent, gate=lambda t: "ask_hours", context=ReadingContext())[0]) \
+        == [("ask_hours", {})]  # começo da conversa: a frase sozinha basta
+    assert _fields(_read("obrigada", silent, gate=lambda t: "thank", context=going)[0]) == [("thank", {})]
+
+
 def test_the_verifier_answers_a_choice_or_doubt_and_a_failure_is_a_port_error(conversation):
     from conversational_commerce.contracts import Alternative
     from conversational_commerce.ports import AdjudicateRequest, ModelRequest, PortError
