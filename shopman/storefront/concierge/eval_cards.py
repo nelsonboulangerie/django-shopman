@@ -121,6 +121,11 @@ def _world():
     # As formas que a conversa do canal oferece (as do ar, sem dinheiro), não as do falso: com as do falso,
     # o "pix" virava forma não oferecida e a Nice respondia a frase do dinheiro.
     world.state.payment_methods = tuple(conversation_payment_methods(CHANNEL))
+    # Os horários de retirada da grade da casa: com eles o falso exige o quando antes dos termos, como o
+    # requirements do ar (#3482). Sem eles, o cartão fechava um pedido que a casa não grava.
+    from shopman.shop.services.fulfillment_window import canonical_slots
+
+    world.state.pickup_slots = tuple(str(slot.get("label") or slot["ref"]) for slot in canonical_slots())
     world.state.carts = {CART: {}}
     world.state.cart_owner = {CART: SUBJECT}
     world.state.versions = {CART: 1}

@@ -264,10 +264,12 @@ class ShopmanCommerceRead:
             logger.warning("conversational.requirements: fonte falhou", exc_info=True)
             return Unknown(reason="source_failed")
         value: dict = {"missing": []}
+        value.update(_fulfillment_requirements(data, self.channel_ref))
+        value["missing"] = [code for code in FULFILLMENT_CODES if code in value]
         if delivery:
             # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
             value.update(_address_requirements(data, saved=saved))
-            value["missing"] = [code for code in ADDRESS_CODES if code in value]
+            value["missing"] += [code for code in ADDRESS_CODES if code in value]
         chosen = str((data.get("payment") or {}).get("method") or "")
         if chosen not in methods and len(methods) > 1:
             value["missing"].append("payment_method")
@@ -347,6 +349,27 @@ class ShopmanCommerceRead:
 
 #: Os códigos do endereço da entrega no ``requirements``, na ordem em que o fechamento pergunta.
 ADDRESS_CODES = ("delivery_address_saved", "delivery_address", "delivery_address_details", "delivery_complement")
+#: O quando, na ordem do fechamento de hoje (``order_closing.advance``): o dia, retirar ou entregar, e o horário
+#: da retirada (o ``review_order`` da casa não grava retirada sem ele).
+FULFILLMENT_CODES = ("fulfillment_date", "fulfillment_type", "delivery_time_slot")
+
+
+def _fulfillment_requirements(data: dict, channel_ref: str) -> dict:
+    """O que falta do quando. O horário vai só com o dia (os horários de retirada são do dia), e as opções
+    dele, a casa diz no envio (o formatador lê a grade do dia): o fato leva o dia."""
+    from shopman.shop.services.channel_policy import resolve_channel_policy
+
+    types = [t for t in resolve_channel_policy(channel_ref).fulfillment_types if t in ("pickup", "delivery")]
+    day = str(data.get("delivery_date") or "")
+    kind = str(data.get("fulfillment_type") or "")
+    found: dict = {}
+    if not day:
+        found["fulfillment_date"] = []
+    if kind not in types and len(types) > 1:
+        found["fulfillment_type"] = types  # com um modo só, o dia dito já o grava (o sítio do recebimento)
+    if kind == "pickup" and day and not data.get("delivery_time_slot"):
+        found["delivery_time_slot"] = {"date": day}
+    return found
 
 
 #: As chaves da sacola que dizem QUAL é o endereço da entrega: mudou uma, a referência é outra.

@@ -199,6 +199,10 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "present_terms.needs_delivery_address_saved_many": ("Entregamos no endereço do seu cadastro, "
                                                         "{delivery_address_saved}? Se preferir outro endereço "
                                                         "cadastrado, é só dizer qual."),
+    # O quando (#3482): as perguntas de hoje do fechamento, letra por letra; o horário com as opções do dia.
+    "present_terms.needs_fulfillment_date": "Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?",
+    "present_terms.needs_fulfillment_type": "Você vai retirar aqui na loja ou prefere entrega?",
+    "present_terms.needs_delivery_time_slot": "Qual horário de retirada fica melhor? {delivery_time_slot}",
     # O "outro" à oferta (#3454): a MESMA lista de hoje (``address.saved_listing``).
     "present_terms.needs_delivery_address_saved_options": ("Seus endereços cadastrados: "
                                                            "{delivery_address_saved_options}. Em qual entregamos?"),
