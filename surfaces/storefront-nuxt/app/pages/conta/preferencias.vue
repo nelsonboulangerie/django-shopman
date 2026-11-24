@@ -140,7 +140,7 @@ useSeoMeta({ title: 'Preferências' })
 
       <div>
         <h1 class="shop-title">Preferências</h1>
-        <p class="shop-muted">Conte como você gosta de ser atendido. Você pode mudar quando quiser.</p>
+        <p class="shop-muted">Conte como você prefere o atendimento. Você pode mudar quando quiser.</p>
       </div>
 
       <UiSkeleton v-if="pending" class="h-48 rounded-lg" />

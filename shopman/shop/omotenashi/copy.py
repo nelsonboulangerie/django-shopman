@@ -1992,7 +1992,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Continuar")},
     },
     "LOGIN_AUTH_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Bem-vindo de volta", message="Tudo pronto. Levando você para a loja…")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Que bom te ver de novo", message="Tudo pronto. Levando você para a loja…")},
     },
     "DEVICE_TRUST_REDIRECTING": {
         WILDCARD: {WILDCARD: CopyEntry(message="Aparelho reconhecido. Entrando automaticamente…")},
