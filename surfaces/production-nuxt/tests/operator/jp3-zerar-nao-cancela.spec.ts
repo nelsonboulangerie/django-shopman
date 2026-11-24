@@ -150,7 +150,15 @@ test("J-P3: zerar não cancela; cancelar diz o que está em jogo", async ({
   ).toHaveCount(0);
   await legible(tablet, hint, "a frase de quem cancela");
   await capture(tablet, testInfo, "cozinha-zero-e-com-o-gerente");
-  await planDialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+  // Sair sem mudar nada é "Fechar": num diálogo sobre cancelar lote, "Cancelar"
+  // leria como cancelar o lote. O X do canto tem o mesmo nome; é o do rodapé.
+  await expect(
+    planDialog.getByRole("button", { name: "Cancelar", exact: true }),
+  ).toHaveCount(0);
+  await planDialog
+    .getByRole("button", { name: "Fechar", exact: true })
+    .last()
+    .click();
   await expect(planDialog).toBeHidden();
   await expect(plannedItem(tablet, WITH_ORDERS)).toBeVisible();
 
@@ -221,6 +229,9 @@ test("J-P3: zerar não cancela; cancelar diz o que está em jogo", async ({
     .fill("Forno em manutenção amanhã");
   await expect(remove).toBeEnabled();
   await expect(remove).toBeInViewport({ ratio: 1 });
+  await expect(
+    phoneDialog.getByRole("button", { name: "Cancelar", exact: true }),
+  ).toHaveCount(0);
   await capture(phone, testInfo, "gerente-celular-remover-do-plano");
   await remove.click();
   await expect(phoneDialog).toBeHidden();

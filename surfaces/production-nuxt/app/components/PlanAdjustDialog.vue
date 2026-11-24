@@ -176,7 +176,7 @@ defineExpose({
     <template #footer>
       <div class="flex w-full flex-wrap items-center justify-end gap-2">
         <!-- No lugar do "Remover do plano", quem cancela; à esquerda, longe do
-             "Cancelar" (fechar), para não ler como um botão só. -->
+             "Fechar", para não ler como um botão só. -->
         <p
           v-if="!removeAllowed"
           class="op-label mr-auto text-muted-foreground"
@@ -188,7 +188,7 @@ defineExpose({
           color="neutral"
           variant="outline"
           size="xl"
-          label="Cancelar"
+          label="Fechar"
           @click="emit('cancel')"
         />
         <NuxtButton
