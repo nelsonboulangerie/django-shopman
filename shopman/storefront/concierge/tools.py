@@ -1222,6 +1222,7 @@ def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
 def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | None = None) -> dict:
     """O orçamento: recap completo, o que falta e o token que autoriza o pedido."""
     from shopman.shop.config import ChannelConfig
+    from shopman.shop.policies.order_payment import sole_payment_method
     from shopman.storefront.intents.checkout import _validate_preorder
 
     session = _open_session(ctx)
@@ -1234,7 +1235,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
             return _error("invalid_input", "A observação deve ter até 300 caracteres.")
         session = _set_session_data(ctx, session.session_key, {"order_notes": " ".join(order_notes.split())})
     methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
-    selected = payment_method or (session.data or {}).get("payment", {}).get("method") or (methods[0] if len(methods) == 1 else "")
+    selected = payment_method or (session.data or {}).get("payment", {}).get("method") or sole_payment_method(methods)
     if selected and selected not in methods:
         return _error("invalid_payment_method", "Escolha uma forma de pagamento disponível.")
     if selected:

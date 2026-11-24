@@ -17,7 +17,7 @@ from shopman.orderman.models import Order, Session
 from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel, Shop
-from shopman.shop.policies.order_payment import PaymentMethodRule, payment_refusal
+from shopman.shop.policies.order_payment import PaymentMethodRule, payment_refusal, sole_payment_method
 from shopman.shop.services import sessions
 
 pytestmark = pytest.mark.django_db
@@ -227,3 +227,11 @@ def test_o_mesmo_pedido_sem_forma_grita_uma_vez_e_nao_a_cada_leitura():
     assert error.call_count == 2
     error.assert_any_call("order_queue.order_without_payment order=%s", "WEB-SEM-FORMA-2")
     error.assert_any_call("order_queue.order_without_payment order=%s", "WEB-SEM-FORMA-3")
+
+
+def test_so_a_unica_forma_oferecida_se_assume_sem_o_cliente_escolher():
+    """A régua de "assumir a única forma" (Concierge e termos da conversa, OC-14)."""
+    assert sole_payment_method(["pix"]) == "pix"
+    assert sole_payment_method(("card",)) == "card"
+    assert sole_payment_method(["pix", "card"]) == ""
+    assert sole_payment_method([]) == ""

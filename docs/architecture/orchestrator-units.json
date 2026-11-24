@@ -4896,7 +4896,8 @@
             "MISSING_MESSAGE",
             "PAYMENT_METHODS",
             "PaymentMethodRule",
-            "payment_refusal"
+            "payment_refusal",
+            "sole_payment_method"
           ]
         }
       ],
@@ -5900,11 +5901,11 @@
           "symbols": [
             "BUNDLE_PARENT_SKU_META",
             "CART_SOURCE_SKU_META",
-            "_channel_hold_ttl_minutes",
             "_reserve_across_quants",
             "_reserve_bundle_components",
             "_reserve_checked_status",
             "_reserve_listing_gate_error",
+            "channel_hold_ttl_minutes",
             "check",
             "reserve",
             "session_holds_after",
