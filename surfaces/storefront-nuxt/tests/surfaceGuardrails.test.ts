@@ -318,7 +318,7 @@ describe('surface UX guardrails', () => {
     expect(home).not.toContain('v-if="operationalStatus.message"')
     expect(home).toContain('data-home-reorder-card')
     expect(home).toContain('const quickReorderImageItem = computed')
-    expect(home).toContain('<UiCard v-if="reorderAction || quickReorderItems.length" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
+    expect(home).toContain('<UiCard v-if="!reorderOnTop && (reorderAction || quickReorderItems.length)" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
     expect(home).toContain('<div class="grid grid-cols-1 md:grid-cols-2">')
     expect(home).toContain('<UiAspectRatio :ratio="16 / 9" class="overflow-hidden bg-muted md:h-full">')
     expect(home).not.toContain('class="mx-auto max-w-3xl"')
