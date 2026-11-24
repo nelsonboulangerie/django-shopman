@@ -734,6 +734,9 @@ _PLAIN_PRODUCT_WORDS = frozenset({
     "amanha", "agora", "unidade", "unidades",
     # "mas a baguete de tradição, não tem?": o "mas" e o "não" perguntam presença, não atributo.
     "mas", "nao", "sim", "entao",
+    # "Ainda há disponível pão de forma artesanal, 1 pacote?" (observação, 18/11): a embalagem
+    # é quanto se leva, não atributo do produto.
+    "pacote", "pacotes",
 })
 #: "Ele é doce?" sem o produto resolvido: de quem se fala a busca não sabe.
 #: Sem "esta": sem acento é o verbo ("está disponível?", "ainda está aí?"), não "esta aqui".
@@ -962,7 +965,7 @@ def _cited(act: Act, conversation) -> str:
 
 #: O quanto uma palavra fora do cardápio precisa parecer com uma do cardápio para ser ela.
 SPELLING_CUTOFF = 0.85
-_ASKED_SEPARATOR = re.compile(r"\s*[,;+]\s*|\s+(?:e|ou)\s+", re.IGNORECASE)
+_ASKED_SEPARATOR = re.compile(r"\s*[,;+/]\s*|\s+(?:e|ou)\s+", re.IGNORECASE)
 
 
 def _menu_words(channel_ref: str) -> list[str]:
@@ -986,20 +989,20 @@ def _menu_words(channel_ref: str) -> list[str]:
 
 
 def _item_words(item: dict) -> set[str]:
-    """As palavras (radicais) que dizem o que o item é: o nome e as palavras-chave dele."""
-    from shopman.storefront.presentation.public_information import word_stem
+    """As palavras que dizem o que o item é, o nome e as palavras-chave dele, como se ouvem:
+    "baguete" é a "Baguette", "pão" é o "Pain" (``tools.heard``)."""
+    from . import tools as tools_module
 
     said = _fold(" ".join([item.get("name") or "", *(item.get("keywords") or ())]))
-    return {word_stem(word) for word in re.findall(r"[a-z0-9]+", said)}
+    return {tools_module.heard(word) for word in re.findall(r"[a-z0-9]+", said)}
 
 
 def _distinctive(text: str) -> set[str]:
-    from shopman.storefront.presentation.public_information import word_stem
-
+    """As palavras do pedido que distinguem produto, como se OUVEM (``tools.heard``)."""
     from . import tools as tools_module
 
     return {
-        word_stem(word) for word in tools_module._public_search_terms(text)
+        tools_module.heard(word) for word in tools_module._public_search_terms(text)
         if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
         and word not in _CITE_LEADING
     }
@@ -1008,9 +1011,9 @@ def _distinctive(text: str) -> set[str]:
 def _named_by(items: list[dict], words: list[str]) -> list[dict]:
     """Os itens que levam no nome ou nas palavras-chave uma das palavras (a corrigida é o
     que o cliente pediu)."""
-    from shopman.storefront.presentation.public_information import word_stem
+    from . import tools as tools_module
 
-    wanted = {word_stem(word) for word in words}
+    wanted = {tools_module.heard(_fold(word)) for word in words}
     return [item for item in items if wanted & _item_words(item)]
 
 
@@ -1041,20 +1044,39 @@ def asked_pieces(asked: str, menu_names: list[str]) -> list[str]:
     return pieces
 
 
-#: Como se escreve o que se ouve: "campanha" é "campagne" (o "gn" francês é o nosso "nh"),
-#: "ciabata" é "ciabatta", "capuccino" é "cappuccino", "tradição" é "tradition". A chave
-#: compara o som, não a letra.
-_SOUND_RULES = (("tion", "sao"), ("cao", "sao"), ("gn", "nh"), ("ph", "f"), ("th", "t"), ("ch", "x"), ("sh", "x"), ("y", "i"), ("w", "v"),
-                ("qu", "k"), ("c", "k"), ("ç", "s"))
+#: Quanto a palavra mais perto tem que passar da segunda para ser ela ("coelinho" é o
+#: "coelhinho", 0,94, e não o "coelho", 0,86).
+SPELLING_MARGIN = 0.05
 
 
-def _sound_key(word: str) -> str:
-    key = _fold(word)
-    for written, heard in _SOUND_RULES:
-        key = key.replace(written, heard)
-    key = re.sub(r"(.)\1+", r"\1", key)  # letra dobrada soa como uma: "baguette", "ciabatta"
-    key = re.sub(r"s$", "", key)  # o plural: "croassants" pede o croissant
-    return re.sub(r"[eao]$", "", key)  # a vogal final some na fala: "campagne" e "campanha"
+def _closest_word(folded: str, vocabulary: list[str]) -> str:
+    """A palavra do cardápio que ``folded`` parece, ou ``""`` se nenhuma (ou duas, empatadas).
+
+    Palavras que soam igual contam como uma ("campanha" e "campagne"). Primeiro o mesmo som;
+    sem ele, a semelhança das letras ou do som, de ``SPELLING_CUTOFF`` para cima, e a mais
+    perto só vale se passar da segunda por ``SPELLING_MARGIN``.
+    """
+    import difflib
+
+    from . import tools as tools_module
+
+    heard = tools_module.sound_key(folded)
+    same = sorted(word for word in vocabulary if tools_module.sound_key(word) == heard)
+    if same:
+        return same[0]
+    best: dict[str, tuple[float, str]] = {}
+    for word in vocabulary:
+        key = tools_module.sound_key(word)
+        score = max(
+            difflib.SequenceMatcher(None, folded, word).ratio(),
+            difflib.SequenceMatcher(None, heard, key).ratio(),
+        )
+        if score >= SPELLING_CUTOFF and score > best.get(key, (0.0, ""))[0]:
+            best[key] = (score, word)
+    ranked = sorted(best.values(), reverse=True)
+    if not ranked or (len(ranked) > 1 and ranked[0][0] - ranked[1][0] < SPELLING_MARGIN):
+        return ""
+    return ranked[0][1]
 
 
 def spelled_as_menu(text: str, menu_names: list[str]) -> tuple[str, list[str]]:
@@ -1064,9 +1086,9 @@ def spelled_as_menu(text: str, menu_names: list[str]) -> tuple[str, list[str]]:
     se troca (a busca segue como veio). Só palavra que distingue produto, de cinco letras
     ou mais: "pão" e "de" nunca viram outra coisa.
     """
-    import difflib
 
     from shopman.storefront.presentation.public_information import word_stem
+
 
     vocabulary = sorted({
         word for name in menu_names for word in re.findall(r"[a-z0-9]+", _fold(name)) if len(word) >= 5
@@ -1080,15 +1102,8 @@ def spelled_as_menu(text: str, menu_names: list[str]) -> tuple[str, list[str]]:
             len(folded) >= 5 and folded.isalpha() and word_stem(folded) not in stems
             and folded not in _GENERIC_PRODUCT_WORDS and folded not in _ORDER_FILLER
         ):
-            heard = _sound_key(folded)
-            close = {word for word in vocabulary if _sound_key(word) == heard} or set(
-                difflib.get_close_matches(folded, vocabulary, n=2, cutoff=SPELLING_CUTOFF)
-            ) or {
-                word for word in vocabulary
-                if difflib.SequenceMatcher(None, heard, _sound_key(word)).ratio() >= SPELLING_CUTOFF
-            }
-            if len(close) == 1:
-                (match,) = close
+            match = _closest_word(folded, vocabulary)
+            if match:
                 corrected.append(match)
                 words.append(match)
                 continue
@@ -1275,6 +1290,10 @@ def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemRea
     if corrected:
         named = _named_by(items, corrected)
         items = named or items
+    if len(_distinctive(query)) == 1 and items:
+        # Uma palavra que distingue: valem os itens que a levam no nome ou nas palavras-chave.
+        # "4 pães ( chalá" é a Challah, não o Pão Francês que só casou pelo "pão".
+        items = _holding_all(items, query) or items
     if len(_distinctive(query)) > 1 and items:
         # Duas palavras que distinguem: vale o item que leva as duas, no nome ou nas palavras-
         # chave ("folhados de maca" é o Chausson aux Pommes). Nenhum leva as duas: só fica quem
@@ -1567,7 +1586,7 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         from .service import copy_message as copy
     catalog_ref = tools_module._catalog_channel_ref(channel_ref)
 
-    def context(text: str) -> ToolContext:
+    def context(text: str, *, spoken: str = "") -> ToolContext:
         return ToolContext(
             conversation=conversation,
             channel_ref=channel_ref,
@@ -1576,6 +1595,7 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             transport_channel=str(getattr(binding, "transport_channel", "") or ""),
             connection_key=str(getattr(binding, "connection_key", "") or ""),
             customer_text=text,
+            spoken_text=spoken,
         )
 
     # Cancelamento que o cliente poderia fazer pelo site: a Concierge pergunta (não é equipe).
@@ -1671,13 +1691,14 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         query = _search_text(act)
         if corrected:
             # Só as palavras que distinguem produto: "pão" casava todo pão da seção, e a lista
-            # cortada em três deixava de fora um dos Campagne.
+            # cortada em três deixava de fora um dos Campagne. O "pão" da fala ainda desempata
+            # na busca (``spoken``): é o "Pain" do Pain de Campagne.
             query = " ".join(
                 word for word in tools_module._public_search_terms(query)
                 if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER
                 and word not in _ORDER_WORDS and word not in _CITE_LEADING
             ) or query
-        result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
+        result = _own_source(act, tools_module.execute("search_storefront", {}, context(query, spoken=asked.span if corrected else "")))
         if corrected and result.get("items") and not result.get("overview"):
             # A palavra corrigida é o que o cliente pediu: só os itens que a levam no nome
             # (a busca por "pão campagne" trazia também os pães sem relação).

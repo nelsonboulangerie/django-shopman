@@ -42,7 +42,10 @@ def baguettes(surface, settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
     monkeypatch.setattr(intents, "_model", lambda: "modelo-de-teste")
     _listed("TRADI", "Baguette de Tradition", description="Baguette de fermentação natural", stock="20")
-    _listed("JB", "Jambon-Beurre", description="Baguette com presunto e manteiga", stock="20")
+    # Duas baguetes no nome: o Jambon-Beurre do ar, que só cita "baguette" na descrição, deixou de
+    # ser candidato (``test_a_description_only_match_is_not_a_candidate``), e a dúvida que o Jev
+    # resolve é entre duas baguetes de verdade.
+    _listed("BVIEN", "Baguette Viennoise", description="Baguete de massa amanteigada", stock="20")
 
 
 def _jev(monkeypatch, choice, confidence=0.92, *, boom=False):
@@ -55,9 +58,12 @@ def _jev(monkeypatch, choice, confidence=0.92, *, boom=False):
         if boom:
             raise TimeoutError("fora")
         sent.append(body)
-        keys = list(body["questions"]["sku"]["criteria"])
-        probs = {k: (0.9 if k == choice else 0.1 / max(1, len(keys) - 1)) for k in keys}
-        return FakeResponse({"answers": {"sku": {"type": "choice", "choice": choice, "probabilities": probs,
+        criteria = body["questions"]["sku"]["criteria"]
+        keys = list(criteria)
+        # "nome:X": o Jev escolhe o candidato que tem esse nome, seja qual for a posição dele.
+        picked = next(k for k, text in criteria.items() if choice[5:] in text) if choice.startswith("nome:") else choice
+        probs = {k: (0.9 if k == picked else 0.1 / max(1, len(keys) - 1)) for k in keys}
+        return FakeResponse({"answers": {"sku": {"type": "choice", "choice": picked, "probabilities": probs,
                                                  "confidence": confidence}}, "usage": {"input_tokens": 80}})
 
     monkeypatch.setattr(ai, "jev_post", post)
@@ -69,7 +75,7 @@ def _order(conversation):
 
 
 def test_a_sure_jev_picks_the_sku_and_the_cart_gets_it(conversation, outbox, baguettes, monkeypatch):
-    sent = _jev(monkeypatch, "p1")
+    sent = _jev(monkeypatch, "nome:Baguette de Tradition")
 
     reply = _order(conversation)
 
@@ -95,3 +101,20 @@ def test_a_fallen_jev_never_picks(conversation, outbox, baguettes, monkeypatch):
     reply = _order(conversation)
 
     assert reply.startswith("Qual deles?") and _cart(conversation) == {}, reply
+
+
+def test_a_description_only_match_is_not_a_candidate(conversation, outbox, surface, settings, monkeypatch):
+    """O caso do ar (21/11/2026): "baguettes" achava o Jambon-Beurre pela descrição. A palavra
+    que distingue o pedido está no NOME da Baguette de Tradition, e ela vai à sacola sem
+    pergunta e sem chamar o Jev."""
+    settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
+    monkeypatch.setattr(intents, "_model", lambda: "modelo-de-teste")
+    _listed("TRADI", "Baguette de Tradition", description="Baguette de fermentação natural", stock="20")
+    _listed("JB", "Jambon-Beurre", description="Baguette com presunto e manteiga", stock="20")
+    sent = _jev(monkeypatch, "p2")
+
+    reply = _order(conversation)
+
+    assert _cart(conversation) == {"TRADI": 2}, reply
+    assert "Qual deles?" not in reply
+    assert not [body for body in sent if "sku" in body["questions"]]  # o Jev não escolheu SKU
