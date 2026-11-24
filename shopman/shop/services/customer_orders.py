@@ -23,6 +23,10 @@ from shopman.shop.services import payment as payment_service
 logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = frozenset({"new", "accepted", "preparing", "ready", "dispatched"})
+# O pedido que chegou ao cliente: entregue (delivery) ou finalizado (retirada,
+# balcão, e o fechamento depois da entrega). É o que o cliente avalia e o que a
+# loja oferece repetir; pedido em andamento, cancelado ou devolvido fica de fora.
+CONCLUDED_STATUSES = frozenset({"delivered", "completed"})
 DEFAULT_CHANNEL_REF = "web"
 ORDER_ACCESS_SESSION_KEY = "shopman_order_access_refs"
 MAX_SESSION_ORDER_ACCESS_REFS = 20
@@ -154,7 +158,13 @@ def order_count_for_customer(
 
 
 def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, list[dict]]:
-    """Return the last old-enough order ref and sealed snapshot items for reorder."""
+    """Return the last CONCLUDED order ref and its items for the reorder offer.
+
+    Só pedido concluído (``CONCLUDED_STATUSES``): o que ainda está em andamento já
+    aparece na faixa do pedido, e oferecer repeti-lo logo abaixo seria repetir o
+    pedido que está a caminho (#3560). Cancelado e devolvido também não voltam
+    aqui; o pedido vencido sem pagamento tem caminho próprio (``repeat_order``).
+    """
     try:
         from shopman.guestman.services import customer as customer_service
 
@@ -175,7 +185,7 @@ def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, l
             return None, []
 
         last = (
-            Order.objects.filter(identity)
+            Order.objects.filter(identity, status__in=CONCLUDED_STATUSES)
             .distinct()
             .order_by("-created_at")
             .prefetch_related("items")
@@ -254,7 +264,7 @@ def lock_customer_order(order_ref: str):
 
 def can_rate(order) -> bool:
     """Return whether the customer may submit the order's first rating."""
-    if order.status not in {"delivered", "completed"}:
+    if order.status not in CONCLUDED_STATUSES:
         return False
     data = order.data if isinstance(order.data, dict) else {}
     rating = data.get("customer_rating")
@@ -829,6 +839,7 @@ def _price_q(product, *, channel_ref: str, qty=1) -> int:
 
 __all__ = [
     "ACTIVE_STATUSES",
+    "CONCLUDED_STATUSES",
     "ORDER_ACCESS_SESSION_KEY",
     "active_order_count_for_customer",
     "active_order_count_for_phone",

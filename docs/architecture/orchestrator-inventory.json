@@ -10193,6 +10193,7 @@
           "responsibility": "leitura",
           "symbols": [
             "ACTIVE_STATUSES",
+            "CONCLUDED_STATUSES",
             "DEFAULT_CHANNEL_REF",
             "MAX_SESSION_ORDER_ACCESS_REFS",
             "ORDER_ACCESS_SESSION_KEY",

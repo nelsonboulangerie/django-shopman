@@ -141,10 +141,14 @@ def test_repetir_pedido_de_b_nunca_parte_do_pedido_de_a(matrix, customer):
     from django.utils import timezone
     from shopman.orderman.models import Order
 
-    # O pedido de A é o mais recente de todos no número.
-    Order.objects.filter(pk=matrix["a_top"].pk).update(created_at=timezone.now() + timedelta(minutes=5))
+    # A recompra só oferece pedido concluído (#3560): o de A, concluído, é o mais
+    # recente de todos no número, e o de B também está concluído.
+    Order.objects.filter(pk=matrix["a_top"].pk).update(
+        status="completed", created_at=timezone.now() + timedelta(minutes=5)
+    )
+    Order.objects.filter(pk=matrix["b_own"].pk).update(status="completed")
     order_ref, _items = customer_orders.last_reorder_context(customer_uuid=customer.uuid, min_days=0)
-    assert order_ref in _b_visible_refs(matrix)
+    assert order_ref == matrix["b_own"].ref
 
 
 # ── API: o novo titular do número recebe 404, como pedido inexistente ─
