@@ -186,10 +186,11 @@ class FakeCommerceRead(FakeBase):
         return terms
 
     def _conditions(self, cart_ref: str) -> list[dict]:
-        """O dia e a janela combinados e a forma de pagamento, como o sistema de registro os declara nos termos.
+        """O dia, a janela e a hora combinados e a forma de pagamento, como o sistema de registro os declara.
 
-        A janela é a da grade da casa quando o mundo a conhece (``window``); sem ela, a hora dita. Sem o dia e a
-        janela, o resumo dos termos dizia só "Retirada", e o do sistema de registro diz o quando (ensaio, 24/11).
+        A janela é a da grade da casa quando o mundo a conhece (``window``); sem ela, a hora dita. A hora dita
+        vai também à parte (``fulfillment_time``): o resumo a ecoa. Sem o dia e a janela, o resumo dizia só
+        "Retirada", e o do sistema de registro diz o quando (ensaio, 24/11).
         """
         chosen = self.state.fulfillment.get(cart_ref, {})
         found = []
@@ -198,6 +199,8 @@ class FakeCommerceRead(FakeBase):
             window = chosen.get("window") or chosen.get("time")
             if window:
                 found.append({"code": "fulfillment_window", "value": window})
+            if chosen.get("time"):
+                found.append({"code": "fulfillment_time", "value": chosen["time"]})
         if cart_ref in self.state.payment:
             found.append({"code": "payment_method", "value": self.state.payment[cart_ref]})
         return found

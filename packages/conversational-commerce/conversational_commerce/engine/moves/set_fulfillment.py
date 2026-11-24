@@ -34,10 +34,12 @@ from ._effects import FAILED, PENDING, SHARED, commitment_id
 MOVE = "set_fulfillment"
 ACT = "choose_fulfillment"
 EFFECT = True
-# Do mais completo ao mais genérico: o primeiro cujos espaços o recibo preenche todos.
+# Do mais completo ao mais genérico: o primeiro cujos espaços o recibo preenche todos. A hora que o cliente disse
+# vem antes da janela que a casa grava: "às 16h" ecoa o que ele disse, e "a partir das 15h" pareceria que não
+# ouviu (coordenação, 24/11). A janela fica para quando ele não disse a hora.
 REPLY_TEMPLATES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("set_fulfillment.done", ("mode", "date", "window")),
     ("set_fulfillment.done_time", ("mode", "date", "time")),
+    ("set_fulfillment.done", ("mode", "date", "window")),
     ("set_fulfillment.done_day", ("mode", "date")),
     ("set_fulfillment.done_date", ("date",)),
     ("set_fulfillment.done_mode", ("mode",)),

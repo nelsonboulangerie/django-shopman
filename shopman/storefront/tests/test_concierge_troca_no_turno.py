@@ -779,13 +779,15 @@ def test_card_one_in_one_sentence_says_the_agreement_before_the_invitation_and_t
             service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
     cart, _payment, summary = outbox.sent[:3]
     agreed, listed = cart.split("\n\n", 1)
-    # As 16h ditas caem na janela da grade que começa às 15h: o combinado diz a janela, como o resumo.
-    assert agreed == "Combinado: retirada amanhã, a partir das 15h.", cart
+    # O combinado ecoa a hora que o cliente disse; a janela que a cobre é a que se grava (coordenação, 24/11).
+    assert agreed == "Combinado: retirada amanhã às 16h.", cart
     assert listed.startswith("Pronto, sua sacola ficou assim:") and listed.endswith("é só escrever “pode fechar”."), cart
     tomorrow = timezone.localdate() + timedelta(days=1)
     day = f"{formats.date_format(tomorrow, 'l').lower()}, {formats.date_format(tomorrow, 'd/m')}"
-    # As 16h caem na janela da casa que começa às 15h, como no resumo do caminho de hoje.
-    assert f"\nRetirada: {day}, a partir das 15h\n" in summary and summary.endswith("Posso registrar?"), summary
+    assert f"\nRetirada: {day}, às 16h\n" in summary and summary.endswith("Posso registrar?"), summary
+    data = Session.objects.get(session_key="sess-card-1").data
+    assert data["delivery_time_slot"] == "slot-15"  # o que se grava é a janela da grade
+    assert data["delivery_time_said"] == {"time": "16:00", "date": tomorrow.isoformat(), "slot": "slot-15"}
 
 
 @pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
