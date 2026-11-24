@@ -340,6 +340,30 @@ def assign_customer(
 
 
 @transaction.atomic
+def release_customer(*, session_key: str, channel_ref: str) -> bool:
+    """O avesso de ``assign_customer``: a sacola aberta volta a ser de ninguém.
+
+    Roda no logout (OC-09). A sacola sobrevive ao sair, mas o bloco ``customer``
+    (ref, grupos e o que mais a cliente deixou nele) é dela e sai junto com ela:
+    sem isto, o próximo a usar o mesmo navegador lia o preço da anterior até
+    outro login. Devolve ``True`` quando havia identidade a tirar; quem chama
+    reprecifica.
+    """
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key, channel_ref=channel_ref, state="open")
+        .first()
+    )
+    if session is None or "customer" not in (session.data or {}):
+        return False
+    data = dict(session.data or {})
+    data.pop("customer")
+    session.data = data
+    session.save(update_fields=["data"])
+    return True
+
+
+@transaction.atomic
 def assign_handle(
     *,
     session_key: str,

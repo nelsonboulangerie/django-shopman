@@ -14,6 +14,7 @@ gesto de verdade.
 | Spec | Jornada | Papéis |
 |---|---|---|
 | `jp1-a-madrugada.spec.ts` | J-P1: a Gerente libera o tablet; a Cozinha entra com PIN, confirma o previsto do lote de hoje do Pain au Chocolat e o finaliza com 2 de perda e o motivo ("Assou demais"); a Gerente, com o PIN dela, confirma a Qualidade (lote com perda é exceção: "Confirmar assim"); a loja mostra o Pain au Chocolat "Pronto agora". Abre e finaliza o lote do dia, então roda **uma vez por seed** | Gerente e Cozinha (Produção, tablet 1024 px com toque) · Gerente com PIN (Produção, celular 375 px) · cliente (loja, 375 px) |
+| `jp3-zerar-nao-cancela.spec.ts` | J-P3: a Cozinha corrige um lote planejado para 0 e lê "Cancelar lote é com o gerente." no lugar do botão (nada vai ao servidor); a Gerente, com o PIN dela, abre "Cancelar lote…" no Croissant Manteiga de hoje e lê "N un. encomendadas: M pedidos" e os pedidos antes do botão (tablet e celular), escolhe o motivo e cancela; no celular, tira do plano de amanhã a Focaccia do dia com o motivo escrito. Audita enquadramento e contraste (4,5) do que decide o gesto. Cancela os dois lotes, então roda **uma vez por seed**. A loja não entra: a variável `OPERATOR_STORE_URL` é exigida pela configuração, mas a jornada não a abre | Cozinha e Gerente com PIN (Produção, tablet 1024 px com toque) · Gerente com PIN (Produção, celular 375 px) |
 
 Os papéis vêm de `shopman/shop/management/commands/setup_operators.py` (o `seed` roda o
 comando): Gerente `joyce` (senha `admin`, PIN 1234), Cozinha `diofer` (PIN 1234). Nunca o

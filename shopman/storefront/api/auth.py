@@ -114,6 +114,11 @@ class LogoutView(APIView):
         if hasattr(request, "session"):
             for key, value in preserved.items():
                 request.session[key] = value
+            # A sacola fica; o preço de quem saiu, não (OC-09): o próximo a usar este
+            # navegador lê o preço público.
+            from shopman.storefront.cart import CartService
+
+            CartService.release_customer_pricing(request)
 
         response = Response(_session_payload(None))
         auth_service.revoke_current_device(request=request, response=response)
