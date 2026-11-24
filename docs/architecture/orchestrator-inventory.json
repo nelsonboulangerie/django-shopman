@@ -8965,29 +8965,6 @@
       ]
     },
     {
-      "path": "shopman/shop/services/access_urls.py",
-      "touchpoints": [
-        "service"
-      ],
-      "out_of_extraction": false,
-      "unit_ids": [],
-      "responsibilities": [
-        "infraestrutura"
-      ],
-      "support_claims": [
-        {
-          "responsibility": "infraestrutura",
-          "symbols": [
-            "build_access_url",
-            "build_payment_access_url",
-            "build_reorder_access_url",
-            "build_tracking_access_url",
-            "logger"
-          ]
-        }
-      ]
-    },
-    {
       "path": "shopman/shop/services/account.py",
       "touchpoints": [
         "service"

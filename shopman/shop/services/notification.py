@@ -820,36 +820,6 @@ def _build_context(order, payload: dict, template: str) -> dict:
         customer_data.get("phone", "") if isinstance(customer_data, dict) else ""
     )
 
-    customer_uuid = customer_data.get("uuid") if isinstance(customer_data, dict) else None
-    if customer_uuid:
-        try:
-            from shopman.doorman.conf import get_adapter
-
-            from shopman.shop.services.access_urls import (
-                build_payment_access_url,
-                build_reorder_access_url,
-                build_tracking_access_url,
-            )
-
-            auth_customer = get_adapter().identity(customer_uuid, purpose="access_link")
-            if auth_customer is None:
-                raise LookupError("notification subject is inactive or missing")
-            order_ref = payload.get("order_ref") or order.ref
-            context["tracking_url"] = build_tracking_access_url(auth_customer, order_ref)
-            context["payment_url"] = build_payment_access_url(auth_customer, order_ref)
-            context["reorder_url"] = build_reorder_access_url(auth_customer, order_ref)
-        except Exception:
-            # ⚠️ Isto era `logger.debug` e engoliu em silêncio o defeito que chegou ao
-            # cliente: sem estas URLs o template do Admin manda `{tracking_url}` cru.
-            # Falhar fechado não é opção aqui (o aviso tem de sair), então falha
-            # GRITANDO — e o fallback logo abaixo garante um link comum no lugar.
-            logger.warning(
-                "access_urls: magic link não gerado para o pedido %s; "
-                "os links do aviso caem para o link comum de acompanhamento",
-                order.ref,
-                exc_info=True,
-            )
-
     if order.total_q:
         # ⚠️ Era `:,.2f` cru — "R$ 38.00", ponto decimal americano, na mensagem
         # que o cliente recebe. O formatador da casa é um só.
@@ -873,12 +843,25 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # que anuncia saldo sem dizer onde vê-lo é promessa sem porta.
     context["account_url"] = storefront_links.account_url()
 
-    # PAYMENT-TRACKING-MERGE: o link de pagamento é o do próprio acompanhamento
-    # (o Pix/cartão vivem lá inline). Sem tela /pagamento.
+    # Os links do aviso são os COMUNS do pedido, sem credencial nenhuma (decisão D5 do
+    # dono, OC-01). Mensagem se encaminha: um link que entrasse na conta entregaria a
+    # conta a quem recebesse o encaminhamento. No celular do próprio cliente a loja já
+    # reconhece a sessão ou o dispositivo confiável e abre direto; em outro dispositivo,
+    # `/pedido/<ref>` mostra "entre com seu telefone" e volta para o mesmo pedido depois
+    # da entrada (`storefront-nuxt/app/presentation/orderAccess.ts`).
+    #
+    # Acompanhar e pagar são a MESMA tela (PAYMENT-TRACKING-MERGE: o Pix e o cartão
+    # vivem inline no acompanhamento, e o código Pix já vai no próprio texto do aviso).
+    # Pedir de novo é o histórico da conta, o mesmo destino do botão fixo do template
+    # aprovado no WhatsApp.
+    tracking_url = storefront_links.order_tracking_url(order.ref)
+    context["tracking_url"] = tracking_url
+    context["payment_url"] = tracking_url
+    context["reorder_url"] = storefront_links.storefront_url(storefront_links.path_order_history())
+
     payment = order.data.get("payment")
     if payment:
         context["payment"] = payment
-        context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         copy_paste = payment.get("copy_paste")
         context["copy_paste"] = copy_paste or ""
         context["pix_suffix"] = f" Código PIX: {copy_paste}" if copy_paste else ""
@@ -887,40 +870,8 @@ def _build_context(order, payload: dict, template: str) -> dict:
         # manda o cliente para cá, não para a tela do pedido.
         context["checkout_url"] = str(payment.get("checkout_url") or "")
     else:
-        context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         context["pix_suffix"] = ""
         context["checkout_url"] = ""
-
-    # Mesmo critério do `payment_url` acima: sem magic link (pedido da loja não grava
-    # `customer.uuid`, ou a cunhagem do token falhou), o acompanhamento vira o link
-    # COMUM do pedido. Sem este fallback a chave sumia do contexto e o texto do Admin
-    # entregava `{tracking_url}` literal na tela do cliente — link comum é pior que
-    # magic link e MUITO melhor que placeholder cru.
-    context["tracking_url"] = context.get("tracking_url") or storefront_links.order_tracking_url(
-        order.ref
-    )
-
-    # Gêmeas PÚBLICAS dos três links de cliente. O ManyChat recusa, por construção,
-    # gravar magic link como campo personalizado do assinante (`_safe_field_value`): o
-    # token viveria em texto claro no perfil dele, dentro de uma ferramenta SaaS de
-    # marketing. Sem uma gêmea informada aqui, a recusa vira botão EM BRANCO no template
-    # aprovado — o canal que interpola o texto na hora (SMS, e-mail) segue recebendo o
-    # link pessoal, que é o bom.
-    #
-    # O destino público de cada um é diferente, e é por isso que quem sabe é o emissor:
-    # acompanhar e pagar são a MESMA tela (PAYMENT-TRACKING-MERGE, o Pix/cartão vivem
-    # inline no acompanhamento); repetir o pedido é o histórico da conta. Quem chega
-    # sem sessão não bate num 404: a loja mostra "entre com seu telefone" e volta para
-    # o mesmo pedido (`presentation/orderAccess.ts`).
-    public_tracking = storefront_links.order_tracking_url(order.ref)
-    context["tracking_url_public"] = public_tracking
-    context["payment_url_public"] = public_tracking
-    context["reorder_url_public"] = storefront_links.storefront_url(
-        storefront_links.path_order_history()
-    )
-    # Mesmo critério do `tracking_url`: sem magic link, o link comum (o aviso de
-    # prazo vencido manda "pedir de novo" por ele).
-    context["reorder_url"] = context.get("reorder_url") or context["reorder_url_public"]
 
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.
     # Sufixo auto-suprimível (padrão pix_suffix) — some limpo em pedidos sem
