@@ -25,10 +25,11 @@ foi escrito.
   reduzir, cancelar) a Produção diz quem fica sem pão e entrega a saída pronta: "Rendeu 4 de
   40. Três encomendas ficam descobertas. Fechar com 4 e avisar o Gestor." Nenhum dos onze
   produtos pesquisados leva o gesto do padeiro até a promessa feita ao cliente.
-- **22 WPs em 7 ondas**, cada um dimensionado para uma sessão Opus 5.5 em esforço médio. Os
+- **23 WPs em 7 ondas** (o WP-F09 virou F09a e F09b em 24/11), cada um dimensionado para uma sessão Opus 5.5 em esforço médio. Os
   primeiros a delegar são o **WP-F01** (zerar não cancela, o P0 de permissão, só servidor) e
   o **WP-F00** (harness de operador de verdade), juntos.
-- **5 decisões do dono**, no fim. Só a primeira bloqueia um P0 (WP-F06).
+- **5 decisões do dono, todas respondidas** pela recomendação (D-042, 23/11; a 2 e a 5
+  reconfirmadas em 24/11). Ver a seção 10.
 - **O vocabulário do brief está vencido.** O brief fala em "Planejado, Produzido, Concluído",
   "Quanto foi produzido?" e "Expedição". Desde 29/10/2026 valem as abas Planejamento,
   Preparação, Produção, Finalização e Qualidade, e as quantidades **planejado, previsto e
@@ -473,7 +474,7 @@ Lentes: PROM, FLUXO. **[medido]**
 | S1 | **A fornada responde.** No gesto (abrir, fechar, reduzir, cancelar), a Produção mostra quem fica sem pão, pelo nome e pela hora, e fecha com a verdade: "Rendeu 4 de 40. Três encomendas ficam descobertas (Marina 9h, …). Fechar com 4 e avisar o Gestor." O Gestor já tem o "Resolver" | o padeiro nunca mais digita número falso nem atravessa a loja para avisar; a Caixa sabe antes do cliente | WP-F01, F06, F07 e F10. Nenhum dos onze benchmarks faz |
 | S2 | **Uma régua só, à vista antes de assar.** Por produto e data: planejado, encomendado e livre, da mesma leitura da loja e do PDV, inclusive em data sem lote ("Sábado: 12 Croissants encomendados, nenhum lote. Planejar 12") | "a Produção sabe, antes de assar, o que já está prometido"; o pedido à Produção ganha um lugar | WP-F08, F10, F13 |
 | S3 | **O porquê em uma frase, e gravado.** Na linha: "42 = 6 encomendas + 30 de balcão + 6 de margem". No lote: sugerido, planejado, previsto e realizado, por append | o padeiro confia ou corrige em um relance; o B.I. aprende onde a casa discorda da conta | WP-F17 |
-| S4 | **Chão sem teclado, em qualquer tablet.** Todo número pelo teclado da tela, todo motivo em um toque, o "Separado" valendo para a bancada inteira, o forno visível em toda tela ("no forno até 5h40") | luva e farinha não param o trabalho; trocar de tablet não perde nada | WP-F03, F09, F12, F20 |
+| S4 | **Chão sem teclado, em qualquer tablet.** Todo número pelo teclado da tela, todo motivo em um toque, o "Separado" valendo para a bancada inteira, o forno visível em toda tela ("no forno até 5h40") | luva e farinha não param o trabalho; trocar de tablet não perde nada | WP-F03, F09a, F09b, F12, F20 |
 | S5 | **O Letreiro como painel de embarque de verdade.** Lido a dois metros, com o que cada lote lastreia ("12 encomendas às 9h") e o atraso medido contra a hora prometida | a equipe inteira vê a manhã de relance, e o que está em risco | WP-F04 e o lado de fronteira F-04 |
 
 ## 7. WPs
@@ -693,25 +694,57 @@ Tamanhos: P (até meio dia) · M (um dia).
   chamada por um adapter que já exista; não escreva consulta nova ao Stockman na projeção. O
   campo antigo do vínculo continua até o WP-F10 trocar a tela, e some junto (sem legado).
 
-### WP-F09 · Preparação que lembra
+### WP-F09a · O "Separado" no servidor (#3524)
 
-- **Objetivo:** o "Separado" não some sozinho, existe na lente de pesagem, e a falta diz
-  quanto e o que fazer.
-- **Achados que fecha:** P1-19, P1-26.
-- **Dependências:** decisão 5 (se as marcas vão ao servidor; sem ela, o WP entrega a versão
-  do dispositivo).
+- **Objetivo:** a marca de "Separado" da Preparação passa a morar no servidor e vale para
+  todos os tablets do dia (D-042, item 5).
+- **Achados que fecha:** P1-19 (o lado do servidor).
+- **Dependências:** nenhuma (decisão 5 respondida: servidor).
+- **Arquivos:** só arquivos novos, mais o registro deles: `shopman/backstage/models/prep_checklist.py`
+  (e `models/__init__.py`), a migração seguinte do `backstage`,
+  `shopman/backstage/services/prep_checklist.py`, `shopman/backstage/api/production_checklist.py`
+  (e a rota em `api/urls.py`), o Admin só leitura, testes.
+- **Fora do escopo:** a tela (WP-F09b); `PROJ` e `SVC` (são de F08 e F06 nesta onda): a marca
+  tem leitura e escrita próprias, ao lado da projeção da Preparação, sem entrar nela.
+- **Pronto quando:**
+  - roteiro: pela API que a tela vai usar, com a sessão de um operador da Cozinha com PIN,
+    marcar e desmarcar três insumos do dia; ler de outro dispositivo (outro contexto de
+    navegador) e ver as mesmas marcas, com quem marcou e a hora. A conferência pela tela fica
+    com o F09b.
+  - testes: marca por dia e por item (insumo, ou ingrediente de um preparo), presa à
+    quantidade do momento; a marca cai quando a quantidade daquele item muda, e só então; quem
+    marcou é o operador do PIN; desmarcar grava, não apaga a história; dois tablets marcando o
+    mesmo item ao mesmo tempo dão um resultado só; a mudança emite o evento de produção que a
+    grade já ouve (SSE, ADR-016); a estação autônoma do Letreiro não escreve.
+- **Muda tela:** não. **Tamanho:** M.
+- **Brief:** leia o P1-19, a D-042 (item 5 e "a regra que o item 5 deixa") e o ADR-016. Hoje a
+  marca vive em `FE/composables/useMiseEnPlace.ts`, presa ao hash da projeção inteira, e por
+  isso some sozinha. A chave da marca é o item e a data, nunca o hash. Confira a numeração da
+  migração contra o `main` e os PRs abertos antes de abrir o PR. Permissão: a mesma de operar
+  a Preparação; o Letreiro só lê.
+
+### WP-F09b · Preparação que lembra, a tela (#3525)
+
+- **Objetivo:** a tela da Preparação usa a marca do servidor, ela existe também na lente de
+  pesagem, e a falta diz quanto e o que fazer.
+- **Achados que fecha:** P1-19 (a tela), P1-26.
+- **Dependências:** WP-F09a no `main`.
 - **Arquivos:** `FE/pages/mise-en-place.vue`, `FE/composables/useMiseEnPlace.ts`,
-  `useWeighing.ts`, `FE/presentation/weighing.ts`, `WeighingLabels.vue`.
+  `useWeighing.ts`, `FE/presentation/weighing.ts`, `WeighingLabels.vue`, testes.
 - **Fora do escopo:** sessão de pesagem com balança (D5 do plano de 08/09).
 - **Pronto quando:**
-  - roteiro: a Cozinha marca três insumos, liga "Mostrar ingredientes dos pré-preparos" e as
-    marcas ficam; marca os ingredientes de uma massa na lente "Por preparo"; imprime a
-    etiqueta com "Com massa velha" ligado e o papel traz o mesmo peso da tela; num insumo em
-    falta lê "Faltam 300 g" com "Pedir no Compras". Capturas em 1024 e 375.
-  - testes: a marca presa ao item e à quantidade, não ao hash da tela; alvo de 44 px.
+  - roteiro: a Cozinha marca três insumos no tablet A; o tablet B, aberto na mesma tela, mostra
+    as três marcas sem recarregar; liga "Mostrar ingredientes dos pré-preparos" e as marcas
+    ficam; marca os ingredientes de uma massa na lente "Por preparo"; imprime a etiqueta com
+    "Com massa velha" ligado e o papel traz o mesmo peso da tela; num insumo em falta lê
+    "Faltam 300 g" com "Pedir no Compras". Capturas em 1024 e 375.
+  - testes: o composable lê e grava pelo servidor (sem `localStorage` para a marca; a chave
+    antiga some, sem leitura de legado); alvo de 44 px; a frase "as marcações ficam somente
+    neste dispositivo" sai.
 - **Muda tela:** sim (prévia). **Tamanho:** M.
-- **Brief:** leia P1-19 e P1-26. A marca só cai quando a quantidade daquele insumo muda. A
-  regra do pré-preparo continua: nunca mostra saldo nem falta (decisão de 03/07).
+- **Brief:** leia P1-19, P1-26 e a D-042. A regra do pré-preparo continua: nunca mostra saldo
+  nem falta (decisão de 03/07). Marcação otimista na tela, desfeita com aviso se o servidor
+  recusar.
 
 ### WP-F10 · O prometido na tela
 
@@ -773,16 +806,17 @@ Tamanhos: P (até meio dia) · M (um dia).
   cartão depende do estado). Depois de finalizar, a tela volta à lista; só segue ao próximo
   lote aberto se a pessoa tocar.
 
-### WP-F13 · Pedidos à Produção
+### WP-F13 · Pedidos à Produção (#3526)
 
 - **Objetivo:** a encomenda para data sem lote, ou acima do plano, tem um lugar no
   Planejamento, com o gesto de planejar ao lado.
 - **Achados que fecha:** P1-04, P1-30.
-- **Dependências:** WP-F08 e WP-F10 no `main`; decisão 2.
+- **Dependências:** WP-F08 e WP-F10 no `main`. A decisão 2 foi respondida (D-042, item 2):
+  a Produção só planeja.
 - **Arquivos:** `PlanLens.vue`, `FE/components/PlanReasonCard.vue`, `GRID` (os atalhos de
   vazio), testes.
-- **Fora do escopo:** aceitar ou recusar o pedido na Produção (decisão 2); a casa do aviso no
-  sino (F-03).
+- **Fora do escopo:** aceitar ou recusar o pedido na Produção (não será feito, D-042 item 2);
+  falar com o cliente, que é do Gestor; a casa do aviso no sino (F-03).
 - **Pronto quando:**
   - roteiro: a Caixa cria no PDV uma encomenda para uma data sem lote. A Cozinha abre o
     Planejamento daquela data e lê, no topo, "Encomendado sem lote: Croissant 12" com
@@ -790,7 +824,9 @@ Tamanhos: P (até meio dia) · M (um dia).
     (conferido no Gestor: sem "Promessa em risco"). Capturas em 1024 e 375.
   - testes: componente e a J-P5 (cliente pela loja, Caixa pelo PDV, Cozinha na Produção).
 - **Muda tela:** sim (prévia). **Tamanho:** M.
-- **Brief:** leia a D-041 em `DECISIONS.md` (o que ela não decidiu), #2598 e #2932. O número
+- **Brief:** leia a D-041 e a D-042 em `DECISIONS.md`, #2598 e #2932. A Produção não ganha
+  botão de recusar: se a casa não vai produzir, o pedido segue em "Promessa em risco" no Gestor
+  e é lá que se fala com o cliente. O número
   vem da projeção do WP-F08. Os atalhos "Ir para o Planejamento" carregam a data da tela.
 
 ### WP-F14 · Erros que falam português
@@ -967,8 +1003,8 @@ Dois WPs da mesma onda nunca tocam o mesmo arquivo. Os gargalos são `GRID`, `SV
 | Onda | WPs em paralelo | `GRID` | `SVC` | `PROJ` | `close.vue` |
 |---|---|---|---|---|---|
 | 0 | **F00** · **F01** · **F02** · **F03** · **F04** · **F05** | F02 | F01 | F04 | - |
-| 1 | **F06** · **F07** · **F08** · **F09** · **F20** | F20 | F06 | F08 | F06 |
-| 2 | **F10** · **F11** · **F12** | F10 | F11 | F11 | F12 |
+| 1 | **F06** · **F07** · **F08** · **F09a** · **F20** | F20 | F06 | F08 | F06 |
+| 2 | **F09b** · **F10** · **F11** · **F12** | F10 | F11 | F11 | F12 |
 | 3 | **F13** · **F14** · **F15** · **F16** | F13 | F14 | F16 | F15 |
 | 4 | **F17** · **F18** | F17 | F17 | - | - |
 | 5 | **F19** | F19 | - | F19 | F19 |
@@ -981,11 +1017,12 @@ Conferência dos arquivos por onda:
   `board.vue`, `SplitFlap.vue`, `presentation/production.ts` e o trecho do Letreiro em `PROJ`;
   F05 com `recipes/**` e `recipe_book.py`.
 - Onda 1: F06 com `SVC`, `ShortageDialog.vue` e `close.vue`; F07 com `LotCancelDialog.vue` e
-  `PlanAdjustDialog.vue`; F08 com `PROJ`, o contrato e `presentation/production.ts`; F09 com
-  a Preparação; F20 com `LotStartPanel.vue` e `GRID`.
-- Onda 2: F10 com `GRID`, `LotCommitmentsDialog.vue` e `planningRows.ts`; F11 com `SVC`,
-  `ShortageDialog.vue` e `PROJ`; F12 com `close.vue`, os composables de forno e timer e
-  `timers.vue`.
+  `PlanAdjustDialog.vue`; F08 com `PROJ`, o contrato e `presentation/production.ts`; F09a só
+  com arquivos novos (modelo, migração, service e API da marca) e a rota em `api/urls.py`; F20
+  com `LotStartPanel.vue` e `GRID`.
+- Onda 2: F09b com a Preparação (página, composables e etiquetas de pesagem); F10 com `GRID`,
+  `LotCommitmentsDialog.vue` e `planningRows.ts`; F11 com `SVC`, `ShortageDialog.vue` e `PROJ`;
+  F12 com `close.vue`, os composables de forno e timer e `timers.vue`.
 - Onda 3: F13 com `PlanLens.vue`, `PlanReasonCard.vue` e `GRID`; F14 com `SVC` e `MUT`; F15
   com o cabeçalho, os composables de leitura, `quality.vue` e `close.vue`; F16 com `PROJ`.
 - Onda 4: F17 com `GRID`, `SVC`, `planningReason.ts` e `PlanLens.vue`; F18 com os Relatórios.
@@ -999,6 +1036,21 @@ O P0-1 fecha na onda 0 (servidor) e ganha a tela na onda 1. O P0-2 fecha na onda
 decisão 1 vier antes.
 
 ## 10. Decisões do dono
+
+**Respondidas.** O dono aceitou as cinco recomendações em 23/11/2026 (*"No mais, aceito as
+sugestões"*; na 5: *"Sim, óbvio! No servidor, sempre! Não precisava nem ter perguntado!"*),
+registradas na [D-042](../coordination/DECISIONS.md) (#3422). Em 24/11 ele reconfirmou a 2 e a
+5 pela coordenação.
+
+| Decisão | Resposta | Efeito |
+|---|---|---|
+| 1. Lote curto fecha com o número verdadeiro | **Sim** | WP-F06 liberado |
+| 2. Encomenda para data sem lote | **1: a Produção só planeja**; quem fala com o cliente é o Gestor | WP-F13 liberado, sem botão de recusar |
+| 3. Quem autoriza fechar com falta de insumo | **1: Gerente e Dono, da lista, com o próprio PIN** | WP-F11 liberado |
+| 4. Etapas da receita no lote aberto (#2385) | **Sim, não será feito** | #2385 fechada como not planned |
+| 5. "Separado" no servidor | **Sim**, para todos os tablets do dia | WP-F09 dividido em F09a (servidor) e F09b (tela) |
+
+As perguntas, como foram feitas:
 
 Procurado antes em `docs/coordination/DECISIONS.md`, `docs/reference/`, nos ADRs 007, 017,
 028 e 040 e nas issues citadas: nenhuma das cinco tinha resposta escrita. Cada uma traz a
@@ -1085,7 +1137,7 @@ falta é a Produção enxergar e responder por esse elo.
 
 ## 12. Ficou de fora deste PR
 
-- A execução dos 22 WPs (#3364).
+- A execução dos WPs (#3364; eram 22, são 23 desde que o F09 se dividiu).
 - As 16 fronteiras da seção 5, em especial F-01 e F-02, que são do `shop` e foram medidas
   (#3365).
 - As jornadas não percorridas pela tela nesta revisão: pedido à Produção pelo PDV, falta de
