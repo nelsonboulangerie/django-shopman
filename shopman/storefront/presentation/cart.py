@@ -410,14 +410,20 @@ def build_cart(
         None if data.is_empty or reserved_until
         else cart_data.reservation_lapsed_at(session_key, [line.sku for line in data.lines])
     )
+    conflict = _transfer_conflict(request, data)
     return CartProjection(
         reserved_until_iso=_iso(reserved_until),
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         reservation_lapsed_display=_lapsed_display(lapsed_at),
-        open_elsewhere=_open_elsewhere(request, channel_ref),
+        # Com a pergunta "substituir ou manter" na tela, o aviso da mesma sacola sai:
+        # a pergunta já diz o que ela tem e oferece trazê-la.
+        open_elsewhere=tuple(
+            entry for entry in _open_elsewhere(request, channel_ref)
+            if conflict is None or entry.channel != conflict.channel
+        ),
         continue_in_conversation=_continue_in_conversation(request, channel_ref, is_empty=data.is_empty),
         transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, channel_ref),
-        transfer_conflict=_transfer_conflict(request, data),
+        transfer_conflict=conflict,
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -909,6 +915,70 @@ def _continue_in_conversation(request: HttpRequest, channel_ref: str, *, is_empt
     )
 
 
+#: Como a loja e a Nice nomeiam o que não viajou na passagem da sacola (OC-16, #3517).
+_FULFILLMENT_NAMES = {"delivery": "A entrega", "pickup": "A retirada"}
+_PAYMENT_NAMES = {"pix": "Pix", "card": "cartão", "cash": "dinheiro", "external": "pagamento externo"}
+_ADDRESS_FIELDS = frozenset(
+    {"delivery_address", "delivery_address_structured", "saved_address_id", "address_label"}
+)
+_GIFT_FIELDS = frozenset({"is_gift", "recipient", "gift_message", "gift_hide_values"})
+
+
+def transfer_difference_lines(differences) -> list[str]:
+    """Uma frase por diferença do recibo da passagem (``TransferReceipt.differences``).
+
+    A mesma frase na loja e na conversa, dita do lado que recebeu a sacola ("aqui").
+    Tipo que esta função não conhece vira uma frase que manda conferir, nunca silêncio.
+    """
+    lines: list[str] = []
+    for diff in differences or ():
+        if not isinstance(diff, dict):
+            continue
+        kind = diff.get("kind")
+        name = str(diff.get("name") or diff.get("sku") or "Um item")
+        if kind == "price_changed":
+            lines.append(f"{name}: o preço aqui é {_plain_money(diff.get('to_q'))} (era {_plain_money(diff.get('from_q'))}).")
+        elif kind == "qty_reduced":
+            lines.append(f"{name}: temos {diff.get('to_qty')} agora, em vez de {diff.get('from_qty')}.")
+        elif kind == "unavailable":
+            lines.append(f"{name}: indisponível aqui, ficou fora da sacola.")
+        elif kind == "fulfillment_not_available":
+            label = _FULFILLMENT_NAMES.get(str(diff.get("fulfillment_type") or ""), "A forma de receber escolhida")
+            lines.append(f"{label} não está disponível aqui. Escolha como receber ao finalizar.")
+        elif kind == "payment_not_available":
+            method = _PAYMENT_NAMES.get(str(diff.get("method") or ""), "a forma escolhida")
+            lines.append(f"O pagamento por {method} não está disponível aqui. Escolha outra forma ao finalizar.")
+        elif kind == "coupon_not_applied":
+            code = str(diff.get("code") or "")
+            lines.append(f"O cupom {code} não vale aqui." if code else "O cupom não vale aqui.")
+        elif kind == "details_not_carried":
+            fields = set(diff.get("fields") or ())
+            if fields & _ADDRESS_FIELDS:
+                lines.append("O endereço de entrega não veio junto. Informe ao finalizar.")
+            if fields & _GIFT_FIELDS:
+                lines.append("Os dados do presente não vieram junto. Informe ao finalizar.")
+        else:
+            lines.append("Um item chegou diferente. Confira a sacola.")
+    return lines
+
+
+def transfer_total_line(source_total_q, dest_total_q) -> str:
+    """A soma dos itens depois da passagem, com a de antes quando mudou; vazio quando igual."""
+    if source_total_q is None or dest_total_q is None or int(source_total_q) == int(dest_total_q):
+        return ""
+    return f"Soma dos itens agora: {_plain_money(dest_total_q)} (era {_plain_money(source_total_q)})."
+
+
+def _plain_money(value_q) -> str:
+    """"R$ 0,00" inclusive para zero: a frase da diferença nunca omite o valor."""
+    return f"R$ {format_money(int(value_q or 0))}"
+
+
+def _glued(text: str) -> str:
+    """"R$ 7,65" sem quebra de linha entre o símbolo e o valor (a frase quebra em 375 px)."""
+    return text.replace("R$ ", "R$\u00a0")
+
+
 def _transfer_arrival(session_key: str | None, channel_ref: str) -> CartTransferArrivalProjection | None:
     arrival = cart_data.transfer_arrival(session_key, channel_ref)
     if arrival is None or not arrival.differences:
@@ -916,8 +986,8 @@ def _transfer_arrival(session_key: str | None, channel_ref: str) -> CartTransfer
     return CartTransferArrivalProjection(
         channel=arrival.source_channel,
         title=f"Sua sacola veio do {arrival.source_channel_name} com mudanças",
-        lines=tuple(cart_data.transfer_difference_lines(arrival.differences)),
-        total_line=cart_data.transfer_total_line(arrival.source_total_q, arrival.dest_total_q),
+        lines=tuple(_glued(line) for line in transfer_difference_lines(arrival.differences)),
+        total_line=_glued(transfer_total_line(arrival.source_total_q, arrival.dest_total_q)),
     )
 
 
@@ -942,7 +1012,7 @@ def _transfer_conflict(request: HttpRequest, data) -> CartTransferConflictProjec
     return CartTransferConflictProjection(
         channel=offered.channel_ref,
         title="Qual sacola você quer usar aqui?",
-        message=(
+        message=_glued(
             f"Aqui já existe uma sacola, com {here} ({_money(data.subtotal_q)}). "
             f"A do {where} tem {there} ({_money(offered.subtotal_q)}). "
             f"Se trouxer a do {where}, a daqui é descartada. Se ficar com a daqui, a do {where} continua lá."
@@ -1054,5 +1124,7 @@ __all__ = [
     "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
+    "transfer_difference_lines",
+    "transfer_total_line",
     "present_cart_date_mismatch",
 ]

@@ -41,7 +41,7 @@ async function run (action: Action) {
 <template>
   <div v-if="conflict || (arrival && !arrivalClosed) || notices.length" class="shop-stack-tight" data-cart-passage>
     <UiAlert v-if="conflict" variant="warning" icon="lucide:shopping-bag" data-cart-transfer-conflict>
-      <UiAlertTitle>{{ conflict.title }}</UiAlertTitle>
+      <UiAlertTitle class="line-clamp-none leading-snug">{{ conflict.title }}</UiAlertTitle>
       <UiAlertDescription>
         <p class="shop-body">{{ conflict.message }}</p>
         <div class="mt-3 flex flex-wrap gap-2">
@@ -69,7 +69,7 @@ async function run (action: Action) {
     </UiAlert>
 
     <UiAlert v-if="arrival && !arrivalClosed" variant="warning" icon="lucide:arrow-right-left" class="relative pr-12" data-cart-transfer-arrival>
-      <UiAlertTitle>{{ arrival.title }}</UiAlertTitle>
+      <UiAlertTitle class="line-clamp-none leading-snug">{{ arrival.title }}</UiAlertTitle>
       <UiAlertDescription>
         <ul class="mt-1 list-disc space-y-1 pl-4 shop-body">
           <li v-for="line in arrival.lines" :key="line" data-decisive>{{ line }}</li>
@@ -93,7 +93,7 @@ async function run (action: Action) {
       icon="lucide:message-circle"
       data-cart-open-elsewhere
     >
-      <UiAlertTitle>{{ notice.text }}</UiAlertTitle>
+      <UiAlertTitle class="line-clamp-none leading-snug">{{ notice.text }}</UiAlertTitle>
       <UiAlertDescription>
         <p class="shop-body">{{ notice.consequence }}</p>
         <UiButton

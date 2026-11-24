@@ -396,66 +396,6 @@ def items_phrase(entry) -> str:
     return f"{lines} {'produto' if lines == 1 else 'produtos'}"
 
 
-#: Como a loja e a Nice nomeiam o que não viajou na passagem da sacola (OC-16, #3517).
-_FULFILLMENT_NAMES = {"delivery": "A entrega", "pickup": "A retirada"}
-_PAYMENT_NAMES = {"pix": "Pix", "card": "cartão", "cash": "dinheiro", "external": "pagamento externo"}
-_ADDRESS_FIELDS = frozenset(
-    {"delivery_address", "delivery_address_structured", "saved_address_id", "address_label"}
-)
-_GIFT_FIELDS = frozenset({"is_gift", "recipient", "gift_message", "gift_hide_values"})
-
-
-def _money(value_q) -> str:
-    from shopman.utils.monetary import format_money
-
-    return f"R$ {format_money(int(value_q or 0))}"
-
-
-def transfer_difference_lines(differences) -> list[str]:
-    """Uma frase por diferença do recibo da passagem (``TransferReceipt.differences``).
-
-    A mesma frase na loja e na conversa, dita do lado que recebeu a sacola ("aqui").
-    Tipo que esta função não conhece vira uma frase que manda conferir, nunca silêncio.
-    """
-    lines: list[str] = []
-    for diff in differences or ():
-        if not isinstance(diff, dict):
-            continue
-        kind = diff.get("kind")
-        name = str(diff.get("name") or diff.get("sku") or "Um item")
-        if kind == "price_changed":
-            lines.append(f"{name}: o preço aqui é {_money(diff.get('to_q'))} (era {_money(diff.get('from_q'))}).")
-        elif kind == "qty_reduced":
-            lines.append(f"{name}: temos {diff.get('to_qty')} agora, em vez de {diff.get('from_qty')}.")
-        elif kind == "unavailable":
-            lines.append(f"{name}: indisponível aqui, ficou fora da sacola.")
-        elif kind == "fulfillment_not_available":
-            label = _FULFILLMENT_NAMES.get(str(diff.get("fulfillment_type") or ""), "A forma de receber escolhida")
-            lines.append(f"{label} não está disponível aqui. Escolha como receber ao finalizar.")
-        elif kind == "payment_not_available":
-            method = _PAYMENT_NAMES.get(str(diff.get("method") or ""), "a forma escolhida")
-            lines.append(f"O pagamento por {method} não está disponível aqui. Escolha outra forma ao finalizar.")
-        elif kind == "coupon_not_applied":
-            code = str(diff.get("code") or "")
-            lines.append(f"O cupom {code} não vale aqui." if code else "O cupom não vale aqui.")
-        elif kind == "details_not_carried":
-            fields = set(diff.get("fields") or ())
-            if fields & _ADDRESS_FIELDS:
-                lines.append("O endereço de entrega não veio junto. Informe ao finalizar.")
-            if fields & _GIFT_FIELDS:
-                lines.append("Os dados do presente não vieram junto. Informe ao finalizar.")
-        else:
-            lines.append("Um item chegou diferente. Confira a sacola.")
-    return lines
-
-
-def transfer_total_line(source_total_q, dest_total_q) -> str:
-    """A soma dos itens depois da passagem, com a de antes quando mudou; vazio quando igual."""
-    if source_total_q is None or dest_total_q is None or int(source_total_q) == int(dest_total_q):
-        return ""
-    return f"Soma dos itens agora: {_money(dest_total_q)} (era {_money(source_total_q)})."
-
-
 def build_cart(
     session_key: str | None,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,

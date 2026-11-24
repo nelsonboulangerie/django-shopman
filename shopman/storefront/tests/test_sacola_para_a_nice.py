@@ -378,8 +378,8 @@ def test_3517_the_store_shows_each_difference_after_the_transfer(ctx, customer, 
 
     arrival = cart["transfer_arrival"]
     assert arrival["title"] == "Sua sacola veio do WhatsApp com mudanças"
-    assert arrival["lines"] == ["Pão Francês: o preço aqui é R$ 1,00 (era R$ 0,90)."]
-    assert arrival["total_line"] == "Soma dos itens agora: R$ 3,00 (era R$ 2,70)."
+    assert arrival["lines"] == ["Pão Francês: o preço aqui é R$\u00a01,00 (era R$\u00a00,90)."]
+    assert arrival["total_line"] == "Soma dos itens agora: R$\u00a03,00 (era R$\u00a02,70)."
     assert "—" not in repr(arrival)
 
 
@@ -401,9 +401,10 @@ def test_3517_a_browser_with_a_cart_is_asked_keep_or_replace(ctx, customer, brid
     conflict = asked.data["cart"]["transfer_conflict"]
     assert conflict["title"] == "Qual sacola você quer usar aqui?"
     assert conflict["message"] == (
-        "Aqui já existe uma sacola, com 1 item (R$ 0,90). A do WhatsApp tem 3 itens (R$ 2,70). "
+        "Aqui já existe uma sacola, com 1 item (R$\u00a00,90). A do WhatsApp tem 3 itens (R$\u00a02,70). "
         "Se trouxer a do WhatsApp, a daqui é descartada. Se ficar com a daqui, a do WhatsApp continua lá."
     )
+    assert asked.data["cart"]["open_elsewhere"] == []  # a pergunta já diz o que a outra sacola tem
     assert (conflict["replace"]["label"], conflict["keep"]["label"]) == ("Trazer a do WhatsApp", "Ficar com a daqui")
     source.refresh_from_db()
     here.refresh_from_db()

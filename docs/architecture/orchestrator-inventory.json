@@ -7861,11 +7861,7 @@
             "MinimumOrderProgressProjection",
             "TransferArrival",
             "UpsellSuggestionProjection",
-            "_ADDRESS_FIELDS",
-            "_FULFILLMENT_NAMES",
-            "_GIFT_FIELDS",
             "_NO_PLANNED_HOLD",
-            "_PAYMENT_NAMES",
             "_PRICING_MODIFIER_KEYS",
             "_availability",
             "_build_line",
@@ -7878,7 +7874,6 @@
             "_future_cart_date",
             "_line_availability",
             "_made_to_order_skus",
-            "_money",
             "_planned_holds",
             "_product_facts",
             "_sellable_skus",
@@ -7896,9 +7891,7 @@
             "reservation_lapsed_at",
             "reserved_until",
             "shop_rule_q",
-            "transfer_arrival",
-            "transfer_difference_lines",
-            "transfer_total_line"
+            "transfer_arrival"
           ]
         }
       ]

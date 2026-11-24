@@ -145,7 +145,7 @@ def receive(conversation: Conversation, binding, text: str) -> TurnOutcome | Non
 
 def arrival_text(result: dict, *, cart_text: str = "") -> str:
     """A frase de chegada, as diferenças uma por linha, e a sacola como está."""
-    from shopman.shop.projections.cart import transfer_difference_lines
+    from shopman.storefront.presentation.cart import transfer_difference_lines
 
     if result.get("replayed"):
         return "\n".join(part for part in (ARRIVED_AGAIN, cart_text) if part)
