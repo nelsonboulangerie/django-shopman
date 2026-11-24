@@ -231,7 +231,7 @@ test("Finalização abre a revisão de QC mantendo contexto", async ({ context, 
     .getByRole("button", { name: "Finalizar o lote de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("40 previstos", { exact: false })).toBeVisible();
+  await expect(page.getByText("Previsto: 40 un.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Voltar" })).toBeVisible();
   await expectNoAxeViolations(page, `QC aberto ${testInfo.project.name}`);
   await testInfo.attach(`qc-aberto-${testInfo.project.name}`, {
