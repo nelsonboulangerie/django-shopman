@@ -11,6 +11,7 @@ from shopman.shop.eventstream import events as eventstream_view
 from .alerts import (
     AlertAckView,
     AlertListView,
+    ConciergeHandoffGiveBackView,
     ConciergeVerificationAnswerView,
     ConciergeVerificationPromoteView,
     ConciergeVerificationTakeOverView,
@@ -1129,6 +1130,12 @@ urlpatterns = [
         "alerts/<int:pk>/concierge-verification/take-over/",
         ConciergeVerificationTakeOverView.as_view(),
         name="api-backstage-alert-concierge-verification-take-over",
+    ),
+    # #3578: a conversa com a equipe volta à Concierge pelo cartão do handoff.
+    path(
+        "alerts/<int:pk>/concierge-handoff/give-back/",
+        ConciergeHandoffGiveBackView.as_view(),
+        name="api-backstage-alert-concierge-handoff-give-back",
     ),
     # WP-15: a pergunta respondida vira rascunho de pergunta frequente (não publicado).
     path(

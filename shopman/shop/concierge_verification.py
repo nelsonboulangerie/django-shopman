@@ -68,11 +68,14 @@ TakeOver = Callable[..., DeskResult]
 _handlers: dict[str, Callable[..., DeskResult]] = {}
 
 
-def register(*, answer: Answer, take_over: TakeOver, promote_faq: Callable[..., DeskResult] | None = None) -> None:
+def register(*, answer: Answer, take_over: TakeOver, promote_faq: Callable[..., DeskResult] | None = None,
+             give_back: Callable[..., DeskResult] | None = None) -> None:
     _handlers["answer"] = answer
     _handlers["take_over"] = take_over
     if promote_faq is not None:
         _handlers["promote_faq"] = promote_faq
+    if give_back is not None:
+        _handlers["give_back"] = give_back
 
 
 def answer(alert_pk: int, text: str, *, actor: str) -> DeskResult:
@@ -81,6 +84,14 @@ def answer(alert_pk: int, text: str, *, actor: str) -> DeskResult:
     if handler is None:
         return DeskResult(False, "unavailable")
     return handler(alert_pk, text, actor=actor)
+
+
+def give_back(alert_pk: int, *, actor: str) -> DeskResult:
+    """A conversa com a equipe volta à Concierge pelo cartão do handoff no sino (#3578)."""
+    handler = _handlers.get("give_back")
+    if handler is None:
+        return DeskResult(False, "unavailable")
+    return handler(alert_pk, actor=actor)
 
 
 def take_over(alert_pk: int, *, actor: str) -> DeskResult:

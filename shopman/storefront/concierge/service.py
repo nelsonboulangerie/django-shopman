@@ -2041,6 +2041,23 @@ def return_to_concierge(conversation: Conversation, *, answer_waiting: bool = Fa
     return synced
 
 
+def give_back_by_alert(alert_pk: int, *, actor: str):
+    """O "Devolver à Concierge" do cartão do handoff no sino do Gestor (#3578): a mesma devolução do Admin
+    (``return_to_concierge``), que fecha o cartão. Só a conversa daquele cartão, e só se ela está com a equipe."""
+    from shopman.shop.concierge_verification import DeskResult
+
+    conversation = (Conversation.objects.filter(**{f"flags__{ALERTS_FLAG}__concierge_handoff": int(alert_pk)})
+                    .order_by("-pk").first())
+    if conversation is None:
+        return DeskResult(False, "not_found")
+    if conversation.state != Conversation.State.HANDOFF:
+        return DeskResult(False, "not_with_team")
+    if not return_to_concierge(conversation):
+        return DeskResult(False, "not_returned")
+    logger.info("concierge.give_back conversation=%s actor=%s", conversation.pk, actor)
+    return DeskResult(True)
+
+
 def _domain_on_return(conversation: Conversation, facts, *, team_since) -> dict:
     """O que o domínio dizia na devolução: o que a Concierge relê, gravado para quem audita.
 

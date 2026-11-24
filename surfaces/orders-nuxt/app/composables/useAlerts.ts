@@ -16,12 +16,17 @@ import {
   PROMOTE_LABEL,
   promotionToast,
   type PromotionResult,
+  GIVE_BACK_CONFIRM,
+  GIVE_BACK_FAILED,
+  GIVEN_BACK,
+  giveBackAction,
   TAKE_OVER_FAILED,
   TAKEN_OVER,
   TAKEN_OVER_NOTICE_NOT_SENT,
   isFinalAnswerError,
   verificationActions,
 } from "~/presentation/conciergeVerification";
+import { useConfirm } from "../../../operator-kit/app/composables/useConfirm";
 import {
   openResilientEventSource,
   type ResilientEventSource,
@@ -167,6 +172,7 @@ export function useAlerts() {
   const intentions = useOrderIntention();
   // Por aviso, não global: aceitar um pedido não trava o aviso de outro.
   const accepting = ref<Set<number>>(new Set());
+  const confirm = useConfirm();
   const isAccepting = (pk: number) => accepting.value.has(pk);
 
   /**
@@ -282,6 +288,28 @@ export function useAlerts() {
     }
   }
 
+  /** "Devolver à Concierge" (#3578): a conversa parada com a equipe volta à Concierge, e o cartão fecha. Pede
+   *  confirmação antes (dono, 24/11): sem o "Devolver" do diálogo, nada é devolvido. */
+  async function giveBack(alert: AlertProjection): Promise<boolean> {
+    const action = giveBackAction(alert);
+    if (!action?.href || accepting.value.has(alert.pk)) return false;
+    if (!(await confirm({ tone: "primary", ...GIVE_BACK_CONFIRM }))) return false;
+    accepting.value = new Set(accepting.value).add(alert.pk);
+    try {
+      await $fetch(action.href, { method: "POST", body: {} });
+      useSonner.success(GIVEN_BACK);
+      return true;
+    } catch (error) {
+      useSonner.error(httpErrorMessage(error, GIVE_BACK_FAILED));
+      return false;
+    } finally {
+      const next = new Set(accepting.value);
+      next.delete(alert.pk);
+      accepting.value = next;
+      await refresh();
+    }
+  }
+
   async function takeOverVerification(alert: AlertProjection): Promise<string | null> {
     const { error, data } = await verificationPost(alert, "takeOver", undefined, TAKE_OVER_FAILED);
     if (!error) useSonner.success(data?.warning ? TAKEN_OVER_NOTICE_NOT_SENT : TAKEN_OVER);
@@ -298,6 +326,7 @@ export function useAlerts() {
     ackAction,
     accept,
     acceptAction,
+    giveBack,
     isAccepting,
     answerVerification,
     promoteToFaq,
