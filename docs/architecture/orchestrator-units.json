@@ -17255,6 +17255,42 @@
       "out_of_extraction": false
     },
     {
+      "id": "preorder.date-with-cart",
+      "question": "Esta data de encomenda pode ser combinada para esta sacola (data da casa, fornada da sacola e antecedência de cada produto)?",
+      "owner": "preorder.date-with-cart",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.preorder_date:preorder_date_errors",
+      "authoritative_symbols": [
+        "shopman.shop.policies.preorder_date:preorder_date_errors"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/preorder_date.py",
+          "symbols": [
+            "_lead_time_refusal",
+            "preorder_date_errors"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/test_preorder_localdate.py::test_preorder_for_local_today_not_rejected_as_past"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
       "id": "waitlist.charge-waits-for-the-queue",
       "question": "A cobrança deste pedido espera a fila da fornada, ou nasce no fechamento do pedido?",
       "owner": "waitlist.charge-waits-for-the-queue",

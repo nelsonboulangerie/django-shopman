@@ -998,8 +998,8 @@ def set_fulfillment(
     grava nada: devolve a OFERTA do endereço padrão (``saved_address_offer``),
     para o cliente responder antes de qualquer pergunta.
     """
+    from shopman.shop.policies.preorder_date import preorder_date_errors
     from shopman.shop.services import cart as cart_service
-    from shopman.storefront.intents.checkout import _validate_preorder
     from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
 
     fulfillment_type = str(fulfillment_type or "").strip().lower()
@@ -1021,7 +1021,7 @@ def set_fulfillment(
 
     errors: dict[str, str] = {}
     errors.update(
-        _validate_preorder(
+        preorder_date_errors(
             when,
             cart_lines=list(session.items or []),
             channel_ref=ctx.channel_ref,
@@ -1222,7 +1222,7 @@ def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
 def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | None = None) -> dict:
     """O orçamento: recap completo, o que falta e o token que autoriza o pedido."""
     from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
-    from shopman.storefront.intents.checkout import _validate_preorder
+    from shopman.shop.policies.preorder_date import preorder_date_errors
 
     session = _open_session(ctx)
     if session is None or not (session.items or []):
@@ -1274,7 +1274,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
     if not ctx.conversation.phone:
         missing.append("customer_phone")
     if data.get("delivery_date"):
-        date_errors = _validate_preorder(
+        date_errors = preorder_date_errors(
             str(data["delivery_date"]),
             cart_lines=list(session.items or []),
             channel_ref=ctx.channel_ref,
@@ -1584,8 +1584,8 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             fresh = _cart_payload(ctx, locked)
             if fresh["total_q"] != quote["total_q"]:
                 return _error("revision_conflict", "O total mudou; confira a diferença antes de confirmar.", previous_total_q=quote["total_q"], current_total_q=fresh["total_q"]), 409
-            from shopman.storefront.intents.checkout import _validate_preorder
-            errors = _validate_preorder(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
+            from shopman.shop.policies.preorder_date import preorder_date_errors
+            errors = preorder_date_errors(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
                 channel_ref=ctx.channel_ref, session_key=locked.session_key)
             if locked.data.get("fulfillment_type") == "pickup":
                 from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection

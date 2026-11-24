@@ -267,7 +267,7 @@ class TestRecusaAntesDoFechamento:
 
     def test_validacao_de_data_da_concierge_recusa_antes_da_fornada(self):
         from shopman.shop.models import Shop
-        from shopman.storefront.intents.checkout import _validate_preorder
+        from shopman.shop.policies.preorder_date import preorder_date_errors
 
         Shop.objects.get_or_create(name="Casa", defaults={"brand_name": "Casa"})
         today = timezone.localdate()
@@ -276,11 +276,11 @@ class TestRecusaAntesDoFechamento:
         _session_hold(_quant(position, target_date=wednesday))
         lines = [{"sku": SKU, "qty": 1}]
 
-        errors = _validate_preorder(
+        errors = preorder_date_errors(
             (today + timedelta(days=1)).isoformat(),
             cart_lines=lines, channel_ref=CHANNEL_REF, session_key=SESSION_KEY,
         )
-        on_the_day = _validate_preorder(
+        on_the_day = preorder_date_errors(
             wednesday.isoformat(), cart_lines=lines, channel_ref=CHANNEL_REF, session_key=SESSION_KEY,
         )
 

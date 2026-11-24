@@ -3,7 +3,7 @@
 Regressão do QA exploratório (P1): o gate autoritativo checava só ``is_open_on``
 e "hoje já fechou" — data no PASSADO era commitada (pedido para ontem, 201) e
 não havia teto de janela (encomenda para 2027 passava). A validação correta
-morava no caminho HTMX morto (``_validate_preorder``), com falsa cobertura.
+morava no caminho HTMX morto, com falsa cobertura.
 """
 
 from __future__ import annotations

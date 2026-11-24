@@ -24,10 +24,12 @@ SUBJECT_ROOTS = (
     REPO_ROOT / "shopman" / "shop" / "conversational",
 )
 
-#: Onde a regra mora (serviços e políticas do orquestrador). Símbolo privado daqui não sai daqui.
+#: Onde a regra mora (serviços e políticas do orquestrador) e as portas de intenção da loja.
+#: Símbolo privado daqui não sai daqui.
 PROTECTED_PREFIXES = (
     "shopman.shop.policies",
     "shopman.shop.services",
+    "shopman.storefront.intents",
     "shopman.storefront.services",
 )
 
@@ -76,7 +78,7 @@ def test_concierge_and_conversation_port_use_only_public_rules():
             offenders += private_rule_imports(path.read_text(encoding="utf-8"), str(path.relative_to(REPO_ROOT)))
     assert offenders == [], (
         "Regra comercial importada por símbolo privado; exponha uma função pública no serviço dono "
-        "(shopman/shop/services/) e chame-a:\n" + "\n".join(offenders)
+        "(shopman/shop/services/ ou shopman/shop/policies/) e chame-a:\n" + "\n".join(offenders)
     )
 
 
