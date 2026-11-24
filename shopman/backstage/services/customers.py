@@ -324,7 +324,8 @@ def update_customer(ref: str, data: dict):
 def _request_phone_confirmation(customer, *, previous_phone: str) -> None:
     """Telefone novo digitado pela equipe: o titular confirma no WhatsApp (D4).
 
-    Até a confirmação, o número não abre a conta pela loja. Só pede quando o
+    Até a confirmação (o toque no WhatsApp ou o código certo do SMS), o número
+    não resolve para a conta pela loja. Só pede quando o
     telefone da ficha mudou nesta gravação; editar o nome não manda nada.
     """
     from shopman.shop.services import phone_confirmation

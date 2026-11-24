@@ -571,3 +571,48 @@ def test_deletion_wins_before_otp_reconciliation_cannot_restore_sent(customer):
     code.refresh_from_db()
     assert code.status == VerificationCode.Status.PENDING
     assert code.delivery_reconciled_at is None
+
+
+def test_claim_of_unproven_holder_skips_a_locked_customer_instead_of_waiting():
+    """Decisão D: o código certo entrega o cadastro sem prova, mas não espera por ele.
+
+    O ``create`` roda com o código já travado; a ordem da casa é cadastro antes de
+    código. Com o cadastro ocupado por outra transação (exclusão, troca de
+    contato), a entrega pula a trava (``skip_locked``) e cai no ``create`` comum,
+    que recusa com conflito: falha fechado, sem esperar e sem impasse.
+    """
+    value = "+5543999990191"
+    holder = Customer.objects.create(ref="BALCAO-PG", first_name="Ana", phone=value)
+    assert not ContactPoint.objects.filter(value_normalized=value, is_verified=True).exists()
+    locked, release = Event(), Event()
+
+    def hold_customer():
+        with transaction.atomic():
+            Customer.objects.select_for_update().get(pk=holder.pk)
+            locked.set()
+            assert release.wait(10)
+
+    def claim():
+        started = monotonic()
+        try:
+            result = IdentityResolver().create("phone", value)
+        except IdentityConflict as exc:
+            result = exc
+        return result, monotonic() - started
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        holding = pool.submit(Worker(hold_customer))
+        try:
+            assert locked.wait(10)
+            result, elapsed = pool.submit(Worker(claim)).result(20)
+        finally:
+            release.set()
+        holding.result(20)
+
+    assert isinstance(result, IdentityConflict)
+    assert elapsed < 5
+    assert Customer.objects.filter(phone=value).count() == 1
+
+    # Livre o cadastro, o mesmo código certo o recebe.
+    view = IdentityResolver().create("phone", value)
+    assert view.subject_id == holder.uuid

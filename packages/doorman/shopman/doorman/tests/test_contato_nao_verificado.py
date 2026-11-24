@@ -1,10 +1,12 @@
-"""Contato gravado sem prova não abre a conta (laudo S4, decisão do dono D4, OC-08).
+"""Contato gravado sem prova: o código certo o confirma (laudo S4; D4, OC-08; decisão D).
 
-O telefone digitado no balcão nasce sem prova. Antes, quem passasse o código
-naquele número entrava na conta de quem estava no balcão: bastava a equipe errar
-um dígito para o dono do número errado ver endereço, pedidos e preço de grupo de
-outra pessoa. Agora o número só abre a conta depois que o titular confirma (o
-toque no WhatsApp, que o vínculo do ManyChat grava como verificado pelo canal).
+O telefone digitado no balcão nasce sem prova. O OC-08 fez o número sem prova não
+resolver para a conta: pedir o código responde igual a um número que ninguém tem
+(a loja não vira oráculo de "este telefone é cliente"). A decisão D (24/11/2026)
+completa: o código CERTO prova a posse do número, como a mensagem pelo WhatsApp já
+prova, então ele CONFIRMA o contato (prova ``sms``, gravada na transação do aceite)
+e entra no cadastro do balcão. Código errado não muda nada. Número digitado errado
+pela equipe é o D' (#3528).
 """
 
 from __future__ import annotations
@@ -51,8 +53,8 @@ def _codigo_valido(numero: str) -> str:
     return raw_code
 
 
-def test_codigo_no_numero_digitado_no_balcao_nao_abre_a_conta(cadastro_do_balcao):
-    """S4: quem passa o código no número sem prova não entra na conta do balcão."""
+def test_codigo_certo_no_numero_do_balcao_confirma_o_numero_e_entra(cadastro_do_balcao):
+    """D: o código certo prova a posse, grava a prova ``sms`` e entra no cadastro do balcão."""
     clientes_antes = Customer.objects.count()
 
     assert IdentityResolver().resolve("phone", NUMERO_DO_BALCAO) is None
@@ -60,18 +62,47 @@ def test_codigo_no_numero_digitado_no_balcao_nao_abre_a_conta(cadastro_do_balcao
     pedido = AuthService.request_code(NUMERO_DO_BALCAO, delivery_method="sms")
     assert pedido.success is True
     codigo_emitido = VerificationCode.objects.filter(target_value=NUMERO_DO_BALCAO).latest("created_at")
-    # O código não nasce preso ao cadastro do balcão.
+    # O código não nasce preso ao cadastro do balcão: até o código certo, nada o distingue.
     assert codigo_emitido.customer_id is None
+
+    entrada = AuthService.verify_for_login(NUMERO_DO_BALCAO, _codigo_valido(NUMERO_DO_BALCAO))
+
+    assert entrada.success is True, entrada.error
+    assert entrada.customer.subject_id == cadastro_do_balcao.uuid
+    # Entrou no cadastro que existia: nenhuma conta nasceu por cima do mesmo número.
+    assert Customer.objects.count() == clientes_antes
+    contato = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO_DO_BALCAO)
+    assert contato.customer_id == cadastro_do_balcao.pk
+    assert contato.is_verified is True
+    assert contato.verification_method == ContactPoint.VerificationMethod.OTP_SMS
+    # Daí em diante o número resolve para o cadastro, como qualquer contato provado.
+    assert IdentityResolver().resolve("phone", NUMERO_DO_BALCAO).subject_id == cadastro_do_balcao.uuid
+
+
+def test_codigo_errado_no_numero_do_balcao_nao_muda_nada(cadastro_do_balcao):
+    """Sem o código certo não há prova: o contato segue sem prova e ninguém entra."""
+    codigo = _codigo_valido(NUMERO_DO_BALCAO)
+    errado = "".join(str((int(d) + 1) % 10) for d in codigo)
+
+    entrada = AuthService.verify_for_login(NUMERO_DO_BALCAO, errado)
+
+    assert entrada.success is False
+    assert entrada.error_code == ErrorCode.CODE_INVALID
+    contato = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO_DO_BALCAO)
+    assert contato.is_verified is False
+    assert IdentityResolver().resolve("phone", NUMERO_DO_BALCAO) is None
+
+
+def test_cadastro_inativo_nao_e_entregue_ao_codigo_certo(cadastro_do_balcao):
+    """Cadastro desativado não é adotado: a entrada recusa com conflito, sem conta nova."""
+    Customer.objects.filter(pk=cadastro_do_balcao.pk).update(is_active=False)
+    clientes_antes = Customer.objects.count()
 
     entrada = AuthService.verify_for_login(NUMERO_DO_BALCAO, _codigo_valido(NUMERO_DO_BALCAO))
 
     assert entrada.success is False
     assert entrada.error_code == ErrorCode.IDENTITY_CONFLICT
-    # Nem abriu a conta existente nem nasceu outra por cima do mesmo número.
     assert Customer.objects.count() == clientes_antes
-    contato = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO_DO_BALCAO)
-    assert contato.customer_id == cadastro_do_balcao.pk
-    assert contato.is_verified is False
 
 
 def test_pedir_codigo_para_numero_sem_prova_responde_como_numero_desconhecido(cadastro_do_balcao):
@@ -80,6 +111,13 @@ def test_pedir_codigo_para_numero_sem_prova_responde_como_numero_desconhecido(ca
     desconhecido = AuthService.request_code(NUMERO_QUE_NINGUEM_TEM, delivery_method="sms")
 
     assert (do_balcao.success, do_balcao.error_code) == (desconhecido.success, desconhecido.error_code)
+    # E o código errado também responde igual nos dois.
+    respostas = []
+    for numero in (NUMERO_DO_BALCAO, NUMERO_QUE_NINGUEM_TEM):
+        errado = "".join(str((int(d) + 1) % 10) for d in _codigo_valido(numero))
+        r = AuthService.verify_for_login(numero, errado)
+        respostas.append((r.success, r.error_code, r.error, r.attempts_remaining))
+    assert respostas[0] == respostas[1]
 
 
 def test_depois_da_confirmacao_o_numero_abre_a_conta(cadastro_do_balcao):
@@ -116,3 +154,31 @@ def test_numero_novo_continua_criando_a_conta_de_quem_provou():
     contato = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO_QUE_NINGUEM_TEM)
     assert contato.is_verified is True
     assert IdentityResolver().resolve("phone", NUMERO_QUE_NINGUEM_TEM).subject_id == entrada.customer.subject_id
+
+
+# ── O porto: quem recebe o contato recém-provado ────────────────────────────
+
+
+def test_create_entrega_o_unico_cadastro_sem_prova_a_quem_provou_o_contato(cadastro_do_balcao):
+    """O ``create`` só é chamado depois do código certo: o titular sem prova é quem provou."""
+    clientes_antes = Customer.objects.count()
+
+    for kind, valor in (("phone", NUMERO_DO_BALCAO), ("email", EMAIL_DO_BALCAO)):
+        visto = IdentityResolver().create(kind, valor)
+        assert visto.subject_id == cadastro_do_balcao.uuid
+
+    assert Customer.objects.count() == clientes_antes
+
+
+def test_create_com_dois_cadastros_no_mesmo_contato_continua_conflito(cadastro_do_balcao):
+    from shopman.doorman.protocols.identity import IdentityConflict
+    from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
+
+    outra = Customer.objects.create(ref="BALCAO-2", first_name="Outra")
+    CustomerIdentifier.objects.create(customer=outra, identifier_type="whatsapp", identifier_value=NUMERO_DO_BALCAO)
+    clientes_antes = Customer.objects.count()
+
+    with pytest.raises(IdentityConflict):
+        IdentityResolver().create("phone", NUMERO_DO_BALCAO)
+
+    assert Customer.objects.count() == clientes_antes

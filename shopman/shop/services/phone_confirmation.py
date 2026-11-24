@@ -2,8 +2,8 @@
 
 Decisão do dono (D4, 23/11/2026): quando o balcão grava um telefone, o cliente
 recebe no WhatsApp "Confirme que este número é seu" e confirma com um toque. Até
-confirmar, o número não abre a conta existente: o porto de identidade do Guestman
-(``IdentityResolver.resolve``) recusa contato que ninguém provou.
+confirmar, o número não resolve para a conta existente: o porto de identidade do
+Guestman (``IdentityResolver.resolve``) não entrega contato que ninguém provou.
 
 O que este módulo faz é o PEDIDO, e só ele:
 
@@ -20,7 +20,10 @@ A CONFIRMAÇÃO não mora aqui. O toque no botão é uma mensagem do próprio n�
 para a loja; ela chega pelo ManyChat, e o vínculo do assinante
 (``ManychatService.sync_subscriber``, chamado pela Concierge ao identificar quem
 escreveu) marca o contato como verificado pelo canal. É o caminho de verificação
-que já existe; nada novo foi aberto para isso.
+que já existe; nada novo foi aberto para isso. O código certo do SMS também
+confirma (decisão D, 24/11/2026): ele prova a posse do número, e o
+``IdentityResolver.create`` do Guestman entrega o cadastro sem prova a quem acabou
+de prová-lo, com a prova ``otp_sms`` gravada na transação do aceite.
 
 O registro do pedido fica em ``Customer.metadata["phone_confirmation"]``
 (``docs/reference/data-schemas.md``), sem o número: o contato é apontado pelo id.

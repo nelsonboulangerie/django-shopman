@@ -892,12 +892,14 @@ O vocabulário de cada `type` pertence a quem emite (`Session.emit_event`). Uma 
 ## guestman.Customer.metadata["phone_confirmation"] — o pedido de confirmação do telefone
 
 Decisão do dono D4 (23/11/2026, OC-08): o telefone que a equipe grava (PDV, ficha do
-Gestor, pedido anotado por telefone) só abre a conta depois que o titular confirma. Quem
+Gestor, pedido anotado por telefone) só resolve para a conta depois que o titular confirma
+(o toque no WhatsApp, ou o código certo do SMS desde a decisão D de 24/11/2026). Quem
 grava chama `shop/services/phone_confirmation.request_on_commit`; depois do commit, se o
 contato continua sem prova, sai o aviso `phone_confirmation_requested` pelo WhatsApp, e o
 pedido fica registrado aqui. A CONFIRMAÇÃO não mora nesta chave: é o `ContactPoint`
 verificado (`is_verified`, `verification_method = channel_asserted`, gravado pelo vínculo
-do ManyChat quando o próprio número escreve para a loja).
+do ManyChat quando o próprio número escreve para a loja, ou `otp_sms`, gravado no aceite do
+código certo do SMS).
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|

@@ -616,12 +616,15 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
   `NotificationTemplate` do Admin), e `manage.py manychat_flows --check` confere. Sem o flow, a Concierge
   não promete resposta fora da janela (falha fechada, WP-05).
 
-### `confirmar_numero` — evento `phone_confirmation_requested` 🆕 · ⏳ texto proposto (OC-08, 23/11/2026), não submetido
+### `confirmar_numero` — evento `phone_confirmation_requested` 🆕 · ⏳ submetido na Meta em 24/11/2026 (Utility, pt_BR, botão `Sim, é meu`), em revisão
 
 Decisão do dono D4 (23/11/2026): quando a equipe grava um telefone (PDV, ficha do Gestor,
 pedido anotado por telefone), o cliente recebe no WhatsApp "Confirme que este número é seu"
-e confirma com um toque. Até confirmar, o número não abre a conta pela loja
-(`guestman.adapters.auth.IdentityResolver.resolve`). Quem pede é
+e confirma com um toque. Até confirmar, o número não resolve para a conta pela loja
+(`guestman.adapters.auth.IdentityResolver.resolve`). Decisão D (24/11/2026): o código
+certo do SMS também confirma, porque prova a posse do número; quem entra pelo código no
+número do balcão confirma e entra no mesmo gesto (`IdentityResolver.create` entrega o
+cadastro sem prova a quem acabou de provar o contato; prova `otp_sms`). Quem pede é
 `shop/services/phone_confirmation.py`; o registro do pedido mora em
 `Customer.metadata["phone_confirmation"]` (`data-schemas.md`).
 
@@ -836,7 +839,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `waitlist_available` | `fila_vaga_disponivel_v2` | Utility ✅ (aprovado; o `fila_vaga_disponivel` antigo também, mas diz "saiu") |
 | `waitlist_released` | `fila_vaga_liberada` | Utility ✅ (aprovado) |
 | `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |
-| `phone_confirmation_requested` | `confirmar_numero` | Utility 🆕 (OC-08; texto proposto, a submeter) |
+| `phone_confirmation_requested` | `confirmar_numero` | Utility 🆕 (OC-08; submetido em 24/11/2026, em revisão) |
 | `stock_arrived` | `produto_chegou` | Utility |
 | `purchase_request` | `pedido_compra` | Utility (fornecedor) |
 | `production_ready` | `ficou_pronto` | Marketing |

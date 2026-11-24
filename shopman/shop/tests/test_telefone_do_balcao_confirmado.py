@@ -1,12 +1,14 @@
-"""Telefone digitado no balcão só vale depois que o cliente confirma (D4, OC-08).
+"""Telefone digitado no balcão só vale depois que o cliente confirma (D4, OC-08; D).
 
 Decisão do dono (23/11/2026): quando o balcão grava um telefone, o cliente recebe
 no WhatsApp "Confirme que este número é seu" e confirma com um toque. Até
-confirmar, o número não abre a conta existente (laudo S4).
+confirmar, o número não resolve para a conta existente (laudo S4). Decisão D
+(24/11/2026): o código CERTO do SMS também confirma, porque prova a posse do
+número como a mensagem pelo WhatsApp prova.
 
 Três partes, um teste cada lado:
 
-- a porta: o código no número sem prova não entra na conta do balcão;
+- a porta: até a prova, o número não resolve para a conta; o código certo é prova;
 - o pedido: o PDV (e o Gestor) gravando um telefone novo pede a confirmação, e
   sem o modelo da Meta ligado o pedido fica registrado como pendente de modelo;
 - a confirmação: a mensagem do próprio número chega pelo ManyChat, o vínculo do
@@ -96,7 +98,11 @@ def _last_code() -> str:
 
 
 def _entrar_por_codigo(client: Client, numero: str):
-    pedido = client.post("/api/v1/auth/request-code/", data={"phone": numero}, content_type="application/json")
+    pedido = client.post(
+        "/api/v1/auth/request-code/",
+        data={"phone": numero, "delivery_method": "sms"},
+        content_type="application/json",
+    )
     assert pedido.status_code == 200, pedido.content
     csrf = client.get("/api/v1/storefront/cart/").cookies["csrftoken"].value
     return client.post(
@@ -110,19 +116,29 @@ def _entrar_por_codigo(client: Client, numero: str):
 # ── A porta ──────────────────────────────────────────────────────────────────
 
 
-def test_s4_codigo_no_numero_do_balcao_nao_abre_a_conta_ate_o_cliente_confirmar(
+def test_codigo_certo_no_numero_do_balcao_confirma_o_numero_e_entra_na_conta(
     django_capture_on_commit_callbacks, envios,
 ):
+    """Decisão D: pedir o código, digitar o certo, entrar no cadastro do balcão."""
     cadastro = _cadastrar_no_balcao(django_capture_on_commit_callbacks)
     contas_antes = Customer.objects.count()
+    contato = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO)
+    assert contato.is_verified is False
 
     cliente = Client()
-    recusa = _entrar_por_codigo(cliente, NUMERO)
+    entrada = _entrar_por_codigo(cliente, NUMERO)
 
-    assert recusa.status_code == 400
-    assert recusa.json()["error_code"] == "identity_conflict"
-    assert cliente.get("/api/v1/auth/session/").json().get("customer_ref") in (None, "")
+    assert entrada.status_code == 200, entrada.content
+    assert cliente.get("/api/v1/auth/session/").json()["customer_ref"] == cadastro.ref
     assert Customer.objects.count() == contas_antes
+    contato.refresh_from_db()
+    assert contato.customer_id == cadastro.pk
+    assert contato.is_verified is True
+    assert contato.verification_method == ContactPoint.VerificationMethod.OTP_SMS
+
+
+def test_confirmacao_pelo_whatsapp_continua_abrindo_a_conta(django_capture_on_commit_callbacks, envios):
+    cadastro = _cadastrar_no_balcao(django_capture_on_commit_callbacks)
 
     _confirmar_pelo_whatsapp(NUMERO)
     contato = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO)
@@ -130,6 +146,7 @@ def test_s4_codigo_no_numero_do_balcao_nao_abre_a_conta_ate_o_cliente_confirmar(
     assert contato.is_verified is True
     assert contato.verification_method == ContactPoint.VerificationMethod.CHANNEL_ASSERTED
 
+    cliente = Client()
     entrada = _entrar_por_codigo(cliente, NUMERO)
     assert entrada.status_code == 200, entrada.content
     assert cliente.get("/api/v1/auth/session/").json()["customer_ref"] == cadastro.ref
