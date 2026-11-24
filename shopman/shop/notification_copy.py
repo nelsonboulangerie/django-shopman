@@ -292,6 +292,20 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "{cart_note}Depois, é só voltar ao computador."
         ),
     },
+    # Telefone digitado pela equipe (D4, OC-08; ``services/phone_confirmation.py``).
+    # Sem nome, de propósito: se o número foi digitado errado, quem o recebe não lê
+    # o nome de outra pessoa. A resposta do próprio número é a confirmação (o
+    # vínculo do ManyChat marca o contato como verificado pelo canal), por isso o
+    # texto pede que quem não fez o cadastro NÃO responda. Fora da janela de 24h
+    # sai o modelo `confirmar_numero` (whatsapp-templates-meta.md), com o botão.
+    "phone_confirmation_requested": {
+        "subject": "Confirme que este número é seu",
+        "body": (
+            "Oi! Este número acabou de ser cadastrado na nossa loja. "
+            "Se ele é seu, responda *Sim, é meu* para confirmar. "
+            "Se não foi você, é só ignorar esta mensagem."
+        ),
+    },
     # Dois usos: o "Me avise" (sem reserva, CTA "Garanta o seu:") e a reserva que a
     # loja separou (`handlers/_stock_receivers`: "Sua reserva está garantida.", prazo
     # para confirmar, CTA "Finalize seu pedido:"). As notas começam com espaço e

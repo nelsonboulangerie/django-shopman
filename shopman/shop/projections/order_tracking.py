@@ -806,6 +806,7 @@ def _action(
     payload_schema: dict | None = None,
     idempotency: str = "required",
     confirmation: dict | None = None,
+    value: str = "",
 ) -> Action:
     return Action(
         ref=ref,
@@ -819,6 +820,7 @@ def _action(
         payload_schema=payload_schema or {},
         idempotency=idempotency,
         confirmation=confirmation or {},
+        value=value,
     )
 
 
@@ -1221,6 +1223,9 @@ def _build_promise(
                         kind="copy",
                         label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código Pix"),
                         idempotency="none",
+                        # O código que o rótulo promete: a conversa o entrega em
+                        # mensagem própria, a página o tem no bloco de pagamento.
+                        value=str(pix_copy or ""),
                     ),
                 ),
                 payment_method="pix",

@@ -262,13 +262,17 @@ class TestVerificationCodeVerifyViewJSON:
 
     @_PATCH_BUILD_URL
     def test_json_correct_code_returns_success(self, _mock_url):
+        from shopman.doorman.tests.conftest import proven
         from shopman.guestman.models import Customer
 
-        Customer.objects.create(
-            ref="VIEW-001",
-            first_name="View",
-            last_name="Test",
-            phone="+5541999999999",
+        # O dono desta conta já provou o contato (OC-08: sem prova, não entra).
+        proven(
+            Customer.objects.create(
+                ref="VIEW-001",
+                first_name="View",
+                last_name="Test",
+                phone="+5541999999999",
+            )
         )
 
         raw_code, hmac_digest = generate_raw_code()
@@ -289,13 +293,17 @@ class TestVerificationCodeVerifyViewJSON:
 
     @_PATCH_BUILD_URL
     def test_json_correct_email_code_returns_success(self, _mock_url):
+        from shopman.doorman.tests.conftest import proven
         from shopman.guestman.models import Customer
 
-        Customer.objects.create(
-            ref="VIEW-EMAIL-001",
-            first_name="Email",
-            last_name="Test",
-            email="email@example.com",
+        # O dono desta conta já provou o contato (OC-08: sem prova, não entra).
+        proven(
+            Customer.objects.create(
+                ref="VIEW-EMAIL-001",
+                first_name="Email",
+                last_name="Test",
+                email="email@example.com",
+            )
         )
 
         raw_code, hmac_digest = generate_raw_code()
@@ -327,13 +335,17 @@ class TestFullJourney:
     @_PATCH_BUILD_URL
     def test_full_flow_json(self, _mock_url):
         """Request code via JSON, then verify via JSON."""
+        from shopman.doorman.tests.conftest import proven
         from shopman.guestman.models import Customer
 
-        Customer.objects.create(
-            ref="VERIFY-001",
-            first_name="Verify",
-            last_name="Test",
-            phone="+5541888888888",
+        # O dono desta conta já provou o contato (OC-08: sem prova, não entra).
+        proven(
+            Customer.objects.create(
+                ref="VERIFY-001",
+                first_name="Verify",
+                last_name="Test",
+                phone="+5541888888888",
+            )
         )
 
         sender = FakeSender()

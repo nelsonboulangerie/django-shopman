@@ -31,7 +31,7 @@ Fingir que os dois casos são um só produziria o pior resultado possível: um b
 
 ## O link é NÃO autenticado
 
-Não se usa `build_access_url`: `AccessLink` expira em 5 minutos e é single-use — morreria
+Não se usa link de entrada (`/a?t=`): `AccessLink` expira em 5 minutos e é single-use — morreria
 antes do clique. E aumentar o TTL para campanha espalharia links de concessão de sessão,
 de vida longa, em históricos de conversa que são encaminhados e printados. O link carrega
 a **oferta**; a autenticação acontece onde já acontece, no checkout. Ninguém precisa estar

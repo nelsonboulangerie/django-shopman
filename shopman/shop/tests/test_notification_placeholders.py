@@ -67,7 +67,7 @@ def _order(*, name: str = "Joyce", uuid: str | None = None):
 @pytest.mark.django_db
 @override_settings(SHOPMAN_SMS=COMTELE_SETTINGS, SHOPMAN_STOREFRONT_BASE_URL="")
 def test_sms_de_pedido_sai_com_nome_e_link_de_acompanhamento():
-    """O caso da Joyce: SMS com o texto do Admin, cliente nomeado, sem magic link."""
+    """O caso da Joyce: SMS com o texto do Admin, cliente nomeado."""
     from shopman.shop.models import NotificationTemplate
 
     NotificationTemplate.objects.create(
@@ -127,42 +127,16 @@ def test_email_e_whatsapp_recebem_as_mesmas_chaves_que_o_sms():
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
-def test_tracking_url_cai_no_link_comum_quando_nao_ha_magic_link():
-    """Mesmo critério do `payment_url`: link comum é melhor que placeholder cru."""
+def test_tracking_url_e_sempre_o_link_comum_do_pedido():
+    """Link comum é o link do aviso (OC-01), com ou sem cliente identificado."""
     context = _build_context(_order(), {"order_ref": "ORD-1"}, "order_received")
     assert context["tracking_url"] == "https://loja.test/pedido/ORD-1"
 
-
-@override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
-def test_falha_no_bloco_de_access_urls_grita_e_cai_no_link_comum():
-    """O `except` era `logger.debug` e engoliu exatamente este defeito.
-
-    Um `uuid` gravado torto no pedido rebenta dentro do bloco: antes isso saía só no
-    debug e o aviso ia com `{tracking_url}` cru.
-    """
-    from shopman.shop.services import notification as notification_service
-
-    order = _order(uuid="nao-e-um-uuid")
-    with patch.object(notification_service.logger, "warning") as warning:
-        context = _build_context(order, {"order_ref": "ORD-1"}, "order_received")
-
-    assert context["tracking_url"] == "https://loja.test/pedido/ORD-1"
-    assert warning.called, "a falha de magic link tem de gritar, não sussurrar em debug"
-    assert "ORD-1" in warning.call_args.args, "o grito tem de nomear o pedido"
-
-
-@override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
-def test_token_indisponivel_ainda_entrega_link_de_acompanhamento():
-    """Cunhagem de token fora do ar não pode virar `{tracking_url}` na tela."""
-    order = _order(uuid="6f9619ff-8b86-d011-b42d-00c04fc964ff")
-    with patch(
-        "shopman.doorman.services.access_link.AccessLinkService.create_token",
-        side_effect=RuntimeError("token store fora do ar"),
-    ):
-        context = _build_context(order, {"order_ref": "ORD-1"}, "order_received")
-
-    assert context["tracking_url"] == "https://loja.test/pedido/ORD-1"
-    assert context["payment_url"] == "https://loja.test/pedido/ORD-1"
+    identified = _build_context(
+        _order(uuid="6f9619ff-8b86-d011-b42d-00c04fc964ff"), {"order_ref": "ORD-1"}, "order_received"
+    )
+    assert identified["tracking_url"] == "https://loja.test/pedido/ORD-1"
+    assert identified["payment_url"] == "https://loja.test/pedido/ORD-1"
 
 
 def test_derive_context_e_idempotente():
@@ -220,11 +194,7 @@ def _produced_keys() -> set[str]:
     order.data["payment"] = {"method": "pix", "copy_paste": "0002012..."}
     order.data["courier"] = {"tracking_url": "https://courier.test/x", "tracking_match": "single"}
     context = _build_context(order, {"order_ref": "ORD-1", "reason": "sem estoque"}, "order_accepted")
-    keys = set(derive_context(context))
-    # Só existe com magic link (o pedido da loja não tem `customer.uuid`); é sempre
-    # consumido pelo `{reorder_suffix}`, que se auto-suprime.
-    keys.add("reorder_url")
-    return keys
+    return set(derive_context(context))
 
 
 def _offenders(bodies: dict[str, str], produced: set[str], origin: str) -> list[str]:

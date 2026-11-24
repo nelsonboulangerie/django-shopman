@@ -8,6 +8,7 @@ import pytest
 from django.db import IntegrityError
 from django.http import HttpResponse
 from django.test import RequestFactory, override_settings
+from django.utils import timezone
 from shopman.doorman.adapter import DefaultAuthAdapter
 from shopman.doorman.error_codes import ErrorCode
 from shopman.doorman.models import TrustedDevice, VerificationCode
@@ -211,6 +212,8 @@ def test_phone_resolution_materializes_identifier_only_whatsapp_handle(customer)
         identifier_type=IdentifierType.WHATSAPP,
         identifier_value=value,
         is_primary=True,
+        # Identificador com prova: sem ela o contato não abre a conta (OC-08).
+        verified_at=timezone.now(),
     )
 
     resolved = IdentityResolver().resolve("phone", value)
@@ -338,12 +341,14 @@ def test_login_resolution_exposes_only_requested_value(customer):
         type=ContactPoint.Type.WHATSAPP,
         value_normalized=requested,
         is_primary=False,
+        is_verified=True,
     )
     ContactPoint.objects.create(
         customer=customer,
         type=ContactPoint.Type.WHATSAPP,
         value_normalized=other,
         is_primary=False,
+        is_verified=True,
     )
 
     resolved = IdentityResolver().resolve("phone", requested, purpose="login")

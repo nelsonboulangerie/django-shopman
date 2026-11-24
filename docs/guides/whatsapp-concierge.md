@@ -131,7 +131,8 @@ caso diretamente como ingresso **at-least-once**:
 4. fechar o pedido (`place_order`) exige o **código do orçamento** que o resumo mostra
    ("confirmo 4821"): um "sim" sozinho não prova que veio depois do resumo;
 5. catálogo público, orientação e handoff permanecem disponíveis;
-6. acréscimo a pedido já feito, cópia da sacola para o site, inscrição de aviso,
+6. acréscimo a pedido já feito, convite para levar a sacola ao site (a passagem
+   acontece no aceite, pelo `shop/services/session_transfer`), inscrição de aviso,
    pagamento, identidade e transferência não recebem autoridade desse ingresso;
 7. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
    portanto nenhum hash de contato + timestamp é usado para descartar mensagens.

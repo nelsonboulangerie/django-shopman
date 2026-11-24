@@ -109,8 +109,10 @@ a presentation via `projection_data()`.
 
 **`Action` é o contrato canônico de toda afordância** (`shop/projections/types.py`):
 `ref, kind ("link"|"mutation"|"external"|"copy"), label (pt-BR), priority, enabled, reason, href,
-method, payload_schema, idempotency ("required"|"recommended"|"none"), confirmation`. O Nuxt renderiza
-por `kind` (link→navega; mutation→POST com schema+confirm; external→nova aba; copy→clipboard).
+method, payload_schema, idempotency ("required"|"recommended"|"none"), confirmation, value`. O Nuxt renderiza
+por `kind` (link→navega; mutation→POST com schema+confirm; external→nova aba; copy→clipboard). `value` é o
+texto que a ação `copy` copia (o copia-e-cola do Pix em `copy_pix`): a conversa, que não tem clipboard,
+entrega esse texto em mensagem própria, nunca um link com o rótulo da cópia (OC-05).
 
 **Máquinas de estado de promessa** (emitem `Action` + tom + deadline): **pagamento**
 (`payment_status.py`: pix_*/card_*/paid/expired/cancelled/intent_error) e **tracking**
@@ -284,9 +286,11 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   (`1 ponto/R$1` em `shop/handlers/loyalty.py`); os **tier thresholds** são via `settings.GUESTMAN_LOYALTY`
   (env/código, **não** admin); `stamps_target` é campo por-conta. Caminho limpo: mover earn rate +
   thresholds + stamps p/ `Shop.defaults` dataclass-driven (como `pickup_slots`), editável no admin.
-- **AccessLink `audience` não enforçado na troca** — validado na criação, não no exchange. **Decisão de
-  design:** o `/a` é uma ponte genérica (destino vem da metadata, não da audience); enforçar exigiria
-  definir qual audience o exchange genérico requer. Débito de defense-in-depth, baixo risco.
+- **AccessLink `audience` aplicada na troca (OC-09):** o `/a` troca só as audiências da loja
+  (`web_general`, `web_checkout`, `web_account`; `shop/services/access.STORE_ENTRY_AUDIENCES`) e recusa
+  as outras sem gastar o token. A API S2S (`api/auth/access/create/`, `shop/views/access_link.py`)
+  recusa audiência fora da loja e prazo acima de 24 h (`S2S_LINK_MAX_TTL_MINUTES`). O destino continua
+  vindo da metadata; a audiência diz só qual porta o link abre.
 - **Agendamento de cleanups** — o comando `auth_cleanup` (purga device-trust + access links + códigos)
   existe; falta rodá-lo periodicamente. É **infra compartilhada** (nenhum cleanup —`cleanup_stale_planning`,
   `cleanup_stale_sessions`, etc.— está agendado; DO App Platform não tem cron no spec). Resolver junto.

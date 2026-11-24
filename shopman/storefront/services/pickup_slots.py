@@ -96,7 +96,7 @@ def _starts_before(window: dict, day: date, deadline: datetime) -> bool:
 
     from shopman.shop.services import fulfillment_window
 
-    start = fulfillment_window._window_start(window)
+    start = fulfillment_window.slot_start(window)
     if start is None:
         return False
     return timezone.make_aware(datetime.combine(day, start)) < deadline
@@ -181,7 +181,7 @@ def annotate_slots_for_checkout(
     slots = []
     for window in context.get("windows") or []:
         ref = str(window.get("ref") or "")
-        start = fulfillment_window._window_start(window)
+        start = fulfillment_window.slot_start(window)
         slots.append(
             {
                 "ref": ref,
