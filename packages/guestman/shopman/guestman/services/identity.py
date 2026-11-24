@@ -281,6 +281,9 @@ def announce_contact_left(
     customer_ref = (
         Customer.objects.filter(pk=customer_id).values_list("ref", flat=True).first() or ""
     )
+    # ADR-025: escrita acoplada — o número sai e, no mesmo ato, saem o assinante do
+    # WhatsApp e o vínculo da conversa; depois do commit haveria uma janela em que o
+    # novo titular já fala pela conversa e pelo assinante da pessoa anterior.
     contact_reassigned.send(
         sender=ContactPoint,
         customer_id=customer_id,
