@@ -65,3 +65,59 @@ describe("ShortageDialog — falta de insumo", () => {
     expect(modal.props("description")).not.toContain("undefined");
   });
 });
+
+// WP-F06 (decisão 1 do dono, 23/11/2026): rendeu menos que o encomendado, o lote
+// fecha com a verdade. Antes a tela mandava "informar pelo menos 6.000 un." e o
+// "Revisar quantidade" não fazia nada.
+const shortLot = {
+  code: "order_shortage",
+  work_order_ref: "WO-2026-00034",
+  idempotency_key: "k",
+  possibilities: [
+    { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "" },
+    { kind: "confirm", label: "Fechar com 4 e avisar o Gestor", enabled: true, proof: "assinada" },
+  ],
+  required: "6.000",
+  requested: "4.000",
+  order_refs: ["NB-261123-B57"],
+  orders: [{ ref: "NB-261123-B57", qty: "6" }],
+} as unknown as ProductionShortageError;
+
+describe("ShortageDialog — o lote curto fecha com a verdade", () => {
+  function mountShortLot(allowShortLot: boolean) {
+    return mount(ShortageDialog, {
+      props: { shortage: shortLot, allowShortLot },
+      global: { stubs: nuxtUiStubs },
+    });
+  }
+
+  it("diz quanto rendeu, quanto falta e quem fica descoberto", () => {
+    const wrapper = mountShortLot(true);
+    const modal = wrapper.findComponent({ name: "NuxtModal" });
+
+    expect(modal.props("title")).toBe("Rendeu menos que o encomendado");
+    expect(modal.props("description")).toBe("Rendeu 4. Faltam 2 para as encomendas.");
+    const order = wrapper.get("[data-short-lot-order]");
+    expect(order.findAll("span").map((span) => span.text())).toEqual(["NB-261123-B57", "6 un."]);
+    expect(wrapper.get("[data-short-lot-outcome]").text()).toContain("Promessa em risco");
+    expect(wrapper.html()).not.toContain("pelo menos");
+  });
+
+  it("fecha com a prova da recusa, e revisar devolve à contagem", async () => {
+    const wrapper = mountShortLot(true);
+
+    expect(wrapper.get("[data-short-lot-confirm]").text()).toBe("Fechar com 4 e avisar o Gestor");
+    await wrapper.get("[data-short-lot-confirm]").trigger("click");
+    await wrapper.get("[data-short-lot-review]").trigger("click");
+
+    expect(wrapper.emitted("close-short-lot")).toEqual([["assinada"]]);
+    expect(wrapper.emitted("review")).toHaveLength(1);
+  });
+
+  it("a tela que não sabe fechar o lote curto não oferece o botão", () => {
+    const wrapper = mountShortLot(false);
+
+    expect(wrapper.find("[data-short-lot-confirm]").exists()).toBe(false);
+    expect(wrapper.findComponent({ name: "NuxtModal" }).props("title")).toBe("Quantidade não cobre pedidos");
+  });
+});

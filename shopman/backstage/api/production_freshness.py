@@ -143,10 +143,12 @@ def override_attempt_digest(body: dict) -> str:
         if key
         not in {
             "_approved_shortage_snapshot",
+            "_approved_short_lot_snapshot",
             "_committed_replay",
             "force",
             "reason",
             "override_proof",
+            "short_lot_proof",
         }
     }
     payload = json.dumps(

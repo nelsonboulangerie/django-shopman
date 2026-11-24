@@ -3,12 +3,17 @@
 // returns (409) when a finish/plan would consume more than is available, or leave
 // committed orders uncovered. For a material shortage the operator can override
 // (force=1) only when the server advertises that possibility. An order shortage
-// offers "retry" (o operador volta ao número que digitou e corrige); confirmar o
-// previsto abaixo das encomendas nunca é forçável, então ali o caminho é só esse.
+// offers "retry" (o operador volta ao número que digitou e corrige). Quando o
+// servidor oferece "confirm" e a tela sabe fechar o lote curto (`allowShortLot`),
+// o lote fecha com o que rendeu: a tela diz quanto falta para as encomendas e
+// quais pedidos ficam descobertos (decisão 1 do dono, 23/11/2026).
 import type { ProductionShortageError } from "~/types/production";
-import { formatQtyUnit } from "~/presentation/production";
+import { formatQty, formatQtyUnit } from "~/presentation/production";
 
-const props = defineProps<{ shortage: ProductionShortageError | null }>();
+const props = defineProps<{
+  shortage: ProductionShortageError | null;
+  allowShortLot?: boolean;
+}>();
 // O modal some com animação depois de `shortage` virar null. Título e frase
 // saem do último envelope não nulo, para a saída não piscar outro caso com
 // "lote undefined" (beta 05/11).
@@ -22,6 +27,7 @@ watch(
 const emit = defineEmits<{
   "update:open": [value: boolean];
   confirm: [reason: string, proof: string];
+  "close-short-lot": [proof: string];
   review: [];
 }>();
 
@@ -36,6 +42,24 @@ const retryPossibility = computed(() =>
     (possibility) => possibility.kind === "retry" && possibility.enabled,
   ),
 );
+const shortLotPossibility = computed(() =>
+  props.allowShortLot && last.value?.code === "order_shortage"
+    ? last.value.possibilities.find(
+        (possibility) =>
+          possibility.kind === "confirm" && possibility.enabled && possibility.proof,
+      )
+    : undefined,
+);
+const shortLot = computed(() => {
+  const value = last.value;
+  if (!shortLotPossibility.value || value?.code !== "order_shortage") return null;
+  const missing = Math.max(0, Number(value.required) - Number(value.requested));
+  return {
+    yielded: formatQty(value.requested),
+    missing: formatQty(String(missing)),
+    orders: value.orders ?? [],
+  };
+});
 const overrideReason = ref("");
 const canConfirm = computed(
   () =>
@@ -50,10 +74,17 @@ watch(
 );
 
 const title = computed(() =>
-  isMaterial.value ? "Insumos insuficientes" : "Quantidade não cobre pedidos",
+  isMaterial.value
+    ? "Insumos insuficientes"
+    : shortLot.value
+      ? "Rendeu menos que o encomendado"
+      : "Quantidade não cobre pedidos",
 );
 const description = computed(() => {
   const ref = last.value?.work_order_ref;
+  if (shortLot.value) {
+    return `Rendeu ${shortLot.value.yielded}. Faltam ${shortLot.value.missing} para as encomendas.`;
+  }
   if (isMaterial.value && forcePossibility.value) {
     return `Faltam insumos para concluir ${ref}. Registre o motivo real da autorização; a identidade do operador e um alerta serão preservados.`;
   }
@@ -62,6 +93,11 @@ const description = computed(() => {
   }
   return `O lote ${ref} tem encomendas que dependem dele, e a quantidade informada não cobre todas.`;
 });
+
+function closeShortLot() {
+  const proof = shortLotPossibility.value?.proof;
+  if (proof) emit("close-short-lot", proof);
+}
 
 function confirmOverride() {
   const reason = overrideReason.value.trim();
@@ -101,6 +137,26 @@ function confirmOverride() {
             </span>
           </li>
         </ul>
+        <template v-else-if="shortLot">
+          <ul class="divide-y rounded-md border text-sm" data-short-lot-orders>
+            <li
+              v-for="order in shortLot.orders"
+              :key="order.ref"
+              class="flex items-center justify-between gap-2 px-3 py-2"
+              data-short-lot-order
+            >
+              <span class="font-medium">{{ order.ref }}</span>
+              <span class="tabular-nums text-muted-foreground"
+                >{{ formatQty(order.qty) }} un.</span
+              >
+            </li>
+          </ul>
+          <p class="text-sm" data-short-lot-outcome>
+            O lote fecha com {{ shortLot.yielded }}, o pão entra no estoque, e estes
+            pedidos aparecem em "Promessa em risco" no Gestor, para quem cuida das
+            encomendas resolver.
+          </p>
+        </template>
         <template v-else-if="last && last.code === 'order_shortage'">
           <div class="rounded-md border bg-muted/40 p-3 text-sm">
             <p>
@@ -137,13 +193,30 @@ function confirmOverride() {
     <template #footer>
       <div class="flex w-full flex-wrap justify-end gap-2">
         <NuxtButton
+          v-if="!shortLotPossibility"
           color="neutral"
           variant="outline"
           :label="isMaterial || retryPossibility ? 'Cancelar' : 'Entendi'"
           @click="emit('update:open', false)"
         />
+        <template v-if="shortLotPossibility">
+          <NuxtButton
+            v-if="retryPossibility"
+            color="neutral"
+            variant="outline"
+            :label="retryPossibility.label"
+            data-short-lot-review
+            @click="emit('review')"
+          />
+          <NuxtButton
+            color="primary"
+            :label="shortLotPossibility.label"
+            data-short-lot-confirm
+            @click="closeShortLot"
+          />
+        </template>
         <NuxtButton
-          v-if="retryPossibility && !isMaterial && forcePossibility"
+          v-else-if="retryPossibility && !isMaterial && forcePossibility"
           color="neutral"
           variant="outline"
           :label="retryPossibility.label"
