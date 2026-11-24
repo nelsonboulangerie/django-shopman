@@ -1,6 +1,7 @@
 <template>
   <Primitive
     data-slot="alert-title"
+    data-decisive="alert"
     v-bind="forwarded"
     :class="styles({ class: normalizeClass(props.class) || undefined })"
   >
@@ -29,6 +30,6 @@
   const forwarded = reactiveOmit(props, "class", "title");
 
   const styles = tv({
-    base: "mb-1 line-clamp-1 min-h-4 leading-none font-medium tracking-tight",
+    base: "mb-1 min-h-4 leading-snug font-medium tracking-tight",
   });
 </script>

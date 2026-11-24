@@ -174,7 +174,7 @@ function onSheetOpenChange (value: boolean) {
         <p class="text-right shop-meta tabular-nums" aria-live="polite" data-cart-line-note-count>
           {{ draft.length }}/{{ LINE_NOTES_MAX_LENGTH }}
         </p>
-        <p v-if="errorMessage" role="alert" class="shop-meta text-destructive" data-cart-line-note-error>
+        <p v-if="errorMessage" role="alert" class="shop-meta text-destructive" data-cart-line-note-error data-decisive="error">
           {{ errorMessage }}
         </p>
         <UiButton

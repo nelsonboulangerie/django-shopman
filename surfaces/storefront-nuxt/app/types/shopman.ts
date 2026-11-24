@@ -431,6 +431,12 @@ export interface CartProjection {
   // Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
   // sincronização. Ausente ou vazio para visitante e para link encaminhado.
   open_elsewhere?: CartOpenElsewhere[]
+  // "Continuar pelo WhatsApp" (OC-16): só vem quando a passagem para a conversa é
+  // possível agora (X1). Ausente ou null: a tela não oferece o gesto.
+  continue_in_conversation?: Action | null
+  // O que entrou vindo de outro canal ("Entraram 3 itens da sacola do WhatsApp.") e
+  // o que mudou, só se mudou (#3517).
+  transfer_arrival?: CartTransferArrival | null
   // Só na sacola vazia (com itens, cada linha já diz quando fica pronta): null
   // com a sacola cheia. Ver `OrderingProjection`.
   ordering?: OrderingProjection | null
@@ -452,6 +458,26 @@ export interface CartOpenElsewhere {
   subtotal_q: number
   subtotal_display: string
   bring: Action
+}
+
+export interface CartTransferArrival {
+  channel: string
+  title: string
+  lines: string[]
+}
+
+// Resposta de "Trazer a sacola do WhatsApp" (`/api/v1/cart/bring/`).
+export interface CartTransferResponse {
+  cart: CartProjection
+  cart_transfer?: { status: 'accepted' | 'refused' | string, code?: string, differences?: unknown[] }
+}
+
+// "Continuar pelo WhatsApp": a mensagem pronta com o código NB.
+export interface CartConversationStart {
+  code: string
+  message: string
+  deep_link: string
+  wa_number: string
 }
 
 export interface SocialLinkProjection {
@@ -507,6 +533,7 @@ export interface ShopDesignTokensProjection {
   bottomnav?: string
   cta?: string
   cta_foreground?: string
+  promotion?: string
   background_hex?: string
   theme_hex?: string
   heading_font?: string

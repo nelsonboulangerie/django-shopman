@@ -2114,11 +2114,12 @@ useHead({ title: "Catálogo" });
                       class="shrink-0 text-xs font-normal text-muted-foreground"
                       >Repõe {{ row.replenish_qty }} no lote</span
                     >
-                    <!-- estoque baixo (produto ainda ativo): aviso discreto -->
+                    <!-- acabando pela % do SKU (DEV-2026-077), a mesma régua do PDV:
+                         o mesmo selo, "Resta 1" / "Restam 6" -->
                     <NuxtBadge
                       v-else-if="!rowStatuses[row.sku]?.off && row.low_stock"
                       color="warning"
-                      :label="`Resta ${row.stock_qty}`"
+                      :label="row.stock_qty === 1 ? 'Resta 1' : `Restam ${row.stock_qty}`"
                     />
                     <!-- sync com erro em N plataforma(s): salta à vista + atalho p/ reenviar tudo -->
                     <NuxtButton
