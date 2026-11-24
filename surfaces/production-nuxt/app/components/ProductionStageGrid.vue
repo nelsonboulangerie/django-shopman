@@ -17,14 +17,19 @@
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
-import { nextTick, onMounted } from "vue";
+import { nextTick, onMounted, type Ref } from "vue";
+
+import LotCancelDialog from "./LotCancelDialog.vue";
+import LotCommitmentsDialog from "./LotCommitmentsDialog.vue";
+import LotStartPanel from "./LotStartPanel.vue";
+import PlanAdjustDialog from "./PlanAdjustDialog.vue";
+import PlanLens from "./PlanLens.vue";
 
 import {
   boardDisplay,
   commitmentChipLabel,
   dayContextLine,
   formatQty,
-  formatQtyUnit,
   fullDateLabel,
   latestPlanTime,
   plannedAsSuggested,
@@ -32,7 +37,6 @@ import {
   isStale,
   matchesRowQuery,
   outsizedQuantityWarning,
-  rowCommitments,
   rowCommittedUnits,
   rowLabel,
 } from "~/presentation/production";
@@ -66,7 +70,6 @@ import type {
   AuthorizeFormulaDeviationResponse,
 } from "~/composables/useProductionKds";
 import { defaultPlanningDate } from "~/composables/useProductionBoard";
-import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{
   stage: "plan" | "open";
@@ -221,9 +224,10 @@ const reasonSku = ref<string | null>(null);
 const reasonTriggers = new Map<string, HTMLElement>();
 const planRow = ref<ProductionMatrixRowProjection | null>(null);
 const planQty = ref("");
-// Os campos de quantidade são `NuxtInput`: o foco vai ao `<input>` que ele expõe.
-type QtyField = { inputRef?: HTMLInputElement | null } | null;
-const planQtyInput = ref<QtyField>(null);
+// Os campos de quantidade moram nos diálogos (`PlanAdjustDialog`, `LotStartPanel`):
+// cada um expõe `focusQty`, que leva o foco ao `<input>` do `NuxtInput`.
+type QtyField = { focusQty: () => void } | null;
+const planDialog = ref<QtyField>(null);
 const planSubmitting = ref(false);
 const planSource = ref<"manual" | "suggested">("manual");
 const selectedPlannedPk = ref<number | null>(null);
@@ -255,9 +259,11 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 };
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
-const startQtyInput = ref<QtyField>(null);
-function focusQty(field: typeof planQtyInput) {
-  void nextTick(() => field.value?.inputRef?.focus());
+// O previsto tem duas formas (o painel encaixado e o diálogo); só uma está na tela.
+const startPanel = ref<QtyField>(null);
+const startModal = ref<QtyField>(null);
+function focusQty(...fields: Ref<QtyField>[]) {
+  void nextTick(() => fields.forEach((field) => field.value?.focusQty()));
 }
 const startSubmitting = ref(false);
 const selectedStartPk = ref<number | null>(null);
@@ -287,10 +293,6 @@ const lastPlanAttempt = ref<{
   payload: Parameters<typeof plan>[1];
   successMessage: string;
 } | null>(null);
-
-const commitmentsList = computed(() =>
-  commitmentsRow.value ? rowCommitments(commitmentsRow.value) : [],
-);
 
 const selectedPlannedOrder = computed<WorkOrderCardProjection | null>(
   () =>
@@ -429,14 +431,14 @@ function openPlan(
     planQty.value = selectedPlannedOrder.value?.planned_qty ?? "";
   else planQty.value = row.suggestion?.quantity ?? "0";
   if (!row.planned_orders.length || selectedPlannedPk.value != null) {
-    focusQty(planQtyInput);
+    focusQty(planDialog);
   }
 }
 
 function selectPlannedWorkOrder(workOrder: WorkOrderCardProjection) {
   selectedPlannedPk.value = workOrder.pk;
   if (planSource.value === "manual") planQty.value = workOrder.planned_qty;
-  focusQty(planQtyInput);
+  focusQty(planDialog);
 }
 
 function toggleReason(row: ProductionMatrixRowProjection) {
@@ -622,14 +624,14 @@ function openStart(row: ProductionMatrixRowProjection) {
     row.planned_orders.length === 1 ? row.planned_orders[0]!.pk : null;
   startQty.value = selectedStartOrder.value?.planned_qty ?? "";
   if (selectedStartPk.value != null) {
-    focusQty(startQtyInput);
+    focusQty(startPanel, startModal);
   }
 }
 
 function selectStartWorkOrder(workOrder: WorkOrderCardProjection) {
   selectedStartPk.value = workOrder.pk;
   startQty.value = workOrder.planned_qty;
-  focusQty(startQtyInput);
+  focusQty(startPanel, startModal);
 }
 
 async function confirmStart() {
@@ -690,7 +692,7 @@ function reviewShortage() {
       ? startAttempt.workOrderPk
       : null;
     startQty.value = startAttempt.quantity;
-    focusQty(startQtyInput);
+    focusQty(startPanel, startModal);
     return;
   }
   const planAttempt = lastPlanAttempt.value;
@@ -708,7 +710,7 @@ function reviewShortage() {
       ? row.planned_orders[0]!.pk
       : null;
   planQty.value = String(planAttempt.payload.quantity);
-  focusQty(planQtyInput);
+  focusQty(planDialog);
 }
 
 function closeShortage() {
@@ -1733,92 +1735,18 @@ const startedDescription = computed(() => {
             </template>
           </div>
 
-          <!-- O que não tem ressalva vira conjunto: um "sim" para todos, ou ver um a um. -->
-          <div
-            v-if="planGroups.clean.length"
-            class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-muted/40 px-4 py-3 last:border-b-0 lg:min-h-16"
-            data-plan-clean
-          >
-            <span
-              class="grid size-9 shrink-0 place-items-center rounded-full border border-border bg-card"
-              aria-hidden="true"
-            >
-              <Icon name="lucide:list-checks" class="size-4 text-muted-foreground" />
-            </span>
-            <div class="min-w-0 flex-1 basis-60">
-              <p class="op-body">
-                <b class="font-semibold"
-                  >+{{ planGroups.clean.length }} produtos sem ressalva</b
-                >
-                <span class="text-muted-foreground">
-                  · insumos ok, sem encomenda, sem falta nem sobra repetida</span
-                >
-              </p>
-              <p class="truncate op-micro text-muted-foreground">
-                {{ cleanSummary }}
-              </p>
-            </div>
-            <NuxtButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-list"
-              label="Ver um a um"
-              data-plan-clean-expand
-              @click="expandClean = true"
-            />
-            <NuxtButton
-              color="primary"
-              variant="outline"
-              icon="i-lucide-check-check"
-              :disabled="
-                !canPlanCleanSet || bulkSubmitting || inlineSubmitting != null
-              "
-              :aria-busy="bulkSubmitting"
-              :label="
-                bulkSubmitting
-                  ? 'Planejando…'
-                  : `Planejar os ${planGroups.clean.length} como sugerido`
-              "
-              data-plan-clean-all
-              @click="planCleanSet()"
-            />
-          </div>
-
-          <!-- Sem sugestão para o dia (bases, recheios, o que não vende hoje): conjunto
-               que se abre para planejar à mão. -->
-          <div
-            v-if="planGroups.manual.length"
-            class="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-muted/25 px-4 py-3 last:border-b-0 lg:min-h-16"
-            data-plan-manual
-          >
-            <span
-              class="grid size-9 shrink-0 place-items-center rounded-full border border-border bg-card"
-              aria-hidden="true"
-            >
-              <Icon name="lucide:pencil-line" class="size-4 text-muted-foreground" />
-            </span>
-            <div class="min-w-0 flex-1 basis-60">
-              <p class="op-body">
-                <b class="font-semibold"
-                  >+{{ planGroups.manual.length }} produtos sem sugestão para o dia</b
-                >
-                <span class="text-muted-foreground">
-                  · sem venda que sustente um número; planeje à mão se precisar</span
-                >
-              </p>
-              <p class="truncate op-micro text-muted-foreground">
-                {{ manualSummary }}
-              </p>
-            </div>
-            <NuxtButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-list"
-              label="Ver um a um"
-              data-plan-manual-expand
-              @click="expandManual = true"
-            />
-          </div>
+          <PlanLens
+            :clean-count="planGroups.clean.length"
+            :manual-count="planGroups.manual.length"
+            :clean-summary="cleanSummary"
+            :manual-summary="manualSummary"
+            :can-plan-clean-set="canPlanCleanSet"
+            :bulk-submitting="bulkSubmitting"
+            :inline-busy="inlineSubmitting != null"
+            @expand-clean="expandClean = true"
+            @expand-manual="expandManual = true"
+            @plan-clean="planCleanSet()"
+          />
 
           <!-- Planejado vira estado; corrigir e ver encomendas descem para o menu. -->
           <template v-if="planGroups.planned.length">
@@ -2075,585 +2003,105 @@ const startedDescription = computed(() => {
       </template>
     </section>
 
-    <!-- Painel de confirmação encaixado (tablet deitado): lote em blocos, quantidade
-         com − / + no tamanho do toque, numérico na tela e "Confirmar N un." no polegar. -->
-    <aside
+    <LotStartPanel
       v-if="docked && startRow"
-      class="flex w-[392px] shrink-0 flex-col border-l border-border bg-card"
-      aria-label="Confirmar o previsto"
-      data-open-confirm-panel
-    >
-      <header class="flex items-start gap-3 border-b border-border px-5 pt-4 pb-3.5">
-        <div class="min-w-0 flex-1">
-          <p class="op-eyebrow text-muted-foreground">Quanto está previsto?</p>
-          <h2 class="truncate op-heading leading-tight">
-            {{ rowLabel(startRow) }}
-          </h2>
-          <p class="op-micro text-muted-foreground">
-            {{ startRow.output_sku }} · esta quantidade segue para a Finalização.
-          </p>
-        </div>
-        <NuxtButton
-          icon="i-lucide-x"
-          color="neutral"
-          variant="ghost"
-          size="xl"
-          square
-          aria-label="Fechar"
-          @click="
-            startRow = null;
-            selectedStartPk = null;
-          "
-        />
-      </header>
-      <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
-        <template v-if="startRow.planned_orders.length > 1">
-          <p class="op-label text-muted-foreground">Lote que vai confirmar</p>
-          <div class="grid grid-cols-2 gap-2">
-            <NuxtButton
-              v-for="workOrder in startRow.planned_orders"
-              :key="workOrder.pk"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              block
-              :active="selectedStartPk === workOrder.pk"
-              active-color="primary"
-              active-variant="outline"
-              :ui="{ base: 'h-auto flex-col items-start justify-start text-left' }"
-              :aria-pressed="selectedStartPk === workOrder.pk"
-              @click="selectStartWorkOrder(workOrder)"
-            >
-              <span class="op-title">#{{ workOrder.ref }}</span>
-              <span class="op-micro text-muted-foreground"
-                >planejado {{ workOrder.planned_qty }} un.</span
-              >
-            </NuxtButton>
-          </div>
-        </template>
-        <p v-else-if="selectedStartOrder" class="op-label text-muted-foreground">
-          Lote #{{ selectedStartOrder.ref }} · planejado {{ selectedStartOrder.planned_qty }} un.
-        </p>
-        <template v-if="selectedStartOrder">
-          <div class="flex items-center gap-2">
-            <NuxtButton
-              icon="i-lucide-minus"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              square
-              aria-label="Diminuir"
-              @click="bump('start', -1)"
-            />
-            <NuxtInput
-              ref="startQtyInput"
-              v-model="startQty"
-              inputmode="none"
-              size="xl"
-              color="primary"
-              highlight
-              class="w-full"
-              :ui="{ base: 'text-center text-3xl font-bold tabular-nums' }"
-              aria-label="Quantidade prevista"
-              @keydown.enter.prevent="confirmStart()"
-            />
-            <NuxtButton
-              icon="i-lucide-plus"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              square
-              aria-label="Aumentar"
-              @click="bump('start', 1)"
-            />
-          </div>
-          <NuxtAlert
-            v-if="startOutsized"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="startOutsized"
-            data-start-outsized
-            :actions="
-              alertActions('warning', [
-                startNeedsDoubleCheck && { label: 'O número está certo', onClick: acknowledgeStartOutsized },
-              ])
-            "
-          />
-          <p v-else-if="startDiverges" class="op-label text-muted-foreground">
-            Diferente do planejado ({{ selectedStartOrder.planned_qty }}). É rendimento, não perda.
-          </p>
-          <OperatorNumpad
-            class="[&_button]:h-14! [&_button]:op-figure"
-            subject="quantidade prevista"
-            @digit="startDigit"
-            @backspace="startBackspace"
-            @clear="startClear"
-          />
-        </template>
-      </div>
-      <footer class="flex gap-2 border-t border-border px-5 py-4">
-        <NuxtButton
-          color="neutral"
-          variant="outline"
-          size="xl"
-          block
-          class="flex-1"
-          label="Cancelar"
-          @click="
-            startRow = null;
-            selectedStartPk = null;
-          "
-        />
-        <NuxtButton
-          size="xl"
-          block
-          class="flex-[1.6]"
-          icon="i-lucide-check"
-          :disabled="startSubmitting || !startReady || startNeedsDoubleCheck"
-          :label="
-            startSubmitting
-              ? 'Confirmando…'
-              : `Confirmar ${formatQtyUnit(startQty || '0', startRow.output_unit)}`
-          "
-          data-open-confirm-submit
-          @click="confirmStart()"
-        />
-      </footer>
-    </aside>
+      ref="startPanel"
+      v-model:qty="startQty"
+      variant="panel"
+      :row="startRow"
+      :selected-pk="selectedStartPk"
+      :selected-order="selectedStartOrder"
+      :submitting="startSubmitting"
+      :ready="startReady"
+      :outsized="startOutsized"
+      :needs-double-check="startNeedsDoubleCheck"
+      :diverges="startDiverges"
+      @close="
+        startRow = null;
+        selectedStartPk = null;
+      "
+      @select="selectStartWorkOrder"
+      @bump="(delta: number) => bump('start', delta)"
+      @confirm="confirmStart()"
+      @acknowledge="acknowledgeStartOutsized"
+      @digit="startDigit"
+      @backspace="startBackspace"
+      @clear="startClear"
+    />
     </div>
 
-    <!-- planejar -->
-    <NuxtModal
-      :open="planRow != null"
+    <PlanAdjustDialog
+      ref="planDialog"
+      v-model:qty="planQty"
+      :row="planRow"
       :title="`${PLAN_TITLE[planMode]} · ${planRow ? rowLabel(planRow) : ''}`"
       :description="planDescription"
-      :ui="{ content: 'sm:max-w-sm' }"
-      @update:open="
-        (v: boolean) => {
-          if (!v) {
-            planRow = null;
-            selectedPlannedPk = null;
-          }
-        }
+      :mode="planMode"
+      :selected-order="selectedPlannedOrder"
+      :source="planSource"
+      :outsized="planOutsized"
+      :needs-double-check="planNeedsDoubleCheck"
+      :submitting="planSubmitting"
+      :qty-valid="planQtyValid"
+      :action-allowed="planActionAllowed"
+      :removes="planRemoves"
+      @close="
+        planRow = null;
+        selectedPlannedPk = null;
       "
-    >
-      <template #body>
-        <div class="flex flex-col gap-3">
-          <div
-            v-if="
-              planRow &&
-              planRow.planned_orders.length > 1 &&
-              !selectedPlannedOrder
-            "
-            class="grid gap-2"
-          >
-            <p class="text-sm text-muted-foreground">
-              Selecione o lote exato que deseja ajustar.
-            </p>
-            <!-- O bloco do lote carrega referência e quantidade; é seleção de registro. -->
-            <NuxtButton
-              v-for="workOrder in planRow.planned_orders"
-              :key="workOrder.pk"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              block
-              :ui="{ base: 'justify-between' }"
-              @click="selectPlannedWorkOrder(workOrder)"
-            >
-              <span class="font-medium">#{{ workOrder.ref }}</span>
-              <span class="tabular-nums text-muted-foreground"
-                >{{ workOrder.planned_qty }} un.</span
-              >
-            </NuxtButton>
-          </div>
-          <p
-            v-if="planMode === 'adjust' && selectedPlannedOrder"
-            class="text-sm text-muted-foreground"
-          >
-            Substitui #{{ selectedPlannedOrder.ref }} ({{
-              selectedPlannedOrder.planned_qty
-            }}). Com 0, o lote sai do plano.
-          </p>
-          <p
-            v-else-if="planMode === 'new-batch'"
-            class="text-sm text-muted-foreground"
-          >
-            Soma ao dia<template v-if="planRow?.started_qty !== '0'">
-              · {{ planRow?.started_qty }} previstas</template
-            ><template v-if="planRow?.finished_qty !== '0'">
-              · {{ planRow?.finished_qty }} realizadas</template
-            >.
-          </p>
-          <div
-            v-if="!planRow?.planned_orders.length || selectedPlannedOrder"
-            class="flex items-center gap-2"
-          >
-            <NuxtButton
-              icon="i-lucide-minus"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              square
-              :disabled="planSource === 'suggested'"
-              aria-label="Diminuir"
-              @click="bump('plan', -1)"
-            />
-            <NuxtInput
-              ref="planQtyInput"
-              v-model="planQty"
-              inputmode="decimal"
-              size="xl"
-              class="w-full"
-              :ui="{ base: 'text-center text-3xl font-bold tabular-nums' }"
-              :readonly="planSource === 'suggested'"
-              aria-label="Quantidade planejada"
-              @keydown.enter.prevent="confirmPlan()"
-            />
-            <NuxtButton
-              icon="i-lucide-plus"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              square
-              :disabled="planSource === 'suggested'"
-              aria-label="Aumentar"
-              @click="bump('plan', 1)"
-            />
-          </div>
-          <NuxtAlert
-            v-if="planOutsized"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="planOutsized"
-            data-plan-outsized
-            :actions="
-              alertActions('warning', [
-                planNeedsDoubleCheck && { label: 'O número está certo', onClick: acknowledgePlanOutsized },
-              ])
-            "
-          />
-        </div>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <NuxtButton
-            color="neutral"
-            variant="outline"
-            size="xl"
-            label="Cancelar"
-            @click="planRow = null"
-          />
-          <NuxtButton
-            size="xl"
-            :disabled="
-              !planQty.trim() ||
-              !planQtyValid ||
-              !planActionAllowed ||
-              planSubmitting ||
-              planNeedsDoubleCheck ||
-              (!!planRow?.planned_orders.length && !selectedPlannedOrder)
-            "
-            aria-keyshortcuts="Enter"
-            :color="planRemoves ? 'error' : undefined"
-            :label="
-              planSubmitting
-                ? 'Confirmando…'
-                : planRemoves
-                  ? 'Remover do plano'
-                  : planMode === 'new-batch'
-                    ? 'Confirmar novo lote'
-                    : 'Confirmar'
-            "
-            @click="confirmPlan()"
-          />
-        </div>
-      </template>
-    </NuxtModal>
+      @cancel="planRow = null"
+      @select="selectPlannedWorkOrder"
+      @bump="(delta: number) => bump('plan', delta)"
+      @confirm="confirmPlan()"
+      @acknowledge="acknowledgePlanOutsized"
+    />
 
-    <!-- Confirmar: o previsto abre o lote e segue para a Finalização (evento interno: start) -->
-    <NuxtModal
+    <LotStartPanel
+      ref="startModal"
+      v-model:qty="startQty"
+      variant="modal"
       :open="startRow != null && !docked"
-      :title="`Quanto está previsto? · ${startRow ? rowLabel(startRow) : ''}`"
-      :description="`${startRow?.output_sku ?? ''} · esta quantidade abre o lote e segue para a Finalização.`"
-      :ui="{ content: 'sm:max-w-sm' }"
-      @update:open="
-        (v: boolean) => {
-          if (!v) {
-            startRow = null;
-            selectedStartPk = null;
-          }
-        }
+      :row="startRow"
+      :selected-pk="selectedStartPk"
+      :selected-order="selectedStartOrder"
+      :submitting="startSubmitting"
+      :ready="startReady"
+      :outsized="startOutsized"
+      :needs-double-check="startNeedsDoubleCheck"
+      :diverges="startDiverges"
+      @close="
+        startRow = null;
+        selectedStartPk = null;
       "
-    >
-      <template #body>
-        <div class="flex flex-col gap-3">
-          <div
-            v-if="
-              startRow &&
-              startRow.planned_orders.length > 1 &&
-              !selectedStartOrder
-            "
-            class="grid gap-2"
-          >
-            <p class="text-sm text-muted-foreground">
-              Selecione o lote que vai confirmar.
-            </p>
-            <!-- O bloco do lote carrega referência e quantidade; é seleção de registro. -->
-            <NuxtButton
-              v-for="workOrder in startRow.planned_orders"
-              :key="workOrder.pk"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              block
-              :ui="{ base: 'justify-between' }"
-              @click="selectStartWorkOrder(workOrder)"
-            >
-              <span class="font-medium">#{{ workOrder.ref }}</span>
-              <span class="tabular-nums text-muted-foreground"
-                >{{ workOrder.planned_qty }} un.</span
-              >
-            </NuxtButton>
-          </div>
-          <p v-if="selectedStartOrder" class="text-sm text-muted-foreground">
-            Lote #{{ selectedStartOrder.ref }} · planejado
-            {{ selectedStartOrder.planned_qty }}
-          </p>
-          <div v-if="selectedStartOrder" class="flex items-center gap-2">
-            <NuxtButton
-              icon="i-lucide-minus"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              square
-              aria-label="Diminuir"
-              @click="bump('start', -1)"
-            />
-            <NuxtInput
-              ref="startQtyInput"
-              v-model="startQty"
-              inputmode="decimal"
-              size="xl"
-              class="w-full"
-              :ui="{ base: 'text-center text-3xl font-bold tabular-nums' }"
-              aria-label="Quantidade prevista"
-              @keydown.enter.prevent="confirmStart()"
-            />
-            <NuxtButton
-              icon="i-lucide-plus"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              square
-              aria-label="Aumentar"
-              @click="bump('start', 1)"
-            />
-          </div>
-          <!-- Divergiu do planejado? A tela avisa e segue: é rendimento, não perda.
-               Um zero a mais (3x) se confere antes de abrir. -->
-          <NuxtAlert
-            v-if="startOutsized"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="startOutsized"
-            data-start-outsized
-            :actions="
-              alertActions('warning', [
-                startNeedsDoubleCheck && { label: 'O número está certo', onClick: acknowledgeStartOutsized },
-              ])
-            "
-          />
-          <p
-            v-else-if="selectedStartOrder && startDiverges"
-            class="text-sm text-muted-foreground"
-          >
-            Diferente do planejado ({{ selectedStartOrder.planned_qty }}).
-          </p>
-        </div>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <NuxtButton
-            color="neutral"
-            variant="outline"
-            size="xl"
-            label="Cancelar"
-            @click="startRow = null"
-          />
-          <NuxtButton
-            size="xl"
-            :disabled="startSubmitting || !startReady || startNeedsDoubleCheck"
-            aria-keyshortcuts="Enter"
-            :label="startSubmitting ? 'Confirmando…' : 'Confirmar'"
-            @click="confirmStart()"
-          />
-        </div>
-      </template>
-    </NuxtModal>
+      @cancel="startRow = null"
+      @select="selectStartWorkOrder"
+      @bump="(delta: number) => bump('start', delta)"
+      @confirm="confirmStart()"
+      @acknowledge="acknowledgeStartOutsized"
+    />
 
-    <!-- lote aberto: conferência e cancelamento, sem etapas, sem gestão -->
-    <NuxtModal
-      :open="startedRow != null"
+    <LotCancelDialog
+      v-model:void-reason="voidReason"
+      :row="startedRow"
       :title="startedRow ? rowLabel(startedRow) : 'Detalhes do lote'"
       :description="startedDescription"
-      @update:open="
-        (v: boolean) => {
-          if (!v) {
-            startedRow = null;
-            selectedStartedPk = null;
-            voidConfirming = false;
-          }
-        }
+      :orders="startedDialogOrders"
+      :selected-order="selectedStartedOrder"
+      :void-confirming="voidConfirming"
+      :old-dough-action="selectedOldDoughAction"
+      :deviation-action="selectedDeviationAction"
+      :kds-card="selectedStartedKdsCard"
+      @close="
+        startedRow = null;
+        selectedStartedPk = null;
+        voidConfirming = false;
       "
-    >
-      <template #body>
-        <div class="flex flex-col gap-3">
-          <div
-            v-if="
-              startedRow &&
-              startedDialogOrders.length > 1 &&
-              !selectedStartedOrder
-            "
-            class="grid gap-2"
-          >
-            <!-- O bloco do lote carrega referência e quantidade; é seleção de registro. -->
-            <NuxtButton
-              v-for="workOrder in startedDialogOrders"
-              :key="workOrder.pk"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              block
-              :ui="{ base: 'justify-between' }"
-              @click="selectedStartedPk = workOrder.pk"
-            >
-              <span class="font-medium">#{{ workOrder.ref }}</span>
-              <span class="tabular-nums text-muted-foreground"
-                >{{ workOrder.started_qty || workOrder.planned_qty }} un.</span
-              >
-            </NuxtButton>
-          </div>
-
-          <div
-            v-if="selectedStartedOrder"
-            class="flex flex-col gap-2"
-            data-lot-summary
-          >
-            <p class="op-body text-muted-foreground">
-              {{
-                selectedStartedOrder.started_qty
-                  ? "Lote aberto"
-                  : "Lote planejado"
-              }}<template v-if="selectedStartedOrder.started_at_display">
-                · Aberto em
-                {{ selectedStartedOrder.started_at_display }}</template
-              >
-            </p>
-            <p class="text-3xl font-bold tabular-nums" data-lot-quantity>
-              {{
-                formatQtyUnit(
-                  selectedStartedOrder.started_qty ||
-                    selectedStartedOrder.planned_qty,
-                  startedRow?.output_unit,
-                )
-              }}
-              {{
-                selectedStartedOrder.started_qty ? "previstas" : "planejadas"
-              }}
-            </p>
-            <p
-              v-if="selectedStartedOrder.started_qty"
-              class="op-body text-muted-foreground"
-            >
-              Seguem para a Finalização.
-            </p>
-          </div>
-
-          <template v-if="voidConfirming">
-            <NuxtAlert
-              color="warning"
-              variant="subtle"
-              icon="i-lucide-triangle-alert"
-              :description="
-                startedRow?.started_orders.length
-                  ? 'O lote volta atrás e o vínculo com pedidos é desfeito.'
-                  : 'O lote planejado sai do dia e o vínculo com pedidos é desfeito.'
-              "
-            />
-            <NuxtTextarea
-              v-model="voidReason"
-              :rows="2"
-              class="w-full"
-              placeholder="Motivo do cancelamento…"
-              aria-label="Motivo do cancelamento"
-            />
-          </template>
-        </div>
-      </template>
-      <template #footer>
-        <div class="flex w-full flex-wrap gap-2">
-          <NuxtButton
-            v-if="selectedStartedOrder && selectedOldDoughAction"
-            color="primary"
-            variant="outline"
-            icon="i-lucide-package-plus"
-            label="Registrar massa velha"
-            :disabled="!selectedOldDoughAction.enabled"
-            :title="selectedOldDoughAction.reason || undefined"
-            @click="openOldDoughRegistration"
-          />
-          <NuxtButton
-            v-if="
-              selectedStartedOrder &&
-              selectedDeviationAction?.enabled &&
-              selectedStartedKdsCard?.formula_limits.length
-            "
-            color="primary"
-            variant="outline"
-            icon="i-lucide-shield-check"
-            label="Autorizar desvio"
-            @click="openFormulaDeviation"
-          />
-          <!-- O botão só existe para quem pode cancelar (o mesmo can_void do
-               menu da linha); para os outros, a tela diz quem cancela. -->
-          <NuxtButton
-            v-if="selectedStartedOrder?.can_void && !voidConfirming"
-            color="error"
-            variant="outline"
-            label="Cancelar lote…"
-            @click="voidConfirming = true"
-          />
-          <NuxtButton
-            v-else-if="selectedStartedOrder?.can_void"
-            color="error"
-            label="Confirmar cancelamento"
-            @click="confirmVoid()"
-          />
-          <p
-            v-else-if="selectedStartedOrder"
-            class="op-label self-center text-muted-foreground"
-            data-void-hint
-          >
-            Cancelar lote é com o gerente.
-          </p>
-          <NuxtButton
-            color="neutral"
-            variant="outline"
-            class="ml-auto"
-            label="Fechar"
-            @click="
-              startedRow = null;
-              selectedStartedPk = null;
-              voidConfirming = false;
-            "
-          />
-        </div>
-      </template>
-    </NuxtModal>
+      @select="(pk: number) => (selectedStartedPk = pk)"
+      @ask-void="voidConfirming = true"
+      @confirm-void="confirmVoid()"
+      @register-old-dough="openOldDoughRegistration"
+      @authorize-deviation="openFormulaDeviation"
+    />
 
     <RegisterOldDoughDialog
       :open="oldDoughOrder != null"
@@ -2683,49 +2131,10 @@ const startedDescription = computed(() => {
       @submit="authorizeFormulaDeviation"
     />
 
-    <!-- pedidos vinculados -->
-    <NuxtModal
-      :open="commitmentsRow != null"
-      :title="`${commitmentsRow ? rowCommittedUnits(commitmentsRow) : 0} un. comprometidas · ${commitmentsRow ? rowLabel(commitmentsRow) : ''}`"
-      :description="`${commitmentsRow?.output_sku ?? ''} · encomendas confirmadas que dependem desta produção.`"
-      @update:open="
-        (v: boolean) => {
-          if (!v) commitmentsRow = null;
-        }
-      "
-    >
-      <template #body>
-        <ul class="flex flex-col gap-2 text-sm">
-          <li
-            v-for="commitment in commitmentsList"
-            :key="commitment.ref"
-            class="flex items-center justify-between gap-3 rounded-md border p-2.5"
-          >
-            <span class="inline-flex items-center gap-2">
-              <Icon
-                name="lucide:shopping-bag"
-                class="size-4 text-muted-foreground"
-              />
-              <span class="font-medium">{{ commitment.ref }}</span>
-              <NuxtBadge color="neutral" :label="commitment.status_label" />
-            </span>
-            <span class="tabular-nums text-muted-foreground"
-              >{{ commitment.qty_required }} un.</span
-            >
-          </li>
-        </ul>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end">
-          <NuxtButton
-            color="neutral"
-            variant="outline"
-            label="Fechar"
-            @click="commitmentsRow = null"
-          />
-        </div>
-      </template>
-    </NuxtModal>
+    <LotCommitmentsDialog
+      :row="commitmentsRow"
+      @close="commitmentsRow = null"
+    />
 
     <ShortageDialog
       :shortage="shortage"
