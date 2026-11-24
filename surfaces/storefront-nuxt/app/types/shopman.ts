@@ -789,7 +789,11 @@ export interface StorefrontShellProjection {
   faq: FAQItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
-  /** Opcional durante a convivência (campo aditivo); o consumo é o OC-21. */
+  /**
+   * Opcional durante a convivência (campo aditivo). A tela lê por `useExperience`;
+   * `useStorefrontShell` torna privado o documento que traz versão fora da padrão.
+   * Ausente ou vazio = todos os experimentos na versão padrão.
+   */
   experience?: ExperienceProjection[]
 }
 
