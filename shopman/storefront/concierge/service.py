@@ -1074,6 +1074,11 @@ def _framework_turn(conversation, inbound):
     return turn_framework.run(conversation, inbound[0], interrupted=interrupted)
 
 
+#: A entrada que a varredura reingeriu (``inbound_sweep``): a resposta dela começa pela desculpa.
+LATE_SOURCE = "inbound_sweep"
+LATE_REPLY_COPY_KEY = "CONCIERGE_LATE_REPLY"
+
+
 def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, intents_client=None) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
@@ -1319,6 +1324,11 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         reply_text, *extra_replies = reviewed.texts
+        if reply_text and any((message.envelope or {}).get("correlation_ref") == LATE_SOURCE for message in inbound):
+            # A mensagem chegou pela varredura (o webhook a perdeu): a resposta sai atrasada,
+            # e a casa diz, numa frase, antes de responder (dono, 24/11/2026).
+            apology = (copy_message(LATE_REPLY_COPY_KEY) or "").strip()
+            reply_text = "\n".join(part for part in (apology, reply_text) if part)
         # A conferência antes do envio (dono, 21/11/2026), em sombra: correta, útil e
         # aceitável. Roda fora da transação (o juiz é rede) e nunca derruba o turno; o
         # veredito vai para o envelope e o placar de conversa mede antes de ela valer.
