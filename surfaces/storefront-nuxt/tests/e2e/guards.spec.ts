@@ -64,3 +64,24 @@ test('home preserva o SSR e negocia compressão na origem', async ({ request }) 
   expect(head.headers()['content-length']).toBe(compressed.headers()['content-length'])
   expect(await head.body()).toHaveLength(0)
 })
+
+// #3474: o documento com sessão embute o shell da cliente (nome, sacola). Em
+// qualquer rota ele sai `private, no-store`; o anônimo segue com a política de antes.
+test('documento com sessão nunca é guardado na borda; o anônimo segue como antes', async ({ request }) => {
+  const directives = (value: string | undefined) => (value || '').split(',').map(part => part.trim().split('=')[0]!.toLowerCase()).filter(Boolean)
+  const routes = ['/', '/menu', '/produto/EXEMPLO', '/termos', '/privacidade', '/faq', '/rota-que-nao-existe-123']
+
+  for (const path of routes) {
+    const withSession = await request.get(path, { headers: { cookie: 'csrftoken=t; sessionid=e2e-cliente' }, maxRedirects: 0 })
+    const privateCache = directives(withSession.headers()['cache-control'])
+    expect(privateCache, `${path} com sessão (${withSession.status()})`).toEqual(expect.arrayContaining(['private', 'no-store']))
+    expect(privateCache, path).not.toContain('public')
+  }
+
+  const home = await request.get('/', { headers: { 'accept-encoding': 'identity' } })
+  expect(home.headers()['cache-control']).toBe('private, no-transform')
+  for (const path of ['/menu', '/termos', '/privacidade', '/faq']) {
+    const anonymous = await request.get(path, { headers: { cookie: 'csrftoken=t' } })
+    expect(anonymous.headers()['cache-control'], `${path} anônimo`).toBeUndefined()
+  }
+})

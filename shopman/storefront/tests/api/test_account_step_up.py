@@ -14,6 +14,7 @@ from shopman.guestman.contrib.identifiers.models import (
 from shopman.guestman.models import Customer
 
 from shopman.shop.models import PrivacyRequestOperation, PrivacyRequestReceipt
+from shopman.storefront.tests.identity_fakes import proven
 
 pytestmark = pytest.mark.django_db
 
@@ -103,7 +104,7 @@ def test_step_up_with_wrong_code_is_rejected(client: Client):
 
 def test_step_up_then_delete_succeeds(client: Client):
     phone = "+5543999990013"
-    customer = Customer.objects.create(ref="CUS-SU-OK", first_name="Duda", phone=phone)
+    customer = proven(Customer.objects.create(ref="CUS-SU-OK", first_name="Duda", phone=phone))
     _login_as_customer(client, customer)
     raw_code = _mint_login_code(phone)
 
@@ -126,7 +127,7 @@ def test_step_up_then_delete_succeeds(client: Client):
 
 def test_completed_delete_replays_after_session_was_flushed(client: Client):
     phone = "+5543999990018"
-    customer = Customer.objects.create(ref="CUS-SU-LOST", first_name="Lia", phone=phone)
+    customer = proven(Customer.objects.create(ref="CUS-SU-LOST", first_name="Lia", phone=phone))
     _login_as_customer(client, customer)
     raw_code = _mint_login_code(phone)
     key = str(uuid.uuid4())

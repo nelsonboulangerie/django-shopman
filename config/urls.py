@@ -10,7 +10,6 @@ from django.http import Http404, HttpResponse
 from django.middleware.csrf import get_token
 from django.urls import URLPattern, URLResolver, include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-from shopman.doorman.views.access_link import AccessLinkCreateView, AccessLinkExchangeView
 from shopman.watchman.release import ReleaseIdentityView
 
 from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
@@ -24,6 +23,7 @@ from shopman.backstage.admin_console.pos_counter_agent import (
 from shopman.backstage.admin_console.settings_hub import settings_hub_view
 from shopman.backstage.views.admin_login import admin_login
 from shopman.backstage.views.two_factor import admin_2fa_enroll, admin_2fa_verify
+from shopman.shop.views.access_link import StoreAccessLinkCreateView, StoreAccessLinkExchangeView
 from shopman.shop.views.admin_host import admin_host_root
 from shopman.shop.views.health import DatabaseReadyView, HealthCheckView, ReadyCheckView
 
@@ -198,11 +198,13 @@ _confine_to_admin_host(p for p in urlpatterns if str(p.pattern).startswith("admi
 #
 # - `api/auth/access/create/`: a ponte do ManyChat. O External Request do flow
 #   chama servidor a servidor com `ACCESS_LINK_API_KEY` (docs/guides/
-#   whatsapp-access-link.md).
+#   whatsapp-access-link.md). Montada pela subclasse do orquestrador, que aplica
+#   o teto de prazo e as audiências da loja (`shop/views/access_link.py`, OC-09).
 # - `auth/access/` (`doorman:access-exchange`): a entrada de reserva do
 #   `AccessLinkService._build_url` quando `ACCESS_LINK_ENTRY_URL` está vazio
 #   (suíte de testes, dev local sem loja). Com a loja configurada, como em todo
-#   ambiente vivo, o link emitido é `{loja}/a?t=` e a troca é POST.
+#   ambiente vivo, o link emitido é `{loja}/a?t=` e a troca é POST. A subclasse
+#   do orquestrador aplica a mesma régua de audiência da porta da loja (OC-09).
 #
 # O resto de `shopman.doorman.urls` e `shopman.doorman.api.urls` (OTP por
 # `api/auth/request-code|verify-code` e `auth/code/*`, pedido de link por
@@ -211,12 +213,12 @@ _confine_to_admin_host(p for p in urlpatterns if str(p.pattern).startswith("admi
 # e nenhuma superfície a chamava: a loja entra por `api/v1/auth/` (BFF Nuxt).
 # Guardrail: shopman/shop/tests/test_api_perimeter.py.
 urlpatterns += [
-    path("api/auth/access/create/", AccessLinkCreateView.as_view(), name="auth-access-create"),
+    path("api/auth/access/create/", StoreAccessLinkCreateView.as_view(), name="auth-access-create"),
     path(
         "auth/",
         include(
             (
-                [path("access/", AccessLinkExchangeView.as_view(), name="access-exchange")],
+                [path("access/", StoreAccessLinkExchangeView.as_view(), name="access-exchange")],
                 "doorman",
             )
         ),

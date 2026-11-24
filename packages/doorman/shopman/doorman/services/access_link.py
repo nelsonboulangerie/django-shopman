@@ -184,8 +184,8 @@ class AccessLinkService:
         adapters. Todos apontavam para uma rota que a loja não serve.
 
         A entrada tem de ser a da loja por desenho, não por acaso: é lá que o
-        cookie de sessão precisa nascer (ver o docstring de
-        `shopman/shop/services/access_urls.py`).
+        cookie de sessão precisa nascer (ver o docstring de `path_access` em
+        `shopman/shop/services/storefront_links.py`).
         """
         entry = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         if entry:

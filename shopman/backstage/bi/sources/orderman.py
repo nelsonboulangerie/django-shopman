@@ -11,6 +11,7 @@ from __future__ import annotations
 from django.utils import timezone
 
 from shopman.backstage.bi.canonical import CanonicalPayment, CanonicalSale, CanonicalSaleLine
+from shopman.shop.services import order_helpers
 
 SOURCE = "shopman"
 
@@ -60,15 +61,15 @@ def read_no_shows(window, *, channel: str = "") -> dict[str, int]:
     fora do faturamento. O que ele decidiu mora em ``Order.data["no_show"]``
     (``shop/services/no_show.py``): o pago, o que voltou ao cliente, o que ficou
     com a loja e as linhas que viraram perda, com o valor de venda delas. Mesmo
-    recorte das vendas: ``created_at`` na janela, sem pedido de teste.
+    recorte das vendas: o dia combinado na janela, sem pedido de teste.
     """
     from shopman.orderman.models import Order
 
     from shopman.shop.services.order_helpers import exclude_test_orders
     from shopman.shop.services.payment_provenance import exclude_provider_simulated_orders
 
-    rows = Order.objects.filter(
-        created_at__range=window, status=Order.Status.CANCELLED, data__has_key="no_show",
+    rows = order_helpers.in_agreed_days(
+        Order.objects.filter(status=Order.Status.CANCELLED, data__has_key="no_show"), window,
     )
     if channel:
         rows = rows.filter(channel_ref=channel)
@@ -88,8 +89,14 @@ def read_no_shows(window, *, channel: str = "") -> dict[str, int]:
     return totals
 
 
-def read_sales(window) -> tuple[list[CanonicalSale], int]:
-    """(vendas canônicas, pedidos cancelados/devolvidos) na janela [início, fim)."""
+def read_sales(window, *, by_created: bool = False) -> tuple[list[CanonicalSale], int]:
+    """(vendas canônicas, pedidos cancelados/devolvidos) na janela [início, fim).
+
+    A venda entra pelo DIA COMBINADO (:func:`order_helpers.agreed_day`), e
+    ``CanonicalSale.day`` é esse dia; ``occurred_at`` segue sendo a hora em que o
+    pedido foi feito. ``by_created`` é para quem pergunta pelo balcão, não pela
+    venda (o troco do dia): recorta pela criação, como o caixa vê.
+    """
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections.bi_payments import payment_method_label
@@ -105,8 +112,12 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
     # cancelado: ele não é venda que a casa perdeu, é venda que nunca existiu.
     # O filtro de confirmação simulada ao lado só olha
     # ``data.payment.confirmation_mode``, chave que o iFood nunca grava.
+    orders = (
+        Order.objects.filter(created_at__range=window) if by_created
+        else order_helpers.in_agreed_days(Order.objects.all(), window)
+    )
     rows = exclude_test_orders(
-        exclude_provider_simulated_orders(Order.objects.filter(created_at__range=window))
+        exclude_provider_simulated_orders(orders)
     ).values_list(
         "id", "ref", "created_at", "total_q", "channel_ref", "status", "data"
     )
@@ -145,7 +156,7 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
                 key=pk,
                 ref=f"{SOURCE}:{ref}",
                 occurred_at=local,
-                day=local.date(),
+                day=local.date() if by_created else order_helpers.agreed_day(data, created_at),
                 channel_key=channel_ref,
                 is_delivery=data.get("fulfillment_type") == "delivery",
                 total_q=total_q,
@@ -162,7 +173,25 @@ def read_sales(window) -> tuple[list[CanonicalSale], int]:
 
 def read_lines(window) -> list[CanonicalSaleLine]:
     """As linhas dos pedidos que contam como venda (cancelado/devolvido fora)."""
-    from shopman.orderman.models import Order, OrderItem
+    from shopman.orderman.models import Order
+
+    return _lines_of(order_helpers.in_agreed_days(Order.objects.all(), window))
+
+
+def read_lines_for_refs(refs) -> list[CanonicalSaleLine]:
+    """As linhas dos pedidos destas refs que contam como venda, criados quando for.
+
+    Quem parte do lote (a margem da fornada) acha o pedido pela baixa, não pela
+    data de criação: a encomenda de quinta atendida pela fornada de sábado é venda
+    da fornada de sábado em qualquer filtro de datas (#3427).
+    """
+    from shopman.orderman.models import Order
+
+    return _lines_of(Order.objects.filter(ref__in=list(refs)))
+
+
+def _lines_of(orders) -> list[CanonicalSaleLine]:
+    from shopman.orderman.models import OrderItem
 
     from shopman.shop.services import order_composition
     from shopman.shop.services.order_helpers import exclude_test_orders
@@ -170,7 +199,7 @@ def read_lines(window) -> list[CanonicalSaleLine]:
 
     # Totais e ranking leem o mesmo conjunto de vendas reais.
     eligible = exclude_test_orders(exclude_provider_simulated_orders(
-        Order.objects.filter(created_at__range=window).exclude(status__in=_excluded_statuses())
+        orders.exclude(status__in=_excluded_statuses())
     ))
     # Pedido + ajustes: o pedido que o cliente alterou tem as linhas dele lidas
     # do ajuste. Ler as duas fontes somaria o item removido ao item que ficou.

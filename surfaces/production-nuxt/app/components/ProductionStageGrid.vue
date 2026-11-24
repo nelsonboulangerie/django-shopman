@@ -271,6 +271,7 @@ const startedRow = ref<ProductionMatrixRowProjection | null>(null);
 const selectedStartedPk = ref<number | null>(null);
 const voidReason = ref("");
 const voidConfirming = ref(false);
+const voidSubmitting = ref(false);
 const oldDoughOrder = ref<WorkOrderCardProjection | null>(null);
 // Recusa do servidor no registro de massa velha, campo a campo (beta 05/11: o
 // toast genérico ficava atrás do modal e nenhum campo era marcado).
@@ -393,6 +394,11 @@ function acknowledgePlanOutsized() {
 const planRemoves = computed(
   () => planMode.value === "adjust" && !!planQty.value.trim() && qtyNumber(planQty.value) === 0,
 );
+// Tirar do plano é cancelar o lote: leva o motivo de quem decidiu (#3400).
+const planRemoveReason = ref("");
+watch(planRow, () => {
+  planRemoveReason.value = "";
+});
 
 // Stepper touch: quantidade sempre editável com +/− generosos.
 // (Recebe o NOME do campo — no template o Vue desembrulha refs, então passar
@@ -504,6 +510,7 @@ async function confirmPlan() {
       source: planSource.value,
       workOrder: selectedPlannedOrder.value,
       newBatch: planMode.value === "new-batch",
+      reason: planRemoves.value ? planRemoveReason.value.trim() : undefined,
     });
     if (res?.ok) {
       planRow.value = null;
@@ -528,6 +535,8 @@ async function submitPlan(
     workOrder?: WorkOrderCardProjection | null;
     newBatch?: boolean;
     quiet?: boolean;
+    /** O motivo de quem tirou o lote do plano (zero sobre lote existente). */
+    reason?: string;
   },
 ) {
   if (row.recipe_pk == null || !board.value) return null;
@@ -550,6 +559,7 @@ async function submitPlan(
     expected_rev: opts.workOrder?.rev ?? null,
     position_ref: positionRef,
     source: opts.source,
+    ...(opts.reason ? { reason: opts.reason } : {}),
   };
   const label = opts.newBatch ? "Novo lote planejado" : "Planejado";
   const successMessage =
@@ -725,22 +735,25 @@ function openStarted(row: ProductionMatrixRowProjection) {
   selectedStartedPk.value =
     row.started_orders.length === 1 ? row.started_orders[0]!.pk : null;
   voidConfirming.value = false;
+  voidReason.value = "";
   kds.refresh();
 }
 
 async function confirmVoid() {
   const row = startedRow.value;
   const wo = selectedStartedOrder.value;
-  if (!row || !wo) return;
+  const reason = voidReason.value.trim();
+  if (!row || !wo || !reason || voidSubmitting.value) return;
   // A ação vem da matriz do dia, que traz o lote planejado e o aberto (#2957). A
   // recusa (permissão, números velhos, outra tela mexeu) chega pelo aviso do guarda,
   // com a causa e o "Atualizar os números", e o diálogo fica aberto.
-  const res = await voidOrder(
-    row.output_sku,
-    wo.pk,
-    wo.rev,
-    voidReason.value.trim() || "Cancelado pelo operador",
-  );
+  voidSubmitting.value = true;
+  let res: Awaited<ReturnType<typeof voidOrder>>;
+  try {
+    res = await voidOrder(row.output_sku, wo.pk, wo.rev, reason);
+  } finally {
+    voidSubmitting.value = false;
+  }
   if (res.ok) {
     startedRow.value = null;
     voidConfirming.value = false;
@@ -868,6 +881,7 @@ function openVoid(row: ProductionMatrixRowProjection) {
   const orders = voidableOrders(row);
   selectedStartedPk.value = orders.length === 1 ? orders[0]!.pk : null;
   voidConfirming.value = true;
+  voidReason.value = "";
 }
 function voidableOrders(row: ProductionMatrixRowProjection): WorkOrderCardProjection[] {
   const started = row.started_orders.filter((order) => order.can_void);
@@ -2033,6 +2047,7 @@ const startedDescription = computed(() => {
     <PlanAdjustDialog
       ref="planDialog"
       v-model:qty="planQty"
+      v-model:remove-reason="planRemoveReason"
       :row="planRow"
       :title="`${PLAN_TITLE[planMode]} · ${planRow ? rowLabel(planRow) : ''}`"
       :description="planDescription"
@@ -2088,6 +2103,7 @@ const startedDescription = computed(() => {
       :orders="startedDialogOrders"
       :selected-order="selectedStartedOrder"
       :void-confirming="voidConfirming"
+      :void-submitting="voidSubmitting"
       :old-dough-action="selectedOldDoughAction"
       :deviation-action="selectedDeviationAction"
       :kds-card="selectedStartedKdsCard"

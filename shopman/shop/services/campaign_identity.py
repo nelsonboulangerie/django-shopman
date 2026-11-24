@@ -24,10 +24,10 @@ Três decisões que este módulo carrega:
 2. **Sem UUID, link simples.** Assinante anônimo de alerta (só telefone) recebe o link de
    sempre. Não é exceção nem erro: não há identidade a pôr no link.
 
-3. **A cerca não é a `audience`.** Ela existe no model mas ninguém a aplica hoje —
-   `exchange_token` nunca passa `required_audience` (`storefront/api/auth.py`). Marcamos
-   `WEB_CHECKOUT` como intenção declarada, e quem decide o que a sessão pode fazer é a
-   FORÇA da identidade (dispositivo conhecido vs. só o número), não este campo.
+3. **A cerca não é a `audience`.** A troca a aplica só como porta: `WEB_CHECKOUT` é uma
+   das audiências que a loja aceita (`access.STORE_ENTRY_AUDIENCES`, OC-09), e todas abrem
+   a mesma sessão. Quem decide o que a sessão pode fazer é a FORÇA da identidade
+   (dispositivo conhecido vs. só o número), não este campo.
 """
 
 from __future__ import annotations
