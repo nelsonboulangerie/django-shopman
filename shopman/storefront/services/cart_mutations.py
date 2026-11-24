@@ -16,7 +16,7 @@ from shopman.shop.discount_spread import merged_for_display
 from shopman.shop.product_options import OptionSelectionError
 from shopman.shop.projections import cart_context
 from shopman.shop.projections.cart import build_minimum_order_progress
-from shopman.shop.services.cart import CartUnavailableError
+from shopman.shop.services.cart import CartDateRefused, CartUnavailableError
 from shopman.storefront.cart import CartService
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.intents.cart import interpret_set_qty
@@ -39,6 +39,14 @@ class CartMutationOptionRefused(Exception):
         self.error = error
 
 
+class CartMutationDateRefused(Exception):
+    """O dia escolhido no cardápio não pode ser combinado (OC-33 B1); ``message`` diz por quê."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
 class CartMutationUnavailable(Exception):
     """Raised when the server refuses a cart mutation for stock reasons."""
 
@@ -55,6 +63,19 @@ class CartMutationOutcome:
     intent: SetQtyIntent
     cart: dict[str, Any]
     payload: dict[str, Any]
+
+
+def _cart_qty_of(cart: dict, sku: str) -> int:
+    """Quanto do SKU a sacola tem, somando a parte que o rateio partiu da linha (#3240)."""
+    total = 0
+    for item in cart.get("items") or []:
+        if item.get("sku") != sku:
+            continue
+        try:
+            total += int(float(item.get("qty") or 0))
+        except (TypeError, ValueError):
+            continue
+    return total
 
 
 def parse_cart_qty(raw, *, minimum: int) -> int | None:
@@ -75,12 +96,17 @@ def set_qty_by_sku(
     sku: str,
     qty: int,
     perf=None,
+    chosen_date=None,
 ) -> CartMutationOutcome:
     """Set absolute cart quantity for one SKU.
 
     This is the canonical cart mutation for product-card, PDP and cart steppers.
     It keeps the server authoritative for price, holds and stock while letting
     different surfaces share the same action semantics.
+
+    ``chosen_date`` é o dia do "Para quando?" do cardápio (OC-33 B1). Vale para
+    o que PÕE na sacola (o primeiro "Adicionar" e o acréscimo); tirar não
+    depende do dia.
     """
     key = request.session.get("cart_session_key")
     if key:
@@ -108,12 +134,14 @@ def set_qty_by_sku(
                         whole_product=True,
                     )
             elif intent.action == "update":
+                adds = intent.qty > _cart_qty_of(cart, intent.sku)
                 mutated_session = CartService.update_qty(
                     request,
                     line_id=intent.line_id,
                     qty=intent.qty,
                     sku=intent.sku,
                     whole_product=True,
+                    chosen_date=chosen_date if adds else None,
                 )
             else:
                 # O nome do produto tem que viajar JUNTO com a linha. Sem ele o
@@ -130,11 +158,14 @@ def set_qty_by_sku(
                     unit_price_q=intent.unit_price_q,
                     name=str(getattr(intent.product, "name", "") or ""),
                     product=intent.product,
+                    chosen_date=chosen_date,
                 )
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=intent.product, stock_error=exc) from exc
     except OptionSelectionError as exc:
         raise CartMutationOptionRefused(product=intent.product, error=exc) from exc
+    except CartDateRefused as exc:
+        raise CartMutationDateRefused(exc.message) from exc
 
     with _perf_step(perf, "payload"):
         if mutated_session is not None:
@@ -155,6 +186,7 @@ def add_line_with_options(
     sku: str,
     qty: int,
     options: list[dict],
+    chosen_date=None,
 ) -> CartMutationOutcome:
     """Põe na sacola um item COM escolha no produto (sabor, adicionais).
 
@@ -181,11 +213,14 @@ def add_line_with_options(
             name=str(product_ctx.product.name or ""),
             options=options,
             product=product_ctx.product,
+            chosen_date=chosen_date,
         )
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=product_ctx.product, stock_error=exc) from exc
     except OptionSelectionError as exc:
         raise CartMutationOptionRefused(product=product_ctx.product, error=exc) from exc
+    except CartDateRefused as exc:
+        raise CartMutationDateRefused(exc.message) from exc
     cart = CartService.summary_from_session(session, include_items=True)
     wanted = product_options.signature(options)
     line = next(

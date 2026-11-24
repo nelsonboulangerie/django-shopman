@@ -88,6 +88,57 @@ class CartDateMismatchError(CartUnavailableError):
         self.item_date = item_date
 
 
+class CartDateRefused(Exception):
+    """O dia escolhido no cardápio não pode ser combinado: passado, além do máximo, fechado.
+
+    ``message`` é a frase da recusa (``preorder_dates.date_refusal``), para a tela.
+    """
+
+    error_code = "date_refused"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _apply_chosen_date(session: Session, chosen: date, *, sku: str, qty: int) -> None:
+    """O dia do "Para quando?" do cardápio vira o dia da sacola (OC-33 B1).
+
+    É o mesmo ``delivery_date`` que a concierge grava ao combinar o dia, e o que
+    ``_cart_date`` já lê: a reserva cai nesse dia. Escrito na sessão travada, antes
+    da reserva, pela mutação da sacola que já existe.
+
+    - Hoje (ou antes) é o cardápio de sempre (X13): a sacola fica sem data
+      escolhida, e a reserva segue a régua de sempre.
+    - Dia que a casa não combina: recusa com a frase (:class:`CartDateRefused`).
+    - Sacola que já tem reserva para OUTRO dia: um pedido, uma data (decisão do
+      dono, 01/10/2026): o item é de outro pedido (:class:`CartDateMismatchError`),
+      sem reservar nada.
+    """
+    from shopman.shop.services.preorder_dates import date_refusal
+
+    today = timezone.localdate()
+    held = availability.session_hold_dates(session.session_key)
+    data = dict(session.data or {})
+    if chosen <= today:
+        if held and min(held) > today:
+            raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=min(held), item_date=today)
+        if parse_commitment_date(data.get("delivery_date")) is not None:
+            data.pop("delivery_date", None)
+            session.data = data
+            session.save(update_fields=["data"])
+        return
+    refusal = date_refusal(chosen, today=today)
+    if refusal:
+        raise CartDateRefused(refusal)
+    if held and min(held) != chosen:
+        raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=min(held), item_date=chosen)
+    if data.get("delivery_date") != chosen.isoformat():
+        data["delivery_date"] = chosen.isoformat()
+        session.data = data
+        session.save(update_fields=["data"])
+
+
 def _refuse_a_second_date(*, session_key: str, sku: str, requested_qty: int, new_hold_id: str | None) -> None:
     """Loja online: um pedido, uma data (decisão do dono, 01/10/2026).
 
@@ -183,8 +234,13 @@ def add_item(
     name: str = "",
     options: list[dict] | None = None,
     product=None,
+    chosen_date: date | None = None,
 ) -> tuple[Session, str]:
     """Reserve stock and add or merge a cart line.
+
+    ``chosen_date`` é o dia que a cliente escolheu no "Para quando?" do cardápio
+    (OC-33 B1): vira o dia da sacola antes da reserva (:func:`_apply_chosen_date`).
+    ``None`` = a superfície não escolheu dia, e nada muda.
 
     ``options`` é a escolha do cliente no produto, ``[{group, ref}]`` e nada
     mais (``shopman.shop.product_options``). Ela é conferida contra o cadastro
@@ -214,6 +270,8 @@ def add_item(
     )
 
     session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
+    if chosen_date is not None:
+        _apply_chosen_date(session, chosen_date, sku=sku, qty=qty)
     existing = next(
         (
             item
@@ -314,14 +372,20 @@ def update_qty(
     qty: int,
     sku: str | None = None,
     whole_product: bool = False,
+    chosen_date: date | None = None,
 ) -> Session:
     """Reconcile holds and update a cart line quantity in one local commit.
 
     ``whole_product``: ``qty`` é o total da linha do produto, contando a parte que
     o rateio do desconto partiu dela (#3240); a parte sai na mesma escrita e o
     preço a refaz se ainda couber. É a conta do stepper por SKU, que mostra a soma.
+
+    ``chosen_date``: o dia do "Para quando?" (OC-33 B1), como em :func:`add_item`.
+    Quem chama só o passa no acréscimo: tirar da sacola nunca depende do dia.
     """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    if chosen_date is not None:
+        _apply_chosen_date(session, chosen_date, sku=str(sku or ""), qty=qty)
     parts = tuple(_split_parts(session, line_id)) if whole_product else ()
     line_sku = sku
     if line_sku is None:

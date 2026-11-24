@@ -7545,6 +7545,7 @@
           "path": "shopman/shop/services/cart.py",
           "symbols": [
             "add_item",
+            "_apply_chosen_date",
             "_cart_date",
             "_date_that_serves",
             "_catalog_product",
@@ -7629,6 +7630,7 @@
           "symbols": [
             "CartUnavailableError",
             "CartDateMismatchError",
+            "CartDateRefused",
             "_refuse_a_second_date",
             "lock_cart_session",
             "get_open_session",
@@ -17348,6 +17350,7 @@
           "path": "shopman/shop/policies/preorder_date.py",
           "symbols": [
             "_lead_time_refusal",
+            "chosen_day",
             "preorder_date_errors"
           ]
         }

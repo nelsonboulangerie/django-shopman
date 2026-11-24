@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -28,7 +29,7 @@ from shopman.shop.policies.exclusive_collections import CollectionAccess
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.copy import build_copy
 from shopman.shop.projections.pricing_quote import PriceQuoteProjection
-from shopman.shop.projections.ready_promise import read_promise_facts
+from shopman.shop.projections.ready_promise import opening_slot, read_promise_facts
 from shopman.shop.projections.storefront_context import (
     popular_skus,
     session_pricing_hints,
@@ -46,8 +47,10 @@ from shopman.storefront.presentation.promise import (
     ORDERING_NONE,
     OrderingProjection,
     PromiseProjection,
+    day_label,
     ordering_from_promises,
     promise_for,
+    promise_on_day,
 )
 from shopman.storefront.presentation.status import availability_label
 
@@ -216,6 +219,38 @@ class EmptyStateProjection:
 
 
 @dataclass(frozen=True)
+class CatalogDayProjection:
+    """O dia que a cliente escolheu no "Para quando?" (OC-33 B1).
+
+    ``label`` é o dia como a loja o diz ("amanhã, quarta", "quinta, 26/11"), o
+    mesmo da sacola; ``opens_at`` (``"HH:MM"``) é o primeiro horário do dia: o
+    item disponível desde ele não tem frase, o que fica depois diz "A partir das 11h".
+    """
+
+    date: str
+    label: str
+    opens_at: str
+
+
+@dataclass(frozen=True)
+class CatalogDaysProjection:
+    """Os dias que o "Para quando?" pode oferecer, e o escolhido.
+
+    ``today_open`` = hoje ainda tem horário (falso: encerrado ou casa fechada).
+    ``next_days`` são os próximos dias em que a casa opera, depois de hoje (ISO).
+    ``max_date`` é o teto do "Outro dia"; ``closed_weekdays`` (0 = segunda) os
+    dias da semana sem expediente. ``selected`` é o dia do cardápio (``None`` = hoje).
+    """
+
+    today: str
+    today_open: bool
+    next_days: tuple[str, ...]
+    max_date: str
+    closed_weekdays: tuple[int, ...]
+    selected: CatalogDayProjection | None = None
+
+
+@dataclass(frozen=True)
 class CatalogProjection:
     """Top-level projection for the storefront menu."""
 
@@ -228,6 +263,9 @@ class CatalogProjection:
     # (``empty_state``) e busca client-side sem resultado (``search_empty_state``).
     empty_state: EmptyStateProjection | None = None
     search_empty_state: EmptyStateProjection | None = None
+    # O "Para quando?" (OC-33 B1): os dias que dá para escolher e o escolhido.
+    # ``None`` quando o calendário não pôde ser lido.
+    days: CatalogDaysProjection | None = None
     has_items: bool = field(init=False)
 
     def __post_init__(self) -> None:
@@ -268,6 +306,7 @@ def build_catalog(
     channel_ref: str,
     collection_ref: str | None = None,
     request: HttpRequest | None = None,
+    target_date: date | None = None,
 ) -> CatalogProjection:
     """Build a ``CatalogProjection`` for the given channel.
 
@@ -279,6 +318,11 @@ def build_catalog(
     - ``request`` is optional; when provided, it derives session pricing
       hints (fulfillment type + subtotal) so prices shown on the menu match
       what the checkout will apply.
+    - ``target_date`` é o dia que a cliente escolheu no "Para quando?" (OC-33
+      B1), sempre depois de hoje (hoje é ``None``, X13). Disponibilidade e
+      promessa respondem para ESSE dia, pela régua da reserva: só a fornada e o
+      estoque válidos no dia, nunca a sobra de hoje (a margem de validade é a
+      do dia). Só lê.
     """
     from shopman.shop.omotenashi.context import OmotenashiContext
 
@@ -319,6 +363,8 @@ def build_catalog(
         all_products.extend(products)
         group_index.append((col_ref, start, len(all_products)))
 
+    days = _catalog_days(target_date)
+
     if not all_products:
         return CatalogProjection(
             items=(),
@@ -328,6 +374,7 @@ def build_catalog(
             favorite_category_ref=favorite_category_ref,
             empty_state=_catalog_empty_state(),
             search_empty_state=_search_empty_state(),
+            days=days,
         )
 
     items_flat = _build_items(
@@ -344,12 +391,15 @@ def build_catalog(
         subscribed_skus=subscribed_skus,
         session_key=session_key,
         active_food_prefs=active_food_prefs,
+        target_date=target_date,
     )
 
     static_sections = _build_sections(items_flat, group_index, categories)
     # Dinâmicas só em visão full (sem filtro de coleção específica)
     if active_collection is None:
-        dynamic_sections = _build_dynamic_sections(channel_ref, {item.sku for item in items_flat})
+        dynamic_sections = _build_dynamic_sections(
+            channel_ref, {item.sku for item in items_flat}, target_date=target_date,
+        )
         sections = dynamic_sections + static_sections
     else:
         sections = static_sections
@@ -365,12 +415,40 @@ def build_catalog(
         # aqui é inócuo e mantém o contrato estável.
         empty_state=_catalog_empty_state(),
         search_empty_state=_search_empty_state(),
+        days=days,
     )
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Internals — kept private; contract lives in build_catalog.
 # ──────────────────────────────────────────────────────────────────────
+
+
+def _catalog_days(target_date: date | None) -> CatalogDaysProjection | None:
+    """O "Para quando?": os dias que a casa atende, lidos do mesmo calendário do checkout."""
+    from shopman.shop.projections import checkout as checkout_projection
+    from shopman.shop.projections import checkout_context
+
+    max_preorder_days, _closed = checkout_context.preorder_config()
+    days = checkout_projection.menu_days(max_preorder_days)
+    if days is None:
+        return None
+    selected = None
+    if target_date is not None:
+        opens = opening_slot(target_date)
+        selected = CatalogDayProjection(
+            date=target_date.isoformat(),
+            label=day_label(target_date, today=days.today),
+            opens_at=opens.strftime("%H:%M") if opens else "",  # hora-ok: contrato HH:MM
+        )
+    return CatalogDaysProjection(
+        today=days.today.isoformat(),
+        today_open=days.today_open,
+        next_days=tuple(day.isoformat() for day in days.next_days),
+        max_date=days.max_date.isoformat(),
+        closed_weekdays=days.closed_weekdays,
+        selected=selected,
+    )
 
 
 def _build_categories() -> tuple[CategoryProjection, ...]:
@@ -659,6 +737,7 @@ def _build_items(
     subscribed_skus: set[str] | None = None,
     session_key: str = "",
     active_food_prefs=frozenset(),
+    target_date: date | None = None,
 ) -> list[CatalogItemProjection]:
     qty_in_cart_by_sku = qty_in_cart_by_sku or {}
     favorite_skus = favorite_skus or set()
@@ -666,7 +745,8 @@ def _build_items(
     skus = [p.sku for p in products]
 
     # Batch: hold da PRÓPRIA sessão, para não contar contra quem o fez (uma query).
-    own_holds = catalog_context.own_holds_by_sku(session_key, skus) if session_key else {}
+    # No dia escolhido, só o que a sessão reservou PARA esse dia volta a ela.
+    own_holds = _own_holds(session_key, skus, target_date=target_date)
 
     # Batch: collections per SKU (used as `category` and for pricing context).
     sku_collections = catalog_context.collection_refs_by_sku(skus)
@@ -689,6 +769,7 @@ def _build_items(
             channel_ref=channel_ref,
             own_holds=own_holds,
             low_stock_threshold=low_stock_threshold,
+            target_date=target_date,
         )
 
     # Batch: active automatic promotions once, evaluated per SKU in memory by the
@@ -701,13 +782,17 @@ def _build_items(
     availability_copy = build_copy("AVAILABILITY")
 
     # A promessa de quando: os fatos em lote, a mesma leitura de estoque (memo
-    # do request) e a mesma grade que o checkout usa.
+    # do request) e a mesma grade que o checkout usa. No dia escolhido o dia é
+    # sabido (``day_known``): só a prontidão e a grade.
     with catalog_stage("availability"):
-        promise_facts = read_promise_facts(skus, channel_ref=channel_ref, own_holds=own_holds)
+        promise_facts = read_promise_facts(
+            skus, channel_ref=channel_ref, own_holds=own_holds, day_known=target_date is not None,
+        )
 
     # Selos de urgência (#2807): a fornada de cada SKU numa query só; estoque e
-    # promoções já estão em mão.
-    fresh_by_sku = catalog_context.last_finished_by_sku(skus)
+    # promoções já estão em mão. "Fornada pronta há 12 min" é de agora: no dia
+    # escolhido não há selo de fornada.
+    fresh_by_sku = catalog_context.last_finished_by_sku(skus) if target_date is None else {}
 
     result: list[CatalogItemProjection] = []
     for p in products:
@@ -734,24 +819,30 @@ def _build_items(
         availability = state.availability
         is_paused = state.is_paused
         is_notifiable = state.is_notifiable
+        meta = p.metadata if isinstance(p.metadata, dict) else {}
+        if target_date is None:
+            can_add = availability in ORDERABLE_AVAILABILITY
+            promise = promise_for(
+                p.sku,
+                promise_facts,
+                orderable=can_add,
+                made_to_order=bool(meta.get("made_to_order")),
+            )
+        else:
+            availability, promise = _on_day(p.sku, availability, promise_facts, day=target_date)
+            can_add = promise is not None
+            # "Me avise quando disponível" é do estoque de agora, não de um dia escolhido.
+            is_notifiable = False
         avail_label = availability_label(availability, copy=availability_copy)
-        can_add = availability in ORDERABLE_AVAILABILITY
         available_qty = catalog_context.orderable_ceiling(raw_avail, can_add=can_add)
 
         primary = primary_by_sku.get(p.sku)
         primary_meta = primary.metadata if primary and isinstance(primary.metadata, dict) else {}
 
-        meta = p.metadata if isinstance(p.metadata, dict) else {}
         rotulo = label_by_sku.get(p.sku) or {}
         dietary = list(rotulo.get("dietary_info") or ())
         allergens = tuple(rotulo.get("allergens") or ())
         tags = _product_tags(p)
-        promise = promise_for(
-            p.sku,
-            promise_facts,
-            orderable=can_add,
-            made_to_order=bool(meta.get("made_to_order")),
-        )
 
         result.append(
             CatalogItemProjection(
@@ -806,6 +897,41 @@ def _build_items(
     return result
 
 
+def _own_holds(session_key: str, skus: list[str], *, target_date: date | None) -> dict[str, Any]:
+    """A reserva da própria sessão por SKU; com dia escolhido, só a daquele dia."""
+    if not session_key:
+        return {}
+    if target_date is None:
+        return catalog_context.own_holds_by_sku(session_key, skus)
+    from shopman.shop.projections import checkout_context
+
+    held = checkout_context.session_held_qty(session_key, target_date=target_date)
+    return {sku: held[sku] for sku in skus if sku in held}
+
+
+def _on_day(
+    sku: str,
+    availability: Availability,
+    facts,
+    *,
+    day: date,
+) -> tuple[Availability, PromiseProjection | None]:
+    """Disponibilidade e promessa de ``sku`` no dia escolhido (OC-33 B1).
+
+    A leitura já é a do dia: a fornada planejada para ele É o que ele tem, então
+    "lista de espera" vira disponível. O item só se oferece com um horário NO dia
+    (:func:`promise_on_day`); sem ele, fica indisponível naquele dia, sem motivo.
+    """
+    if availability == Availability.PLANNED_OK:
+        availability = Availability.AVAILABLE
+    if availability not in ORDERABLE_AVAILABILITY:
+        return availability, None
+    promise = promise_on_day(sku, facts, day=day, orderable=True)
+    if promise is None:
+        return Availability.UNAVAILABLE, None
+    return availability, promise
+
+
 def ready_now(availability, promise: PromiseProjection | None) -> bool:
     """O produto está pronto agora: disponível (ou acabando) e com a promessa de agora (``ready``).
 
@@ -854,8 +980,12 @@ def _availability_states(
     channel_ref: str,
     own_holds: dict[str, Any],
     low_stock_threshold: Decimal,
+    target_date: date | None = None,
 ) -> dict[str, _AvailabilityState]:
-    """Disponibilidade resolvida por SKU, em lote — card do cardápio e favorito."""
+    """Disponibilidade resolvida por SKU, em lote — card do cardápio e favorito.
+
+    ``target_date``: a leitura do dia escolhido no cardápio, e não a de hoje.
+    """
     skus = [p.sku for p in products]
 
     # Channel-level commercial state. Product.is_sellable is global; a
@@ -864,7 +994,7 @@ def _availability_states(
 
     # Availability for the storefront scope (bundles já resolvidos).
     bundle_skus = [p.sku for p in products if getattr(p, "is_bundle", False)]
-    avail_map = _batch_availability(skus, channel_ref, bundle_skus=bundle_skus)
+    avail_map = _batch_availability(skus, channel_ref, bundle_skus=bundle_skus, target_date=target_date)
 
     states: dict[str, _AvailabilityState] = {}
     for p in products:
@@ -957,6 +1087,7 @@ def _batch_availability(
     channel_ref: str,
     *,
     bundle_skus: list[str] | tuple[str, ...] = (),
+    target_date: date | None = None,
 ) -> dict[str, dict | None]:
     """Wrapper around ``stockman.availability_for_skus`` that stays silent
     when stockman isn't wired up (keeps projections callable in minimal envs).
@@ -966,10 +1097,30 @@ def _batch_availability(
     com um componente esgotado. O raw do bundle sobrescreve o do mapa, e os
     componentes entram na MESMA leitura de estoque do cardápio (o pronto de
     hoje), em vez de uma segunda.
+
+    Com ``target_date`` (o dia escolhido no cardápio), a leitura é a DAQUELE dia
+    e só dele: sem a fila de espera de hoje, com a margem de validade do dia
+    (``stock_on_dates``). É a mesma pergunta que a reserva faz com a sacola
+    datada (``cart._cart_date``), então o botão e a reserva concordam.
     """
     bundle_components = (
         catalog_context.bundle_components_for_skus(list(bundle_skus)) if bundle_skus else {}
     )
+    if target_date is not None:
+        read = list(dict.fromkeys([*skus, *catalog_context.bundle_component_skus(bundle_components)]))
+        day_raw = catalog_context.availability_for_skus(read, channel_ref=channel_ref, target_date=target_date)
+        on_day: dict[str, dict | None] = {sku: day_raw.get(sku) for sku in skus}
+        if bundle_skus:
+            on_day.update(
+                catalog_context.bundle_availability_for_skus(
+                    list(bundle_skus),
+                    channel_ref=channel_ref,
+                    expanded=bundle_components,
+                    today_availability={sku: raw for sku, raw in day_raw.items() if raw is not None},
+                    target_date=target_date,
+                )
+            )
+        return on_day
     avail_map, today_raw = catalog_context.availability_and_today_for_skus(
         skus,
         channel_ref=channel_ref,
@@ -1011,11 +1162,22 @@ def _build_sections(
     return tuple(sections)
 
 
+#: Dinâmicas que falam de AGORA ("Acabaram de ficar prontos"): fora do cardápio de outro dia.
+_DYNAMIC_REFS_OF_NOW = frozenset({"fresh_from_oven"})
+
+
 def _build_dynamic_sections(
     channel_ref: str,
     known_skus: set[str],
+    *,
+    target_date: date | None = None,
 ) -> tuple[CatalogSectionProjection, ...]:
-    """Resolve dinâmicas configuradas em Shop.defaults['menu']['dynamic_collections']."""
+    """Resolve dinâmicas configuradas em Shop.defaults['menu']['dynamic_collections'].
+
+    No dia escolhido (``target_date``), a dinâmica que fala de agora sai: o que
+    ficou pronto há 12 minutos não diz nada sobre quinta. As outras ficam, e os
+    cards delas já são os do dia.
+    """
     from shopman.shop import dynamic_collections as dyn
     from shopman.shop.models import Shop
 
@@ -1027,6 +1189,8 @@ def _build_dynamic_sections(
 
     sections: list[CatalogSectionProjection] = []
     for ref in dyn_refs:
+        if target_date is not None and ref in _DYNAMIC_REFS_OF_NOW:
+            continue
         section = dyn.resolve(ref, channel_ref=channel_ref)
         if section is None:
             continue

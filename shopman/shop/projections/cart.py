@@ -224,6 +224,10 @@ class CartProjection:
     # ``Session.data["transferred_from"]``, lido na mesma consulta da sacola, para
     # o recibo da passagem só custar consulta quando existe.
     transferred_from: dict | None = None
+    # O dia da sacola quando ela é de OUTRO dia (a reserva, ou o dia escolhido no
+    # "Para quando?" do cardápio, OC-33 B1): a mesma data em que ela reserva
+    # (``cart._cart_date``). ``None`` para hoje ou sem data.
+    cart_date: date | None = None
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -446,7 +450,8 @@ def build_cart(
     # das linhas, logo abaixo, sai do memo. A resposta é a mesma: o trilho só
     # depende do conjunto de SKUs da sacola, que já está decidido aqui.
     upsell = _upsell(set(skus), channel_ref=channel_ref)
-    avail_map, own_holds = _availability(skus, session_key, channel_ref, _future_cart_date(session))
+    cart_date = _future_cart_date(session)
+    avail_map, own_holds = _availability(skus, session_key, channel_ref, cart_date)
     planned_by_sku = _planned_holds(session_key, skus)
     earlier_by_sku = _earlier_available_dates(raw_items, planned_by_sku, channel_ref)
 
@@ -545,6 +550,7 @@ def build_cart(
         can_checkout=can_checkout,
         checkout_block_reason=block_reason,
         group_savings_message=str((discount_data.get("savings") or {}).get("message") or ""),
+        cart_date=cart_date,
     )
 
 

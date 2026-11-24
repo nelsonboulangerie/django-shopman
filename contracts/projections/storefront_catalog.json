@@ -8,6 +8,21 @@
       "url": "/menu#paes"
     }
   ],
+  "days": {
+    "closed_weekdays": [
+      6
+    ],
+    "max_date": "<date>",
+    "next_days": [
+      "<tomorrow>",
+      "<date>",
+      "<date>",
+      "<date>"
+    ],
+    "selected": null,
+    "today": "<today>",
+    "today_open": true
+  },
   "empty_state": {
     "cta_href": "",
     "cta_label": "",

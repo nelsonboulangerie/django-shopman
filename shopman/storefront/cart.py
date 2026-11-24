@@ -259,8 +259,12 @@ class CartService:
         name: str = "",
         options: list[dict] | None = None,
         product=None,
+        chosen_date=None,
     ) -> Session:
         """Add item to cart. Merges with existing line if same SKU and same options.
+
+        ``chosen_date`` é o dia do "Para quando?" do cardápio (OC-33 B1); o
+        serviço da sacola o grava e reserva nele (``shop.services.cart``).
 
         ``options`` é a escolha do cliente no produto (``[{group, ref}]``);
         escolha que não fecha com o cadastro levanta ``OptionSelectionError``.
@@ -293,6 +297,7 @@ class CartService:
             name=name,
             options=options,
             product=product,
+            chosen_date=chosen_date,
         )
         request.session["cart_session_key"] = session_key
         if not existing_key and CartService._link_customer(request, session_key):
@@ -311,6 +316,7 @@ class CartService:
         *,
         sku: str | None = None,
         whole_product: bool = False,
+        chosen_date=None,
     ) -> Session:
         """Update quantity of a cart item.
 
@@ -330,6 +336,7 @@ class CartService:
             qty=qty,
             sku=sku,
             whole_product=whole_product,
+            chosen_date=chosen_date,
         )
         CartService._mark_experience(request, session_key, session=session)
         return session

@@ -174,6 +174,28 @@ def test_storefront_catalog_matches_shared_contract(canonical_catalog):
     _assert_matches_contract(payload, "storefront_catalog")
 
 
+def test_storefront_catalog_on_a_chosen_day_matches_shared_contract(canonical_catalog):
+    """OC-33 B1: o cardápio do dia escolhido (amanhã, quarta). O Sonho fica pronto às 11h.
+
+    A tela da variante B lê ESTE arquivo: o dia escolhido com rótulo e abertura, o
+    item disponível desde a abertura sem frase, o que fica depois com "A partir das
+    12h" (o primeiro turno depois das 11h) e o esgotado como "Indisponível".
+    """
+    from datetime import timedelta
+
+    from django.core.cache import cache
+    from shopman.offerman.models import Product
+
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation.catalog import build_catalog
+
+    Product.objects.filter(sku="SONHO-CONTRATO").update(metadata={"ready_from": "11:00"})
+    cache.clear()
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    payload = projection_data(build_catalog(channel_ref="web", target_date=tomorrow))
+    _assert_matches_contract(payload, "storefront_catalog_day")
+
+
 def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
     from shopman.shop.models import Shop
     from shopman.storefront.api.projections import projection_data
