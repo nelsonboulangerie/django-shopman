@@ -779,7 +779,8 @@ def test_card_one_in_one_sentence_says_the_agreement_before_the_invitation_and_t
             service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
     cart, _payment, summary = outbox.sent[:3]
     agreed, listed = cart.split("\n\n", 1)
-    assert agreed == "Combinado: retirada amanhã às 16h.", cart
+    # As 16h ditas caem na janela da grade que começa às 15h: o combinado diz a janela, como o resumo.
+    assert agreed == "Combinado: retirada amanhã, a partir das 15h.", cart
     assert listed.startswith("Pronto, sua sacola ficou assim:") and listed.endswith("é só escrever “pode fechar”."), cart
     tomorrow = timezone.localdate() + timedelta(days=1)
     day = f"{formats.date_format(tomorrow, 'l').lower()}, {formats.date_format(tomorrow, 'd/m')}"

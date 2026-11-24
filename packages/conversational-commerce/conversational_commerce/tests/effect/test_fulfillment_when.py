@@ -106,7 +106,7 @@ def test_what_was_agreed_comes_before_the_cart_summary_in_the_same_turn():
                  {"act": "choose_fulfillment", "fields": {"date": "2026-01-06", "mode": "pickup", "time": "16:00"}})
     turn_engine, _ = engine(steps=(said,), world=_world())
     [result] = (r.result for r in run_journey(turn_engine, CTX, [said]))
-    assert result.chosen_moves == ("change_cart", "set_fulfillment")  # a decisão segue a ordem da fala
+    assert list(result.chosen_moves) == ["change_cart", "set_fulfillment"]  # a decisão segue a ordem da fala
     assert result.reply.template_ids == ("set_fulfillment.done_time", "change_cart.done")  # a fala, não
 
 
