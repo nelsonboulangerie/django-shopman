@@ -762,7 +762,6 @@ def _due_conversations(ctx: TrustedContext) -> list[int]:
     from shopman.shop.conversational.store import _scope, instant
     from shopman.shop.models import Conversation, ConversationalCommitment, ConversationalEpisode
 
-    from .ports import SUBJECT_PREFIX
 
     now = instant(timezone.now())
     episodes = set()
@@ -772,9 +771,27 @@ def _due_conversations(ctx: TrustedContext) -> list[int]:
             episodes.add(row.episode_id)
     subjects = set(ConversationalEpisode.objects.filter(**_scope(ctx), episode_id__in=episodes)
                    .values_list("subject", flat=True))
-    pks = sorted({int(s[len(SUBJECT_PREFIX):]) for s in subjects
-                  if s.startswith(SUBJECT_PREFIX) and s[len(SUBJECT_PREFIX):].isdigit()})
-    return list(Conversation.objects.filter(pk__in=pks).values_list("pk", flat=True))
+    pks = sorted({pk for subject in subjects for pk in _conversations_of_subject(subject)})
+    # Só a conversa com a Concierge: a que está com a equipe é da equipe (a Concierge de hoje também cala).
+    return list(Conversation.objects.filter(pk__in=pks, state=Conversation.State.ACTIVE)
+                .values_list("pk", flat=True))
+
+
+def _conversations_of_subject(subject: str) -> set[int]:
+    """As conversas do sujeito do episódio: ``binding:<canal>:<assinante>`` (o vínculo de transporte, como o
+    motor o chave, ``workflow.correlation.subject_key``), ou ``conversation:<pk>``."""
+    from shopman.shop.models import ConversationBinding
+
+    from .ports import SUBJECT_PREFIX
+
+    if subject.startswith(SUBJECT_PREFIX) and subject[len(SUBJECT_PREFIX):].isdigit():
+        return {int(subject[len(SUBJECT_PREFIX):])}
+    kind, _, rest = subject.partition(":")
+    channel, _, subscriber = rest.partition(":")
+    if kind != "binding" or not channel or not subscriber:
+        return set()
+    return set(ConversationBinding.objects.filter(transport_channel=channel, subject=subscriber)
+               .values_list("conversation_id", flat=True))
 
 
 def _only_this_conversation(engine, conversation) -> None:
@@ -785,7 +802,11 @@ def _only_this_conversation(engine, conversation) -> None:
     from .ports import subject_of
 
     ctx = engine.ports.clock.ctx
-    mine = set(ConversationalEpisode.objects.filter(**_scope(ctx), subject=subject_of(conversation.pk))
+    from shopman.shop.models import ConversationBinding
+
+    subjects = {f"binding:{channel}:{subscriber}" for channel, subscriber in ConversationBinding.objects.filter(
+        conversation=conversation).values_list("transport_channel", "subject")} | {subject_of(conversation.pk)}
+    mine = set(ConversationalEpisode.objects.filter(**_scope(ctx), subject__in=subjects)
                .values_list("episode_id", flat=True))
     ledger = engine.commitments
     ledger.entries = {cid: entry for cid, entry in ledger.entries.items() if entry.commitment.episode_id in mine}
