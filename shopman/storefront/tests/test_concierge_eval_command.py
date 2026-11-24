@@ -93,7 +93,8 @@ def test_the_battery_scores_the_reader_and_writes_only_the_house_meter(house):
 
 def test_a_wrong_reading_fails_with_the_reason(house):
     out = _run("--case", "entrega-com", "--max-calls", "10")  # a IA falsa não lê "entrega"
-    assert "[FALHOU] entrega-com" in out and "recebimento -, esperado delivery" in out
+    # A hora sem o modo a casa grava como retirada (``effect_site._set_fulfillment``): o caso da entrega reprova.
+    assert "[FALHOU] entrega-com" in out and "recebimento pickup, esperado delivery" in out
 
 
 def _failing(*args):
