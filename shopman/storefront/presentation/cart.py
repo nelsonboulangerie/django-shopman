@@ -26,8 +26,13 @@ from shopman.shop.projections import cart as cart_data
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.ready_promise import PromiseFacts, read_promise_facts
 from shopman.shop.projections.types import Action, Availability
-from shopman.storefront.presentation.catalog import notify_subscribed_skus
-from shopman.storefront.presentation.promise import PromiseProjection, promise_for
+from shopman.storefront.presentation.catalog import build_ordering, notify_subscribed_skus
+from shopman.storefront.presentation.promise import (
+    ORDERING_NONE,
+    OrderingProjection,
+    PromiseProjection,
+    promise_for,
+)
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
@@ -310,6 +315,12 @@ class CartProjection:
     # Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
     # sincronização. Vazio para visitante, para link encaminhado e sem outra sacola.
     open_elsewhere: tuple[OpenElsewhereProjection, ...] = ()
+    # Dá para pedir agora, e para quando (OC-04), pela mesma leitura da home
+    # (``catalog.build_ordering``). Só na sacola VAZIA, que é onde a tela convida
+    # a pedir ("Você pode encomendar para o próximo dia"); com itens, cada linha
+    # já diz quando fica pronta, e reler o cardápio inteiro a cada gesto na
+    # sacola seria custo sem leitor. ``None`` com a sacola cheia.
+    ordering: OrderingProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -360,8 +371,14 @@ def build_cart(
     delivery_minimum = present_minimum_order(data.delivery_minimum)
     free_delivery = present_free_delivery(data.free_delivery)
     upsell = present_upsell(data.upsell)
-    actions = _cart_actions(data, min_order)
-    empty_title, empty_message = _empty_copy(request, is_empty=data.is_empty)
+    ordering = (
+        build_ordering(channel_ref=channel_ref, request=request).ordering if data.is_empty else None
+    )
+    nothing_to_order = ordering is not None and ordering.state == ORDERING_NONE
+    actions = _cart_actions(data, min_order, nothing_to_order=nothing_to_order)
+    empty_title, empty_message = _empty_copy(
+        request, is_empty=data.is_empty, nothing_to_order=nothing_to_order
+    )
 
     from shopman.storefront.identity import checkout_draft_context
     context = checkout_draft_context(request, session_key)
@@ -435,6 +452,7 @@ def build_cart(
         upsell=upsell,
         actions=actions,
         group_savings_message=data.group_savings_message,
+        ordering=ordering,
     )
 
 
@@ -822,25 +840,35 @@ def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhe
     )
 
 
-def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
+def _empty_copy(
+    request: HttpRequest, *, is_empty: bool, nothing_to_order: bool = False
+) -> tuple[str, str]:
     """Título e mensagem do estado vazio, por momento e audiência.
 
     Só resolve quando a sacola está vazia: montar o contexto omotenashi custa
     uma leitura do estado do negócio, e a sacola com itens nunca renderiza o
     bloco.
+
+    ``nothing_to_order``: nenhum item do cardápio tem promessa (OC-04). A copy
+    do momento convida a pedir ("Você pode encomendar para o próximo dia",
+    "Pode ir escolhendo o que quer"), e ninguém consegue; a sacola diz que hoje
+    não há encomenda aberta e aponta o aviso, em qualquer momento.
     """
     if not is_empty:
         return "", ""
     from shopman.shop.omotenashi import OmotenashiContext
 
     omo = OmotenashiContext.from_request(request)
-    entry = resolve_copy("CART_EMPTY", moment=omo.moment, audience=omo.audience)
+    key = "CART_EMPTY_NO_ORDERING" if nothing_to_order else "CART_EMPTY"
+    entry = resolve_copy(key, moment=omo.moment, audience=omo.audience)
     return (entry.title or "").strip(), (entry.message or "").strip()
 
 
 def _cart_actions(
     data: cart_data.CartProjection,
     minimum_order_progress: MinimumOrderProgressProjection | None,
+    *,
+    nothing_to_order: bool = False,
 ) -> tuple[Action, ...]:
     """Map the data projection's checkout-eligibility decision to actions.
 
@@ -883,7 +911,9 @@ def _cart_actions(
         Action(
             ref="continue_shopping",
             kind="link",
-            label="Continuar comprando",
+            # Sem nada para pedir, "Continuar comprando" convida ao que não existe;
+            # o cardápio é onde está o "Me avise" de cada item.
+            label="Ver cardápio" if nothing_to_order else "Continuar comprando",
             priority="secondary",
             enabled=True,
             href="/menu",

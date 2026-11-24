@@ -41,13 +41,27 @@ from shopman.storefront.identity import customer_pricing_hints
 from shopman.storefront.presentation.dietary import dietary_warnings as _dietary_warnings
 from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
 from shopman.storefront.presentation.icons import collection_icon
-from shopman.storefront.presentation.promise import KIND_READY, PromiseProjection, promise_for
+from shopman.storefront.presentation.promise import (
+    KIND_READY,
+    OrderingProjection,
+    PromiseProjection,
+    ordering_from_promises,
+    promise_for,
+)
 from shopman.storefront.presentation.status import availability_label
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
 
 logger = logging.getLogger(__name__)
+
+
+#: Disponibilidades em que o botão Adicionar acende.
+ORDERABLE_AVAILABILITY = (
+    Availability.AVAILABLE,
+    Availability.LOW_STOCK,
+    Availability.PLANNED_OK,
+)
 
 
 def get_channel_listing_ref() -> str | None:
@@ -477,6 +491,7 @@ def build_featured_items(
     request: HttpRequest | None = None,
     limit: int = 3,
     prefer_skus: tuple[str, ...] = (),
+    orderable_skus: frozenset[str] | None = None,
 ) -> tuple[CatalogItemProjection, ...]:
     """O rail da home: até ``limit`` cards, sem repetir produto.
 
@@ -487,6 +502,10 @@ def build_featured_items(
     cardápio (coleções ativas, depois sem coleção). Era só "mais pedidos ou, sem
     nenhum, os primeiros": um mais-vendido visível bastava para o rail ficar com
     um card só, um Frappé sob "Direto do forno" (beta 05/11, LOJA-05).
+
+    ``orderable_skus`` (os que dá para pedir, de :func:`build_ordering`) passam
+    na frente, mantida a ordem acima entre eles: a vitrine abria com três
+    "Indisponível" enquanto havia o que pedir mais abaixo (laudo da Etapa II, U6).
     """
     all_products = [
         product
@@ -508,6 +527,8 @@ def build_featured_items(
         *(p.sku for p in all_products if p.sku in popular),
         *(p.sku for p in all_products),
     ]
+    if orderable_skus:
+        ordered_skus.sort(key=lambda sku: sku not in orderable_skus)
     chosen: list[Any] = []
     for sku in ordered_skus:
         if len(chosen) >= limit:
@@ -515,6 +536,73 @@ def build_featured_items(
         if all(c.sku != sku for c in chosen):
             chosen.append(by_sku[sku])
     return _build_cards(chosen, channel_ref=channel_ref, request=request, popular=popular)
+
+
+@dataclass(frozen=True)
+class CatalogOrdering:
+    """O resumo "dá para pedir?" do cardápio, e quais itens dão."""
+
+    ordering: OrderingProjection
+    orderable_skus: frozenset[str]
+
+
+def build_ordering(*, channel_ref: str, request: HttpRequest | None = None) -> CatalogOrdering:
+    """Se dá para pedir algo agora, e para quando: a pergunta da home e da sacola.
+
+    Lê o cardápio que ESTE visitante vê (mesmo portão de coleções do rail), com a
+    mesma disponibilidade do card (:func:`_availability_states`) e a mesma
+    promessa (:func:`promise_for`). Só lê: o botão Adicionar de cada card e esta
+    resposta saem dos mesmos fatos, então a frase nunca oferece o que nenhum
+    card oferece.
+
+    A resposta da home traz a home e a sacola; com a sacola vazia as duas
+    perguntam isto no mesmo request, e o memo de leituras de estoque (só GET,
+    desligado na primeira escrita) responde a segunda sem reler o cardápio.
+    """
+    from shopman.shop import request_memo
+
+    bucket = request_memo.stock_bucket("storefront.catalog_ordering")
+    if bucket is not None and channel_ref in bucket:
+        return bucket[channel_ref]
+    result = _read_ordering(channel_ref=channel_ref, request=request)
+    if bucket is not None:
+        bucket[channel_ref] = result
+    return result
+
+
+def _read_ordering(*, channel_ref: str, request: HttpRequest | None) -> CatalogOrdering:
+    products = [
+        product
+        for _col_ref, products in _fetch_products_by_collection(
+            listing_ref=channel_ref,
+            active_collection=None,
+            access=viewer_collection_access(request),
+        )
+        for product in products
+    ]
+    by_sku: dict[str, Any] = {}
+    for product in products:
+        by_sku.setdefault(product.sku, product)
+    unique = list(by_sku.values())
+    skus = list(by_sku)
+    session_key = _session_key(request)
+    own_holds = catalog_context.own_holds_by_sku(session_key, skus) if session_key and skus else {}
+    config = ChannelConfig.for_channel(channel_ref)
+    states = _availability_states(
+        unique,
+        channel_ref=channel_ref,
+        own_holds=own_holds,
+        low_stock_threshold=Decimal(str(config.stock.low_stock_threshold)),
+    )
+    facts = read_promise_facts(skus, channel_ref=channel_ref, own_holds=own_holds)
+    promises: dict[str, PromiseProjection | None] = {
+        sku: promise_for(sku, facts, orderable=states[sku].availability in ORDERABLE_AVAILABILITY)
+        for sku in skus
+    }
+    return CatalogOrdering(
+        ordering=ordering_from_promises(promises.values(), today=facts.today),
+        orderable_skus=frozenset(sku for sku, promise in promises.items() if promise is not None),
+    )
 
 
 def _build_cards(
@@ -643,11 +731,7 @@ def _build_items(
         is_paused = state.is_paused
         is_notifiable = state.is_notifiable
         avail_label = availability_label(availability, copy=availability_copy)
-        can_add = availability in (
-            Availability.AVAILABLE,
-            Availability.LOW_STOCK,
-            Availability.PLANNED_OK,
-        )
+        can_add = availability in ORDERABLE_AVAILABILITY
         available_qty = catalog_context.orderable_ceiling(raw_avail, can_add=can_add)
 
         primary = primary_by_sku.get(p.sku)

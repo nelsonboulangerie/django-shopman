@@ -57,6 +57,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CART_EMPTY": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
+    "CART_EMPTY_NO_ORDERING": (
+        ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
+    ),
     "CART_UNAVAILABLE_BANNER": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),

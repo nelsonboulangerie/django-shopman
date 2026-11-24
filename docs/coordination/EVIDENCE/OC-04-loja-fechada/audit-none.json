@@ -1,0 +1,121 @@
+{
+  "state": "none",
+  "pages": [
+    {
+      "page": "home",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "eyebrow": {
+        "text": "Fechado agora. Abrimos amanhã às 9h. Hoje não há encomenda aberta. No cardápio, toque em “Me avise” no item que você quer.",
+        "fontSizePx": 14,
+        "fontWeight": "600",
+        "contrastOverPhoto": {
+          "worst": 4.43,
+          "p05": 8.96,
+          "median": 16.54
+        },
+        "aboveTitle": true,
+        "centeredWithTitle": true,
+        "insideViewport": true
+      },
+      "heroCta": "Ver Cardápio",
+      "railHeading": "Do nosso cardápio",
+      "railCards": [
+        "Ver detalhes de Fendu Indisponível Fendu Pãozinho de tradição francesa e ferment",
+        "Ver detalhes de Tabatière Indisponível Tabatière Pãozinho de tradição francesa e",
+        "Ver detalhes de Mini Baguete Indisponível Mini Baguete Mini baguete com fermenta"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": null
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Hoje não há encomenda aberta",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": "No cardápio, toque em “Me avise” no item que você quer, e avisamos quando ele voltar.",
+        "messageFontSizePx": 14,
+        "messageContrast": 5.38,
+        "titleAboveMessage": true,
+        "centered": true,
+        "button": "Ver cardápio"
+      }
+    },
+    {
+      "page": "home",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "eyebrow": {
+        "text": "Fechado agora. Abrimos amanhã às 9h. Hoje não há encomenda aberta. No cardápio, toque em “Me avise” no item que você quer.",
+        "fontSizePx": 14,
+        "fontWeight": "600",
+        "contrastOverPhoto": {
+          "worst": 3.55,
+          "p05": 6.13,
+          "median": 16.14
+        },
+        "aboveTitle": true,
+        "centeredWithTitle": true,
+        "insideViewport": true
+      },
+      "heroCta": "Ver Cardápio",
+      "railHeading": "Do nosso cardápio",
+      "railCards": [
+        "Ver detalhes de Fendu Indisponível Fendu Pãozinho de tradição francesa e ferment",
+        "Ver detalhes de Tabatière Indisponível Tabatière Pãozinho de tradição francesa e",
+        "Ver detalhes de Mini Baguete Indisponível Mini Baguete Mini baguete com fermenta"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 177,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 177,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 208,
+          "priceSingleLine": true,
+          "badge": null
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Hoje não há encomenda aberta",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": "No cardápio, toque em “Me avise” no item que você quer, e avisamos quando ele voltar.",
+        "messageFontSizePx": 14,
+        "messageContrast": 5.38,
+        "titleAboveMessage": true,
+        "centered": true,
+        "button": "Ver cardápio"
+      }
+    }
+  ]
+}

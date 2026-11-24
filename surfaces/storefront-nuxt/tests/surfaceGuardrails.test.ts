@@ -101,9 +101,9 @@ describe('surface UX guardrails', () => {
     expect(read('app/pages/index.vue')).not.toContain("label: isOpen ? 'Aberto agora' : 'Fechado agora'")
     expect(read('app/pages/index.vue')).not.toContain('v-if="operationalStatus.message"')
     expect(read('app/components/HomeHeroThing.vue')).not.toContain('omo.shop_hint')
-    // Loja fechada: dá para finalizar agora (a casa confere na abertura), então o
-    // CTA não promete "para depois" (beta 06/11).
-    expect(read('app/pages/index.vue')).toContain('closed-cta-label="Fazer pedido"')
+    // Loja fechada: o CTA sai do `ordering` (OC-04): "Fazer pedido" quando há o
+    // que pedir (a casa confere na abertura), nunca "para depois" (beta 06/11).
+    expect(read('app/pages/index.vue')).toContain(':closed-cta-label="closedHeroCtaLabel(home.ordering)"')
     expect(read('app/pages/index.vue')).not.toContain('para depois')
     expect(omotenashiType).not.toMatch(/\b(is_open|opens_at|closes_at)\b/)
   })

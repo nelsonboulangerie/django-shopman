@@ -1,0 +1,129 @@
+{
+  "state": "now",
+  "pages": [
+    {
+      "page": "home",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "eyebrow": {
+        "text": "Fechado agora. Abrimos hoje às 9h. Você já pode finalizar o pedido, e conferimos quando abrirmos.",
+        "fontSizePx": 14,
+        "fontWeight": "600",
+        "contrastOverPhoto": {
+          "worst": 4.72,
+          "p05": 9.7,
+          "median": 16.42
+        },
+        "aboveTitle": true,
+        "centeredWithTitle": true,
+        "insideViewport": true
+      },
+      "heroCta": "Fazer pedido",
+      "railHeading": "Direto do forno",
+      "railCards": [
+        "Ver detalhes de Coelhinho de Chocolate Coelhinho de Chocolate Pão doce de massa ",
+        "Ver detalhes de Pain de Campagne Pain de Campagne Fermentação natural (levain), ",
+        "Ver detalhes de Tabatière Fica pronto amanhã Tabatière Pãozinho de tradição fran"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 118,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 118,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 239,
+          "priceSingleLine": true,
+          "badge": {
+            "text": "Fica pronto amanhã",
+            "fontSizePx": 12,
+            "contrast": 11.27
+          }
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "m375",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Acordou cedo?",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": "Abrimos em breve. Pode ir escolhendo o que quer.",
+        "messageFontSizePx": 14,
+        "messageContrast": 5.38,
+        "titleAboveMessage": true,
+        "centered": true,
+        "button": "Continuar comprando"
+      }
+    },
+    {
+      "page": "home",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "eyebrow": {
+        "text": "Fechado agora. Abrimos hoje às 9h. Você já pode finalizar o pedido, e conferimos quando abrirmos.",
+        "fontSizePx": 14,
+        "fontWeight": "600",
+        "contrastOverPhoto": {
+          "worst": 4.44,
+          "p05": 6.61,
+          "median": 16.13
+        },
+        "aboveTitle": true,
+        "centeredWithTitle": true,
+        "insideViewport": true
+      },
+      "heroCta": "Fazer pedido",
+      "railHeading": "Direto do forno",
+      "railCards": [
+        "Ver detalhes de Coelhinho de Chocolate Coelhinho de Chocolate Pão doce de massa ",
+        "Ver detalhes de Pain de Campagne Pain de Campagne Fermentação natural (levain), ",
+        "Ver detalhes de Tabatière Fica pronto amanhã Tabatière Pãozinho de tradição fran"
+      ],
+      "railLayout": [
+        {
+          "priceBlockWidthPx": 223,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 223,
+          "priceSingleLine": true,
+          "badge": null
+        },
+        {
+          "priceBlockWidthPx": 115,
+          "priceSingleLine": true,
+          "badge": {
+            "text": "Fica pronto amanhã",
+            "fontSizePx": 12,
+            "contrast": 11.27
+          }
+        }
+      ]
+    },
+    {
+      "page": "sacola",
+      "viewport": "desktop",
+      "noHorizontalScroll": true,
+      "empty": {
+        "title": "Acordou cedo?",
+        "titleFontSizePx": 18,
+        "titleContrast": 11.27,
+        "message": "Abrimos em breve. Pode ir escolhendo o que quer.",
+        "messageFontSizePx": 14,
+        "messageContrast": 5.38,
+        "titleAboveMessage": true,
+        "centered": true,
+        "button": "Continuar comprando"
+      }
+    }
+  ]
+}

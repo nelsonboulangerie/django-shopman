@@ -17,6 +17,8 @@ import { describe, expect, it } from 'vitest'
 
 import catalogContractJson from '../../../contracts/projections/storefront_catalog.json'
 import productDetailContractJson from '../../../contracts/projections/storefront_product_detail.json'
+import orderingContractJson from '../../../contracts/projections/storefront_ordering.json'
+import { heroEyebrow } from '../app/presentation/home'
 import {
   buildSectionsBySku,
   resolveCatalogSections,
@@ -26,6 +28,7 @@ import {
 import type {
   CatalogItemProjection,
   CatalogProjection,
+  OrderingProjection,
   ProductDetailProjection,
 } from '../app/types/shopman'
 
@@ -35,6 +38,8 @@ const catalogContract: CatalogProjection =
   catalogContractJson as unknown as CatalogProjection
 const productDetailContract: ProductDetailProjection =
   productDetailContractJson as unknown as ProductDetailProjection
+const orderingContract: { home: OrderingProjection, empty_cart: OrderingProjection } =
+  orderingContractJson as unknown as { home: OrderingProjection, empty_cart: OrderingProjection }
 
 const LEGACY_PRICE_FIELDS = [
   'base_price_q',
@@ -124,5 +129,17 @@ describe('contrato compartilhado: storefront_product_detail', () => {
     expect(productDetailContract.can_add_to_cart).toBe(true)
     expect(typeof productDetailContract.availability_label).toBe('string')
     expect(productDetailContract.availability_label.length).toBeGreaterThan(0)
+  })
+})
+
+describe('contrato compartilhado: storefront_ordering (OC-04)', () => {
+  it('home e sacola vazia dizem o mesmo, e a frase do topo lê a forma do servidor', () => {
+    expect(orderingContract.empty_cart).toEqual(orderingContract.home)
+    expect(Object.keys(orderingContract.home).sort()).toEqual(['day_label', 'next_date', 'state'])
+    expect(orderingContract.home.state).toBe('now')
+    expect(heroEyebrow({ statusOpen: false, statusLabel: 'Fechado agora', ordering: orderingContract.home }))
+      .toBe('Fechado agora. Você já pode finalizar o pedido, e conferimos quando abrirmos.')
+    const none: OrderingProjection = { ...orderingContract.home, state: 'none', next_date: null, day_label: '' }
+    expect(heroEyebrow({ statusOpen: false, statusLabel: 'Fechado agora', ordering: none })).not.toMatch(/finalizar/)
   })
 })
