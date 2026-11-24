@@ -89,8 +89,8 @@ OFFER_TEAM = "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da 
 @pytest.fixture
 def order_on_air(conversation, monkeypatch):
     """O pedido pelo motor no ar: a chave "pedido" ligada, a P08 aprovada só em memória (espera o dono no
-    perfil do ar) e a leitura "pix" por uma IA falsa. A validade da concessão entra só se faltar: o ``main``
-    a tem desde 889240d50, e esta pilha é anterior a ele (sem ela, nenhuma concessão nasce)."""
+    perfil do ar) e a leitura "pix" por uma IA falsa. A validade da concessão (P22) e a janela do episódio
+    (P23) são as do perfil de verdade."""
     import dataclasses
     import json
 
@@ -108,13 +108,6 @@ def order_on_air(conversation, monkeypatch):
         built = build(**kwargs)
         lines = [dataclasses.replace(line, state="approved", decided_at=line.decided_at or DECIDED)
                  if line.id == "commerce.order_in_conversation" else line for line in built.lines]
-        if not any(line.id == "grant.validity_seconds" for line in lines):
-            lines.append(dataclasses.replace(lines[0], id="grant.validity_seconds", setting=LineSet(value=600),
-                                             state="approved", decided_at=DECIDED))
-        if not any(line.id == "episode.inactivity_window_seconds" for line in lines):
-            # Sem ela o motor abre um episódio por mensagem, e a pergunta no ar morre (decisão pendente).
-            lines.append(dataclasses.replace(lines[0], id="episode.inactivity_window_seconds",
-                                             setting=LineSet(value=86400), state="approved", decided_at=DECIDED))
         return dataclasses.replace(built, lines=tuple(lines))
 
     monkeypatch.setattr(profile, "build_profile", approved)
