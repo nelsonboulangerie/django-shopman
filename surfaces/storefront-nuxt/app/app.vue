@@ -2,6 +2,7 @@
 import { absoluteImage, siteVerificationMeta } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 import type { ShellResponse } from '~/types/shopman'
+import { STOREFRONT_HOME_KEY } from '~/composables/useStorefrontHome'
 
 const session = useShopSession()
 const { setFromServer, refreshCart } = useCartState()
@@ -45,9 +46,19 @@ watch(() => shellState.value, value => {
   if (!authRoute) setFromServer(value?.cart)
 }, { immediate: true })
 
-watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
-  if (!isAuthRoute && wasAuthRoute) void refreshShellState()
-})
+// Saindo do login, a próxima página só monta com o shell de quem entrou (#3572): a
+// versão do experimento e o nome já chegam certos, sem a tela trocar depois. `cancel`
+// descarta uma leitura anônima em voo em vez de reaproveitá-la. A home guardada é a
+// do anônimo (sem nome nem recompra) e, montada antes do shell novo, desfazia a
+// identidade: sai do cache, e a home relê. Ainda na rota de login, o `watch` acima
+// não semeia a sacola: semeia-se aqui, com o shell novo.
+if (!courierShell) {
+  useFreshShellAfterLogin(path => AUTH_SHELL_ROUTES.has(path), async () => {
+    clearNuxtData(STOREFRONT_HOME_KEY)
+    await refreshShellState({ dedupe: 'cancel' })
+    setFromServer(shellState.value?.cart)
+  })
+}
 
 // Loja viva (WP-L04): "aberta" e "fechada" viram sozinhas na hora da virada, e na
 // volta da aba que ficou esquecida. Sem isso o cabeçalho dizia "Aberta" a noite toda.
