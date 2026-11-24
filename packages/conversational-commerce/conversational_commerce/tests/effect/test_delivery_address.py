@@ -287,3 +287,43 @@ def test_the_condition_answer_is_only_for_the_move_that_declares_it():
     assert not state.answers_condition(need, ("payment_method",))  # outro movimento não responde a esta pergunta
     other = NeedSpec("n1", "affirm", answers_question="q-2")
     assert not state.answers_condition(other, ("delivery_address_saved",))  # outra pergunta
+
+
+# ── o "outro" à oferta (#3454): pede as opções, nem aceita nem recusa ─────────────────────────────
+
+ANOTHER = _step("another", {"act": "ask_options"})
+
+
+def test_another_lists_every_saved_address_by_reference_and_keeps_the_close():
+    steps = (CLOSE, ANOTHER, YES)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua A 1", "Rua B 2"))
+    _close, listed, yes = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert listed.reply.template_ids == ("present_terms.needs_delivery_address_saved_options",)
+    assert listed.commands == ()
+    assert "saved:cart-1:0:" in listed.text and "saved:cart-1:1:" in listed.text  # todas, por referência
+    assert "Rua A" not in listed.text and "Rua B" not in listed.text  # P17
+    # A lista não é pergunta de sim ou não: o "sim" a ela não escolhe a primeira.
+    assert yes.commands == () and "cart-1" not in world.state.address
+
+
+def test_another_after_the_list_a_new_address_still_closes():
+    steps = (CLOSE, ANOTHER, ADDRESS)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua A 1", "Rua B 2"))
+    _close, _listed, address = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert [c.action for c in address.commands] == ["set_delivery_address"]
+    assert address.reply.template_ids[-1] == "present_terms.confirm"  # o fechamento seguiu
+
+
+def test_another_with_a_single_saved_address_offers_it_again():
+    steps = (CLOSE, ANOTHER)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua do Cadastro 10"))
+    _close, again = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert again.reply.template_ids == ("present_terms.needs_delivery_address_saved",)
+    assert again.commands == ()
+
+
+def test_another_without_the_condition_question_lists_nothing():
+    steps = (ANOTHER,)
+    turn_engine, world = engine(steps=steps, world=_saved_world("Rua A 1", "Rua B 2"))
+    (result,) = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert "present_terms.needs_delivery_address_saved_options" not in (result.reply.template_ids if result.reply else ())
