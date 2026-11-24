@@ -41,7 +41,7 @@ test("lê produto, quantidade com a unidade certa, hora e situação", async ({
   ]);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/board");
-  await expect(page.getByRole("heading", { name: "Letreiro" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produção do dia" })).toBeVisible();
 
   const dough = page.getByRole("article", {
     name: "Massa de croissant: 18,5 kg às 6h, Atrasado",

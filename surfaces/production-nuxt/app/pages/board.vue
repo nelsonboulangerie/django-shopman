@@ -240,10 +240,13 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
         </div>
       </div>
 
-      <div class="flex items-baseline justify-between gap-6">
-        <h1 class="board-title">Letreiro</h1>
+      <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <!-- O título também em palhetas, pretas, com letra de latão (dono). -->
+        <h1 class="board-title" aria-label="Produção do dia">
+          <SplitFlap value="Produção do dia" aria-hidden="true" />
+        </h1>
         <ClientOnly>
-          <SplitFlap :value="clock" :chars="5" :upper="false" align="right" class="board-display" />
+          <SplitFlap :value="clock" :chars="5" :upper="false" align="right" class="board-display ml-auto" />
         </ClientOnly>
       </div>
     </header>
@@ -424,7 +427,11 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   font-size: var(--scale-display);
   font-weight: 600;
   line-height: 1;
-  letter-spacing: -0.01em;
+}
+/* Latão discreto: separa o título das linhas sem tomar o âmbar do aviso nem o
+   vermelho do atraso. */
+.board-title :deep(.flap-cell) {
+  color: #c4a265;
 }
 .board-display {
   font-size: var(--scale-display);
@@ -479,8 +486,9 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   color: var(--board-bg);
   background: linear-gradient(180deg, #f6d185 0%, #f2c46b 48%, #d9a94f 52%, #eebd60 100%);
 }
+/* O espaço também é palheta âmbar, no mesmo tom das letras (dono). */
 .board-stale-flaps :deep(.flap-cell--blank) {
-  background: linear-gradient(180deg, #c99a45 0%, #b88a3a 48%, #9c742f 52%, #b08438 100%);
+  background: linear-gradient(180deg, #f6d185 0%, #f2c46b 48%, #d9a94f 52%, #eebd60 100%);
 }
 /* O X discreto no fim da linha, na cor dos rótulos; alvo de 44px. */
 .board-stale-close {
@@ -632,6 +640,10 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
       min(1.6rem, calc((100vw - 6rem) / (var(--row-chars-narrow) * 0.87)))
     );
     --scale-display: clamp(1.6rem, 8vw, 2.4rem);
+  }
+  /* Celular: o título (15 palhetas) cabe na largura; o relógio desce. */
+  .board-title {
+    font-size: min(var(--scale-display), calc((100vw - 2rem) / 13.2));
   }
 }
 </style>
