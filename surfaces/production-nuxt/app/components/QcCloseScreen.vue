@@ -8,8 +8,6 @@ import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
   QUANTITY_MAX,
-  YIELD_OVERSHOOT_REASONS,
-  YIELD_SHORTFALL_REASONS,
   backspaceQuantityText,
   defaultGradeRef,
   formatQcNumber,
@@ -23,6 +21,7 @@ import {
   parseQuantityText,
   roundQuantity,
   typeQuantityKey,
+  yieldReasons as yieldReasonsFor,
   type QcPartitionGroup,
 } from "~/presentation/qc";
 import {
@@ -516,10 +515,11 @@ const sheetTitle = computed(() => {
 
 // "Outro" abre o texto; os motivos prontos fecham em um toque.
 const yieldOtherOpen = ref(false);
-const yieldReasons = computed<readonly string[]>(() =>
-  sheetQuestion.value?.kind === "overshoot"
-    ? YIELD_OVERSHOOT_REASONS
-    : YIELD_SHORTFALL_REASONS,
+const yieldReasons = computed(() =>
+  yieldReasonsFor(
+    sheetQuestion.value?.kind === "overshoot" ? "overshoot" : "shortfall",
+    props.unit,
+  ),
 );
 
 function openQuestion(question: SheetQuestion, thenSubmit: boolean) {
@@ -1109,10 +1109,12 @@ const actionBarValue = computed(() =>
               size="xl"
               block
               class="min-h-14 h-auto justify-start whitespace-normal text-left"
-              :label="reason"
               data-yield-reason
               @click="answerYieldReason(reason)"
-            />
+            >
+              <!-- Slot, e não label: o label do Nuxt UI trunca, e motivo não se corta. -->
+              <span class="whitespace-normal text-left">{{ reason }}</span>
+            </NuxtButton>
             <NuxtButton
               color="neutral"
               variant="outline"

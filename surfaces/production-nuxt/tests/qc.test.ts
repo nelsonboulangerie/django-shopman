@@ -23,8 +23,7 @@ import {
   quantityText,
   roundQuantity,
   typeQuantityKey,
-  YIELD_OVERSHOOT_REASONS,
-  YIELD_SHORTFALL_REASONS,
+  yieldReasons,
 } from "../app/presentation/qc";
 import type { QCGradeProjection } from "../app/types/production";
 
@@ -283,11 +282,27 @@ describe("a unidade do lote (P1-22)", () => {
 });
 
 describe("motivos de rendeu menos e rendeu mais (P1-07)", () => {
-  it("cada lista tem motivos prontos, sem repetir, e o Outro fica com a tela", () => {
-    for (const list of [YIELD_SHORTFALL_REASONS, YIELD_OVERSHOOT_REASONS]) {
-      expect(list.length).toBeGreaterThanOrEqual(3);
-      expect(new Set(list).size).toBe(list.length);
-      expect(list).not.toContain("Outro");
+  it("cada lista diz uma causa, sem repetir e sem o Outro (que é da tela)", () => {
+    for (const kind of ["shortfall", "overshoot"] as const) {
+      for (const unit of ["un", "kg"]) {
+        const list = yieldReasons(kind, unit);
+        expect(list.length).toBe(3);
+        expect(new Set(list).size).toBe(list.length);
+        expect(list).not.toContain("Outro");
+        // A causa nunca repete a pergunta ("rendeu menos/mais"), e não se chama
+        // "perda": a folha diz que a diferença não entra como perda.
+        for (const reason of list) expect(reason).not.toMatch(/rendeu|^perda/i);
+      }
     }
+  });
+
+  it("lote pesado não fala em peça", () => {
+    for (const kind of ["shortfall", "overshoot"] as const) {
+      for (const reason of yieldReasons(kind, "kg")) {
+        expect(reason).not.toMatch(/peça/i);
+      }
+    }
+    expect(yieldReasons("shortfall", "un")).toContain("Peças maiores que o padrão");
+    expect(yieldReasons("overshoot", "un")).toContain("Peças menores que o padrão");
   });
 });

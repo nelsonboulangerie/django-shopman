@@ -347,14 +347,39 @@ export function backspaceQuantityText(current: string): string {
 // A decisão de 05/11 (#2150) pede o motivo; não pede teclado. Mesmo desenho dos
 // motivos da perda: um toque escolhe e segue; "Outro" abre o texto.
 
-export const YIELD_SHORTFALL_REASONS = [
-  "A massa rendeu menos peças",
-  "Peças maiores que o padrão",
-  "Massa ou peças perdidas antes do forno",
-] as const;
+// Cada motivo diz a CAUSA, nunca repete a pergunta. A lista segue a unidade do
+// lote: "peça maior que o padrão" não existe num creme pesado em quilo.
+const YIELD_REASONS = {
+  shortfall: {
+    count: [
+      "Peças maiores que o padrão",
+      "Massa perdida antes do forno",
+      "Receita feita com menos massa",
+    ],
+    measured: [
+      "Ficou na bacia e no batedor",
+      "Evaporou mais no cozimento",
+      "Receita feita com menos insumo",
+    ],
+  },
+  overshoot: {
+    count: [
+      "Peças menores que o padrão",
+      "Sobra de massa aproveitada",
+      "Receita feita com mais massa",
+    ],
+    measured: [
+      "Evaporou menos no cozimento",
+      "Sobra aproveitada no preparo",
+      "Receita feita com mais insumo",
+    ],
+  },
+} as const;
 
-export const YIELD_OVERSHOOT_REASONS = [
-  "A massa rendeu mais peças",
-  "Peças menores que o padrão",
-  "Contagem conferida",
-] as const;
+/** Os motivos prontos de "rendeu menos" ou "rendeu mais", na unidade do lote. */
+export function yieldReasons(
+  kind: "shortfall" | "overshoot",
+  unit: string | null | undefined,
+): readonly string[] {
+  return YIELD_REASONS[kind][isCountUnit(unit) ? "count" : "measured"];
+}

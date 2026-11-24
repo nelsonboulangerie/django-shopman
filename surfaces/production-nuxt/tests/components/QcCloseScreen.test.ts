@@ -315,13 +315,13 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(wrapper.text()).toContain("Rendeu 38 de 40 previstos?");
     expect(wrapper.find("[data-shortfall] textarea").exists()).toBe(false);
     expect(wrapper.emitted("confirm")).toBeUndefined();
-    await buttonByText(wrapper, "A massa rendeu menos peças")!.trigger("click");
+    await buttonByText(wrapper, "Massa perdida antes do forno")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toEqual({
       quantity: "38",
       partition: [{ quantity: "38", quality_grade_ref: "standard" }],
       yield_deviation_confirmed: true,
-      yield_deviation_reason: "A massa rendeu menos peças",
+      yield_deviation_reason: "Massa perdida antes do forno",
       reason: "",
     });
   });
@@ -355,12 +355,12 @@ describe("QcCloseScreen — classificação por grau", () => {
     await buttonByText(wrapper, "Finalizar")!.trigger("click");
 
     expect(wrapper.text()).toContain("Saíram 42, mais que os 40 previstos?");
-    await buttonByText(wrapper, "Contagem conferida")!.trigger("click");
+    await buttonByText(wrapper, "Sobra de massa aproveitada")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
       quantity: "42",
       yield_deviation_confirmed: true,
-      yield_deviation_reason: "Contagem conferida",
+      yield_deviation_reason: "Sobra de massa aproveitada",
     });
   });
 
@@ -857,7 +857,9 @@ describe("QcCloseScreen — sem teclado e em qualquer tela (WP-F03)", () => {
 
     await buttonByText(wrapper, "Finalizar")!.trigger("click");
     expect(wrapper.text()).toContain("Rendeu 2,35 de 2,5 kg previstos?");
-    await buttonByText(wrapper, "A massa rendeu menos peças")!.trigger("click");
+    // Lote pesado não fala em peça: a lista é a do preparo.
+    expect(wrapper.text()).not.toContain("Peças maiores");
+    await buttonByText(wrapper, "Evaporou mais no cozimento")!.trigger("click");
 
     expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
       quantity: "2.35",
