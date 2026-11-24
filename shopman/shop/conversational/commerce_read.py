@@ -288,7 +288,7 @@ class ShopmanCommerceRead:
 
         found = sorted(address_service.addresses(customer),
                        key=lambda saved: (not saved.is_default, -saved.updated_at.timestamp(), saved.pk))
-        return [saved_address_ref(cart_ref, saved.pk) for saved in found]
+        return [saved_address_ref(cart_ref, saved) for saved in found]
 
     def _hold_minutes(self) -> int:
         """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal).
@@ -368,9 +368,36 @@ def address_ref(cart_ref: str, data: dict) -> str:
     return f"address:{cart_ref}:{digest[:16]}"
 
 
-def saved_address_ref(cart_ref: str, saved_pk) -> str:
-    """A referência opaca de um endereço do cadastro, presa à sacola (P17: o texto nunca vai a contrato)."""
-    return f"saved-address:{cart_ref}:{saved_pk}"
+#: Os campos que dizem QUAL é o endereço do cadastro: mudou um, a referência oferecida não vale mais.
+_SAVED_ADDRESS_FIELDS = ("formatted_address", "route", "street_number", "complement", "neighborhood", "city",
+                         "state_code", "postal_code")
+
+
+def saved_address_ref(cart_ref: str, saved) -> str:
+    """A referência opaca de um endereço do cadastro: a sacola, o id e um resumo do endereço.
+
+    P17: o texto nunca vai a contrato; vai um resumo de mão única, salgado pela sacola. O "sim" aceita a
+    referência OFERECIDA; se o endereço foi editado depois da oferta, o resumo não casa e nada se grava com
+    um endereço que o cliente não viu (``parse_saved_address_ref`` + ``saved_address_digest``).
+    """
+    return f"saved-address:{cart_ref}:{saved.pk}:{saved_address_digest(cart_ref, saved)}"
+
+
+def saved_address_digest(cart_ref: str, saved) -> str:
+    import hashlib
+    import json
+
+    said = {field: str(getattr(saved, field, "") or "") for field in _SAVED_ADDRESS_FIELDS}
+    return hashlib.sha256(f"{cart_ref}|{json.dumps(said, sort_keys=True)}".encode()).hexdigest()[:16]
+
+
+def parse_saved_address_ref(ref: str, cart_ref: str) -> tuple[str, str] | None:
+    """O id e o resumo de uma referência do cadastro desta sacola, ou ``None``."""
+    prefix = f"saved-address:{cart_ref}:"
+    if not cart_ref or not str(ref).startswith(prefix):
+        return None
+    pk, _, digest = str(ref)[len(prefix):].partition(":")
+    return (pk, digest) if pk and digest else None
 
 
 def _address_requirements(data: dict, *, saved=()) -> dict:

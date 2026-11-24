@@ -379,17 +379,20 @@ def saved_address_text(conversation):
     from conversational_commerce.reply import UnresolvedReference
 
     def text(value) -> str:
+        from shopman.shop.conversational.commerce_read import parse_saved_address_ref, saved_address_digest
+
         from .address import saved_addresses, short_line
-        from .effect_site import SAVED_PREFIX
 
         options = list(value) if isinstance(value, (list, tuple)) else [value]
         ref = str(options[0]) if options else ""
         key = getattr(conversation, "session_key", "") or ""
-        prefix = f"{SAVED_PREFIX}{key}:"
-        if conversation is None or not key or not ref.startswith(prefix):
+        parsed = parse_saved_address_ref(ref, key) if conversation is not None else None
+        if parsed is None:
             raise UnresolvedReference(ref)
         chosen = next((saved for saved in saved_addresses(conversation.customer_ref or "")
-                       if str(saved.pk) == ref[len(prefix):]), None)
+                       if str(saved.pk) == parsed[0]), None)
+        if chosen is not None and saved_address_digest(key, chosen) != parsed[1]:
+            chosen = None  # o endereço mudou: a oferta nunca diz outro no lugar
         line = short_line(chosen) if chosen is not None else ""
         if not line:
             raise UnresolvedReference(ref)

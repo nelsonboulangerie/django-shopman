@@ -268,20 +268,27 @@ def _cart_lines(conversation) -> list[dict]:
 
 
 #: O que falta no endereço já gravado: a resposta a isto é um pedaço de endereço ("apto 12", "Jardim Botânico").
-_ADDRESS_DETAIL_CODES = frozenset({"delivery_address_details", "delivery_complement"})
+#: E a oferta do endereço do cadastro: a resposta pode ser o nome dele ("o do trabalho", "casa da minha mãe").
+_ADDRESS_DETAIL_CODES = frozenset({"delivery_address_details", "delivery_complement", "delivery_address_saved"})
 
 
 def address_detail_pending(conversation) -> bool:
-    """O fechamento espera um pedaço do endereço da entrega (o número, o CEP, o bairro, o complemento)."""
+    """O fechamento espera um pedaço do endereço da entrega (o número, o CEP, o bairro, o complemento) ou a
+    resposta à oferta do endereço do cadastro (que pode ser o nome dele)."""
     from shopman.orderman.models import Session
 
     from shopman.shop.conversational.commerce_read import _address_requirements
+
+    from .address import saved_addresses
 
     if conversation is None or not conversation.session_key:
         return False
     session = Session.objects.filter(session_key=conversation.session_key).first()
     data = (session.data if session is not None else None) or {}
-    return data.get("fulfillment_type") == "delivery" and bool(_ADDRESS_DETAIL_CODES & set(_address_requirements(data)))
+    if data.get("fulfillment_type") != "delivery":
+        return False
+    saved = tuple(item.pk for item in saved_addresses(conversation.customer_ref or ""))
+    return bool(_ADDRESS_DETAIL_CODES & set(_address_requirements(data, saved=saved)))
 
 
 def address_answer(conversation, text: str) -> bool:

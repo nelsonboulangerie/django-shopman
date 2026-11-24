@@ -276,6 +276,9 @@ class ConciergeEffectSite:
         # sacola, outro movimento do turno, e nunca vai para a etiqueta nem para a nota).
         if source.startswith(SAVED_PREFIX):
             said = self._saved_choice(source, str(session.session_key))  # o "sim" ao endereço do cadastro
+            if not said:
+                # O endereço oferecido mudou ou saiu do cadastro: não se grava outro no lugar.
+                return Done(False, refusal=ErrorCode.REVISION_CONFLICT.value)
         elif shared_location_of(source):
             said = {"use_shared_location": True}
         else:
@@ -305,20 +308,18 @@ class ConciergeEffectSite:
         return saved_addresses(self.tool_context.conversation.customer_ref or "")
 
     def _saved_choice(self, source: str, cart: str) -> dict:
-        """O endereço do cadastro pela referência opaca: só o desta sacola e do cliente desta conversa."""
-        from .address import saved_tag
+        """O endereço do cadastro pela referência OFERECIDA: só o desta sacola e do cliente desta conversa, e só se
+        o endereço ainda é o que o cliente viu (o resumo casa). Grava pelo id, nunca pelo "padrão" de agora."""
+        from shopman.shop.conversational.commerce_read import parse_saved_address_ref, saved_address_digest
 
-        prefix = f"{SAVED_PREFIX}{cart}:"
-        if not source.startswith(prefix):
+        parsed = parse_saved_address_ref(source, cart)
+        if parsed is None:
             return {}
-        saved_list = self._saved_list()
-        chosen = next((saved for saved in saved_list if str(saved.pk) == source[len(prefix):]), None)
-        if chosen is None:
-            return {}
-        # O padrão é o que o "sim" aceita (o fechamento de hoje, ``use_saved_address``); outro, pela etiqueta.
-        if chosen is saved_list[0]:
-            return {"use_saved_address": True}
-        return {"saved_address_label": saved_tag(chosen)} if saved_tag(chosen) else {}
+        pk, digest = parsed
+        chosen = next((saved for saved in self._saved_list() if str(saved.pk) == pk), None)
+        if chosen is None or saved_address_digest(cart, chosen) != digest:
+            return {}  # o endereço mudou (ou saiu do cadastro) depois da oferta
+        return {"saved_address_pk": chosen.pk}
 
     def _saved_by_name(self, text: str, data: dict) -> dict:
         """ "O do trabalho": sem endereço na sacola, a etiqueta de UM endereço do cadastro, dita na fala, escolhe ele.
@@ -429,6 +430,8 @@ _NEW_ADDRESS = re.compile(
 #: Onde uma fala se divide em trechos: vírgula, ponto e vírgula, exclamação, interrogação, "e", "mas".
 #: O ponto fica de fora ("Av. Brasil" é um trecho só).
 _CLAUSE_SEP = re.compile(r"(\s*[,;!?]\s*|\s+(?:e|mas)\s+)", re.IGNORECASE)
+#: A resposta curta de sim ou não ("sim", "pode", "esse mesmo", "não"): é resposta, não endereço.
+_YES_NO = re.compile(r"^(?:sim|s|pode|pode ser|ok|claro|isso|isso mesmo|esse|esse mesmo|este|nao|n)\b")
 #: Trecho que pede outra coisa, pelas palavras da casa (sobre o texto dobrado): mexer na sacola, agradecer.
 _OTHER_CUE = re.compile(
     r"\b(?:poe|ponha|coloca|coloque|bota|adiciona|acrescenta|inclui|mais|menos|tira|remove|troca|quero|queria|"
@@ -454,7 +457,7 @@ def _other_clause(piece: str, products: frozenset[str]) -> bool:
     from .turn_framework import NiceRules
 
     folded = _fold(piece)
-    rules = (_GIVE_UP_RE, _START_RE, _PIX_RE, _CARD_RE, _CASH_RE, _PICKUP_RE, _DELIVERY_RE, _OTHER_CUE)
+    rules = (_GIVE_UP_RE, _START_RE, _PIX_RE, _CARD_RE, _CASH_RE, _PICKUP_RE, _DELIVERY_RE, _OTHER_CUE, _YES_NO)
     words = re.findall(r"\w{4,}", folded)
     named = any(word in products or word.rstrip("s") in products for word in words)  # "croissants"
     return bool(NiceRules().read(piece)) or any(rule.search(folded) for rule in rules) or named
