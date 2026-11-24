@@ -186,3 +186,17 @@ def test_read_policy_states_only_the_house_hours(shop):
     assert set(fact.value) == {"open", "opens", "closes"}
     for unknown in ("returns", "delivery_fee", ""):
         assert ShopmanCommerceRead.read_policy(reader, CTX, unknown) == Unknown(reason="not_found")
+
+
+def test_terms_total_counts_the_merchandise_and_the_delivery_fee_once():
+    """A linha ``__DELIVERY_FEE__`` é cobrança, não item: o total dos termos é a mercadoria mais a taxa UMA vez
+    (ensaio no ar, 24/11: a cotação somava a taxa duas vezes)."""
+    from types import SimpleNamespace
+
+    from shopman.shop.conversational.commerce_read import terms_total
+
+    session = SimpleNamespace(
+        items=[{"sku": "PAO", "line_total_q": 180}, {"sku": "__DELIVERY_FEE__", "line_total_q": 800}],
+        data={"delivery_fee_q": 800})
+    assert terms_total(session) == 980
+    assert terms_total(SimpleNamespace(items=[{"sku": "PAO", "line_total_q": 180}], data={})) == 180

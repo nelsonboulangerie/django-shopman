@@ -985,6 +985,26 @@ def test_a_cart_changed_after_the_offer_refuses_the_yes_and_offers_again(order_o
 
 
 @pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_price_change_after_the_offer_refuses_the_yes(order_on_air, outbox, monkeypatch):
+    """Coordenação (24/11): o preço muda depois do "Posso registrar?" sem ninguém mexer na sacola (o Happy Hour
+    acabou, o lote, o cupom vencido). A revisão da casa no registro repreça; o "sim" não pode registrar o total
+    novo, que o cliente não viu: recusa e diz o total novo."""
+    from shopman.offerman.models import ListingItem
+    from shopman.orderman.models import Order
+
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    def reprice():  # o preço do canal muda; a sacola, não
+        ListingItem.objects.filter(product__sku=SKU).update(price_q=120)
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _engine_order(order_on_air, monkeypatch, PICKUP_SCRIPT,
+                      ["pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "sim"], between=reprice)
+    assert not Order.objects.exists(), Order.objects.values_list("total_q", flat=True)
+    assert outbox.sent[-1] == "O total mudou; agora é R$ 2,40. Confira antes de confirmar.", outbox.sent[-1]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
 def test_the_order_placed_in_the_conversation_with_delivery_counts_the_fee_once(order_on_air, outbox, monkeypatch,
                                                                                 django_capture_on_commit_callbacks):
     """Coordenação (24/11), depois de o ensaio no ar achar a taxa contada duas vezes NO RESUMO: o pedido GRAVADO pela

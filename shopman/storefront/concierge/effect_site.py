@@ -145,7 +145,22 @@ class ConciergeEffectSite:
         if session is None:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         terms_ref = str((current.quote or {}).get("token") or "") or None if command.action == "commit_order" else None
-        return Reading(ownership_epoch=epoch, versions={target: session.rev}, terms_ref=terms_ref)
+        rev = self._repriced_rev(session) if command.action == "commit_order" else session.rev
+        return Reading(ownership_epoch=epoch, versions={target: rev}, terms_ref=terms_ref)
+
+    def _repriced_rev(self, session) -> int:
+        """A revisão dos termos no registro: a sacola é repreçada AGORA (o Happy Hour acabou, o lote, o cupom
+        venceu, sem ninguém mexer nela), antes da guarda. Total igual: os termos que o cliente viu, a revisão da
+        oferta. Total diferente: a revisão nova, e a guarda do Core recusa o "sim"; o repreço fica gravado (a trava
+        é fora da transação do efeito), e o motor diz o total novo (coordenação, 24/11)."""
+        from shopman.shop.conversational.commerce_read import terms_total
+        from shopman.shop.services import cart as cart_service
+
+        before = terms_total(session)
+        fresh = cart_service.reprice(session_key=session.session_key, channel_ref=self.tool_context.channel_ref)
+        if fresh is None or terms_total(fresh) == before:
+            return session.rev
+        return fresh.rev
 
     def apply(self, ctx: TrustedContext, command: ActionCommand) -> Done:
         from .service import TurnRevoked

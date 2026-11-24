@@ -238,7 +238,7 @@ class ShopmanCommerceRead:
         fee = int(data.get("delivery_fee_q") or 0)
         if fee:
             adjustments.append({"code": "delivery_fee", "amount": {"amount_minor": fee, "currency": CURRENCY}})
-        total = sum(item["line_total"]["amount_minor"] for item in items) + fee
+        total = terms_total(session)
         now = self.now()
         return seal(TermsDocument(
             id=self._id("terms"), tenant=ctx.tenant, environment=ctx.environment, trace_id=self._id("trace"),
@@ -457,6 +457,17 @@ def _address_requirements(data: dict, *, saved=()) -> dict:
     if "complement" not in structured:
         return {"delivery_complement": []}  # ausente = ainda não perguntado; "" = "sem complemento"
     return {}
+
+
+def terms_total(session) -> int:
+    """O total dos termos da sacola, em centavos: as linhas de mercadoria mais a taxa de entrega UMA vez (a linha
+    ``__DELIVERY_FEE__`` é cobrança, não item; como ``projections.cart``). A cotação e o registro pelo motor contam
+    do mesmo jeito: total diferente é termo diferente."""
+    from shopman.shop.modifiers import _is_non_merchandise_line
+
+    lines = sum(int(line.get("line_total_q") or 0) for line in session.items or []
+                if not _is_non_merchandise_line(line))
+    return lines + int((session.data or {}).get("delivery_fee_q") or 0)
 
 
 def _fulfillment(data: dict, cart_ref: str = "") -> dict:
