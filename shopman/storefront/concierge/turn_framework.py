@@ -368,25 +368,30 @@ def pickup_slots_text(conversation):
     """Os horários de retirada do dia, como a pergunta de hoje os oferece: os da grade anotada do checkout que
     a sacola ainda alcança, sem números ("9h às 12h ou 15h às 18h"; o "1" não se lê como a primeira opção).
 
-    Sem horário que sirva, levanta: a mensagem segura e o caminho de hoje diz que não há horário no dia.
+    Sem horário que sirva, levanta ``UnresolvedReference``: a mensagem segura e o caminho de hoje diz que não há
+    horário no dia. A lista já pronta (o fato do ensaio, de memória) se diz como veio.
     """
     def text(value) -> str:
         from collections.abc import Mapping
 
+        from conversational_commerce.reply import UnresolvedReference
         from shopman.orderman.models import Session
 
         from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
 
-        day = str(value.get("date") or "") if isinstance(value, Mapping) else ""
-        if not day or conversation is None:
-            raise ValueError("horário sem dia")
-        session = Session.objects.filter(session_key=getattr(conversation, "session_key", "") or "").first()
-        skus = [str(item.get("sku")) for item in ((session.items if session is not None else None) or [])]
-        annotated = annotate_slots_for_checkout(skus, delivery_date=day, channel_ref=conversation.channel_ref)
-        labels = [str(slot.get("label")) for slot in annotated.get("pickup_slots", [])
-                  if slot.get("enabled") and slot.get("label")]
+        if isinstance(value, (list, tuple)):
+            labels = [str(label) for label in value if label]
+        else:
+            day = str(value.get("date") or "") if isinstance(value, Mapping) else ""
+            if not day or conversation is None:
+                raise UnresolvedReference("horário sem dia")
+            session = Session.objects.filter(session_key=getattr(conversation, "session_key", "") or "").first()
+            skus = [str(item.get("sku")) for item in ((session.items if session is not None else None) or [])]
+            annotated = annotate_slots_for_checkout(skus, delivery_date=day, channel_ref=conversation.channel_ref)
+            labels = [str(slot.get("label")) for slot in annotated.get("pickup_slots", [])
+                      if slot.get("enabled") and slot.get("label")]
         if not labels:
-            raise ValueError("nenhum horário no dia")
+            raise UnresolvedReference("nenhum horário no dia")
         return labels[0] if len(labels) == 1 else f"{', '.join(labels[:-1])} ou {labels[-1]}"
 
     return text
