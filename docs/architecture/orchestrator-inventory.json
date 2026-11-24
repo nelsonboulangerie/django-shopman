@@ -2112,7 +2112,8 @@
           "responsibility": "configuração",
           "symbols": [
             "FAQEntryAdmin",
-            "OriginFilter"
+            "OriginFilter",
+            "REPEATS_CONFIGURATION"
           ]
         }
       ]
@@ -6728,7 +6729,10 @@
         {
           "responsibility": "configuração",
           "symbols": [
-            "FAQEntry"
+            "FAQEntry",
+            "OPERATIONAL_QUESTIONS",
+            "_OPERATIONAL_BY_NORMALIZED",
+            "normalized_question"
           ]
         }
       ]
