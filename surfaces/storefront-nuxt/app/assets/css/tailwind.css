@@ -107,6 +107,7 @@
   --color-info-foreground: var(--info-foreground);
   --color-cta: var(--shop-cta);
   --color-cta-foreground: var(--shop-cta-foreground);
+  --color-promotion: var(--shop-promotion);
   --color-brass: var(--shop-brass);
   --color-brass-foreground: var(--shop-brass-foreground);
   --color-ink: var(--shop-ink);
@@ -188,6 +189,9 @@
   --shop-ink-foreground: var(--background);
   --shop-bottomnav: rgb(245 231 221); /* Faubourg 200 — bottom bar + área de overscroll (brand_tokens) */
   --shop-cta: var(--primary);
+  /* Texto de promoção ("Semana do Pão -15%"): a cor de ação, salvo quando a marca dá um
+     tom próprio por tema (`promotion`). No escuro da Nelson o primary não passa o AA. */
+  --shop-promotion: var(--primary);
   --shop-cta-foreground: var(--primary-foreground);
   /* Brass/dourado da marca (mesmo tom do logo). Escuro o bastante p/ texto branco
      (≈4.8:1, AA). Padrão de ação secundária "dourada" (ex.: como chegar/ajuda). */

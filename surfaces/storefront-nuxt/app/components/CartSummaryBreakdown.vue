@@ -28,7 +28,7 @@ defineProps<{
 
     <template v-for="discount in cart.order_discount_lines" :key="discount.label">
       <UiDescriptionListTerm>{{ discount.label }}</UiDescriptionListTerm>
-      <UiDescriptionListDetails class="tabular-nums text-primary dark:text-foreground sm:text-right" data-decisive="price">
+      <UiDescriptionListDetails class="tabular-nums text-promotion sm:text-right" data-decisive="price">
         {{ discountDisplay(discount.amount_display) }}
       </UiDescriptionListDetails>
     </template>

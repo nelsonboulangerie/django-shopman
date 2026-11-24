@@ -110,6 +110,9 @@ _BRAND_LIGHT: dict[str, str] = {
     "bottomnav": _FAUBOURG["200"],         # Faubourg rosé — bottom bar
     "cta": _BRASS["700"],                  # Brass — acento/superfície/estado (barras, fios, qty)
     "cta_foreground": _WHITE,
+    # Texto de promoção ("Semana do Pão -15%", desconto da sacola): a cor da ação. No
+    # claro é o próprio primary (8,3:1 no branco, 6,8:1 no creme).
+    "promotion": _BURGUNDY["500"],
 }
 
 _BRAND_LIGHT_ALIASES: dict[str, str] = {
@@ -163,6 +166,10 @@ _BRAND_DARK: dict[str, str] = {
     "bottomnav": "43 29 22",              # superfície escura p/ a bottom bar no escuro
     "cta": "150 116 52",                  # Brass (um tom acima p/ o escuro)
     "cta_foreground": "250 246 237",
+    # Texto de promoção no escuro: o burgundy do primary escuro (154 79 86) dá 3,05:1 no
+    # fundo e reprova o AA a 14 px (X9, OC-30). Burgundy-300 é o tom MAIS ESCURO da escala
+    # que passa: 5,22:1 no fundo, 4,82:1 no cartão (o 400 dá 3,36:1).
+    "promotion": _BURGUNDY["300"],
 }
 
 _BRAND_DARK_ALIASES: dict[str, str] = {

@@ -507,6 +507,7 @@ export interface ShopDesignTokensProjection {
   bottomnav?: string
   cta?: string
   cta_foreground?: string
+  promotion?: string
   background_hex?: string
   theme_hex?: string
   heading_font?: string

@@ -2780,7 +2780,7 @@ useSeoMeta({
                   </div>
                   <div v-for="discount in cart.order_discount_lines" :key="discount.label" class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">{{ discount.label }}</dt>
-                    <dd class="tabular-nums text-primary">{{ discountDisplay(discount.amount_display) }}</dd>
+                    <dd class="tabular-nums text-promotion" data-decisive="price">{{ discountDisplay(discount.amount_display) }}</dd>
                   </div>
                   <div v-if="cart.delivery_fee_display" class="flex items-baseline justify-between gap-3">
                     <dt class="shop-muted">Entrega<span v-if="cart.delivery_distance_display"> · {{ cart.delivery_distance_display }}</span></dt>

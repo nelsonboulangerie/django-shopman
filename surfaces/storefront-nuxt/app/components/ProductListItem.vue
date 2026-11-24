@@ -71,7 +71,7 @@ const badge = computed(() => {
       <p v-else class="mt-2 flex flex-wrap items-baseline gap-x-2">
         <span v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta" data-decisive="price">antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span></span>
         <span class="shop-price" data-decisive="price">{{ quotePriceDisplay(item.quote) }}</span>
-        <span v-for="adjustment in item.quote.adjustments" :key="adjustment.code" class="min-w-0 max-w-full text-sm font-semibold text-primary dark:text-foreground" :title="adjustmentLabel(adjustment)" data-product-promotion data-decisive="price">{{ adjustmentLabel(adjustment) }}</span>
+        <span v-for="adjustment in item.quote.adjustments" :key="adjustment.code" class="min-w-0 max-w-full text-sm font-semibold text-promotion" :title="adjustmentLabel(adjustment)" data-product-promotion data-decisive="price">{{ adjustmentLabel(adjustment) }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
         <span v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>{{ formatCount(currentQty, 'na sacola', 'na sacola') }}</span>
       </p>

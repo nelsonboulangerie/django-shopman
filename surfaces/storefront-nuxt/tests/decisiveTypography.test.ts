@@ -106,13 +106,21 @@ describe('tipografia decisiva (X9, OC-30)', () => {
     expect(offenders).toEqual([])
   })
 
-  it('o decisivo em cor de ação clareia no tema escuro (o burgundy da marca dá 3,1:1 no fundo escuro)', () => {
+  it('a promoção tem cor própria por tema, que a marca define (o primary escuro dá 3,05:1)', () => {
+    // A cor É o significado (promoção): no escuro ela não vira branco, vira o tom da escala
+    // da marca que passa o AA (`promotion` na paleta; Burgundy-300 na Nelson).
+    expect(read('app/utils/shopTheme.ts')).toContain("promotion: '--shop-promotion'")
+    expect(css).toContain('--color-promotion: var(--shop-promotion)')
+    expect(css).toMatch(/--shop-promotion: var\(--primary\)/)
     const offenders: string[] = []
     for (const file of [...vueFiles('app/pages'), ...vueFiles('app/components')]) {
       for (const tag of decisiveTags(read(file))) {
-        if (/\btext-primary\b/.test(tag) && !/\bdark:text-foreground\b/.test(tag)) offenders.push(`${file}: ${tag.slice(0, 120)}`)
+        if (/\btext-primary\b/.test(tag)) offenders.push(`${file}: ${tag.slice(0, 120)}`)
       }
     }
     expect(offenders).toEqual([])
+    for (const file of ['app/components/ProductListItem.vue', 'app/components/CartSummaryBreakdown.vue', 'app/pages/sacola.vue', 'app/pages/finalizar.vue', 'app/pages/pedido/[ref]/index.vue']) {
+      expect(read(file), `${file} pinta a promoção com text-promotion`).toContain('text-promotion')
+    }
   })
 })

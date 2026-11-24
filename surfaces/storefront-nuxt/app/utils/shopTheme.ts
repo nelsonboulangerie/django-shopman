@@ -54,7 +54,8 @@ export const TOKEN_TO_CSS_VAR: Record<string, string> = {
   ink_foreground: '--shop-ink-foreground',
   bottomnav: '--shop-bottomnav',
   cta: '--shop-cta',
-  cta_foreground: '--shop-cta-foreground'
+  cta_foreground: '--shop-cta-foreground',
+  promotion: '--shop-promotion'
 }
 
 function cssColor (value: string): string {

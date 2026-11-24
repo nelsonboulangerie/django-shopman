@@ -303,7 +303,7 @@ useSeoMeta({
                     </template>
                     <template v-else>{{ linePrice(line).current }} cada</template>
                   </p>
-                  <p v-if="line.discount_label" class="mt-0.5 text-sm font-semibold text-primary dark:text-foreground" data-decisive="price">{{ line.discount_label }}</p>
+                  <p v-if="line.discount_label" class="mt-0.5 text-sm font-semibold text-promotion" data-decisive="price">{{ line.discount_label }}</p>
                   <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-sm text-destructive" data-decisive="availability">{{ line.availability_warning }}</p>
 
                   <!-- Preparado na hora: promessa DECLARADA da casa (finalizado no
