@@ -3,6 +3,7 @@ import {
   HEADER_COLLAPSE_AT,
   HEADER_EXPAND_AT,
   STATUS_BAR_HEIGHT,
+  focusRulerAllowance,
   headerCollapsed
 } from '~/presentation/scroll'
 
@@ -71,5 +72,39 @@ describe('headerCollapsed', () => {
   // A propriedade que sustenta o teste acima, dita de forma direta.
   it('zona morta é no mínimo a altura da barra', () => {
     expect(HEADER_COLLAPSE_AT - HEADER_EXPAND_AT).toBeGreaterThanOrEqual(STATUS_BAR_HEIGHT)
+  })
+})
+
+// A régua do próximo foco (#3477): o bloco nunca para atrás da status bar.
+describe('focusRulerAllowance', () => {
+  // Altura do chrome que cobre o topo numa rolagem, dado o estado de partida.
+  function chromeAt (startCollapsed: boolean, y: number): number {
+    const NAVBAR = 70 // 4rem + o fio de 6px: a régua base, a do CSS
+    return headerCollapsed(startCollapsed, y) ? NAVBAR : NAVBAR + STATUS_BAR_HEIGHT
+  }
+
+  it('o caso medido no /entrar a 375 px: parada em 54 desce a régua a altura da barra', () => {
+    expect(focusRulerAllowance(54)).toBe(STATUS_BAR_HEIGHT)
+  })
+
+  it('parada depois do limiar de colapso usa a régua base', () => {
+    expect(focusRulerAllowance(HEADER_COLLAPSE_AT + 1)).toBe(0)
+    expect(focusRulerAllowance(900)).toBe(0)
+  })
+
+  it('em qualquer bloco e qualquer estado de partida, o topo do bloco fica abaixo do chrome', () => {
+    const NAVBAR = 70
+    // O cabeçalho é sticky e ocupa o fluxo: conteúdo nenhum começa acima dele.
+    const firstContent = NAVBAR + STATUS_BAR_HEIGHT
+    for (const startCollapsed of [false, true]) {
+      for (let blockTop = firstContent; blockTop <= 600; blockTop++) {
+        const base = Math.max(0, blockTop - NAVBAR)
+        const ruler = NAVBAR + focusRulerAllowance(base)
+        const landing = Math.max(0, blockTop - ruler)
+        const visibleTop = blockTop - landing
+        expect(visibleTop, `bloco em ${blockTop}, partida ${startCollapsed ? 'recolhida' : 'de pé'}`)
+          .toBeGreaterThanOrEqual(chromeAt(startCollapsed, landing))
+      }
+    }
   })
 })

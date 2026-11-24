@@ -1,0 +1,34 @@
+[antes] 375     home-anonima             h1=1 "Boa noite."
+                                         alvos=43 abaixo_de_24=3 rolagem_lateral=0px axe=color-contrast:1,target-size:3
+[antes] 375     home-anonima-carrossel   pontinhos=[{"w":36,"h":44},{"w":20,"h":44},{"w":20,"h":44},{"w":20,"h":44}] hero=["Boa noite.","Peça. Acompanhe. Aproveite.","Boa noite.","Feito à mão, todo dia"]
+[antes] 375     menu                     h1=1 "Cardápio" (sr-only)
+                                         alvos=143 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2,label-content-name-mismatch:1
+[antes] 375     produto                  h1=1 "Água Mineral Prata 310ml"
+                                         alvos=25 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[antes] 375     sacola                   h1=1 "Sua sacola"
+                                         alvos=20 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[antes] 375     entrar                   h1=1 "Entre pelo WhatsApp"
+                                         alvos=21 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:1
+[antes] 375     entrar-trocar-telefone   {"scrollY":54,"h1":"Entre pelo WhatsApp","h1Top":70,"headerBottom":100,"covered":true,"visibleBelowHeader":false}
+[antes] 375     home-logada              h1=1 "Boa noite, João."
+                                         alvos=45 abaixo_de_24=3 rolagem_lateral=0px axe=color-contrast:3,target-size:3
+                                         cartao_recompra=1 slides_recompra_no_hero=1 hero=["Boa noite, João.","Peça. Acompanhe. Aproveite.","Quer repetir seu último pedido, João?","Feito à mão, todo dia"]
+[antes] 375     conta                    h1=1 "Olá, João"
+                                         alvos=28 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+[antes] desktop home-anonima             h1=1 "Boa noite."
+                                         alvos=43 abaixo_de_24=3 rolagem_lateral=0px axe=color-contrast:1,target-size:3
+[antes] desktop home-anonima-carrossel   pontinhos=[{"w":36,"h":44},{"w":20,"h":44},{"w":20,"h":44},{"w":20,"h":44}] hero=["Boa noite.","Peça. Acompanhe. Aproveite.","Boa noite.","Feito à mão, todo dia"]
+[antes] desktop menu                     h1=1 "Cardápio" (sr-only)
+                                         alvos=141 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:11,label-content-name-mismatch:1
+[antes] desktop produto                  h1=1 "Água Mineral Prata 310ml"
+                                         alvos=32 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:4
+[antes] desktop sacola                   h1=1 "Sua sacola"
+                                         alvos=18 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[antes] desktop entrar                   h1=1 "Entre pelo WhatsApp"
+                                         alvos=19 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:1
+[antes] desktop entrar-trocar-telefone   {"scrollY":70,"h1":"Entre pelo WhatsApp","h1Top":70,"headerBottom":64,"covered":false,"visibleBelowHeader":true}
+[antes] desktop home-logada              h1=1 "Boa noite, João."
+                                         alvos=45 abaixo_de_24=3 rolagem_lateral=0px axe=color-contrast:3,target-size:3
+                                         cartao_recompra=1 slides_recompra_no_hero=1 hero=["Boa noite, João.","Peça. Acompanhe. Aproveite.","Quer repetir seu último pedido, João?","Feito à mão, todo dia"]
+[antes] desktop conta                    h1=1 "Olá, João"
+                                         alvos=26 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3

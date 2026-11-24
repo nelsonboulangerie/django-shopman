@@ -137,7 +137,7 @@ describe('StockNotifyButton', () => {
     const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', subscribed: false, pill: true })
 
     expect(wrapper.text()).toBe('Me avise')
-    expect(wrapper.get('button').attributes('title')).toBe('Ativar avisos recorrentes quando Pão voltar')
+    expect(wrapper.get('button').attributes('title')).toBe('Me avise sempre que Pão voltar')
   })
 
   it('captures the 18+ disclosure before login and preserves product context', async () => {
@@ -260,6 +260,6 @@ describe('StockNotifyButton', () => {
   it('keeps a product-specific accessible label before subscription', async () => {
     await setAuthenticated(false)
     const wrapper = await mountStockNotify({ sku: 'PAO', name: 'Pão', pill: true })
-    expect(wrapper.get('button').attributes('aria-label')).toBe('Ativar avisos recorrentes quando Pão voltar')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Me avise sempre que Pão voltar')
   })
 })
