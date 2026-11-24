@@ -62,6 +62,22 @@ def test_malformed_annotation_fails(tmp_path):
     assert "ilegível" in messages[2]
 
 
+def test_the_documented_template_is_not_an_annotation(tmp_path):
+    # ``useExperience.ts`` ensina a convenção com o molde literal; só ele passa.
+    _write(
+        tmp_path,
+        "surfaces/storefront-nuxt/app/composables/useExperience.ts",
+        " *     // EXPERIMENT(<ref>) remove_after AAAA-MM-DD\n"
+        " *   <!-- EXPERIMENT(<ref>) remove_after AAAA-MM-DD -->\n"
+        "// EXPERIMENT(<ref>) remove_after 2020-01-01\n"
+        "// EXPERIMENT(para-quando) remove_after AAAA-MM-DD\n",
+    )
+    messages = [f.message for f in gate.run(tmp_path, TODAY)]
+    assert len(messages) == 2
+    assert "ref de experimento inválido" in messages[0]
+    assert "ilegível" in messages[1]
+
+
 def test_build_output_and_node_modules_are_ignored(tmp_path):
     for rel in (
         "surfaces/storefront-nuxt/node_modules/lib/x.js",

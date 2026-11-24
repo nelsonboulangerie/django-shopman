@@ -12,7 +12,8 @@ O que reprova:
 - **anotação de código** nas superfícies (``surfaces/**``): a linha
   ``// EXPERIMENT(<ref>) remove_after AAAA-MM-DD`` com a data já passada, ou
   malformada (sem ``remove_after``, data ilegível, ref fora do formato). Vale para
-  qualquer marcador de comentário (``//``, ``<!-- -->``, ``/* */``);
+  qualquer marcador de comentário (``//``, ``<!-- -->``, ``/* */``). O molde literal
+  ``EXPERIMENT(<ref>) remove_after AAAA-MM-DD``, que documenta a convenção, passa;
 - **configuração semeada**: ``RuleConfig`` de ``ExperienceRule`` (ou qualquer objeto
   com ``variants`` e ``remove_after``) com data literal já passada, no ``seed`` e nos
   módulos de ``config/``, nos comandos de gestão de ``shopman/``, nos descritores de
@@ -59,6 +60,9 @@ _ANNOTATION = re.compile(
     r"EXPERIMENT\((?P<ref>[^)]*)\)\s+remove_after\s+(?P<date>\S+?)(?:\s|-->|\*/|$)"
 )
 _REF = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
+# O molde da convenção, escrito para ensinar (``useExperience.ts``), não é anotação:
+# ``<ref>`` e ``AAAA-MM-DD`` assim, literais. Qualquer outra coisa é conferida.
+_TEMPLATE = ("<ref>", "AAAA-MM-DD")
 
 
 @dataclass(frozen=True)
@@ -115,6 +119,8 @@ def check_annotation_text(text: str, rel: str, today: date) -> list[Finding]:
             ))
             continue
         ref = match.group("ref").strip()
+        if (ref, match.group("date")) == _TEMPLATE:
+            continue
         if not _REF.match(ref):
             findings.append(Finding(rel, number, f"ref de experimento inválido: {ref!r}"))
             continue
