@@ -1,12 +1,12 @@
 // WP-F04 · Letreiro a dois metros (J-P8): a estação abre o Letreiro numa TV de
-// 1920 × 1080 e num tablet de 1024; a linha se lê de longe (36px na TV), a massa
+// 1920 × 1080 e num tablet de 1024; a linha se lê de longe (44px na TV), a massa
 // aparece em quilo, a hora guarda o "h" minúsculo e, sem conexão, o aviso diz a
 // hora da leitura.
 import { expect, test, type Page } from "@playwright/test";
 
 const SCREENS: Record<string, { minRowPx: number }> = {
-  // 36px numa TV de 1080; a largura dos nomes do dia pode segurar um pouco.
-  "chromium-tv-full-hd": { minRowPx: 32 },
+  // 44px numa TV de 1080; a largura dos nomes do dia pode segurar um pouco.
+  "chromium-tv-full-hd": { minRowPx: 40 },
   "chromium-tablet-landscape": { minRowPx: 20 },
 };
 
@@ -92,12 +92,11 @@ test("sem conexão, o quadro fica e o aviso diz de quando é", async ({
   );
   await expect(page.locator("[data-board-row]").first()).toBeVisible();
 
-  // No tamanho de aviso (o dono: não precisa gritar), legível no balcão.
+  // Na escala da linha: lido a 2 m como o resto do Letreiro.
   const noticePx = await notice.evaluate((el) =>
     Number.parseFloat(getComputedStyle(el).fontSize),
   );
-  expect(noticePx).toBeGreaterThanOrEqual(14);
-  expect(noticePx).toBeLessThanOrEqual(await rowFontPx(page));
+  expect(noticePx).toBeCloseTo(await rowFontPx(page), 0);
 
   await testInfo.attach(`letreiro-sem-conexao-${testInfo.project.name}`, {
     body: await page.screenshot(),

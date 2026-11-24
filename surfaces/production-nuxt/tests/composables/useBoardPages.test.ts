@@ -61,5 +61,7 @@ describe("useBoardPages — airport-panel pagination math", () => {
     // Uma linha maior que a área ainda ganha a própria página (nunca some).
     expect(boardPageStarts([1, 9, 1], { ...fit, capacity: 100 })).toEqual([0, 1, 2]);
     expect(boardPageStarts([], fit)).toEqual([0]);
+    // O vão medido na tela entra na conta: com 15 px, 5 × 50 + 4 × 15 = 310 estoura.
+    expect(boardPageStarts([1, 1, 1, 1, 1], { ...fit, gap: 15 })).toEqual([0, 4]);
   });
 });

@@ -92,11 +92,11 @@ describe("Letreiro — escala e nome", () => {
     ]);
   });
 
-  it("a escala cresce com a altura até 36px na TV, sem o teto de tablet de 1,5rem", () => {
+  it("a escala cresce com a altura até 44px na TV, sem o teto de tablet de 1,5rem", () => {
     const css = readFileSync(resolve(__dirname, "../app/pages/board.vue"), "utf8");
     const row = /--scale-row:\s*max\(([^;]+)\);/.exec(css)?.[1] ?? "";
-    expect(row).toContain("3.4vh");
-    expect(row).toContain("2.25rem");
+    expect(row).toContain("4.1vh");
+    expect(row).toContain("2.75rem");
     expect(row).toContain("var(--row-chars)");
     expect(css).not.toContain("clamp(1.05rem, 2vw, 1.5rem)");
   });

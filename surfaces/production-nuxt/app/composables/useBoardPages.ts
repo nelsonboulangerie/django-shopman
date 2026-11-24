@@ -9,23 +9,25 @@
 import type { Ref } from "vue";
 
 const ROTATE_MS = 12_000;
-const ROW_GAP_PX = 6; // gap-1.5 entre linhas
+const ROW_GAP_PX = 6; // vão padrão; a régua medida traz o vão real da tela
 
-/** A régua medida na tela: altura útil, linha de uma linha de nome, e o acréscimo
- *  de cada linha de nome a mais. */
+/** A régua medida na tela: altura útil, linha de uma linha de nome, o acréscimo
+ *  de cada linha de nome a mais e o vão entre linhas. */
 export interface BoardPageFit {
   capacity: number;
   base: number;
   extra: number;
+  gap?: number;
 }
 
 /** Fatia os itens em páginas que cabem na régua, em ordem (nunca reordena). */
 export function boardPageStarts(lines: readonly number[], fit: BoardPageFit): number[] {
   const starts = [0];
+  const gap = fit.gap ?? ROW_GAP_PX;
   let used = 0;
   lines.forEach((count, index) => {
     const height = fit.base + Math.max(0, count - 1) * fit.extra;
-    const next = used === 0 ? height : used + ROW_GAP_PX + height;
+    const next = used === 0 ? height : used + gap + height;
     if (used > 0 && next > fit.capacity) {
       starts.push(index);
       used = height;
@@ -74,10 +76,14 @@ export function useBoardPages<T>(items: Ref<T[]>, lines?: (item: T) => number) {
       if (!name || !flap || !row.offsetHeight) return;
       const gap = Number.parseFloat(getComputedStyle(name).rowGap) || 0;
       const extra = flap.offsetHeight + gap;
+      const rowGap = row.parentElement
+        ? Number.parseFloat(getComputedStyle(row.parentElement).rowGap)
+        : Number.NaN;
       fit.value = {
         capacity: list.clientHeight,
         base: row.offsetHeight - (count - 1) * extra,
         extra,
+        gap: Number.isFinite(rowGap) ? rowGap : ROW_GAP_PX,
       };
       return;
     }

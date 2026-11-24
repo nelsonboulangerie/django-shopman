@@ -4,13 +4,13 @@
 //   aba "Painel" da UI normal); botão de tela cheia para a TV;
 // · tipografia Oswald (grotesca condensada de painel), DUAS escalas apenas:
 //   display (título · relógio) e linha (todas as palhetas). As duas crescem
-//   com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha tem 36px
+//   com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha tem 44px
 //   e se lê a dois metros (WP-F04). A largura só limita quando os nomes do dia
 //   não caberiam; a hora guarda o "h" minúsculo ("6h42");
 // · NOME do produto nas palhetas (SKU saiu), na largura do maior nome do dia;
 //   quantidade com a unidade que a projeção traz ("12 UN", "18,5 KG");
 // · sem conexão, o último quadro fica no ar e o aviso, com a hora da leitura,
-//   é o primeiro conteúdo da tela, no tamanho de aviso;
+//   é o primeiro conteúdo da tela, na escala da linha;
 // · atrasado não pisca: as palhetas RE-GIRAM periodicamente até o mesmo
 //   valor, como os painéis mecânicos reais fazem;
 // · ordem de aeroporto: cronológica pelo horário — status muda cor, nunca
@@ -290,7 +290,7 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
           <TransitionGroup
             tag="div"
             name="board-row"
-            class="relative flex flex-col gap-1.5"
+            class="board-rows relative flex flex-col"
           >
             <article
               v-for="row in pages.visible.value"
@@ -384,8 +384,8 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   --board-cyan: #6fa0c0;
 
   /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). A linha
-     cresce com a altura da tela até 36px (2,25rem, uma TV de 1080 lida a 2 m;
-     decisão do dono: média, sem exagero). A largura entra só como limite: o total
+     cresce com a altura da tela até 44px (2,75rem, uma TV de 1080 lida a 2 m;
+     a Oswald é condensada e aguenta, decisão do dono). A largura entra só como limite: o total
      de palhetas da linha (`--row-chars`, medido no dia) × 0,87em (célula + vão)
      mais a moldura fixa (margens, bordas e vãos entre colunas, ~11rem) cabe em
      100vw. */
@@ -394,7 +394,7 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   --scale-display: clamp(1.9rem, 4.4vh, 3rem);
   --scale-row: max(
     1rem,
-    min(2.25rem, 3.4vh, calc((100vw - 11rem) / (var(--row-chars) * 0.87)))
+    min(2.75rem, 4.1vh, calc((100vw - 11rem) / (var(--row-chars) * 0.87)))
   );
   --scale-label: clamp(0.85rem, 1.9vh, 1.4rem);
 
@@ -452,10 +452,10 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   text-transform: none;
 }
 
-/* O aviso de conexão: alto contraste (âmbar cheio, letra escura), no tamanho de
-   aviso, o dos rótulos (decisão do dono: não precisa gritar). */
+/* O aviso de conexão: alto contraste (âmbar cheio, letra escura), na escala da
+   linha: lido a 2 m como o resto do Letreiro, sem gritar mais que ele (dono). */
 .board-stale {
-  font-size: max(1rem, var(--scale-label));
+  font-size: max(1rem, var(--scale-row));
   font-weight: 600;
   line-height: 1.1;
   padding: 0.3em 0.5em;
@@ -467,8 +467,8 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   width: 1.2em;
   height: 1.2em;
 }
-/* O X na pele do aviso: letra escura sobre o âmbar, alvo de 44px e ícone do
-   tamanho do do kit (20px), nunca menor que a letra. */
+/* O X na pele do aviso: letra escura sobre o âmbar, alvo de 44px ou mais e
+   ícone em proporção à letra, nunca menor que o do kit (20px). */
 .board-stale-close {
   /* Na escala do aviso (o botão traz fonte pequena de controle). */
   font-size: inherit;
@@ -487,8 +487,8 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
 }
 .board-stale-close :deep(.iconify),
 .board-stale-close :deep(svg) {
-  width: max(1.25rem, 1em);
-  height: max(1.25rem, 1em);
+  width: max(1.25rem, 0.75em);
+  height: max(1.25rem, 0.75em);
 }
 
 .board-key {
@@ -537,6 +537,11 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
 }
 
 /* ── Grade: TV = uma linha; celular = nome em cima, mostradores embaixo ── */
+/* O vão entre um lote e outro cresce com a letra (dono: melhora a leitura). A
+   paginação mede este vão na tela. */
+.board-rows {
+  gap: max(0.375rem, calc(var(--scale-row) * 0.3));
+}
 .board-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
