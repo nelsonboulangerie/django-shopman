@@ -96,7 +96,13 @@ def _run(*args):
     return out.getvalue(), error
 
 
-def test_the_five_cards_run_through_the_engine_and_write_nothing(house):
+def test_the_five_cards_run_through_the_engine_and_write_nothing(house, monkeypatch):
+    from shopman.storefront.concierge import turn_framework
+
+    # Um molde sem frase aprovada, de propósito: a limitação ganhou frase (#3408), e o placar continua tendo de
+    # marcar o turno que, no ar, sairia pelo caminho de hoje.
+    without = {k: v for k, v in turn_framework.NICE_TEMPLATE_COPY.items() if k != "inform_limitation.offer_team"}
+    monkeypatch.setattr(turn_framework, "NICE_TEMPLATE_COPY", without)
     before = _rows()
     out, error = _run()
     after = _rows()
@@ -132,3 +138,34 @@ def test_the_ensaio_profile_never_changes_the_live_profile(house):
     assert live[eval_cards.ORDER_LINE] != "approved" and ensaio[eval_cards.ORDER_LINE] == "approved"
     assert {k: v for k, v in live.items() if k != eval_cards.ORDER_LINE} == \
         {k: v for k, v in ensaio.items() if k != eval_cards.ORDER_LINE}  # só a P08 muda, e só no ensaio
+
+
+
+def test_the_rehearsal_reads_the_menu_without_the_turn_claim():
+    """A conversa do ensaio é de memória e não tem posse de turno. No ar, a busca do cardápio exige a posse; sem
+    a leitura do ensaio, TODA leitura de produto voltava ``authority_unavailable`` e o placar não media nada
+    (os outros testes não viam, porque trocam ``tools.execute`` inteiro)."""
+    from shopman.shop.models import Conversation
+    from shopman.storefront.concierge import tools
+    from shopman.storefront.concierge.eval_battery import leitura_do_cardapio
+
+    ctx = tools.ToolContext(conversation=Conversation(channel_ref="whatsapp"), channel_ref="whatsapp",
+                            customer_text="croissant")
+    assert tools.execute("search_storefront", {}, ctx).get("error") == "authority_unavailable"
+    with leitura_do_cardapio():
+        # A busca roda de verdade (sem loja no banco do teste, ela diz que a informação pública falta).
+        assert tools.execute("search_storefront", {}, ctx).get("error") != "authority_unavailable"
+    assert tools.execute("search_storefront", {}, ctx).get("error") == "authority_unavailable"  # só no ensaio
+
+
+def test_the_rehearsal_offers_the_channel_payment_methods(house):
+    from shopman.shop.conversational.commerce_read import conversation_payment_methods
+    from shopman.storefront.concierge import eval_cards
+
+    _engine, world = eval_cards.engine_for(lambda conversa, linhas: None, today=None)
+    assert world.state.payment_methods == tuple(conversation_payment_methods(eval_cards.CHANNEL))
+
+
+def test_the_rehearsal_takes_the_store_classes_and_refuses_an_unknown_one(house):
+    _out, error = _run("--classes", "inform,pedido")
+    assert "classe desconhecida: pedido" in error

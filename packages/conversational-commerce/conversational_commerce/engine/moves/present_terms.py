@@ -26,6 +26,37 @@ TEMPLATES = (
     # ``requirements.<carrinho>``. Um molde por condição; o genérico diz só o que falta.
     Template("present_terms.needs_payment_method", "1", MOVE, "How would you like to pay? {payment_method}",
              {"payment_method": SlotSpec(("fact",), "payment_method")}),
+    # O quando, na ordem do fechamento: o dia, retirar ou entregar, e o horário da retirada (lista lastreada
+    # no fato). Sem ele, os termos se apresentariam sem o que o sistema de registro exige para gravar.
+    Template("present_terms.needs_fulfillment_date", "1", MOVE,
+             "When is the order for? Today, tomorrow or another day (day/month)?"),
+    Template("present_terms.needs_fulfillment_type", "1", MOVE, "Will you pick it up at the store, or should we deliver?"),
+    Template("present_terms.needs_delivery_time_slot", "1", MOVE, "Which pickup time works best? {delivery_time_slot}",
+             {"delivery_time_slot": SlotSpec(("fact",), "delivery_time_slot")}),
+    # A entrega (spec 08 §6): o endereço, o que falta nele (lista lastreada no fato) e o complemento.
+    Template("present_terms.needs_delivery_address", "1", MOVE,
+             "What is the delivery address? Send your location or write street, number and district."),
+    Template("present_terms.needs_delivery_address_details", "1", MOVE,
+             "For the delivery, tell me {delivery_address_details}.",
+             {"delivery_address_details": SlotSpec(("fact",), "delivery_address_details")}),
+    Template("present_terms.needs_delivery_complement", "1", MOVE,
+             "Is there a complement (apartment, block)? If not, just say \"no complement\"."),
+    # A entrega de quem tem endereço no cadastro: o cadastro primeiro (sim ou não), por referência opaca (P17).
+    Template("present_terms.needs_delivery_address_saved", "1", MOVE,
+             "Shall we deliver to your saved address, {delivery_address_saved}?",
+             {"delivery_address_saved": SlotSpec(("fact",), "delivery_address_saved")}),
+    Template("present_terms.needs_delivery_address_saved_many", "1", MOVE,
+             "Shall we deliver to your saved address, {delivery_address_saved}? If you prefer another saved "
+             "address, tell me which.",
+             {"delivery_address_saved": SlotSpec(("fact",), "delivery_address_saved")}),
+    Template("present_terms.needs_delivery_address_saved_declined", "1", MOVE, "What is the delivery address?"),
+    # A janela da entrega, depois do endereço (lista lastreada no fato): a entrega também tem horário.
+    Template("present_terms.needs_delivery_window", "1", MOVE, "Which delivery window works best? {delivery_window}",
+             {"delivery_window": SlotSpec(("fact",), "delivery_window")}),
+    # O "outro" à oferta: todas as opções do fato, por referência opaca (P17), e a pergunta de qual.
+    Template("present_terms.needs_delivery_address_saved_options", "1", MOVE,
+             "Your saved addresses: {delivery_address_saved_options}. Which one should we deliver to?",
+             {"delivery_address_saved_options": SlotSpec(("fact",), "delivery_address_saved")}),
     Template("present_terms.needs", "1", MOVE, "Before I can place the order I still need: {missing}.",
              {"missing": SlotSpec(("fact",), "missing")}),
     Template("present_terms.changed", "1", MOVE,
@@ -47,9 +78,20 @@ def reply(state, need):
     # "Os termos mudaram" só quando o ponto de efeito recusou; termos vencidos ou "sim" fora de ordem: termos de novo.
     missing = state.missing_conditions()
     if missing:
+        code, known = missing[0], {t.template_id for t in TEMPLATES}
         needs = ("fact", state.requirements_key(state.subject.cart_ref))
-        if f"present_terms.needs_{missing[0]}" in {t.template_id for t in TEMPLATES}:
-            return PartSpec(MOVE, f"present_terms.needs_{missing[0]}", {missing[0]: needs})
+        asks_options = state.asks_condition_options(need, (code,))
+        listed = f"present_terms.needs_{code}_options"
+        if asks_options and len(state.offered(state.subject.cart_ref, code)) > 1 and listed in known:
+            return PartSpec(MOVE, listed, {f"{code}_options": needs})  # pediu as opções: todas, e a pergunta de qual
+        # "Outro" com uma opção só é "essa não": o que falta, sem ela, como o "não".
+        if (state.declines_condition(need, (code,)) or asks_options) \
+                and f"present_terms.needs_{code}_declined" in known:
+            return PartSpec(MOVE, f"present_terms.needs_{code}_declined")  # recusou a opção: o que falta, sem ela
+        if len(state.offered(state.subject.cart_ref, code)) > 1 and f"present_terms.needs_{code}_many" in known:
+            return PartSpec(MOVE, f"present_terms.needs_{code}_many", {code: needs})  # mais de uma opção
+        if f"present_terms.needs_{code}" in known:
+            return PartSpec(MOVE, f"present_terms.needs_{code}", {code: needs})
         return PartSpec(MOVE, "present_terms.needs", {"missing": needs})
     key = ("fact", state.terms_key(state.subject.cart_ref))
     if need.need_id in state.refused:

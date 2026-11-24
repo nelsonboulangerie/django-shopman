@@ -29,6 +29,8 @@ from conversational_commerce.contracts.common import Unavailable
 from conversational_commerce.ports import Capabilities, ItemSummary, PortError, PromiseReading, TrustedContext
 from conversational_commerce.ports.commerce_read import OPERATIONS
 
+from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
+
 logger = logging.getLogger(__name__)
 
 PORT = "commerce_read"
@@ -237,7 +239,7 @@ class ShopmanCommerceRead:
             terms_id=f"{cart_ref}-r{session.rev}", version=max(1, int(session.rev or 0)), items=items,
             adjustments=adjustments, total={"amount_minor": total, "currency": CURRENCY},
             recipient={"subject_ref": ctx.subject or "unknown-subject"},
-            fulfillment=_fulfillment(data), conditions=_fulfillment_conditions(data, self.channel_ref),
+            fulfillment=_fulfillment(data, cart_ref), conditions=_fulfillment_conditions(data, self.channel_ref, cart_ref),
             valid_until=instant(now + timedelta(minutes=self._hold_minutes())),
         ))
 
@@ -256,24 +258,59 @@ class ShopmanCommerceRead:
         try:
             methods = conversation_payment_methods(self.channel_ref)
             session = Session.objects.filter(session_key=cart_ref, channel_ref=self.channel_ref).first()
+            data = (session.data if session is not None else None) or {}
+            delivery = data.get("fulfillment_type") == "delivery"
+            # O cadastro do cliente também é fonte: se não se lê, não se sabe se ele tem endereço salvo.
+            saved = self._saved_address_refs(ctx, cart_ref) if delivery else []
         except Exception:  # noqa: BLE001 - K04: a fonte que falha vira Unknown, nunca o valor velho
             logger.warning("conversational.requirements: fonte falhou", exc_info=True)
             return Unknown(reason="source_failed")
-        chosen = str((((session.data if session is not None else None) or {}).get("payment") or {}).get("method") or "")
-        missing = [] if chosen in methods or len(methods) <= 1 else ["payment_method"]
-        return self._known({"missing": missing, "payment_method": methods}, "shop:channel_config")
+        value: dict = {"missing": []}
+        value.update(_fulfillment_requirements(data, self.channel_ref))
+        value["missing"] = [code for code in FULFILLMENT_CODES if code in value]
+        if delivery:
+            # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
+            value.update(_address_requirements(data, saved=saved))
+            value["missing"] += [code for code in ADDRESS_CODES if code in value]
+            if data.get("delivery_date") and not any(code in value for code in ADDRESS_CODES) \
+                    and not data.get("delivery_time_slot"):
+                # A janela, depois do endereço completo: a loja on-line exige a janela na entrega (coordenação,
+                # 24/11). As opções, a casa diz no envio (a grade do dia); o fato leva o dia.
+                value["delivery_window"] = {"date": str(data["delivery_date"])}
+                value["missing"].append("delivery_window")
+        chosen = str((data.get("payment") or {}).get("method") or "")
+        if chosen not in methods and len(methods) > 1:
+            value["missing"].append("payment_method")
+        value["payment_method"] = methods
+        return self._known(value, "shop:channel_config")
+
+    def _saved_address_refs(self, ctx: TrustedContext, cart_ref: str) -> list[str]:
+        """Os endereços do cadastro do cliente do sujeito (só o dele: a posse diz quem é), por referência opaca.
+
+        ``saved-address:<sacola>:<id>``, na ordem em que o fechamento oferece (o padrão primeiro, depois o
+        mais recente, ``address.saved_addresses``). O texto nunca sai daqui (P17): quem o diz é o formatador
+        de referência da casa, no envio.
+        """
+        customer = self.ownership.customer(ctx)
+        if not customer:
+            return []
+        from shopman.guestman.services import address as address_service
+
+        found = sorted(address_service.addresses(customer),
+                       key=lambda saved: (not saved.is_default, -saved.updated_at.timestamp(), saved.pk))
+        return [saved_address_ref(cart_ref, saved) for saved in found]
 
     def _hold_minutes(self) -> int:
         """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal).
 
-        É a mesma conta que as reservas fazem (``availability._channel_hold_ttl_minutes``,
+        É a mesma conta que as reservas fazem (``availability.channel_hold_ttl_minutes``,
         com o padrão seguro que o ``ChannelConfig`` declara para ``None``). Sem substituto
         aqui: configuração do canal que não se lê levanta, e a cotação falha fechada
         (trava ``test_instance_runtime_config``).
         """
-        from shopman.shop.services.availability import _channel_hold_ttl_minutes
+        from shopman.shop.services.availability import channel_hold_ttl_minutes
 
-        return max(1, _channel_hold_ttl_minutes(self.channel_ref))
+        return max(1, channel_hold_ttl_minutes(self.channel_ref))
 
     # ── pedido, cliente, política ────────────────────────────────────────────
     def read_order(self, ctx: TrustedContext, ref: str):
@@ -318,37 +355,131 @@ class ShopmanCommerceRead:
         return Unavailable(reason="not_supported")
 
 
-def _fulfillment(data: dict) -> dict:
-    """O recebimento da sacola: o modo e, quando há janela combinada, o começo (e o fim) dela."""
+#: Os códigos do endereço da entrega no ``requirements``, na ordem em que o fechamento pergunta.
+ADDRESS_CODES = ("delivery_address_saved", "delivery_address", "delivery_address_details", "delivery_complement")
+#: O quando, na ordem do fechamento de hoje (``order_closing.advance``): o dia, retirar ou entregar, e o horário
+#: da retirada (o ``review_order`` da casa não grava retirada sem ele).
+FULFILLMENT_CODES = ("fulfillment_date", "fulfillment_type", "delivery_time_slot")
+
+
+def _fulfillment_requirements(data: dict, channel_ref: str) -> dict:
+    """O que falta do quando. O horário vai só com o dia (os horários de retirada são do dia), e as opções
+    dele, a casa diz no envio (o formatador lê a grade do dia): o fato leva o dia."""
+    from shopman.shop.services.channel_policy import resolve_channel_policy
+
+    types = [t for t in resolve_channel_policy(channel_ref).fulfillment_types if t in ("pickup", "delivery")]
+    day = str(data.get("delivery_date") or "")
+    kind = str(data.get("fulfillment_type") or "")
+    found: dict = {}
+    if not day:
+        found["fulfillment_date"] = []
+    if kind not in types and len(types) > 1:
+        found["fulfillment_type"] = types  # com um modo só, o dia dito já o grava (o sítio do recebimento)
+    if kind == "pickup" and day and not data.get("delivery_time_slot"):
+        found["delivery_time_slot"] = {"date": day}
+    return found
+
+
+#: As chaves da sacola que dizem QUAL é o endereço da entrega: mudou uma, a referência é outra.
+_ADDRESS_KEYS = ("delivery_address", "delivery_address_structured", "delivery_complement")
+
+
+def address_ref(cart_ref: str, data: dict) -> str:
+    """A referência opaca do endereço da sacola: o carrinho e um resumo do endereço gravado.
+
+    P17: o texto nunca vai a contrato; vai um resumo de mão única, salgado pelo carrinho. A referência
+    muda quando o endereço muda, por isso o recibo e o resumo reenviados dizem o endereço CONFIRMADO, e
+    não o que estiver na sacola no momento do envio (o resolvedor recusa a referência velha e segura).
+    """
+    import hashlib
+    import json
+
+    said = {key: data.get(key) for key in _ADDRESS_KEYS}
+    digest = hashlib.sha256(f"{cart_ref}|{json.dumps(said, sort_keys=True, default=str)}".encode()).hexdigest()
+    return f"address:{cart_ref}:{digest[:16]}"
+
+
+#: Os campos que dizem QUAL é o endereço do cadastro: mudou um, a referência oferecida não vale mais.
+_SAVED_ADDRESS_FIELDS = ("formatted_address", "route", "street_number", "complement", "neighborhood", "city",
+                         "state_code", "postal_code")
+
+
+def saved_address_ref(cart_ref: str, saved) -> str:
+    """A referência opaca de um endereço do cadastro: a sacola, o id e um resumo do endereço.
+
+    P17: o texto nunca vai a contrato; vai um resumo de mão única, salgado pela sacola. O "sim" aceita a
+    referência OFERECIDA; se o endereço foi editado depois da oferta, o resumo não casa e nada se grava com
+    um endereço que o cliente não viu (``parse_saved_address_ref`` + ``saved_address_digest``).
+    """
+    return f"saved-address:{cart_ref}:{saved.pk}:{saved_address_digest(cart_ref, saved)}"
+
+
+def saved_address_digest(cart_ref: str, saved) -> str:
+    import hashlib
+    import json
+
+    said = {field: str(getattr(saved, field, "") or "") for field in _SAVED_ADDRESS_FIELDS}
+    return hashlib.sha256(f"{cart_ref}|{json.dumps(said, sort_keys=True)}".encode()).hexdigest()[:16]
+
+
+def parse_saved_address_ref(ref: str, cart_ref: str) -> tuple[str, str] | None:
+    """O id e o resumo de uma referência do cadastro desta sacola, ou ``None``."""
+    prefix = f"saved-address:{cart_ref}:"
+    if not cart_ref or not str(ref).startswith(prefix):
+        return None
+    pk, _, digest = str(ref)[len(prefix):].partition(":")
+    return (pk, digest) if pk and digest else None
+
+
+def _address_requirements(data: dict, *, saved=()) -> dict:
+    """O que falta no endereço da entrega, pela régua da nota (a MESMA da pergunta de hoje, ``address.question``).
+
+    Sem endereço, quem tem endereço cadastrado ouve PRIMEIRO esse endereço (decisão do dono, 25/09/2026):
+    é outra condição (``delivery_address_saved``), com os endereços do cadastro por referência opaca. Ela se
+    responde com sim ou não: o "sim" aceita o primeiro (o padrão), o "não" pede outro endereço.
+    """
+    from shopman.shop.services import delivery_fiscal_identity as identity
+
+    structured = data.get("delivery_address_structured")
+    if not isinstance(structured, dict) or not structured.get("formatted_address"):
+        return {"delivery_address_saved": list(saved)} if saved else {"delivery_address": []}
+    gaps = [gap for gap in identity.recipient_gaps(tax_id="", address=structured)
+            if gap.field == identity.ADDRESS_FIELD]
+    if gaps:
+        return {"delivery_address_details": identity.address_gap_words(gaps)}
+    if "complement" not in structured:
+        return {"delivery_complement": []}  # ausente = ainda não perguntado; "" = "sem complemento"
+    return {}
+
+
+def _fulfillment(data: dict, cart_ref: str = "") -> dict:
+    """O recebimento da sacola: o modo e, quando há janela combinada, o começo (e o fim) dela.
+
+    Na entrega com endereço, ``address_ref``: só a referência opaca (o texto é da casa, no envio).
+    """
     from django.utils import timezone
 
-    from shopman.shop.services.fulfillment_window import _hour_pair, _window_start
+    from shopman.shop.services.fulfillment_window import hour_pair, slot_start
 
     found: dict = {"mode": str(data.get("fulfillment_type") or "pickup")}
+    if found["mode"] == "delivery" and cart_ref and data.get("delivery_address"):
+        found["address_ref"] = address_ref(cart_ref, data)
     day, slot = _date_or_none(data.get("delivery_date")), str(data.get("delivery_time_slot") or "")
-    start = _window_start({"ref": slot}) if day and slot else None
+    start = slot_start({"ref": slot}) if day and slot else None
     if start is not None:
         zone = timezone.get_current_timezone()
         found["window_start"] = instant(datetime.combine(day, start, tzinfo=zone))
-        pair = _hour_pair(slot)
+        pair = hour_pair(slot)
         if pair is not None and pair[1] > start:
             found["window_end"] = instant(datetime.combine(day, pair[1], tzinfo=zone))
     return found
 
 
-def conversation_payment_methods(channel_ref: str) -> list[str]:
-    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
+def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "") -> list[dict]:
+    """O dia e a janela como a casa os guarda (a resposta mostra o rótulo da janela, não a hora crua).
 
-    Régua ÚNICA: o ``requirements`` conta por ela o que falta, as condições dos termos mostram por
-    ela a forma única, e o fechamento de hoje (``order_closing._methods``) lista por ela as opções.
+    Na entrega, o endereço (pela referência) e a taxa, como as linhas do resumo de hoje.
     """
-    from shopman.shop.config import ChannelConfig
-
-    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
-
-
-def _fulfillment_conditions(data: dict, channel_ref: str = "") -> list[dict]:
-    """O dia e a janela como a casa os guarda (a resposta mostra o rótulo da janela, não a hora crua)."""
     found = []
     day = _date_or_none(data.get("delivery_date"))
     if day:
@@ -356,12 +487,17 @@ def _fulfillment_conditions(data: dict, channel_ref: str = "") -> list[dict]:
         slot = str(data.get("delivery_time_slot") or "")
         if slot:
             found.append({"code": "fulfillment_window", "value": slot})
+    if data.get("fulfillment_type") == "delivery":
+        if cart_ref and data.get("delivery_address"):
+            found.append({"code": "delivery_address", "value": address_ref(cart_ref, data)})
+        fee = int(data.get("delivery_fee_q") or 0)
+        if fee:
+            found.append({"code": "delivery_fee", "value": fee})
     method = str(((data.get("payment") or {}).get("method")) or "")
     if not method and channel_ref:
         # Sem escolha, vale a única forma que a conversa oferece: a MESMA régua do ``requirements``
         # (``conversation_payment_methods``), para que "não falta" e "esta é a forma" nunca discordem.
-        methods = conversation_payment_methods(channel_ref)
-        method = methods[0] if len(methods) == 1 else ""
+        method = sole_payment_method(conversation_payment_methods(channel_ref))
     if method:
         # A forma de pagamento escolhida é condição dos termos: o cliente vê como paga antes do "sim".
         found.append({"code": "payment_method", "value": method})

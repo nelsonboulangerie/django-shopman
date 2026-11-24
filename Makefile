@@ -523,6 +523,10 @@ ai-port: ## Gate: nenhuma chamada a modelo fora da porta de IA (ID3A)
 	$(PYTHON) scripts/check_ai_port.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_ai_port.py -q
 
+experiments: ## Gate: experimento vencido (anotação nas superfícies ou regra semeada) reprova (R4, OC-20)
+	$(PYTHON) scripts/check_experiments.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_experiments.py -q
+
 test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alpha-smoke)
 	$(PYTHON) scripts/check_workflow_budgets.py
 	$(PYTHON) -m pytest shopman/shop/tests/test_workflow_budget_gate.py -q
@@ -560,7 +564,7 @@ orchestrator-governance: ## Gate: inventário físico e unidades semânticas do 
 	$(PYTHON) scripts/check_orchestrator_units.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py scripts/tests/test_promotion_eligibility_policy.py -q
 
-.PHONY: test-instance-descriptors test-instance-contracts
+.PHONY: test-instance-descriptors test-instance-contracts experiments
 test-instance-contracts: ## Gate: soberania, composição e evolução de Instância
 	@echo "── Contratos de Instância ──"
 	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \

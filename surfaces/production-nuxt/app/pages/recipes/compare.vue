@@ -3,7 +3,7 @@
 // receita ou de receitas diferentes. Dois seletores (receita + número da versão)
 // e a tabela de deltas por ingrediente e por métrica; o tom vem do servidor por
 // sinal (o que subiu, o que desceu), calmo por padrão.
-import { compareQuery, parseVersionRef, toneClass } from "~/presentation/recipeBook";
+import { compareQuery, compareSides, parseVersionRef, statusBadgeColor, toneClass } from "~/presentation/recipeBook";
 
 useHead({ title: "Comparar receitas" });
 
@@ -133,10 +133,25 @@ const { ready, compare, rows, metrics, pending, error, refresh } = useRecipeComp
       <OperatorScreenState v-else-if="pending && !compare" state="loading" what="a comparação" />
 
       <template v-else-if="compare">
-        <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          <span><span class="text-muted-foreground">A</span> <b>{{ compare.a_title }}</b></span>
-          <span><span class="text-muted-foreground">B</span> <b>{{ compare.b_title }}</b></span>
-        </div>
+        <!-- Qual é qual (P2-20): o estado de cada lado e de quando, antes dos números. -->
+        <dl class="mb-3 grid gap-2 sm:grid-cols-2" data-compare-sides>
+          <div
+            v-for="side in compareSides(compare)"
+            :key="side.key"
+            class="grid gap-1 rounded-md border bg-card p-3 text-sm"
+            :data-compare-side="side.key"
+          >
+            <dt class="flex flex-wrap items-center gap-2">
+              <span class="text-muted-foreground">{{ side.key.toUpperCase() }}</span>
+              <b class="min-w-0">{{ side.title }}</b>
+            </dt>
+            <dd class="flex flex-wrap items-center gap-2">
+              <NuxtBadge :color="statusBadgeColor(side.status)" :label="side.statusLabel" />
+              <NuxtBadge v-if="side.isCurrent" color="neutral" label="Atual" />
+              <span v-if="side.when" class="text-muted-foreground">{{ side.when }}</span>
+            </dd>
+          </div>
+        </dl>
 
         <OperatorTable
           :data="rows"

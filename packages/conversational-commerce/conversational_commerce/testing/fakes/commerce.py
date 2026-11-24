@@ -168,7 +168,9 @@ class FakeCommerceRead(FakeBase):
             items=items,
             total={"amount_minor": total, "currency": items[0]["unit_price"].currency},
             recipient={"subject_ref": owner or "unknown-subject"},
-            fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup")},
+            fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup"),
+                         **({"address_ref": self.state.address[cart_ref]["ref"]}
+                            if cart_ref in self.state.address else {})},
             conditions=([{"code": "payment_method", "value": self.state.payment[cart_ref]}]
                         if cart_ref in self.state.payment else []),
             valid_until=self.clock.at(TERMS_VALIDITY_SECONDS),
@@ -205,8 +207,41 @@ class FakeCommerceRead(FakeBase):
         if cart_ref not in self.state.carts or (ctx.subject is not None and owner != ctx.subject):
             raise PortError("object_forbidden", "carrinho inexistente ou de outro sujeito")
         methods = list(self.state.payment_methods)
-        missing = [] if self.state.payment.get(cart_ref) or len(methods) <= 1 else ["payment_method"]
-        return self._fact("requirements", {"missing": missing, "payment_method": methods}, "fake-channel")
+        value: dict = {"missing": []}
+        if self.state.pickup_slots:
+            # O quando, na ordem do fechamento: o dia, retirar ou entregar, e o horário da retirada.
+            chosen = self.state.fulfillment.get(cart_ref, {})
+            if not chosen.get("date"):
+                value["missing"].append("fulfillment_date")
+            if chosen.get("mode") not in self.state.fulfillment_modes:
+                value["missing"].append("fulfillment_type")
+                value["fulfillment_type"] = list(self.state.fulfillment_modes)
+            if chosen.get("mode") == "pickup" and chosen.get("date") and not chosen.get("time"):
+                value["missing"].append("delivery_time_slot")
+                value["delivery_time_slot"] = list(self.state.pickup_slots)
+        if self.state.fulfillment.get(cart_ref, {}).get("mode") == "delivery":
+            # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
+            address = self.state.address.get(cart_ref)
+            saved = self.state.saved_addresses.get(cart_ref) or []
+            if address is None and saved:
+                # Quem tem cadastro ouve primeiro o endereço do cadastro (sim ou não), por referência opaca.
+                value["missing"].append("delivery_address_saved")
+                # A referência leva um resumo do endereço (a loja usa um hash): o cadastro mudado não casa mais.
+                value["delivery_address_saved"] = [f"saved:{cart_ref}:{n}:{_digest(text)}"
+                                                   for n, text in enumerate(saved)]
+            elif address is None:
+                value["missing"].append("delivery_address")
+                value["delivery_address"] = []
+            elif address["missing"]:
+                value["missing"].append("delivery_address_details")
+                value["delivery_address_details"] = list(address["missing"])
+            elif self.state.delivery_windows and not self.state.fulfillment.get(cart_ref, {}).get("time"):
+                value["missing"].append("delivery_window")  # a janela, depois do endereço completo
+                value["delivery_window"] = list(self.state.delivery_windows)
+        if not self.state.payment.get(cart_ref) and len(methods) > 1:
+            value["missing"].append("payment_method")
+        value["payment_method"] = methods
+        return self._fact("requirements", value, "fake-channel")
 
     def read_policy(self, ctx: TrustedContext, policy_id: str) -> Fact:
         return self._fact("read_policy", POLICIES.get(policy_id), "fake-policies")
@@ -272,6 +307,15 @@ class FakeCommerceExecute(FakeBase):
         if command.action == "set_payment":
             self.state.payment[command.targets[0]] = command.parameters["method"]
             self.applied_refs[command.command_id] = {"method": command.parameters["method"]}
+        if command.action == "set_delivery_address":
+            # O sistema de registro lê o texto pela referência; um número na fala é o endereço inteiro,
+            # sem número falta o número (a régua sintética do que falta). O recibo leva só a referência.
+            cart = command.targets[0]
+            text = self._address_text(cart, command.parameters["source"])
+            ref = f"addr-{cart}"
+            self.state.address[cart] = {"text": text, "ref": ref,
+                                        "missing": [] if any(ch.isdigit() for ch in text) else ["number"]}
+            self.applied_refs[command.command_id] = {"address_ref": ref}
         if command.action == "set_fulfillment":
             current = self.state.fulfillment.setdefault(command.targets[0], {})
             current.update(command.parameters)
@@ -330,11 +374,34 @@ class FakeCommerceExecute(FakeBase):
             raise PortError(ErrorCode.EFFECT_UNKNOWN, "caiu depois do efeito; reconcilie com a mesma chave")
         return receipt
 
+    def _address_text(self, cart: str, source) -> str:
+        """O endereço pela fonte: o texto da fala, ou o do cadastro (``saved:<carrinho>:<n>``) só deste carrinho."""
+        source = str(source or "")
+        if source.startswith(f"saved:{cart}:"):
+            saved = self.state.saved_addresses.get(cart) or []
+            index, _, digest = source[len(f"saved:{cart}:"):].partition(":")
+            if not index.isdigit() or int(index) >= len(saved):
+                return ""
+            text = saved[int(index)]
+            return text if _digest(text) == digest else ""  # o endereço mudou desde a oferta: não vale
+        return _content(source)
+
     def _refusal(self, command: ActionCommand) -> ErrorCode | None:
         """O conteúdo do comando que o sistema de registro recusa, antes de qualquer efeito."""
         if command.action == "set_payment":
             method = command.parameters.get("method")
             return None if method in self.state.payment_methods else ErrorCode.INVALID_CONTENT
+        if command.action == "set_delivery_address":
+            if set(command.parameters) != {"source"} or \
+                    not self._address_text(command.targets[0], command.parameters.get("source")):
+                return ErrorCode.INVALID_CONTENT
+            mode = self.state.fulfillment.get(command.targets[0], {}).get("mode")
+            if mode != "delivery":
+                return ErrorCode.FACT_UNAVAILABLE  # sem entrega combinada, o endereço não tem onde cair
+            text = self._address_text(command.targets[0], command.parameters["source"])
+            if "nowhere" in text:
+                return ErrorCode.INVALID_CONTENT  # não se localiza (sintético)
+            return ErrorCode.FULFILLMENT_UNAVAILABLE if "far away" in text else None  # fora da área (sintético)
         if command.action == "change_cart":
             lines = command.parameters.get("lines")
             good = isinstance(lines, (list, tuple)) and lines and all(
@@ -379,3 +446,13 @@ class FakeCommerceExecute(FakeBase):
                                     error={"code": "provider_unavailable", "retry": "never"})
         self.by_key[key] = (command.content_hash, receipt)
         return receipt
+
+
+def _digest(text: str) -> str:
+    """Um resumo do texto do endereço (no mundo falso, as letras e números; a loja usa um hash)."""
+    return "".join(ch for ch in text.lower() if ch.isalnum())
+
+
+def _content(source) -> str:
+    """O texto da fala pela referência protegida (no mundo falso, ``text:<fala>``)."""
+    return source[len("text:"):].strip() if isinstance(source, str) and source.startswith("text:") else ""

@@ -198,13 +198,22 @@ def test_d12_mint_failure_rolls_back_transfer_and_preserves_slot(ctx, monkeypatc
 def test_h08_exact_stock_transfer_preserves_all_quantity_and_fulfillment(ctx, monkeypatch):
     configure_ai("fixture")
     from types import SimpleNamespace
+
+    from shopman.shop.services import session_transfer
     assert tools.set_item(ctx, SKU, 10)["ok"]
     assert tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12")["ok"]
     key = ctx.conversation.session_key
-    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token",
-        lambda *a, **k: SimpleNamespace(success=True, url="https://example.invalid/access", expires_at=""))
+    minted = []
+    def mint(*a, **k):
+        minted.append(k["metadata"])
+        return SimpleNamespace(success=True, url="https://example.invalid/access", expires_at="")
+    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", mint)
     result = tools.send_web_link(ctx, "checkout")
     assert result["ok"], result
+    # Todo o estoque da fornada está na sacola: o aceite devolve e reserva de novo na mesma transação.
+    offer = session_transfer.TransferOffer.from_metadata(minted[0][session_transfer.TRANSFER_METADATA_KEY])
+    session_transfer.accept(offer, actor="storefront", dest_context=session_transfer.TransferDestination(
+        customer_ref=ctx.conversation.customer_ref, identity_strength="device"))
     target = Session.objects.get(channel_ref="web", state="open")
     assert Decimal(target.items[0]["qty"]) == 10
     assert target.data["delivery_time_slot"] == "slot-12"
@@ -375,19 +384,31 @@ def test_h03_delivery_fee_is_in_review_order_and_payment_once(ctx, monkeypatch, 
 
 
 @override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
-def test_d15_transfer_retry_returns_same_destination_without_recopied_cart(ctx, monkeypatch):
+def test_d15_transfer_retry_offers_the_same_cart_and_lands_on_one_destination(ctx, monkeypatch):
+    """Pedir o link duas vezes são dois links da MESMA oferta; aceitar os dois é uma sacola só (X4)."""
     configure_ai("fixture")
     from types import SimpleNamespace
+
+    from shopman.shop.services import session_transfer
     tools.set_item(ctx, SKU, 2)
     minted = []
     def mint(*a, **k):
-        minted.append(k["metadata"]["cart_session_key"])
-        return SimpleNamespace(success=True, url="https://example.invalid/one-use-token", expires_at="")
+        minted.append(k["metadata"][session_transfer.TRANSFER_METADATA_KEY])
+        return SimpleNamespace(success=True, url=f"https://example.invalid/one-use-token-{len(minted)}", expires_at="")
     monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", mint)
     first = tools.send_web_link(ctx, "checkout")
     second = tools.send_web_link(ctx, "checkout")
-    assert first["ok"] and second == first
-    assert len(minted) == 1
+    assert first["ok"] and second["ok"] and first["resource_ref"] == second["resource_ref"]
+    assert minted[0] == {**minted[1], "at": minted[0]["at"]}
+    assert not Session.objects.filter(channel_ref="web").exists()  # oferecer não copia nada
+    destination = session_transfer.TransferDestination(
+        customer_ref=ctx.conversation.customer_ref, identity_strength="device")
+    receipts = [
+        session_transfer.accept(session_transfer.TransferOffer.from_metadata(carried), dest_context=destination,
+                                actor="storefront")
+        for carried in minted
+    ]
+    assert receipts[0].dest_session_key == receipts[1].dest_session_key and receipts[1].replayed
     assert Session.objects.filter(channel_ref="web").count() == 1
 
 

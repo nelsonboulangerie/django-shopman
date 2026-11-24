@@ -20,7 +20,8 @@ from ._effects import SHARED, known_with, receipt_part
 
 MOVE = "change_cart"
 EFFECT = True
-TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], TEMPLATES_BY_ID["change_cart.done_receipt"], *SHARED)
+TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], TEMPLATES_BY_ID["change_cart.done_receipt"],
+             TEMPLATES_BY_ID["change_cart.done_total"], *SHARED)
 
 
 def _line(need):
@@ -49,7 +50,7 @@ def eligible_change(state) -> bool:
     group = lines(state)
     items = [_line(other)["item"] for other in group]
     cart = bool(group) and len(set(items)) == len(items) and all(_absolute(_line(other)) for other in group)
-    other_change = any(need.act in ("choose_fulfillment", "choose_payment") and len(need.readings) == 1
+    other_change = any(need.act in ("choose_fulfillment", "choose_payment", "give_address") and len(need.readings) == 1
                        and need.need_id not in state.refused for need in state.needs)
     return cart or other_change
 

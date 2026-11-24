@@ -201,7 +201,7 @@ export function ratingThanksView (
 ): RatingThanksView {
   const celebrate = shouldCelebrateRating(rating)
   return {
-    title: copy?.rating_thanks_title || 'Obrigado!',
+    title: copy?.rating_thanks_title || 'Obrigada!',
     message: (celebrate ? copy?.rating_thanks_celebrate : copy?.rating_thanks) || 'Valorizamos muito seu retorno.',
     celebrate
   }

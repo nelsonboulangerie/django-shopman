@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { CopyEntryProjection, HomeProjection, Action } from '~/types/shopman'
-import { closedHeroEyebrow } from '~/presentation/home'
+import { heroEyebrow } from '~/presentation/home'
 
 interface HeroSlide {
   ref: string
@@ -144,8 +144,13 @@ const slides = computed<HeroSlide[]>(() => {
   // pedido sem dizer que a loja estava fechada — o cliente só descobria no checkout,
   // com a sacola pronta. O selo de estado existe, mas vive lá embaixo, no card
   // "visite a loja". Aqui ele sobe para o topo, que é o que a pessoa lê.
-  // E diz a verdade sobre a finalização (ver closedHeroEyebrow).
-  const closedEyebrow = props.statusOpen ? undefined : closedHeroEyebrow(props.statusLabel)
+  // E diz a verdade sobre o que dá para pedir, pelo `home.ordering` (ver heroEyebrow):
+  // com nada encomendável, a linha aparece também com a casa aberta.
+  const closedEyebrow = heroEyebrow({
+    statusOpen: props.statusOpen,
+    statusLabel: props.statusLabel,
+    ordering: props.home.ordering
+  })
   const handmadeTitle = `${titleOf(copy.handmade_title_prefix, 'Feito à mão,')} ${titleOf(copy.handmade_title_suffix, 'todo dia')}`
   const greetingTitle = sentence(omo.greeting_with_name || handmadeTitle)
   const list: HeroSlide[] = []
@@ -304,10 +309,14 @@ onBeforeUnmount(() => {
       <div class="relative z-10 flex h-full flex-col justify-end px-6 pb-10 pt-8 text-center text-white sm:px-8 sm:pb-14 sm:pt-12 lg:px-10">
         <Transition name="hero-text" mode="out-in">
           <div :key="activeSlide.ref" class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center">
+            <!-- A linha é sempre frase (estado e o que dá para pedir), aberta ou fechada:
+                 caixa alta numa frase inteira se lê mal, então não há variação por estado.
+                 É texto decisivo sobre foto (OC-04): branco cheio e sombra, como a
+                 descrição do slide; com 80% de branco a auditoria medida ficava abaixo de AA. -->
             <p
               v-if="activeSlide.eyebrow"
-              class="text-sm font-semibold text-white/80"
-              :class="statusOpen ? 'uppercase tracking-wide' : ''"
+              class="text-sm font-semibold text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]"
+              data-hero-eyebrow
             >{{ activeSlide.eyebrow }}</p>
             <h1 class="shop-display mt-2 [text-shadow:0_2px_18px_rgba(0,0,0,0.45)]" :aria-label="heroTitleLabel">
               <span v-for="line in activeSlide.titleLines" :key="line" class="block" aria-hidden="true">

@@ -19,28 +19,72 @@ class IdentityResolver:
 
     def resolve(self, kind: str, value: str, *, purpose: str = "login"):
         from shopman.doorman.protocols.identity import IdentityConflict
-        from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
 
         normalized = self._normalize(kind, value)
         if not kind or not normalized:
             return None
 
-        candidate_ids: set[int] = set()
-        identifier_kinds = ("phone", "whatsapp") if kind in {"phone", "whatsapp"} else (kind,)
-        candidate_ids.update(
-            CustomerIdentifier.objects.filter(
-                identifier_type__in=identifier_kinds,
-                identifier_value=normalized,
-            ).values_list("customer_id", flat=True)
+        holder_ids, verified_ids = self._holders(kind, normalized)
+        if len(holder_ids) > 1:
+            raise IdentityConflict("handle_has_multiple_subjects")
+        if not holder_ids:
+            return None
+        # Contato que ninguém provou não resolve para a conta (decisão do dono
+        # D4, 23/11/2026; laudo S4). O telefone digitado no balcão, ou no
+        # Gestor, nasce sem prova. Até o titular confirmar (o toque no WhatsApp,
+        # que o vínculo do ManyChat registra como verificado pelo canal, ou o
+        # código certo do SMS, decisão D), o número não resolve para a conta.
+        #
+        # ``None``, e não conflito, de propósito: pedir o código para um número
+        # assim responde igual a pedir para um número que ninguém tem, e a loja
+        # não vira oráculo de "este telefone é cliente". Quem prova a posse
+        # depois (o código certo) é recebido pelo ``create``, que entrega o
+        # cadastro sem prova a quem acabou de provar o contato, e o
+        # ``bind_verified_handle`` grava a prova na mesma transação (decisão D,
+        # 24/11/2026): nunca nasce uma conta nova por cima do mesmo contato.
+        #
+        # Só vale para contato que se reivindica (e-mail e telefone); o
+        # identificador de provedor (ManyChat, CPF) segue como era.
+        if kind in self._CLAIMABLE_KINDS and not verified_ids:
+            return None
+        customer = Customer.objects.get(pk=next(iter(holder_ids)))
+        return self._to_view(
+            customer,
+            purpose=purpose,
+            requested_kinds={kind},
+            requested_value=normalized,
         )
 
-        contact_kinds = self._contact_kinds(kind)
-        candidate_ids.update(
-            ContactPoint.objects.filter(
-                type__in=contact_kinds,
-                value_normalized=normalized,
-            ).values_list("customer_id", flat=True)
-        )
+    @classmethod
+    def _holders(cls, kind: str, normalized: str) -> tuple[set[int], set[int]]:
+        """Quem guarda este contato, e quem já provou que ele é seu.
+
+        Devolve ``(todos, verificados)``, ids de ``Customer``. Os três lugares
+        onde o contato mora entram em ``todos``: o ``CustomerIdentifier``, o
+        ``ContactPoint`` e o cache do ``Customer``. Em ``verificados`` só entra
+        o ``ContactPoint`` verificado e o identificador com ``verified_at``; o
+        cache espelha o principal e nunca é prova.
+        """
+        from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
+
+        holder_ids: set[int] = set()
+        verified_ids: set[int] = set()
+        identifier_kinds = ("phone", "whatsapp") if kind in {"phone", "whatsapp"} else (kind,)
+        for customer_id, verified_at in CustomerIdentifier.objects.filter(
+            identifier_type__in=identifier_kinds,
+            identifier_value=normalized,
+        ).values_list("customer_id", "verified_at"):
+            holder_ids.add(customer_id)
+            if verified_at is not None:
+                verified_ids.add(customer_id)
+
+        for customer_id, is_verified in ContactPoint.objects.filter(
+            type__in=cls._contact_kinds(kind),
+            value_normalized=normalized,
+        ).values_list("customer_id", "is_verified"):
+            holder_ids.add(customer_id)
+            if is_verified:
+                verified_ids.add(customer_id)
 
         cache_filter = {}
         if kind == "email":
@@ -48,21 +92,10 @@ class IdentityResolver:
         elif kind in {"phone", "whatsapp"}:
             cache_filter = {"phone": normalized}
         if cache_filter:
-            candidate_ids.update(
+            holder_ids.update(
                 Customer.objects.filter(**cache_filter).values_list("id", flat=True)
             )
-
-        if len(candidate_ids) > 1:
-            raise IdentityConflict("handle_has_multiple_subjects")
-        if not candidate_ids:
-            return None
-        customer = Customer.objects.get(pk=next(iter(candidate_ids)))
-        return self._to_view(
-            customer,
-            purpose=purpose,
-            requested_kinds={kind},
-            requested_value=normalized,
-        )
+        return holder_ids, verified_ids
 
     def get(self, subject_id, *, purpose: str):
         customer = customer_service.get_by_uuid(str(subject_id))
@@ -87,6 +120,9 @@ class IdentityResolver:
     def _create(self, kind: str, value: str):
         self._assert_claimable_kind(kind)
         normalized = self._normalize(kind, value)
+        claimed = self._claim_unproven_holder(kind, normalized)
+        if claimed is not None:
+            return claimed
         kwargs = {"email": normalized} if kind == "email" else {"phone": normalized}
         customer = customer_service.create(
             ref=Customer.generate_ref(),
@@ -112,6 +148,45 @@ class IdentityResolver:
             requested_value=normalized,
         )
 
+    def _claim_unproven_holder(self, kind: str, normalized: str):
+        """O cadastro que guarda este contato sem prova, para quem acabou de prová-lo.
+
+        O Doorman só chama o ``create`` depois do código CERTO e quando o
+        ``resolve`` não achou titular: o contato acabou de ser provado por quem o
+        recebeu. Se um cadastro só o guarda, e ninguém o provou ainda (o telefone
+        ou e-mail digitado pela equipe no balcão ou no Gestor), a prova é dele:
+        o código certo confirma o contato e entra nesse cadastro, e o
+        ``bind_verified_handle`` que vem em seguida, na mesma transação, grava a
+        prova (decisão D, 24/11/2026). Código errado nunca chega aqui.
+
+        A trava do cadastro é ``skip_locked``: o código já está travado nesta
+        transação, e a ordem da casa é cadastro antes de código (exclusão, troca
+        de contato). Esperar aqui inverteria a ordem; com o cadastro ocupado, a
+        entrada cai no ``create`` comum, que recusa com conflito porque o contato
+        é único. Falha fechado, sem impasse. Com a trava na mão, os titulares são
+        relidos: se a equipe tirou o número do cadastro enquanto isso, ele já não
+        é de ninguém e o ``create`` comum segue.
+        """
+        holder_ids, verified_ids = self._holders(kind, normalized)
+        if len(holder_ids) != 1 or verified_ids:
+            return None
+        holder_id = next(iter(holder_ids))
+        customer = (
+            Customer.objects.select_for_update(skip_locked=True)
+            .filter(pk=holder_id, is_active=True)
+            .first()
+        )
+        if customer is None:
+            return None
+        if self._holders(kind, normalized)[0] != {customer.pk}:
+            return None
+        return self._to_view(
+            customer,
+            purpose="login",
+            requested_kinds={kind},
+            requested_value=normalized,
+        )
+
     def bind_verified_handle(self, subject_id, kind: str, value: str, *, proof: str):
         try:
             return self._bind_verified_handle(subject_id, kind, value, proof=proof)
@@ -130,8 +205,12 @@ class IdentityResolver:
         verification_method = self._verification_method(kind, proof)
         customer = Customer.objects.select_for_update().get(uuid=subject_id, is_active=True)
         normalized = self._normalize(kind, value)
-        existing = self.resolve(kind, normalized, purpose="login")
-        if existing is not None and str(existing.subject_id) != str(subject_id):
+        # Quem mais guarda este contato, verificado ou não: a prova que chega
+        # agora é do titular que a pediu, e um cadastro alheio com o mesmo valor
+        # é conflito. O próprio contato ainda não provado é justamente o que
+        # este passo vem provar (o ``resolve`` recusaria por isso).
+        holder_ids, _verified_ids = self._holders(kind, normalized)
+        if holder_ids - {customer.pk}:
             from shopman.doorman.protocols.identity import IdentityConflict
 
             raise IdentityConflict("verified_handle_belongs_to_another_subject")

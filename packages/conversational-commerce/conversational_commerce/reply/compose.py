@@ -22,6 +22,15 @@ from .verify import PhraseRule, RenderedClaim, RenderedPart, Segment, VerifyResu
 Formatter = Callable[[Any], str]
 
 
+class UnresolvedReference(Exception):
+    """O formatador de REFERÊNCIA (spec 06) não resolveu o valor: o espaço fica vazio e a verificação segura.
+
+    É o mecanismo de quem diz em texto o que o lastro carrega só como referência opaca (o endereço da
+    entrega, P17): o lastro guarda a referência, o texto existe só no envio, e a falha nunca vira frase
+    sem o valor nem o valor de outro sujeito.
+    """
+
+
 def plain(value: Any) -> str:
     """Formatação neutra. Dinheiro, data e quantidade na voz da casa são do adaptador."""
     if isinstance(value, bool):
@@ -68,7 +77,13 @@ def render_part(spec: PartSpec, template: Template, evidence: Evidence,
         accepted = set(evidence.kinds_of(backing, ref)) & set(template.slots[slot].accepts)
         if evidence.problem(backing, ref) is None and accepted:
             value = evidence.value(backing, ref, template.slots[slot].field)
-            segments.append(Segment(formatters.get(slot, plain)(value), slot))
+            try:
+                segments.append(Segment(formatters.get(slot, plain)(value), slot))
+            except UnresolvedReference:
+                segments.append(Segment("", slot))
+                claims.append(RenderedClaim(slot, backing, ref, unresolved=True))  # a verificação segura
+                cursor = match.end()
+                continue
         else:
             segments.append(Segment("", slot))  # lastro que não vale ou não serve: a verificação segura
         claims.append(RenderedClaim(slot, backing, ref))
@@ -82,8 +97,10 @@ def render_part(spec: PartSpec, template: Template, evidence: Evidence,
 
 def compose(*, specs: Iterable[PartSpec], templates: Mapping[str, Template], evidence: Evidence,
             rules: Iterable[PhraseRule] = (), formatters: Mapping[str, Formatter] | None = None,
-            decision_id: str, record: Mapping[str, Any]) -> Composed:
-    """Compõe e verifica. ``record``: o envelope do ``ReplyPlan`` (id, tenant, environment...)."""
+            decision_id: str, record: Mapping[str, Any], voice: frozenset[str] | None = None) -> Composed:
+    """Compõe e verifica. ``record``: o envelope do ``ReplyPlan`` (id, tenant, environment...).
+
+    ``voice``: os moldes que a casa assina (``verify``); fora deles, a mensagem segura."""
     specs = tuple(specs)
     if not specs:
         raise ValueError("resposta sem parte")
@@ -93,7 +110,7 @@ def compose(*, specs: Iterable[PartSpec], templates: Mapping[str, Template], evi
         rendered.append(render_part(spec, template, evidence, formatters or {}))
         for slot, slot_spec in template.slots.items():
             accepted[(index, slot)] = slot_spec.accepts
-    result = verify(rendered, evidence, rules, accepted)
+    result = verify(rendered, evidence, rules, accepted, voice)
     plan = ReplyPlan(
         **{"producer": Producer(name="conversational-commerce", version="reply-1"), **record},
         decision_id=decision_id,

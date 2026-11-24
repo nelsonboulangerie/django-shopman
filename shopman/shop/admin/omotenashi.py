@@ -98,8 +98,8 @@ class OmotenashiCopyAdmin(ModelAdmin):
 
     @admin.action(description="Resetar para padrão (desativar)")
     def reset_to_default(self, request, queryset):
-        # QuerySet.update() skips post_save, so we invalidate the in-process
-        # resolver cache explicitly to make the default take effect immediately.
+        # QuerySet.update() não dispara post_save: avisamos todos os processos
+        # à mão, senão a loja segue com o texto desativado.
         from shopman.shop.omotenashi.copy import invalidate_cache
 
         updated = queryset.update(active=False)

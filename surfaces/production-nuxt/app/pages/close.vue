@@ -239,6 +239,7 @@ async function onConfirm(
   force = false,
   reason = "",
   overrideProof = "",
+  shortLotProof = "",
 ) {
   lastPayload.value = payload;
   const closingOrder = selectedOrder.value;
@@ -253,6 +254,7 @@ async function onConfirm(
         payload.yield_deviation_confirmed,
         payload.yield_deviation_reason,
         overrideProof,
+        shortLotProof,
       )
     : selectedRecipe.value
       ? await quickFinish(
@@ -279,6 +281,20 @@ function retryWithForce(reason: string, overrideProof: string) {
   const payload = lastPayload.value;
   shortage.value = null;
   if (payload) onConfirm(payload, true, reason, overrideProof);
+}
+
+// Rendeu menos que o encomendado (decisão 1 do dono, 23/11/2026): fecha com o
+// número verdadeiro, na mesma tentativa, e os pedidos descobertos vão para o Gestor.
+function closeShortLot(shortLotProof: string) {
+  const payload = lastPayload.value;
+  shortage.value = null;
+  if (payload) onConfirm(payload, false, "", "", shortLotProof);
+}
+
+// "Revisar quantidade": a recusa sai e a tela do lote fica com os números que a
+// pessoa digitou, para conferir a contagem.
+function reviewShortage() {
+  shortage.value = null;
 }
 
 const screenTitle = computed(
@@ -834,12 +850,15 @@ function onTimerKeydown(event: KeyboardEvent) {
 
     <ShortageDialog
       :shortage="shortage"
+      allow-short-lot
       @update:open="
         (v: boolean) => {
           if (!v) shortage = null;
         }
       "
       @confirm="retryWithForce"
+      @close-short-lot="closeShortLot"
+      @review="reviewShortage"
     />
 
     <!-- timer do forno (lembrete por fornada, com som); o X maior, pensando em

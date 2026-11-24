@@ -81,3 +81,12 @@ class SyntheticState:
     # carrinho → forma de pagamento escolhida; e as formas que o canal oferece
     payment: dict[str, str] = field(default_factory=dict)
     payment_methods: tuple[str, ...] = PAYMENT_METHODS
+    # carrinho → endereço da entrega (só no sistema de registro): o texto, a referência opaca e o que falta
+    address: dict[str, dict] = field(default_factory=dict)
+    # Os endereços do cadastro do sujeito, por carrinho (o texto; o padrão primeiro).
+    saved_addresses: dict[str, list[str]] = field(default_factory=dict)
+    # Os horários de retirada do canal. Com eles, o canal exige o quando (dia, modo, horário) antes dos
+    # termos, como o fechamento da casa; sem eles (o padrão), o falso não exige.
+    pickup_slots: tuple[str, ...] = ()
+    # As janelas de entrega do canal. Com elas, a entrega exige a janela depois do endereço.
+    delivery_windows: tuple[str, ...] = ()

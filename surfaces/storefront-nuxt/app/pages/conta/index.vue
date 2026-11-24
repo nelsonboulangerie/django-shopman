@@ -122,7 +122,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>
-            <UiAlertDialogCancel :disabled="loggingOut">Ficar conectado</UiAlertDialogCancel>
+            <UiAlertDialogCancel :disabled="loggingOut">Continuar na conta</UiAlertDialogCancel>
             <UiAlertDialogAction :disabled="loggingOut" @click.prevent="logout">
               {{ loggingOut ? 'Saindo…' : 'Sair' }}
             </UiAlertDialogAction>

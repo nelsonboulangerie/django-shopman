@@ -159,6 +159,8 @@ POLICY: dict[str, Rule] = {
     "orderman.FulfillmentItem": _purge(_ORDERS),
     "orderman.Directive": _purge(_ORDERS),
     "orderman.IdempotencyKey": _purge(_ORDERS),
+    # fiscalman
+    "fiscalman.FiscalDocument": _purge("notas de homologação dos pedidos do ensaio; vão junto com os pedidos"),
     # payman
     "payman.PaymentIntent": _purge(_ORDERS),
     "payman.PaymentTransaction": _purge(_ORDERS),
@@ -343,6 +345,7 @@ POLICY: dict[str, Rule] = {
     "backstage.OvenRun": _purge("produção do ensaio"),
     "backstage.BlindPrepCode": _purge("produção do ensaio"),
     "backstage.PlanCarryNote": _purge("produção do ensaio"),
+    "backstage.PrepChecklistMark": _purge("produção do ensaio"),
     "backstage.DayClosing": _purge("fechamento do ensaio"),
     "backstage.OperationChecklistRun": _purge("rotina do ensaio"),
     "backstage.OperationTaskRun": _purge("rotina do ensaio"),

@@ -26,8 +26,13 @@ from shopman.shop.projections import cart as cart_data
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.ready_promise import PromiseFacts, read_promise_facts
 from shopman.shop.projections.types import Action, Availability
-from shopman.storefront.presentation.catalog import notify_subscribed_skus
-from shopman.storefront.presentation.promise import PromiseProjection, promise_for
+from shopman.storefront.presentation.catalog import build_ordering, notify_subscribed_skus
+from shopman.storefront.presentation.promise import (
+    ORDERING_NONE,
+    OrderingProjection,
+    PromiseProjection,
+    promise_for,
+)
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
@@ -178,6 +183,29 @@ class UpsellSuggestionProjection:
 
 
 @dataclass(frozen=True)
+class OpenElsewhereProjection:
+    """A sacola aberta da mesma cliente em outro canal (OC-17, C06).
+
+    A loja AVISA que ela existe; não sincroniza nem mescla. Sai só para quem
+    entrou com o próprio dispositivo (força ``device``): link encaminhado não
+    entrega a conta (S1), nem o que está na sacola de outro canal. Sem chave de
+    sessão: a sacola do outro canal é identificada pelo canal.
+
+    ``bring`` é a ação de trazer a sacola para cá. Nasce DESLIGADA: quem a liga é
+    a passagem entre canais (``session_transfer``, OC-15/OC-16/OC-18). Enquanto
+    ``enabled`` é falso, a tela não oferece o gesto (X1).
+    """
+
+    channel: str
+    channel_label: str
+    items_count: int
+    items_phrase: str
+    subtotal_q: int
+    subtotal_display: str
+    bring: Action
+
+
+@dataclass(frozen=True)
 class CartProjection:
     """Full projection for the storefront cart."""
 
@@ -284,6 +312,15 @@ class CartProjection:
     # ``None`` com reserva viva (a sacola diz até quando guarda) ou sem reserva
     # vencida de item que está na sacola.
     reservation_lapsed_display: str | None = None
+    # Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
+    # sincronização. Vazio para visitante, para link encaminhado e sem outra sacola.
+    open_elsewhere: tuple[OpenElsewhereProjection, ...] = ()
+    # Dá para pedir agora, e para quando (OC-04), pela mesma leitura da home
+    # (``catalog.build_ordering``). Só na sacola VAZIA, que é onde a tela convida
+    # a pedir ("Você pode encomendar para o próximo dia"); com itens, cada linha
+    # já diz quando fica pronta, e reler o cardápio inteiro a cada gesto na
+    # sacola seria custo sem leitor. ``None`` com a sacola cheia.
+    ordering: OrderingProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -334,8 +371,14 @@ def build_cart(
     delivery_minimum = present_minimum_order(data.delivery_minimum)
     free_delivery = present_free_delivery(data.free_delivery)
     upsell = present_upsell(data.upsell)
-    actions = _cart_actions(data, min_order)
-    empty_title, empty_message = _empty_copy(request, is_empty=data.is_empty)
+    ordering = (
+        build_ordering(channel_ref=channel_ref, request=request).ordering if data.is_empty else None
+    )
+    nothing_to_order = ordering is not None and ordering.state == ORDERING_NONE
+    actions = _cart_actions(data, min_order, nothing_to_order=nothing_to_order)
+    empty_title, empty_message = _empty_copy(
+        request, is_empty=data.is_empty, nothing_to_order=nothing_to_order
+    )
 
     from shopman.storefront.identity import checkout_draft_context
     context = checkout_draft_context(request, session_key)
@@ -348,6 +391,7 @@ def build_cart(
         reserved_until_iso=_iso(reserved_until),
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         reservation_lapsed_display=_lapsed_display(lapsed_at),
+        open_elsewhere=_open_elsewhere(request, channel_ref),
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -408,6 +452,7 @@ def build_cart(
         upsell=upsell,
         actions=actions,
         group_savings_message=data.group_savings_message,
+        ordering=ordering,
     )
 
 
@@ -765,15 +810,55 @@ def _money(value_q: int | None) -> str:
     return f"R$ {format_money(int(value_q))}"
 
 
-def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
+def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhereProjection, ...]:
+    """As outras sacolas abertas da cliente que entrou com o próprio dispositivo."""
+    from shopman.storefront.identity import get_authenticated_customer, knows_only_the_number
+
+    if getattr(request, "customer", None) is None or knows_only_the_number(request):
+        return ()
+    customer = get_authenticated_customer(request)
+    if customer is None:
+        return ()
+    return tuple(
+        OpenElsewhereProjection(
+            channel=entry.channel_ref,
+            channel_label=entry.channel_name,
+            items_count=entry.items_count if isinstance(entry.items_count, int) else entry.lines_count,
+            items_phrase=cart_data.items_phrase(entry),
+            subtotal_q=entry.subtotal_q,
+            subtotal_display=_money(entry.subtotal_q),
+            bring=Action(
+                ref="bring_cart",
+                kind="mutation",
+                label="Trazer esta sacola para cá",
+                priority="secondary",
+                enabled=False,
+                reason="A passagem da sacola entre canais ainda não está ligada.",
+            ),
+        )
+        for entry in cart_data.open_elsewhere(customer.ref, channel_ref)
+    )
+
+
+def _empty_copy(
+    request: HttpRequest, *, is_empty: bool, nothing_to_order: bool = False
+) -> tuple[str, str]:
     """Título e mensagem do estado vazio, por momento e audiência.
 
     Só resolve quando a sacola está vazia: montar o contexto omotenashi custa
     uma leitura do estado do negócio, e a sacola com itens nunca renderiza o
     bloco.
+
+    ``nothing_to_order``: nenhum item do cardápio tem promessa (OC-04). A copy
+    do momento convida a pedir ("Você pode encomendar para o próximo dia",
+    "Ainda dá tempo", "Pode ir escolhendo o que quer"), e ninguém consegue.
+    A sacola fica no vazio simples, sem frase: o que falta para cada item (o
+    "Me avise") é dito no próprio item (dono, prévia de 24/11).
     """
     if not is_empty:
         return "", ""
+    if nothing_to_order:
+        return _PLAIN_EMPTY_TITLE, ""
     from shopman.shop.omotenashi import OmotenashiContext
 
     omo = OmotenashiContext.from_request(request)
@@ -781,9 +866,15 @@ def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
     return (entry.title or "").strip(), (entry.message or "").strip()
 
 
+#: O vazio sem convite: diz o estado da sacola e mais nada (OC-04).
+_PLAIN_EMPTY_TITLE = "Sacola vazia"
+
+
 def _cart_actions(
     data: cart_data.CartProjection,
     minimum_order_progress: MinimumOrderProgressProjection | None,
+    *,
+    nothing_to_order: bool = False,
 ) -> tuple[Action, ...]:
     """Map the data projection's checkout-eligibility decision to actions.
 
@@ -826,7 +917,9 @@ def _cart_actions(
         Action(
             ref="continue_shopping",
             kind="link",
-            label="Continuar comprando",
+            # Sem nada para pedir, "Continuar comprando" convida ao que não existe;
+            # o cardápio é onde está o "Me avise" de cada item.
+            label="Ver cardápio" if nothing_to_order else "Continuar comprando",
             priority="secondary",
             enabled=True,
             href="/menu",
@@ -844,6 +937,7 @@ __all__ = [
     "DiscountLineProjection",
     "FreeDeliveryProgressProjection",
     "MinimumOrderProgressProjection",
+    "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
     "present_cart_date_mismatch",

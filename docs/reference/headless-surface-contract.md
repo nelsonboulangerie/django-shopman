@@ -69,6 +69,7 @@ Novas projections que expõem acoes devem convergir para um formato pequeno:
 | `payload_schema` | Quando ha payload | Forma minima esperada, sem regra escondida. |
 | `idempotency` | Para mutation | `none`, `recommended` ou `required`. |
 | `confirmation` | Para risco | Copy e severidade da confirmacao. |
+| `value` | Para copy | O texto que a acao copia (o copia-e-cola do Pix em `copy_pix`). Superficie sem clipboard (a conversa) entrega esse texto, nunca o `href`. |
 
 O schema deve ficar pequeno. Se uma action exige muitos campos especificos, primeiro verifique se ela deveria ser uma Projection propria ou uma extension existente.
 

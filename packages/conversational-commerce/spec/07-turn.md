@@ -74,6 +74,31 @@ O ato `choose_payment` (o cliente diz como paga, `{method}`) também é de mudan
 ser uma das opções do canal (`commerce_read.requirements`). Na regra local de teste, `pay by`/`pay with`
 soma o ato, sem campos.
 
+O ato `give_address` (a fala traz o endereço da entrega) é de mudança e NÃO tem campo: quem lê só
+marca o ato, e o endereço se lê no sistema de registro pela referência protegida da fala (o turno
+guarda a `content_ref` do evento no estado). Leitura com campo é inelegível
+(`address_not_by_reference`). Na regra local de teste, `deliver to`/`my address is` soma o ato.
+
+**O fechamento que pergunta volta aos termos.** Quando o `present_terms` pergunta por uma condição
+obrigatória ausente, o estado de diálogo guarda o fechamento pendente (`terms_closing`: o carrinho e a
+época do episódio; outro carrinho ou outra época não o herdam, e o "não" do cliente o encerra). No
+turno seguinte, a mudança material que dá certo (a forma escolhida, o endereço dado) pede os termos de
+novo, como a mudança com termos no ar (`changed_under_offer`): o `present_terms` pergunta a próxima
+condição ou apresenta os termos, sem o cliente repetir "pode fechar". Termos apresentados com a
+pergunta de confirmação tiram o fechamento pendente do ar.
+
+**A condição que se responde com sim ou não.** O movimento que cumpre uma condição pode declará-la
+respondível por sim ou não (`ANSWERS_CONDITIONS`; hoje `set_delivery_address` declara
+`delivery_address_saved`, "entregamos no endereço do cadastro?"). Quando o `present_terms` faz essa
+pergunta, o estado de diálogo guarda a pergunta no ar, o código e a opção OFERECIDA
+(`terms_condition_question`). O "sim" (`answers_condition`) só vale se responder a essa pergunta, e só
+para o movimento que declara o código: o comando leva a referência oferecida (a que o cliente viu, com o
+resumo do endereço), nunca a que o fato diria depois, e volta aos termos como a mudança material. O
+"não" (`declines_condition`) não desiste do pedido: o `present_terms` pergunta pelo que falta sem a
+opção (`present_terms.needs_<código>_declined`). O "não" com outra mudança na mesma fala ("não, o do
+trabalho") é correção: ganha a mudança, e nem a recusa nem a desistência valem. A forma de pagamento
+não é condição de sim ou não: o "sim" à pergunta da forma não escolhe nada.
+
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
 `ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6), e o F9 os de
 compromisso (`09-commitments.md`, seção 4), e o F10 a recomendação (`10-outcomes.md`, seção 1).

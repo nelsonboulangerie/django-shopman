@@ -358,7 +358,7 @@ export function houseGestures(ride: Pick<DeliveryRideProjection, "house">): Hous
 /** Imprimir a via não é gesto que mexe na corrida: sem confirmação, sem intenção. */
 const SLIP_ACTION: Action = {
   ref: "house-slip", kind: "print", label: "Imprimir a via", priority: "", enabled: true, reason: "", href: "",
-  method: "POST", payload_schema: {}, idempotency: "none", confirmation: { required: false },
+  method: "POST", payload_schema: {}, idempotency: "none", confirmation: { required: false }, value: "",
 };
 
 /** Onde a via da rota é composta (o servidor; a página só relaia ao agente da estação). */

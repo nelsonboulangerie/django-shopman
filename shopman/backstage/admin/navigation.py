@@ -167,6 +167,9 @@ def get_sidebar_navigation(request):
             # Quem deu que nota a que versão de receita, e quando (só leitura).
             # Os critérios são ajuste: moram na Configuração.
             _model_item("Notas de receita", "star", "backstage.RecipeVersionRating"),
+            # Quem separou que insumo, em que quantidade e quando (só leitura): a
+            # marca se faz no tablet, com o PIN (WP-F09a).
+            _model_item("Separado da Preparação", "checklist_rtl", "backstage.PrepChecklistMark"),
             _model_item("Insumos", "grocery", "buyman.Material"),
             _model_item("Fornecedores", "local_shipping", "buyman.Supplier"),
             *(

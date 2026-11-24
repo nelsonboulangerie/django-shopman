@@ -61,7 +61,7 @@ def _csrf(client: Client) -> dict[str, str]:
 def _pedir_codigo(client: Client, phone: str):
     return client.post(
         "/api/v1/auth/request-code/",
-        data={"phone": phone},
+        data={"phone": phone, "delivery_method": "sms"},
         content_type="application/json",
     )
 
@@ -112,8 +112,15 @@ def test_corrigir_o_telefone_no_balcao_tira_o_numero_antigo_da_porta():
     assert estranho["customer_ref"] != customer.ref
     cliente.logout()
 
+    # O número novo foi DIGITADO no balcão e nasce sem prova (D4, OC-08). O código
+    # certo nele prova a posse e o confirma (decisão D): a dona entra na conta dela.
+    novo = ContactPoint.objects.get(type=ContactPoint.Type.PHONE, value_normalized=NUMERO_NOVO)
+    assert novo.is_verified is False
     dona = _entrar_por_otp(cliente, NUMERO_NOVO)
     assert dona["customer_ref"] == customer.ref
+    novo.refresh_from_db()
+    assert novo.is_verified is True
+    assert novo.verification_method == ContactPoint.VerificationMethod.OTP_SMS
 
 
 def test_corrigir_o_email_no_balcao_tira_o_antigo_da_porta():
@@ -137,4 +144,9 @@ def test_corrigir_o_email_no_balcao_tira_o_antigo_da_porta():
     assert not ContactPoint.objects.filter(value_normalized=EMAIL_ANTIGO).exists()
     assert not CustomerIdentifier.objects.filter(identifier_value=EMAIL_ANTIGO).exists()
     assert get_adapter().resolve_identity("email", EMAIL_ANTIGO, purpose="login") is None
+    # O e-mail novo foi digitado no balcão: sem prova, ainda não abre a conta (OC-08).
+    assert get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login") is None
+    ContactPoint.objects.get(type=ContactPoint.Type.EMAIL, value_normalized=EMAIL_NOVO).mark_verified(
+        ContactPoint.VerificationMethod.OTP_EMAIL,
+    )
     assert str(get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login").subject_id) == str(customer.uuid)

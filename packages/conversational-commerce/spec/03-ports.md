@@ -50,11 +50,25 @@ Para isso, cada porta devolve:
 - **`read_item(ref)`**: fato com **`name` opcional**. É o nome que as linhas dos termos mostram;
   sem ele, a linha mostra a referência.
 - **`requirements(cart_ref)`**: `Known(value={"missing": [código, ...], <código>: [opção, ...]})`, as
-  condições obrigatórias dos termos ainda ausentes (`payment_method`; depois, `delivery_address`) e as
-  opções do canal para cada uma, nunca do texto. Com algo faltando, o `present_terms` não apresenta os
+  condições obrigatórias dos termos ainda ausentes, NA ORDEM do fechamento (o endereço da entrega antes
+  do pagamento), e as opções do canal para cada uma, nunca do texto. Códigos: `delivery_address` (sem
+  opções: lista vazia), `delivery_address_saved` (os endereços do cadastro do sujeito, por referência
+  opaca, o padrão primeiro), `delivery_address_details` (o que falta no endereço, em palavras da casa),
+  `delivery_complement` (lista vazia) e `payment_method`. Com mais de uma opção, o molde
+  `present_terms.needs_<código>_many` pergunta, quando existe. Código que o pacote não conhece pergunta pelo
+  molde genérico (`present_terms.needs`, `{missing}`). Com algo faltando, o `present_terms` não apresenta os
   termos: pergunta pela condição (spec 06, `present_terms.needs_<código>`). O arnês confere a forma.
 - **Comando `set_payment`**: `parameters={"method"}`, uma das formas de `requirements`; o executor recusa
   outra (`invalid_content`), e o efeito sobe a versão do carrinho (a guarda invalida o "sim" de antes).
+- **Comando `set_delivery_address`**: `parameters={"source"}`, a `content_ref` da fala (spec 01), nunca o
+  texto. O executor lê o texto original pela referência, monta e grava o endereço, e recusa com
+  `fulfillment_unavailable` (a casa não entrega ali), `invalid_content` (o endereço não se localiza) ou
+  `fact_unavailable` (sem entrega combinada); as três têm frase própria, do `inform_limitation`:
+  `set_delivery_address.not_delivered`, `.not_located` e `.ask_mode` (a pergunta "retirada ou
+  entrega?"). Outra falha do efeito recusa com outro código, e a resposta é a limitação comum. O
+  recibo traz só `address_ref`, opaca e presa ao endereço gravado (muda quando o endereço muda: o
+  resumo reenviado nunca diz um endereço que o cliente não confirmou); o `TermsDocument` leva a
+  mesma em `fulfillment.address_ref`. O efeito sobe a versão do carrinho.
 - **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira
   `Unknown`, e a resposta da mudança cai no degrau de baixo (`change_cart.done_receipt`).
 - **Comando `change_cart`**: `parameters={"lines": [{"item", "quantity"}, ...]}`, as linhas do

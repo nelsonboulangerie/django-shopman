@@ -70,6 +70,10 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
     # ficou vazio). Diz-se o efeito pelo recibo, e nada da sacola que não se leu.
     Template("change_cart.done_receipt", "1", "change_cart", "{done} Your cart is updated.",
              {"done": SlotSpec(("receipt:success",))}),
+    # A mudança com uma pergunta do fechamento no ar (#3488): a pergunta segue, e a sacola inteira não se repete;
+    # o efeito pelo recibo e o total novo pelos termos cotados de novo.
+    Template("change_cart.done_total", "1", "change_cart", "{done} Your cart is updated. Total: {total}.",
+             {"done": SlotSpec(("receipt:success",)), "total": SlotSpec(("fact",), "total")}),
     # Recebimento: o molde mais completo que o recibo sustenta (``engine/moves/set_fulfillment.py``).
     # Os valores saem do recibo (o estado do alvo depois do efeito); a casa formata data, modo e janela.
     Template("set_fulfillment.done", "1", "set_fulfillment", "Done: {mode} on {date}, {window}.",
@@ -84,13 +88,19 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
              {"date": SlotSpec(("receipt:success",), "date")}),
     Template("set_fulfillment.done_mode", "1", "set_fulfillment", "Done: noted as {mode}.",
              {"mode": SlotSpec(("receipt:success",), "mode")}),
-    Template("set_fulfillment.updated", "1", "set_fulfillment", "Done: your order details are updated ({ref}).",
-             {"ref": SlotSpec(("receipt:success",), "effect")}),
+    # Degrau de baixo do recebimento: o efeito aconteceu sem dia, janela ou hora para dizer. O estado do recibo
+    # (``noted``) é o lastro, e nada além dele; a referência interna do alvo nunca vai ao cliente.
+    Template("set_fulfillment.updated", "2", "set_fulfillment", "{noted} Your order details are updated.",
+             {"noted": SlotSpec(("receipt:success",))}),
     # O pedido pelo recibo, o total pelo pedido lido depois do efeito, e onde acompanhar (o mesmo recibo,
     # que a casa formata como o caminho dela para o pedido).
     # A forma de pagamento escolhida (``engine/moves/set_payment.py``), dita pelo recibo.
     Template("set_payment.done", "1", "set_payment", "Done: payment by {method}.",
              {"method": SlotSpec(("receipt:success",), "method")}),
+    # O endereço da entrega (``engine/moves/set_delivery_address.py``): o recibo traz só a referência
+    # opaca; quem a resolve em texto é o formatador de referência da casa (spec 06), só no envio.
+    Template("set_delivery_address.done", "1", "set_delivery_address", "Done: delivery to {address}.",
+             {"address": SlotSpec(("receipt:success",), "address_ref")}),
     Template("commit_order.done", "2", "commit_order", "Your order {order} is placed. Total: {total}. Track it: {track}.",
              {"order": SlotSpec(("receipt:success",), "effect"), "total": SlotSpec(("fact",), "total"),
               "track": SlotSpec(("receipt:success",), "effect")}),

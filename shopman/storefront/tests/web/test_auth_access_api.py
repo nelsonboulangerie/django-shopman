@@ -558,3 +558,87 @@ class TestBrowserHandoff:
         client.post(self.URL, {"next": "//evil.com/x"})
 
         assert Link.objects.order_by("-created_at").first().metadata["next"] == "/"
+
+
+class TestCartFromAnotherChannel:
+    """O link da conversa leva a OFERTA da sacola; a troca do link é o aceite (OC-15)."""
+
+    URL = "/api/v1/auth/access/"
+
+    @pytest.fixture
+    def chat_cart(self, channel, product, customer):
+        from shopman.shop.models import Channel
+        from shopman.shop.services import cart, sessions
+        from shopman.storefront.tests.web.conftest import _ensure_listing_item, _seed_stock_for_product_sku
+
+        chat = Channel.objects.create(ref="whatsapp", name="WhatsApp")
+        _seed_stock_for_product_sku(product.sku)
+        _ensure_listing_item(chat, product, price_q=90)
+        _ensure_listing_item(channel, product, price_q=90)
+        _, key = cart.add_item(session_key=None, channel_ref="whatsapp", origin_channel="whatsapp", sku=product.sku,
+                               qty=2, unit_price_q=90, name=product.name)
+        sessions.modify_session(session_key=key, channel_ref="whatsapp", ops=[
+            {"op": "set_data", "path": "customer", "value": {"ref": customer.ref, "name": customer.first_name}},
+        ])
+        return key
+
+    def _token(self, customer, chat_key):
+        from shopman.shop.services import session_transfer
+
+        offer = session_transfer.offer("whatsapp", chat_key, "web", customer_ref=customer.ref, actor="concierge")
+        return AccessLink.create_with_token(
+            customer_id=customer.uuid,
+            audience=AccessLink.Audience.WEB_GENERAL,
+            source=AccessLink.Source.API,
+            metadata={"next": "/finalizar", session_transfer.TRANSFER_METADATA_KEY: offer.as_metadata()},
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )[1]
+
+    def test_c01_the_exchange_accepts_and_the_browser_lands_on_the_carried_cart(self, chat_cart, customer):
+        from shopman.orderman.models import Session
+
+        browser = Client()
+        body = browser.post(self.URL, {"token": self._token(customer, chat_cart)}).json()
+
+        assert body["cart_transfer"] == {"status": "accepted", "differences": []}
+        target = Session.objects.get(session_key=browser.session["cart_session_key"])
+        assert target.channel_ref == "web" and target.data["transferred_from"]["session_key"] == chat_cart
+        assert Session.objects.get(session_key=chat_cart).state == "abandoned"
+        assert body["redirect"] == "/finalizar"
+
+    def test_x4_two_links_of_the_same_offer_land_on_the_same_cart(self, chat_cart, customer):
+        from shopman.orderman.models import Session
+
+        # A Nice mandou o link duas vezes antes de a pessoa abrir qualquer um.
+        tokens = [self._token(customer, chat_cart), self._token(customer, chat_cart)]
+        first, second = Client(), Client()
+        first.post(self.URL, {"token": tokens[0]})
+        body = second.post(self.URL, {"token": tokens[1]}).json()
+
+        assert body["cart_transfer"]["status"] == "accepted"
+        assert first.session["cart_session_key"] == second.session["cart_session_key"]
+        assert Session.objects.filter(channel_ref="web").count() == 1
+
+    def test_a_browser_with_its_own_cart_is_asked_never_merged(self, chat_cart, cart_session, customer):
+        from shopman.orderman.models import Session
+
+        own = cart_session.session["cart_session_key"]
+        body = cart_session.post(self.URL, {"token": self._token(customer, chat_cart)}).json()
+
+        assert body["cart_transfer"] == {"status": "refused", "code": "destination_conflict"}
+        assert cart_session.session["cart_session_key"] == own
+        assert Session.objects.get(session_key=chat_cart).state == "open"
+
+    def test_c05_someone_elses_link_does_not_bring_the_cart(self, chat_cart, customer):
+        from shopman.orderman.models import Session
+
+        stranger = Customer.objects.create(ref="CUST-OUTRA", first_name="Outra", phone="5543999990077")
+        token = self._token(customer, chat_cart)
+        AccessLink.objects.filter(metadata__next="/finalizar").update(customer_id=stranger.uuid)
+
+        browser = Client()
+        body = browser.post(self.URL, {"token": token}).json()
+
+        assert body["cart_transfer"] == {"status": "refused", "code": "not_authorized"}
+        assert "cart_session_key" not in browser.session
+        assert Session.objects.get(session_key=chat_cart).state == "open"

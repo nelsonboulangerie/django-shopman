@@ -225,12 +225,13 @@ const resendState = computed(() => resendCooldown(lastSentAtMs.value, nowMs.valu
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
 const requestedPhoneDisplay = computed(() => phoneDisplay(requestedPhone.value))
 const canContinueWelcome = computed(() => !!welcomeNameValue(welcomeName.value) && !pending.value)
-// Saudação personalizada de retorno: "Bem-vindo de volta, {primeiro nome}!" quando
-// já sabemos o nome (recorrente); sem nome, cai em "Bem-vindo de volta!". O dado vem
+// Saudação personalizada de retorno: "Que bom te ver de novo, {primeiro nome}!" quando
+// já sabemos o nome (recorrente); sem nome, cai em "Que bom te ver de novo!". Voz
+// neutra: a loja não presume o gênero de quem entra (DEV-2026-085). O dado vem
 // da própria resposta de auth (customer_name → session.customerName).
 const greetName = computed(() => (session.customerName.value || '').trim().split(/\s+/)[0] || '')
 const momentTitle = computed(() => {
-  const base = copyTitle(authCopy.value?.auth_confirmed, 'Bem-vindo de volta')
+  const base = copyTitle(authCopy.value?.auth_confirmed, 'Que bom te ver de novo')
   return greetName.value ? `${base}, ${greetName.value}!` : `${base}!`
 })
 const momentMessage = computed(() => moment.value === 'recognized'

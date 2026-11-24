@@ -55,23 +55,26 @@ def _ctx():
 
 # ── o fato do canal ──────────────────────────────────────────────────────────────────────
 
+#: O quando já dito (o dia, a retirada e o horário): estes testes são da forma de pagamento (#3482).
+WHEN = {"fulfillment_type": "pickup", "delivery_date": "2026-11-25", "delivery_time_slot": "slot-15"}
+
 
 def test_without_a_choice_the_payment_is_missing_with_the_channel_options_and_no_cash(conversation):
-    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL)
+    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data=WHEN)
     fact = _read_port().requirements(_ctx(), "sess-1")
     assert isinstance(fact, Known)
     assert {k: list(v) for k, v in fact.value.items()} == {"missing": ["payment_method"], "payment_method": ["pix", "card"]}
 
 
 def test_a_chosen_method_is_no_longer_missing(conversation):
-    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data={"payment": {"method": "card"}})
+    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data={**WHEN, "payment": {"method": "card"}})
     assert list(_read_port().requirements(_ctx(), "sess-1").value["missing"]) == []
 
 
 def test_a_single_method_channel_never_asks(db):
     Channel.objects.create(ref=CHANNEL, name="WhatsApp", config={"payment": {"method": ["pix", "cash"]}})
     Conversation.objects.create(pk=1, session_key="sess-1", channel_ref=CHANNEL)
-    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL)
+    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data=WHEN)
     assert list(_read_port().requirements(_ctx(), "sess-1").value["missing"]) == []
 
 
@@ -207,7 +210,7 @@ def test_what_is_missing_and_the_single_method_shown_follow_one_ruler(db):
 
     Channel.objects.create(ref=CHANNEL, name="WhatsApp", config={"payment": {"method": ["pix", "cash"]}})
     Conversation.objects.create(pk=1, session_key="sess-1", channel_ref=CHANNEL)
-    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL)
+    Session.objects.create(session_key="sess-1", channel_ref=CHANNEL, data=WHEN)
     assert list(_read_port().requirements(_ctx(), "sess-1").value["missing"]) == []
     assert {"code": "payment_method", "value": "pix"} in _fulfillment_conditions({}, CHANNEL)
 

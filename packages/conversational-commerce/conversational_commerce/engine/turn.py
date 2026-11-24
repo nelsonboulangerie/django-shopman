@@ -84,7 +84,7 @@ from conversational_commerce.ledger import (
     staff_deadline,
     staff_owner,
 )
-from conversational_commerce.ledger.commitments import window_seconds
+from conversational_commerce.ledger.commitments import Entry, window_seconds
 from conversational_commerce.memory import MemoryStore
 from conversational_commerce.policy import DecisionInput, decide
 from conversational_commerce.policy.advisor import adheres_to_declared_need
@@ -101,7 +101,7 @@ from conversational_commerce.ports import (
     WorkItem,
 )
 from conversational_commerce.profile import read_line
-from conversational_commerce.reply import Composed, Evidence, Template, compose
+from conversational_commerce.reply import Composed, Evidence, PartSpec, Template, compose
 from conversational_commerce.workflow import (
     EpisodeEvent,
     answer_refers_to,
@@ -118,7 +118,7 @@ from conversational_commerce.workflow import (
 from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
-from .moves import registry, templates
+from .moves import registry, templates, yes_no_conditions
 from .state import NeedSpec, Subject, TurnState
 
 PRODUCER = Producer(name="conversational-commerce", version="engine-1")
@@ -173,9 +173,63 @@ def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
 
 #: A sequência declarada de efeitos A2 reversíveis num turno (spec 08 §5, [DECIDIDO]): o recebimento antes
 #: da sacola, para a sacola medir a data combinada. ``commit_order`` (A3) nunca entra nela.
-EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "change_cart", "set_payment")
+EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "set_delivery_address", "change_cart", "set_payment")
+#: O fechamento que perguntou por uma condição obrigatória (``present_terms.needs_*``), no estado de diálogo:
+#: ``{"cart": <carrinho>, "epoch": <época do episódio>}``. Vale só para o mesmo carrinho e a mesma época
+#: (a conversa que mudou de dono não herda o fechamento), e cai com o "não" do cliente.
+CLOSING_KEY = "terms_closing"
+
+
+#: A pergunta da condição de sim ou não que o fechamento fez ("entregamos no endereço do cadastro?"), no estado
+#: de diálogo: ``{"question_id", "code", "ref", "cart", "epoch"}``. ``ref`` é a opção OFERECIDA (a que o cliente
+#: viu); o "sim" aceita essa, nunca a que o fato diria depois. Cai com o fechamento e com a resposta.
+CONDITION_KEY = "terms_condition_question"
+
+
+def condition_in(dialogue: dict, cart_ref: str | None, epoch: int) -> dict | None:
+    """A pergunta da condição no ar, deste carrinho e desta época."""
+    value = dialogue.get(CONDITION_KEY)
+    if cart_ref is None or not isinstance(value, Mapping) or value.get("cart") != cart_ref \
+            or value.get("epoch") != epoch:
+        return None
+    return dict(value)
+
+
+def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
+    """O fechamento no ar é deste carrinho e desta época."""
+    value = dialogue.get(CLOSING_KEY)
+    return (cart_ref is not None and isinstance(value, Mapping) and value.get("cart") == cart_ref
+            and value.get("epoch") == epoch)
+#: Quantas vezes o tick tenta o aviso de um prazo vencido que não saiu (segurado ou falhado) antes de desistir.
+NOTIFY_ATTEMPTS = 3
 #: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
 MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
+
+
+#: A mudança da sacola com uma pergunta do fechamento no ar (#3488): os termos respondem a necessidade com a
+#: próxima pergunta (``present_terms.needs_*``), que não mostra a sacola. Sem a parte do recibo, "na verdade 3"
+#: mudava a sacola e ouvia só a pergunta de novo, como se nada tivesse acontecido. Diz o total novo pelos termos
+#: cotados de novo; sem eles, só o efeito (o degrau de baixo).
+CHANGE_TOTAL_TEMPLATE = "change_cart.done_total"
+CHANGE_RECEIPT_TEMPLATE = "change_cart.done_receipt"
+
+
+def _with_change_receipts(state, chosen, by_need, specs):
+    """A parte do recibo da mudança antes da pergunta do fechamento que respondeu por ela."""
+    from .moves._effects import known_with
+
+    key = state.terms_key(state.subject.cart_ref) if state.subject.cart_ref else "terms.none"
+    out = []
+    for candidate, spec in zip(chosen, specs, strict=True):
+        need = by_need[candidate.need_id]
+        receipt = state.receipts.get(need.need_id)
+        if candidate.move == "present_terms" and need.act == "change_quantity" and receipt is not None \
+                and receipt.status == "success" and str(spec.template_id).startswith("present_terms.needs_"):
+            done = {"done": ("receipt", receipt.command_id)}
+            out.append(PartSpec("change_cart", CHANGE_TOTAL_TEMPLATE, {**done, "total": ("fact", key)})
+                       if known_with(state, key, "total") else PartSpec("change_cart", CHANGE_RECEIPT_TEMPLATE, done))
+        out.append(spec)
+    return out
 
 
 def _distinct(specs):
@@ -250,6 +304,9 @@ class Engine:
     # lugar dos genéricos do pacote. Cada um troca a frase e mantém o movimento e os espaços, que é
     # o que a parte montada pelo movimento preenche; o que não trocar fica com o do pacote.
     house_templates: Mapping[str, Template] = field(default_factory=dict)
+    # A casa fala SÓ com os próprios moldes: a parte por molde do pacote (o texto neutro, em inglês) segura a
+    # mensagem (``template_not_in_voice``), no ar e depois do efeito, onde a sombra não vê (spec 06).
+    house_voice_only: bool = False
     resolve_content: Callable[[str | None], str] = text_of
     # O adaptador diz quem fala e qual é o carrinho dele, do contexto confiável (nunca do texto).
     subject_of: Callable[[TrustedContext, InteractionEvent], Subject] = default_subject
@@ -277,6 +334,9 @@ class Engine:
 
     def _templates(self) -> dict[str, Template]:
         return {**templates(), **self.house_templates}
+
+    def _voice(self) -> frozenset[str] | None:
+        return frozenset(self.house_templates) if self.house_voice_only else None
 
     # ── envelope ────────────────────────────────────────────────────────────
     def _envelope(self, ctx: TrustedContext, prefix: str, episode_id: str | None, trace_id: str,
@@ -468,8 +528,10 @@ class Engine:
                 state.subject = self.subject_of(ctx, event)
                 self._quote(ctx, state, budget, refresh=True)
                 requoted = True
-            elif action == "set_payment":
-                self._quote(ctx, state, budget, refresh=True)  # a condição mudou: termos novos
+            elif action in ("set_payment", "set_delivery_address", "set_fulfillment"):
+                # A condição mudou (o recebimento também é dos termos: o dia e o horário estão no resumo, e o
+                # quando é condição para registrar): termos novos.
+                self._quote(ctx, state, budget, refresh=True)
                 requoted = True
             elif action == "commit_order" and receipt.domain_refs.get("effect"):
                 ref = receipt.domain_refs["effect"]
@@ -847,7 +909,11 @@ class Engine:
         needs, answered_question = self._needs(understanding, previous_dialogue, epoch)
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,
-                          needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer)
+                          needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer,
+                          closing=closing_in(previous_dialogue, subject.cart_ref, epoch),
+                          content_ref=event.content_ref)
+        if state.closing:
+            state.condition_question = condition_in(previous_dialogue, subject.cart_ref, epoch)
         for need in needs:
             if state.answers_offer(need):
                 state.confirmation_problems[need.need_id] = confirmation_problem(
@@ -862,6 +928,13 @@ class Engine:
         answered_offer = offer is not None and answered_question == offer.question_id
         if answered_offer:
             dialogue.pop(OFFER_KEY, None)
+        if CLOSING_KEY in dialogue and (not state.closing or any(state.declines_terms(n) for n in needs)):
+            # O fechamento de outro carrinho ou de outra época não vale; o "não" do cliente o encerra.
+            dialogue = {key: value for key, value in dialogue.items() if key not in (CLOSING_KEY, CONDITION_KEY)}
+        if CONDITION_KEY in dialogue and (state.condition_question is None or answered_question == (
+                state.condition_question or {}).get("question_id")):
+            # A pergunta da condição foi respondida (ou não vale mais): sai do ar.
+            dialogue = {key: value for key, value in dialogue.items() if key != CONDITION_KEY}
 
         snapshot = self._snapshot(ctx, episode, trace_id, event.id, state, dialogue)
         decision = self._decide(state, needs, snapshot, trace_id)
@@ -902,11 +975,13 @@ class Engine:
         moves = registry()
 
         # Passo 7: dizer e verificar.
-        specs = _distinct([moves[c.move].reply(state, by_need[c.need_id]) for c in chosen])
+        specs = _distinct(_with_change_receipts(state, chosen, by_need,
+                                                [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen]))
         reply = None
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}
             reply = compose(specs=specs, templates=self._templates(), formatters=self.formatters,
+                            voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               receipts=receipts, commitments=state.commitments),
                             decision_id=decision_id,
@@ -919,7 +994,22 @@ class Engine:
         terms_wait = None
         if asked is not None:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
+        if presented is not None and not held and state.missing_conditions():
+            # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
+            dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch}}
+            code = state.missing_conditions()[0]
+            options = state.offered(subject.cart_ref, code)
+            # A lista das opções ("outro") não é pergunta de sim ou não: o "sim" a ela não escolhe a primeira.
+            asked_code = any(str(t).startswith(f"present_terms.needs_{code}")
+                             and not str(t).endswith(("_declined", "_options")) for t in reply.template_ids)
+            if code in yes_no_conditions() and options and asked_code:
+                # A pergunta de sim ou não fica no ar, com a opção oferecida: o "sim" responde a ESTA pergunta.
+                question_id = clock.new_id("q")
+                dialogue = ask(dialogue, question_id=question_id, need_id=presented.need_id, epoch=epoch)
+                dialogue[CONDITION_KEY] = {"question_id": question_id, "code": code, "ref": str(options[0]),
+                                           "cart": subject.cart_ref, "epoch": epoch}
         if presented is not None and not held and not state.missing_conditions():
+            dialogue = {key: value for key, value in dialogue.items() if key not in (CLOSING_KEY, CONDITION_KEY)}
             # Termos que o cliente não viu (mensagem segurada) não esperam confirmação; nem os que ainda pedem
             # uma condição obrigatória (a parte perguntou por ela, e os termos não foram apresentados).
             terms = state.terms[subject.cart_ref]
@@ -1103,7 +1193,7 @@ class Engine:
         reply = None
         if chosen:
             reply = compose(specs=[moves[c.move].reply(state, by_need[c.need_id]) for c in chosen],
-                            templates=self._templates(), formatters=self.formatters,
+                            templates=self._templates(), formatters=self.formatters, voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               commitments=state.commitments),
                             decision_id=decision.decision_id,
@@ -1192,8 +1282,12 @@ class Engine:
         now = clock.now()
         line = read_line(self.profile, ESCALATION_LINE)
         results = []
+        # Avisos que não saíram num tick anterior (segurado ou falhado), antes que o due marque prazos novos.
+        pending = [entry for entry in self.commitments.open_entries(ctx.tenant, ctx.environment)
+                   if not entry.notified and "customer_notify_failed" in self.commitments.events_of(entry.commitment_id)]
         for entry in self.commitments.due(now, ctx.tenant, ctx.environment):
             cid = entry.commitment_id
+            pending = [other for other in pending if other.commitment_id != cid]
             self.commitments.note("deadline_passed", cid, now, entry.commitment.deadline.at)
             episode = store.load_episode(ctx, entry.commitment.episode_id)
             records, steps = [], []
@@ -1219,14 +1313,35 @@ class Engine:
                     store.commit_transition(ctx, Transition(episode=new_episode, expected_version=episode.version),
                                             tuple(records), ())
                 continue
+            results.append(self._notify_overdue(ctx, entry, episode, now, records, steps))
+        for entry in pending:
+            # O prazo já foi tratado; só o aviso ao cliente não saiu da outra vez. Tenta de novo, sem reescalar.
+            episode = store.load_episode(ctx, entry.commitment.episode_id)
+            results.append(self._notify_overdue(ctx, entry, episode, now, [], []))
+        return tuple(results)
+
+    def _notify_overdue(self, ctx: TrustedContext, entry: Entry, episode: Episode, now: str,
+                        records: list, steps: list) -> TurnResult:
+        """Avisa o cliente do prazo vencido. Avisado só com o aviso enviado: segurado ou falhado, ele não soube."""
+        cid = entry.commitment_id
+        state = self._resume_state(entry, now)
+        state.commitments[cid] = entry.commitment
+        state.waiting[entry.need.need_id] = cid
+        result = self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
+                               records=tuple(records), steps=steps)
+        if result.outcome == "answered" and result.exposure is not None:
             entry.notified = True
             self.commitments.note("customer_notified", cid, now)
-            state = self._resume_state(entry, now)
-            state.commitments[cid] = entry.commitment
-            state.waiting[entry.need.need_id] = cid
-            results.append(self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
-                                         records=tuple(records), steps=steps))
-        return tuple(results)
+            return result
+        reason = result.fallbacks[0] if result.fallbacks else result.outcome
+        if self.commitments.events_of(cid).count("customer_notify_failed") + 1 >= NOTIFY_ATTEMPTS:
+            # Tentou e não saiu: para de tentar, registrado, em vez de repetir a cada tick para sempre.
+            entry.notified = True
+            self.commitments.note("customer_notify_failed", cid, now, reason)
+            self.commitments.note("customer_notify_gave_up", cid, now, reason)
+        else:
+            self.commitments.note("customer_notify_failed", cid, now, reason)
+        return result
 
     def _due(self, episode: Episode) -> tuple[Wait, ...]:
         now = self.ports.clock.now()

@@ -153,12 +153,20 @@ class ProductionOrderShortError(ProductionError):
         requested: Decimal,
         order_refs: tuple[str, ...],
         allow_override: bool = True,
+        confirmable: bool = False,
+        orders: tuple[tuple[str, Decimal], ...] = (),
     ):
         self.work_order_ref = work_order_ref
         self.required = required
         self.requested = requested
         self.order_refs = order_refs
         self.allow_override = allow_override
+        # O lote que rendeu menos que o encomendado fecha com a verdade (decisão 1 do
+        # dono, 23/11/2026): a recusa vira pergunta informada, e quem fecha o lote
+        # confirma sem pedir autorização de gerente.
+        self.confirmable = confirmable
+        #: O que cada pedido espera desta produção, na ordem em que reservou.
+        self.orders = orders
         short = max(Decimal("0"), required - requested)
         super().__init__(
             f"{work_order_ref} tem {_qty(required)} un. comprometidas; "
@@ -1435,8 +1443,14 @@ def apply_start(
     actor: str,
     expected_rev: int | None = None,
     idempotency_key: str | None = None,
+    approved_short_lot: dict | None = None,
 ):
-    """Start a planned work order from the operator surface."""
+    """Start a planned work order from the operator surface.
+
+    Previsto abaixo do encomendado não recusa (decisão 1 do dono, 23/11/2026): a
+    primeira tentativa devolve os pedidos descobertos, e a confirmação do mesmo
+    impacto abre o lote. Quem responde pelo pão que faltar é o fechamento.
+    """
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
 
@@ -1463,13 +1477,15 @@ def apply_start(
                     expected_rev=expected_rev,
                     idempotency_key=attempt_key,
                 )
-            shortage = _locked_work_order_order_shortage(
-                work_order,
-                candidate_work_orders=locked_output_work_orders,
-                requested_quantity=Decimal(str(quantity)),
+            _confirmed_order_shortfall(
+                _locked_work_order_order_shortage(
+                    work_order,
+                    candidate_work_orders=locked_output_work_orders,
+                    requested_quantity=Decimal(str(quantity)),
+                ),
+                approved_short_lot,
+                actor=actor,
             )
-            if shortage is not None:
-                raise shortage
             return production_core.start_work_order(
                 work_order_id=work_order_id,
                 quantity=quantity,
@@ -3319,8 +3335,16 @@ def apply_finish(
     yield_deviation_reason: str = "",
     allow_implicit_start: bool = False,
     approved_shortage: dict | None = None,
+    approved_short_lot: dict | None = None,
 ):
     """Finish a work order from the operator surface — escalar ou particionado.
+
+    ``approved_short_lot``: o lote que rendeu menos que o encomendado fecha com o
+    número verdadeiro (decisão 1 do dono, 23/11/2026). A primeira tentativa devolve
+    a recusa com os pedidos descobertos; a confirmação volta com o mesmo impacto
+    assinado e fecha. O pão entra no estoque uma vez só, e os pedidos que ficaram
+    sem ele viram "Promessa em risco" no Gestor pelo caminho de sempre
+    (``announce_short_lot``, #3149).
 
     ``expected_rev``: ver ``apply_void``. Convive com a chave de idempotência sem
     conflito — uma responde "é o MESMO gesto de novo?", a outra "o quadro que você leu
@@ -3466,21 +3490,19 @@ def apply_finish(
                     "actor": str(actor or ""),
                 }
 
-            # A finished link currently represents the whole order/SKU demand;
-            # there is no approved partial-allocation contract.  Therefore a
-            # finish that yields less saleable output than its linked demand
-            # must fail closed. ``force`` on this endpoint only overrides
-            # material availability, never customer demand truth.
-            order_shortage = _locked_work_order_order_shortage(
-                work_order,
-                candidate_work_orders=locked_output_work_orders,
-                requested_quantity=sum(
-                    (Decimal(str(item["quantity"])) for item in finished_items),
-                    Decimal("0"),
+            # Rendeu menos que o encomendado: a verdade entra, mas nunca calada.
+            # Sem a confirmação do impacto exato (os mesmos pedidos e números), a
+            # tentativa volta com a pergunta. ``force`` continua sendo só sobre
+            # insumo; a confirmação do lote curto é um gesto à parte.
+            order_shortfall_context = _confirmed_order_shortfall(
+                _locked_work_order_order_shortage(
+                    work_order,
+                    candidate_work_orders=locked_output_work_orders,
+                    requested_quantity=saleable_quantity,
                 ),
+                approved_short_lot,
+                actor=actor,
             )
-            if order_shortage is not None:
-                raise order_shortage
             _refuse_finish_below_delivered(work_order, saleable_quantity)
 
             missing = check_finish_materials(work_order)
@@ -3550,6 +3572,7 @@ def apply_finish(
                     else {}
                 ),
                 **({"yield_deviation": deviation_context} if deviation_context is not None else {}),
+                **({"order_shortfall": order_shortfall_context} if order_shortfall_context is not None else {}),
             }
             result = production_core.finish_work_order(
                 work_order_id=work_order_id,
@@ -3620,6 +3643,25 @@ def _lock_output_work_orders(work_order_id):
     return target, locked
 
 
+def _production_demand(orders, sku: str) -> tuple[Decimal, tuple[tuple[str, Decimal], ...]]:
+    """O que a produção deve a estes pedidos neste SKU (P1-03).
+
+    Conta o pedido vigente (o editado pede o que vale agora, não as linhas seladas)
+    menos o que já está na prateleira, a mesma conta do alocador. O pedido servido
+    da vitrine não trava o lote.
+    """
+    from shopman.shop.handlers.production_order_sync import (
+        _production_quantity,
+        _shelf_quantities,
+    )
+
+    shelf = _shelf_quantities(orders)
+    lines = tuple(
+        (order.ref, quantity) for order in orders if (quantity := _production_quantity(order, sku, shelf)) > 0
+    )
+    return sum((quantity for _, quantity in lines), Decimal("0")), lines
+
+
 def _locked_work_order_order_shortage(
     work_order,
     *,
@@ -3635,18 +3677,19 @@ def _locked_work_order_order_shortage(
 
     from shopman.shop.handlers.production_order_sync import (
         ACTIVE_ORDER_STATUSES,
+        _adjusted_active_order_ids,
         _allocate_pending_links,
         _match_strategy,
     )
 
-    order_ids = list(
+    order_ids = set(
         Order.objects.filter(
             status__in=ACTIVE_ORDER_STATUSES,
             items__sku=work_order.output_sku,
         )
         .values_list("pk", flat=True)
         .distinct()
-    )
+    ) | _adjusted_active_order_ids([work_order.output_sku])
     orders = list(
         Order.objects.select_for_update()
         .filter(pk__in=order_ids, status__in=ACTIVE_ORDER_STATUSES)
@@ -3672,10 +3715,7 @@ def _locked_work_order_order_shortage(
     )
     covered_orders = [order for order in orders if work_order.ref in desired_work_orders_by_order.get(order.ref, ())]
 
-    required = sum(
-        (item.qty for order in covered_orders for item in order.items.all() if item.sku == work_order.output_sku),
-        Decimal("0"),
-    )
+    required, lines = _production_demand(covered_orders, work_order.output_sku)
     if requested_quantity >= required:
         _persist_locked_order_bindings(
             work_orders=open_work_orders,
@@ -3689,9 +3729,35 @@ def _locked_work_order_order_shortage(
         work_order_ref=work_order.ref,
         required=required,
         requested=requested_quantity,
-        order_refs=tuple(order.ref for order in covered_orders),
+        order_refs=tuple(ref for ref, _ in lines),
         allow_override=False,
+        confirmable=True,
+        orders=lines,
     )
+
+
+def _confirmed_order_shortfall(
+    shortage: ProductionOrderShortError | None,
+    approved: dict | None,
+    *,
+    actor: str,
+) -> dict | None:
+    """O fato do lote curto, quando a pessoa confirmou exatamente este impacto.
+
+    Sem falta, nada. Com falta e sem confirmação (ou confirmada para outro impacto:
+    outro pedido entrou, a conta mudou), a recusa volta com a pergunta nova.
+    """
+    if shortage is None:
+        return None
+    if approved is None or approved != production_shortage_snapshot(shortage):
+        raise shortage
+    return {
+        "required_qty": _qty(shortage.required),
+        "saleable_qty": _qty(shortage.requested),
+        "short_qty": _qty(max(Decimal("0"), shortage.required - shortage.requested)),
+        "orders": [{"ref": ref, "qty": _qty(quantity)} for ref, quantity in shortage.orders],
+        "confirmed_by": str(actor or ""),
+    }
 
 
 def _persist_locked_order_bindings(
@@ -4033,6 +4099,7 @@ def _check_linked_order_coverage(
 
         from shopman.shop.handlers.production_order_sync import (
             ACTIVE_ORDER_STATUSES,
+            _adjusted_active_order_ids,
             _allocate_pending_links,
             _match_strategy,
         )
@@ -4077,14 +4144,14 @@ def _check_linked_order_coverage(
                     "candidates": [work_order.ref for work_order in work_orders],
                 },
             )
-        order_ids = list(
+        order_ids = set(
             Order.objects.filter(
                 status__in=ACTIVE_ORDER_STATUSES,
                 items__sku=recipe.output_sku,
             )
             .values_list("pk", flat=True)
             .distinct()
-        )
+        ) | _adjusted_active_order_ids([recipe.output_sku])
         active_orders = list(
             Order.objects.select_for_update()
             .filter(
@@ -4145,19 +4212,17 @@ def _check_linked_order_coverage(
         covered_orders = [
             order for order in active_orders if target_work_order.ref in desired_work_orders_by_order.get(order.ref, ())
         ]
-        active_refs = tuple(dict.fromkeys(order.ref for order in covered_orders))
+        required, lines = _production_demand(covered_orders, recipe.output_sku)
+        active_refs = tuple(ref for ref, _ in lines)
         if not active_refs:
             return None
-        required = sum(
-            (item.qty for order in covered_orders for item in order.items.all() if item.sku == recipe.output_sku),
-            Decimal("0"),
-        )
         if requested < required:
             return ProductionOrderShortError(
                 work_order_ref=target_work_order.ref,
                 required=required,
                 requested=requested,
                 order_refs=active_refs,
+                orders=lines,
             )
         return None
     except ProductionError:

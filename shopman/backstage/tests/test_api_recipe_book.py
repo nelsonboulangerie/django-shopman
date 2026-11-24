@@ -177,7 +177,7 @@ def test_the_access_probe_answers_without_refusing(client, shop, viewer, editor)
     client.force_login(bare)
     response = client.get(reverse("api-backstage-recipes-access"))
     assert response.status_code == 200
-    assert response.json()["access"] == {"can_view": False, "can_edit": False, "capture_available": False}
+    assert response.json()["access"] == {"can_view": False, "can_edit": False, "capture_available": False, "purchase_url": ""}
 
     client.force_login(viewer)
     assert client.get(reverse("api-backstage-recipes-access")).json()["access"]["can_view"] is True
@@ -217,7 +217,7 @@ def test_list_carries_cards_kinds_and_access(client, viewer, entry):
     response = client.get(LIST_URL)
     assert response.status_code == 200
     body = response.json()
-    assert body["access"] == {"can_view": True, "can_edit": False, "capture_available": False}
+    assert body["access"] == {"can_view": True, "can_edit": False, "capture_available": False, "purchase_url": ""}
     assert body["book"]["count"] == 1
     assert [kind["value"] for kind in body["book"]["kinds"]] == [
         "bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other",

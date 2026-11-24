@@ -51,6 +51,11 @@ NO_PRICE = {"status": "unavailable", "reason": "no_price"}
 FULFILLMENT_ACT = "choose_fulfillment"
 #: O ato do motor que leva a forma de pagamento.
 PAYMENT_ACT = "choose_payment"
+#: O ato do motor que diz "esta fala traz o endereço". Sem campo: o endereço se lê na casa, no texto
+#: original, dentro do efeito (P17). A IA vê só o texto redigido ("[endereço omitido]").
+ADDRESS_ACT = "give_address"
+#: O pedido das opções da pergunta no ar ("outro"): só pelo portão da casa, nunca pela IA (sem descrição).
+OPTIONS_ACT = "ask_options"
 
 #: Atos que o portão do Jev pode entregar sem a IA: nenhum pede campo.
 FIELDLESS = frozenset({"greet", "thank", "ask_hours", "request_human", "cancel_order", "affirm", "deny",
@@ -77,6 +82,8 @@ DESCRIPTIONS = {
     FULFILLMENT_ACT: "dizer o dia, se vai retirar ou receber em casa, ou a hora (\"amanhã às 16h\", "
                      "\"vou aí buscar\", \"entrega na sexta\")",
     PAYMENT_ACT: "dizer como quer pagar (\"no pix\", \"pago no cartão\", \"pode ser pix\")",
+    ADDRESS_ACT: "dar o endereço da entrega ou uma parte dele (rua, número, bairro, CEP, complemento, "
+                 "\"sem complemento\"; no texto aparece como [endereço omitido])",
     "unknown": "nada disso",
 }
 
@@ -262,6 +269,81 @@ def _cart_lines(conversation) -> list[dict]:
     return list(session.items or []) if session is not None else []
 
 
+#: O que falta no endereço já gravado: a resposta a isto é um pedaço de endereço ("apto 12", "Jardim Botânico").
+#: E a oferta do endereço do cadastro: a resposta pode ser o nome dele ("o do trabalho", "casa da minha mãe").
+_ADDRESS_DETAIL_CODES = frozenset({"delivery_address_details", "delivery_complement", "delivery_address_saved"})
+
+
+def _address_pending(conversation) -> tuple[set[str], int]:
+    """O que o fechamento da entrega ainda espera do endereço, e quantos endereços o cliente tem no cadastro."""
+    from shopman.orderman.models import Session
+
+    from shopman.shop.conversational.commerce_read import _address_requirements
+
+    from .address import saved_addresses
+
+    if conversation is None or not conversation.session_key:
+        return set(), 0
+    session = Session.objects.filter(session_key=conversation.session_key).first()
+    data = (session.data if session is not None else None) or {}
+    if data.get("fulfillment_type") != "delivery":
+        return set(), 0
+    saved = tuple(item.pk for item in saved_addresses(conversation.customer_ref or ""))
+    return set(_address_requirements(data, saved=saved)), len(saved)
+
+
+def address_detail_pending(conversation) -> bool:
+    """O fechamento espera um pedaço do endereço da entrega (o número, o CEP, o bairro, o complemento) ou a
+    resposta à oferta do endereço do cadastro (que pode ser o nome dele)."""
+    return bool(_ADDRESS_DETAIL_CODES & _address_pending(conversation)[0])
+
+
+#: "Outro", "quero outro", "outro endereço", "quais?": a resposta à oferta do endereço do cadastro que pede
+#: outro dele, sem nome e sem endereço. Com "não" junto não entra: "não, outro endereço" pode ser um endereço novo.
+_ASKS_OPTIONS_RE = re.compile(
+    r"^(?:(?:quero|prefiro|pode ser|seria|manda(?:r)? (?:pra|para|no|em)|entrega(?:r)? (?:no|em))\s+)?"
+    r"(?:(?:um|o|no|em)\s+)?outro(?:\s+endereco)?(?:\s+(?:cadastrado|do cadastro))?(?:,?\s+por favor)?$"
+    r"|^quais(?:\s+sao)?(?:\s+(?:os|meus|os meus))?(?:\s+enderecos)?(?:\s+cadastrados)?$")
+
+
+def asks_saved_options(conversation, text: str) -> bool:
+    """A fala só pede outro endereço do cadastro, com a oferta no ar. Com dois ou mais, o motor lista; com um,
+    é "esse não", e o motor pergunta o endereço."""
+    from .address import _fold
+
+    folded = _fold(text).rstrip("?!. ")
+    if not folded or not _ASKS_OPTIONS_RE.match(folded):
+        return False
+    pending, saved = _address_pending(conversation)
+    return "delivery_address_saved" in pending and saved > 0
+
+
+def address_answer(conversation, text: str) -> bool:
+    """A fala é SÓ o pedaço de endereço que o fechamento pede, e vai ao motor sem a IA (P17).
+
+    O redator mascara endereço inteiro ("Rua das Flores 120"), mas não o pedaço: "Jardim Botânico", "apto 12".
+    Com um deles pendente, a fala cujos trechos são todos de endereço não sai daqui. A fala mista ("apto 12,
+    e põe mais um croissant") vai à IA com o trecho de endereço mascarado (``reading_text``).
+    """
+    from .effect_site import address_clauses
+
+    if not str(text or "").strip() or not address_detail_pending(conversation):
+        return False
+    clauses = [is_address for _piece, is_address in address_clauses(text) if is_address is not None]
+    return bool(clauses) and all(clauses)
+
+
+def reading_text(conversation, text: str) -> str:
+    """O texto que a IA lê: com um pedaço de endereço pendente, os trechos de endereço mascarados; e sempre
+    pelo redator, que mascara o que ele conhece (endereço inteiro, telefone, nome)."""
+    from .effect_site import masked_for_reading
+    from .observation_privacy import redact_observation_text
+
+    if address_detail_pending(conversation):
+        text = masked_for_reading(text)
+    return redact_observation_text(text).text
+
+
 def cart_note(lines: list[dict]) -> str:
     return "\n".join(f"- {line.get('qty')} × {line.get('name') or line.get('sku')}" for line in lines
                      if line.get("qty"))
@@ -371,7 +453,6 @@ class NiceReader:
                             guarantees={"priced": False, "calls_model": True, "falls_back_to": "local_rules"})
 
     def interpret(self, ctx: TrustedContext, request) -> tuple[Understanding, Consumption]:
-        from .observation_privacy import redact_observation_text
         from .ports import LocalReader, _conversation, resolve_text
         from .reading_health import record_read
 
@@ -379,16 +460,30 @@ class NiceReader:
             raise PortError("object_forbidden", "dado pessoal não vai ao leitor")
         text = resolve_text(request.content_ref)
         allowed = tuple(act for act in (request.allowed_acts or ()) if act in DESCRIPTIONS) or ("unknown",)
+        from .ports import shared_location_of
+
+        if ADDRESS_ACT in allowed and shared_location_of(request.content_ref):
+            # A localização do WhatsApp é o endereço da entrega: sem texto, sem IA.
+            return self._understanding(ctx, request, [{"act": ADDRESS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
+                                       GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         gated = self._gate(text) if text else ""
         if gated and gated in allowed:
             return self._understanding(ctx, request, [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],
                                        GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
+        conversation = self._conversation if self._conversation is not None else _conversation(ctx)
+        if OPTIONS_ACT in (request.allowed_acts or ()) and asks_saved_options(conversation, text):
+            # "Outro" à oferta do endereço do cadastro: pede a lista, sem a IA (o motor lista por referência, P17).
+            return self._understanding(ctx, request, [{"act": OPTIONS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
+                                       GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
+        if ADDRESS_ACT in allowed and address_answer(conversation, text):
+            # O pedaço de endereço que o fechamento pediu: sem IA, o texto fica na casa (P17).
+            return self._understanding(ctx, request, [{"act": ADDRESS_ACT, "fields": {}, "confidence": UNAVAILABLE}],
+                                       GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         client, model = (self._client, self._model) if self._client is not None else build_client()
         if client is None or not text:
             return LocalReader().interpret(ctx, request)
-        conversation = self._conversation if self._conversation is not None else _conversation(ctx)
         lines = self._lines_of(conversation)
-        redacted = redact_observation_text(text).text
+        redacted = reading_text(conversation, text)
         started = time.perf_counter()
         try:
             response = client.messages.create(**build_request(redacted, allowed=allowed,

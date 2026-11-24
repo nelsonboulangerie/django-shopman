@@ -46,28 +46,27 @@ class Cartao:
     falta: str = ""  # o que o motor ainda não tem para este cartão (vira issue)
 
 
+#: As falas respondem ao que a Nice pergunta hoje, como um cliente real (#3489): o quando (o dia, retirar ou
+#: entregar, o horário) e a forma de pagamento, que o canal oferece em mais de uma.
 CARTOES = (
     Cartao("cartao-1-retirada", "retirada, tudo numa frase",
-           ("quero 2 croissants para retirar amanhã às 16h", "pode fechar", "sim"),
-           pedido=True, itens={"croissant": 2}, recebe="pickup", dia=1,
-           falta="a sacola e o recebimento no mesmo turno são dois efeitos (#3374)"),
+           ("quero 2 croissants para retirar amanhã às 16h", "pode fechar", "pix", "sim"),
+           pedido=True, itens={"croissant": 2}, recebe="pickup", dia=1),
     Cartao("cartao-2-entrega", "entrega com endereço",
-           ("quero 1 pão de campanha com entrega", "amanhã", "Rua das Flores, 120, Centro, Londrina, CEP 86010-000",
-            "sem complemento", "pode fechar", "sim"),
-           pedido=True, itens={"campanha": 1}, recebe="delivery", dia=1,
-           falta="o motor não tem movimento para pedir o endereço e o complemento"),
+           # Sem "sem complemento": o mundo de memória não pergunta o complemento (só a casa pergunta, provado
+           # nos testes da loja) e o falso leria a fala como outro endereço, sem número.
+           ("quero 1 pain de campagne com entrega", "amanhã", "Rua das Flores, 120, Centro, Londrina, CEP 86010-000",
+            "pode fechar", "às 15h", "pix", "sim"),
+           pedido=True, itens={"campagne": 1}, recebe="delivery", dia=1),
     Cartao("cartao-3-mudar-no-meio", "muda a quantidade depois do resumo",
-           ("quero 2 croissants", "pode fechar", "na verdade 3", "sim", "sim"),
-           pedido=True, itens={"croissant": 3},
-           falta="depois de mudar a sacola com o resumo no ar, o motor não apresenta o resumo novo"),
+           ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "na verdade 3", "sim"),
+           pedido=True, itens={"croissant": 3}, recebe="pickup", dia=1),
     Cartao("cartao-4-desistir", "desiste no resumo",
-           ("quero 2 croissants", "pode fechar", "deixa pra lá"),
-           pedido=False, itens={"croissant": 2},
-           falta="o motor não tem ato de desistir do resumo"),
+           ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "deixa pra lá"),
+           pedido=False, itens={"croissant": 2}, recebe="pickup", dia=1),
     Cartao("cartao-5-pix", "fecha com Pix",
-           ("quero 2 croissants", "pode fechar", "pix", "sim"),
-           pedido=True, itens={"croissant": 2},
-           falta="o motor não pergunta a forma de pagamento; o copia-e-cola do Pix é da loja, depois do recibo"),
+           ("quero 2 croissants", "pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "sim"),
+           pedido=True, itens={"croissant": 2}, recebe="pickup", dia=1),
 )
 
 
@@ -114,8 +113,19 @@ def _world():
     """O mundo de memória: as portas falsas do pacote, com o canal da Nice e a sacola vazia."""
     from conversational_commerce.testing.fakes import FakeWorld
 
+    from shopman.shop.conversational.commerce_read import conversation_payment_methods
+
     world = FakeWorld()
     world.channel.name = CHANNEL
+    # As formas que a conversa do canal oferece (as do ar, sem dinheiro), não as do falso: com as do falso,
+    # o "pix" virava forma não oferecida e a Nice respondia a frase do dinheiro.
+    world.state.payment_methods = tuple(conversation_payment_methods(CHANNEL))
+    # Os horários de retirada da grade da casa: com eles o falso exige o quando antes dos termos, como o
+    # requirements do ar (#3482). Sem eles, o cartão fechava um pedido que a casa não grava.
+    from shopman.shop.services.fulfillment_window import canonical_slots
+
+    world.state.pickup_slots = tuple(str(slot.get("label") or slot["ref"]) for slot in canonical_slots())
+    world.state.delivery_windows = world.state.pickup_slots  # a mesma grade da casa (fulfillment_window)
     world.state.carts = {CART: {}}
     world.state.cart_owner = {CART: SUBJECT}
     world.state.versions = {CART: 1}
@@ -205,7 +215,18 @@ def _conferir(cartao: Cartao, world, today: date) -> list[str]:
 
 
 def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, model: str = "",
-          only: str = "") -> tuple[list[Placar], dict]:
+          only: str = "", classes: frozenset[str] | None = None) -> tuple[list[Placar], dict]:
+    """Os cartões pelo motor. ``classes``: as classes ligadas que o juiz considera (todas, sem ela), para
+    ensaiar a config da loja ("informar" e "pedido", sem "encaminhar")."""
+    from .eval_battery import leitura_do_cardapio
+
+    with leitura_do_cardapio():
+        return _rodar(reader_for, today=today, max_calls=max_calls, max_usd=max_usd, model=model, only=only,
+                      classes=classes)
+
+
+def _rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, model: str, only: str,
+           classes: frozenset[str] | None) -> tuple[list[Placar], dict]:
     from conversational_commerce.ports import TrustedContext
     from conversational_commerce.testing.journeys import j4
 
@@ -264,9 +285,10 @@ def rodar(reader_for: Callable, *, today: date, max_calls: int, max_usd: float, 
                 resposta = "(sem resposta do motor)"
             bloqueios = {c.move: list(c.blocked_by) for c in (result.decision.candidates if result.decision else ())
                          if c.blocked_by and c.move not in result.chosen_moves}
-            # O mesmo juiz do turno vivo: com todas as classes ligadas, o turno sai pelo motor só se todo
+            # O mesmo juiz do turno vivo: com as classes ligadas, o turno sai pelo motor só se todo
             # molde usado tem a frase da Nice. Senão, no ar, ele sairia pelo caminho de hoje.
-            veredito = judge(result, enabled=frozenset(ACTION_CLASSES), approved=frozenset(nice_templates()))
+            veredito = judge(result, enabled=frozenset(ACTION_CLASSES) if classes is None else classes,
+                             approved=frozenset(nice_templates()))
             turnos.append(Turno(fala, resposta, list(result.chosen_moves), atos,
                                 understanding.reader.name if understanding else "-", ms, leitor.last_error,
                                 bloqueios, "" if veredito.eligible else veredito.reason))

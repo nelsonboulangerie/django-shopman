@@ -20,7 +20,8 @@ def test_repository_boundary_contract_matches_live_admin_registry() -> None:
     # +1 em 20/11/2026: a conferência do corpus anonimizado (#2851), em business-policy-configuration.
     # +1 em 21/11/2026: os atalhos da nota da cozinha com "vale para" (#2705), em business-policy-configuration.
     # +1 em 21/11/2026: o medidor das APIs pagas (#2509, DEV-2026-067), só leitura, em audit-ledgers.
-    assert len(live) == 109
+    # +1 em 24/11/2026: o "Separado" da Preparação (#3524, WP-F09a), só leitura, em audit-ledgers.
+    assert len(live) == 110
     assert len(custom_pages) == 7
     assert gate.validate_contract(
         contract,

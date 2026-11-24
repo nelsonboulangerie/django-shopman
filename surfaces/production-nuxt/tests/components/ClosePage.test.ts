@@ -15,6 +15,8 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
 const orders = ref<QCOrderCardProjection[]>([]);
 const previousOpen = ref({ count: 0, date: "" });
+// O fechar do lote: cada teste diz o que o servidor responde.
+const finish = vi.fn(async (..._args: unknown[]): Promise<Record<string, unknown>> => ({ ok: true }));
 const reviewQuality = vi.fn(async () => ({ ok: true }));
 const reviewQualityBatch = vi.fn(async () => ({ ok: true }));
 const concluded = vi.fn(async () => true);
@@ -125,7 +127,7 @@ function installGlobals() {
     error: ref(null),
     submitting: ref(false),
     refresh: vi.fn(),
-    finish: vi.fn(),
+    finish,
     quickFinish: vi.fn(),
     reviewQuality,
     reviewQualityBatch,
@@ -212,6 +214,12 @@ const QcCloseScreenStub = {
   },
   template: "<section data-qc-screen />",
 };
+const ShortageDialogStub = {
+  name: "ShortageDialog",
+  props: { shortage: { type: Object, default: null }, allowShortLot: Boolean },
+  emits: ["update:open", "confirm", "close-short-lot", "review"],
+  template: "<div data-shortage-dialog />",
+};
 const mountPage = () => {
   const wrapper = shallowMount(ClosePage, {
     global: {
@@ -220,6 +228,7 @@ const mountPage = () => {
         ProductionHeader: ProductionHeaderStub,
         OperatorRecordNav: OperatorRecordNavStub,
         QcCloseScreen: QcCloseScreenStub,
+        ShortageDialog: ShortageDialogStub,
       },
     },
   });
@@ -402,5 +411,74 @@ describe("Finalização — o lote mora na URL", () => {
 
     expect(navigate).toHaveBeenCalledWith({ path: "/close", query: {} }, { replace: true });
     expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(false);
+  });
+});
+
+// WP-F06 (decisão 1 do dono, 23/11/2026): rendeu menos que o encomendado, o lote
+// fecha com a verdade, na MESMA tentativa, e os pedidos vão para o Gestor.
+describe("Finalização — o lote curto fecha com a verdade", () => {
+  const recusa = {
+    code: "order_shortage",
+    work_order_ref: "WO-4",
+    idempotency_key: "k",
+    possibilities: [
+      { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "" },
+      { kind: "confirm", label: "Fechar com 4", enabled: true, proof: "assinada" },
+    ],
+    required: "6",
+    requested: "4",
+    order_refs: ["NB-1"],
+    orders: [{ ref: "NB-1", qty: "6" }],
+  };
+  const payload = {
+    quantity: "4",
+    partition: [{ quantity: "4", quality_grade_ref: "standard" }],
+    yield_deviation_confirmed: true,
+    yield_deviation_reason: "Massa fraca",
+    reason: "",
+  };
+
+  async function lotRefused() {
+    route.query = { lot: "4" };
+    finish.mockReset();
+    finish.mockResolvedValueOnce({ ok: false, shortage: recusa });
+    const wrapper = mountPage();
+    await flushPromises();
+    wrapper.findComponent({ name: "QcCloseScreen" }).vm.$emit("confirm", payload);
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("a recusa abre o diálogo que sabe fechar o lote curto", async () => {
+    const wrapper = await lotRefused();
+    const dialog = wrapper.findComponent({ name: "ShortageDialog" });
+
+    expect(dialog.props("shortage")).toEqual(recusa);
+    expect(dialog.props("allowShortLot")).toBe(true);
+  });
+
+  it("fechar com o que rendeu manda de novo o mesmo lote com a prova da recusa", async () => {
+    const wrapper = await lotRefused();
+    finish.mockResolvedValueOnce({ ok: true });
+
+    wrapper.findComponent({ name: "ShortageDialog" }).vm.$emit("close-short-lot", "assinada");
+    await flushPromises();
+
+    expect(finish).toHaveBeenCalledTimes(2);
+    const [first, second] = finish.mock.calls;
+    expect(second!.slice(0, 9)).toEqual(first!.slice(0, 9));
+    expect(second![9]).toBe("assinada");
+    expect(wrapper.findComponent({ name: "ShortageDialog" }).props("shortage")).toBeNull();
+  });
+
+  it("revisar quantidade fecha a recusa e devolve a contagem, sem fechar nada", async () => {
+    const wrapper = await lotRefused();
+
+    wrapper.findComponent({ name: "ShortageDialog" }).vm.$emit("review");
+    await flushPromises();
+
+    expect(finish).toHaveBeenCalledTimes(1);
+    expect(wrapper.findComponent({ name: "ShortageDialog" }).props("shortage")).toBeNull();
+    expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(true);
   });
 });

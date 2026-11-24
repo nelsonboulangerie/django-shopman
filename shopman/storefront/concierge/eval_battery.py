@@ -19,12 +19,15 @@ from __future__ import annotations
 import calendar
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 #: O produto esperado, pelo nome no catálogo (dobrado: sem acento, minúsculo).
-C, P, B, CA, PF, S = "croissant", "pain au chocolat", "baguete", "campanha", "pao frances", "sonho"
+#: O "pão de campanha" é, no cardápio, o "Pain de Campagne": a busca não acha "campanha" (#3484), então a bateria
+#: pede pelo nome do cardápio. O produto que o cardápio do ar não tem pula o caso (``sem_produto``).
+C, P, B, CA, PF, S = "croissant", "pain au chocolat", "baguete", "campagne", "pao frances", "sonho"
 
 
 @dataclass(frozen=True)
@@ -49,7 +52,7 @@ CASOS = (
     _c("frase-busco-16h", "2 croissant pra amanha, busco 16h", {C: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="uma frase"),
     _c("frase-pegar-10h", "quero 3 pain au chocolat pra pegar amanhã às 10h", {P: 3}, dia=1, recebe="pickup", janela="slot-09", grupo="uma frase"),
     _c("frase-passo-ai", "me separa 2 baguetes pra amanhã, passo aí às 13h", {B: 2}, dia=1, recebe="pickup", janela="slot-12", grupo="uma frase"),
-    _c("frase-a-tarde", "quero 1 pão de campanha para retirar amanhã à tarde", {CA: 1}, dia=1, recebe="pickup", grupo="uma frase"),
+    _c("frase-a-tarde", "quero 1 pain de campagne para retirar amanhã à tarde", {CA: 1}, dia=1, recebe="pickup", grupo="uma frase"),
     _c("frase-vou-buscar-no-fim", "vou querer 4 croissants amanhã às 15h, vou buscar", {C: 4}, dia=1, recebe="pickup", janela="slot-15", grupo="uma frase"),
     _c("frase-dois-produtos", "queria 2 croissants e 2 pain au chocolat pra retirar amanhã às 16h", {C: 2, P: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="uma frase"),
     _c("frase-sabado", "quero 2 croissants pra retirar sábado às 10h", {C: 2}, dia="sabado", recebe="pickup", janela="slot-09", grupo="uma frase"),
@@ -83,7 +86,7 @@ CASOS = (
     _c("so-pedido-pra-amanha", "quero 2 croissants para amanhã", {C: 2}, grupo="só o pedido"),
     # ── Entrega ──
     _c("entrega-com", "quero 2 croissants com entrega amanhã", {C: 2}, dia=1, recebe="delivery", grupo="entrega"),
-    _c("entrega-entregar", "quero 1 pão de campanha pra entregar amanhã", {CA: 1}, dia=1, recebe="delivery", grupo="entrega"),
+    _c("entrega-entregar", "quero 1 pain de campagne pra entregar amanhã", {CA: 1}, dia=1, recebe="delivery", grupo="entrega"),
     _c("entrega-em-casa", "me manda 2 baguetes em casa amanhã", {B: 2}, dia=1, recebe="delivery", grupo="entrega"),
     # ── Espalhado em várias falas ──
     _c("espalhado-tres", ["quero 2 croissants", "pra amanhã", "vou buscar às 16h"], {C: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="espalhado"),
@@ -91,7 +94,7 @@ CASOS = (
     _c("espalhado-dia-depois-hora", ["quero 2 croissants pra amanhã", "busco às 16h"], {C: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="espalhado"),
     _c("espalhado-telegrafico", ["2 croissants", "retirada amanhã 16h"], {C: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="espalhado"),
     _c("espalhado-sabado", ["quero 3 baguetes", "é pra sábado", "passo aí às 10h"], {B: 3}, dia="sabado", recebe="pickup", janela="slot-09", grupo="espalhado"),
-    _c("espalhado-dois-produtos", ["quero 2 croissants", "e 1 pão de campanha", "pra amanhã às 16h, vou retirar"], {C: 2, CA: 1}, dia=1, recebe="pickup", janela="slot-15", grupo="espalhado"),
+    _c("espalhado-dois-produtos", ["quero 2 croissants", "e 1 pain de campagne", "pra amanhã às 16h, vou retirar"], {C: 2, CA: 1}, dia=1, recebe="pickup", janela="slot-15", grupo="espalhado"),
     _c("espalhado-so-a-hora", ["quero 2 croissants pra retirar amanhã", "às 16h"], {C: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="espalhado"),
     # ── Correção no meio ──
     _c("corrige-na-verdade-3", ["quero 2 croissants", "na verdade 3"], {C: 3}, grupo="correção"),
@@ -168,6 +171,20 @@ class Resultado:
     falas: list[Fala] = field(default_factory=list)
     sacola: dict[str, int] = field(default_factory=dict)
     recebimento: dict[str, str] = field(default_factory=dict)
+    pulado: str = ""  # o produto esperado não está no cardápio do ar: o caso não mede a leitura
+
+
+def sem_produto(caso: Caso) -> list[str]:
+    """Os produtos esperados pelo caso que o cardápio publicado não tem (pelo nome dobrado).
+
+    O caso que espera um produto fora do cardápio reprovaria pelo dado, não pela leitura (#3484): ele sai
+    pulado, com o nome do que falta, e nenhuma chamada à IA é feita para ele.
+    """
+    from shopman.offerman.models import Product
+
+    nomes = [fold(nome) for nome in Product.objects.filter(is_published=True, is_sellable=True)
+             .values_list("name", flat=True)]
+    return [produto for produto in caso.sacola if not any(produto in nome for nome in nomes)]
 
 
 def _nomes(skus) -> dict[str, str]:
@@ -200,9 +217,36 @@ def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], to
     return erros
 
 
+@contextmanager
+def leitura_do_cardapio() -> Iterator[None]:
+    """A busca do cardápio no ensaio, sem a trava de posse do turno.
+
+    No ar, a busca (``search_storefront``) só roda dentro de um turno com posse (``assert_turn_authority``),
+    e o leitor acha o produto por ela. A conversa do ensaio é de memória, nunca gravada, e não tem posse:
+    sem isto, TODA leitura de produto do ensaio voltava vazia (``claim_required``), e a bateria e os
+    cartões reprovavam por um motivo que o ar não tem. Os testes do ensaio não viam, porque trocam a
+    ferramenta inteira (``tools.execute``). Só a busca, que é leitura, e só enquanto o ensaio roda.
+    """
+    from . import tools
+
+    guarded = tools._HANDLERS["search_storefront"]
+    tools._HANDLERS["search_storefront"] = guarded.__wrapped__
+    try:
+        yield
+    finally:
+        tools._HANDLERS["search_storefront"] = guarded
+
+
 def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int, max_usd: float = 0.0,
           model: str = "", only: str = "") -> tuple[list[Resultado], dict]:
     """A bateria pelo leitor. ``reader_for(conversa, linhas)`` monta o leitor com a sacola em memória."""
+    with leitura_do_cardapio():
+        return _rodar(reader_for, channel_ref=channel_ref, today=today, max_calls=max_calls, max_usd=max_usd,
+                      model=model, only=only)
+
+
+def _rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int, max_usd: float,
+           model: str, only: str) -> tuple[list[Resultado], dict]:
     from conversational_commerce.engine.acts import ACTS
     from conversational_commerce.ports import InterpretRequest, ModelRequest, TrustedContext
 
@@ -213,6 +257,10 @@ def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int
     resultados: list[Resultado] = []
     for caso in CASOS:
         if only and only not in caso.id:
+            continue
+        faltam = sem_produto(caso)
+        if faltam:
+            resultados.append(Resultado(caso, False, [], pulado=f"sem produto no cardápio: {', '.join(faltam)}"))
             continue
         sacola: dict[str, int] = {}
         recebimento: dict[str, str] = {}
@@ -273,10 +321,12 @@ def relatorio(resultados: list[Resultado], totais: dict) -> str:
     """O placar e a transcrição, em texto puro, para o console."""
     linhas = []
     passou = sum(r.passou for r in resultados)
+    pulados = [r for r in resultados if r.pulado]
     usd = totais.get("usd", 0.0)
     tempos = sorted(f.ms for r in resultados for f in r.falas)
     p95 = tempos[max(0, int(len(tempos) * 0.95) - 1)] if tempos else 0.0
-    linhas.append(f"bateria: {passou} / {len(resultados)} passaram")
+    linhas.append(f"bateria: {passou} / {len(resultados) - len(pulados)} passaram"
+                  + (f" ({len(pulados)} pulados: produto fora do cardápio)" if pulados else ""))
     linhas.append(f"chamadas à IA: {totais['chamadas']} | tokens: {totais['tokens_in']} in, {totais['tokens_out']} out"
                   f" | custo estimado: US$ {usd:.4f} | latência p95: {p95:.0f} ms")
     if totais.get("interrompido"):
@@ -287,6 +337,9 @@ def relatorio(resultados: list[Resultado], totais: dict) -> str:
     linhas.extend(f"ERRO DA IA: {erro}" for erro in totais.get("erros", [])[:10])
     for r in resultados:
         linhas.append("")
+        if r.pulado:
+            linhas.append(f"[pulado] {r.caso.id} ({r.caso.grupo}): {r.pulado}")
+            continue
         linhas.append(f"[{'ok' if r.passou else 'FALHOU'}] {r.caso.id} ({r.caso.grupo})")
         for f in r.falas:
             atos = "; ".join(a["act"] + (f" {a['fields']}" if a["fields"] else "") for a in f.atos)

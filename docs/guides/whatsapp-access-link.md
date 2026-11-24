@@ -276,6 +276,11 @@ POST /api/v1/auth/verify-code/   { "phone": "+55...", "code": "123456" }
   rate-limit por IP (10/min).
 - Token do access link: single-use, TTL 5 min, hash HMAC, exchange transacional
   (`select_for_update`). Ver `packages/doorman/.../services/access_link.py`.
+- Régua da loja no `create` (OC-09, `shopman/shop/views/access_link.py`): `ttl_minutes`
+  acima de 1440 (24 h) ou que não seja número é recusado com 400 `invalid_input`, sem
+  cunhar; `audience` fora de `web_general`/`web_checkout`/`web_account` também. O corpo
+  documentado acima não manda nenhum dos dois. A troca (`/a`) recusa audiência fora da
+  loja sem gastar o token.
 - Liberação da aba de origem: sob `sha256("doorman-origin:" + session_key)`, uso único,
   TTL do código. `claim` sem sessão ou de outra sessão responde `pending` e não revela
   nada. `revoke` apaga a sessão (`SESSION_ENGINE`) e desativa o `TrustedDevice`.

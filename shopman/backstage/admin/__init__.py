@@ -45,6 +45,7 @@ from shopman.backstage.admin.operation import (  # noqa: F401
 )
 from shopman.backstage.admin.operators import PinCredentialAdmin  # noqa: F401
 from shopman.backstage.admin.pos import POSTabAdmin  # noqa: F401
+from shopman.backstage.admin.prep_checklist import PrepChecklistMarkAdmin  # noqa: F401
 from shopman.backstage.admin.print_jobs import (  # noqa: F401
     PrintAgentCredentialAdmin,
     PrintJobAdmin,

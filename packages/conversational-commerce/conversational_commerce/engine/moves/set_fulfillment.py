@@ -98,7 +98,7 @@ def reply(state, need):
     receipt = state.receipts.get(need.need_id)
     if receipt is None:
         # Sem recibo neste turno (sombra): o espaço aponta um recibo que não existe e a verificação segura.
-        return PartSpec(MOVE, FALLBACK_TEMPLATE, {"ref": ("receipt", f"none.{need.need_id}")})
+        return PartSpec(MOVE, FALLBACK_TEMPLATE, {"noted": ("receipt", f"none.{need.need_id}")})
     if receipt.status == "failure":
         return PartSpec("inform_limitation", FAILED.template_id)
     if receipt.status != "success":
@@ -107,4 +107,4 @@ def reply(state, need):
     for template_id, slots in REPLY_TEMPLATES:
         if set(slots) <= present:
             return PartSpec(MOVE, template_id, dict.fromkeys(slots, ("receipt", receipt.command_id)))
-    return PartSpec(MOVE, FALLBACK_TEMPLATE, {"ref": ("receipt", receipt.command_id)})
+    return PartSpec(MOVE, FALLBACK_TEMPLATE, {"noted": ("receipt", receipt.command_id)})

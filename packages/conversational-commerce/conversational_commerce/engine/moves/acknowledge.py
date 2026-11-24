@@ -5,7 +5,7 @@ from __future__ import annotations
 from conversational_commerce.policy import Proposal
 from conversational_commerce.reply import PartSpec, Template
 
-from ..acts import ANSWER_ACTS, COURTESY_ACTS, DECLARATION_ACTS
+from ..acts import ANSWER_ACTS, CHANGE_ACTS, COURTESY_ACTS, DECLARATION_ACTS
 
 MOVE = "acknowledge"
 TEMPLATES = (
@@ -22,6 +22,11 @@ TEMPLATES = (
 def propose(state, need):
     if need.act not in COURTESY_ACTS | ANSWER_ACTS | DECLARATION_ACTS or state.answers_offer(need):
         return None  # o "sim" aos termos é confirmação: quem responde é o fechamento do pedido
+    if state.answers_condition(need) or state.declines_condition(need) or state.asks_condition_options(need):
+        return None  # o "sim" ou o "não" à condição pendente: quem responde é quem a cumpre, ou o fechamento
+    if need.act == "deny" and state.closing and any(
+            other.need_id != need.need_id and other.act in CHANGE_ACTS for other in state.needs):
+        return None  # "não, o do trabalho": o "não" é a correção, e quem responde é a mudança
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE, content={},
                     situation=state.situation(need, reply_only_courtesy=True))
 
@@ -30,7 +35,7 @@ def reply(state, need):
     if need.act in DECLARATION_ACTS:
         return PartSpec(MOVE, {"decline_offers": "acknowledge.declined_offers",
                                "accept_offers": "acknowledge.accepted_offers"}[need.act])
-    if state.declines_offer(need) and not state.effect_chosen:
+    if state.declines_terms(need) and not state.effect_chosen:
         return PartSpec(MOVE, "acknowledge.terms_declined")
     template = "acknowledge.got_it" if need.answers_question else "acknowledge.thanks"
     return PartSpec(MOVE, template)

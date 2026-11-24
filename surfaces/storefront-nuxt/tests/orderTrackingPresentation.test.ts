@@ -138,7 +138,7 @@ describe('trackingFreshness', () => {
 
 describe('rating thank-you & celebration', () => {
   const copy = {
-    rating_thanks_title: 'Obrigado!',
+    rating_thanks_title: 'Obrigada!',
     rating_thanks_celebrate: 'Ficamos muito felizes que você gostou.',
     rating_thanks: 'Valorizamos muito seu retorno.',
   }
@@ -156,21 +156,21 @@ describe('rating thank-you & celebration', () => {
 
   it('shows the warm line and confetti flag for a positive rating', () => {
     const view = ratingThanksView(copy, 5)
-    expect(view.title).toBe('Obrigado!')
+    expect(view.title).toBe('Obrigada!')
     expect(view.message).toBe('Ficamos muito felizes que você gostou.')
     expect(view.celebrate).toBe(true)
   })
 
   it('thanks soberly, without confetti, below the threshold', () => {
     const view = ratingThanksView(copy, 2)
-    expect(view.title).toBe('Obrigado!')
+    expect(view.title).toBe('Obrigada!')
     expect(view.message).toBe('Valorizamos muito seu retorno.')
     expect(view.celebrate).toBe(false)
   })
 
   it('falls back to canonical copy when the catalog is missing', () => {
     const view = ratingThanksView(null, 5)
-    expect(view.title).toBe('Obrigado!')
+    expect(view.title).toBe('Obrigada!')
     expect(view.message).toBe('Valorizamos muito seu retorno.')
     expect(view.celebrate).toBe(true)
   })

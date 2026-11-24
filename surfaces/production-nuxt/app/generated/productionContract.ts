@@ -917,9 +917,9 @@ export interface ProductionNotFoundErrorEnvelope {
   error: ProductionNotFoundErrorBody;
 }
 
-/** ProductionShortagePossibility(kind: "Literal['retry', 'force']", label: 'str', enabled: 'bool', proof: 'str') */
+/** ProductionShortagePossibility(kind: "Literal['retry', 'force', 'confirm']", label: 'str', enabled: 'bool', proof: 'str') */
 export interface ProductionShortagePossibility {
-  kind: "retry" | "force";
+  kind: "retry" | "force" | "confirm";
   label: string;
   enabled: boolean;
   proof: string;
@@ -950,7 +950,13 @@ export interface ProductionMaterialShortageErrorEnvelope {
   error: ProductionMaterialShortageErrorBody;
 }
 
-/** ProductionOrderShortageErrorBody(code: "Literal['order_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', required: 'str', requested: 'str', order_refs: 'tuple[str, ...]') */
+/** ProductionOrderShortageLine(ref: 'str', qty: 'str') */
+export interface ProductionOrderShortageLine {
+  ref: string;
+  qty: string;
+}
+
+/** ProductionOrderShortageErrorBody(code: "Literal['order_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', required: 'str', requested: 'str', order_refs: 'tuple[str, ...]', orders: 'tuple[ProductionOrderShortageLine, ...]') */
 export interface ProductionOrderShortageErrorBody {
   code: "order_shortage";
   work_order_ref: string;
@@ -959,6 +965,7 @@ export interface ProductionOrderShortageErrorBody {
   required: string;
   requested: string;
   order_refs: string[];
+  orders: ProductionOrderShortageLine[];
 }
 
 /** ProductionOrderShortageErrorEnvelope(detail: 'str', error: 'ProductionOrderShortageErrorBody') */
@@ -1009,6 +1016,7 @@ export interface ProductionStartMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+  short_lot_proof?: string;
   quantity: string;
   position_id?: string;
   operator_ref?: string;
@@ -1055,6 +1063,7 @@ export interface ProductionFinishMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+  short_lot_proof?: string;
   override_proof?: string;
   quantity: string;
   force?: boolean;

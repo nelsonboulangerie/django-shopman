@@ -1,4 +1,5 @@
 import type { HomeNoticeProjection, OmotenashiProjection, OpeningHoursEntry, PublicConfigProjection, ShopProjection, ShopStatusProjection } from '~/types/shopman'
+import { removeCheckoutDraft } from '~/utils/checkoutDraft'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 interface ShopSessionState {
@@ -157,10 +158,12 @@ export function useShopSession () {
     state.value = { ...state.value, welcomeAsksMarketing: false, marketingPromptAnswered: true }
   }
 
+  // Sair da conta (e excluir a conta) passa por aqui: o que este navegador guardou
+  // da pessoa vai junto, para o próximo a usar o aparelho encontrar o checkout vazio.
   function reset () {
     if (import.meta.client) {
+      removeCheckoutDraft()
       try {
-        localStorage.removeItem('shopman-checkout-draft')
         for (const key of Object.keys(sessionStorage)) {
           if (key.startsWith('shopman-intention:')) sessionStorage.removeItem(key)
         }
