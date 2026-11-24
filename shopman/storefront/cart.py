@@ -183,6 +183,32 @@ class CartService:
             return False
 
     @staticmethod
+    def release_customer_pricing(request: HttpRequest) -> bool:
+        """Quem sai deixa a sacola, não o preço dela (OC-09).
+
+        O avesso de ``ensure_customer_pricing``: roda no logout, que é comando. A
+        sacola preservada perde a identidade de preço de quem saiu e é reprecificada
+        pelo mesmo ``reprice`` do login, então o próximo a usar o navegador lê o
+        preço público. Sem sacola, ou sacola já anônima, sai sem escrever nada.
+        Devolve ``True`` quando reprecificou.
+        """
+        session_key = CartService._get_session_key(request)
+        if not session_key:
+            return False
+        from shopman.shop.services import sessions as session_service
+
+        try:
+            if not session_service.release_customer(session_key=session_key, channel_ref=CHANNEL_REF):
+                return False
+            cart_mutations.reprice(session_key=session_key, channel_ref=CHANNEL_REF)
+            return True
+        except Exception:
+            # O sair nunca falha por isto, e o log grita: a sessão de quem saiu já
+            # acabou; o que sobra é o preço dela na sacola até o próximo login.
+            logger.error("cart.release_customer_pricing_failed", exc_info=True)
+            return False
+
+    @staticmethod
     def _get_or_create_session(request: HttpRequest) -> tuple[Session, str]:
         """Return (cart_session, session_key). Creates if needed."""
         cart_session, session_key = cart_mutations.get_or_create_session(

@@ -9,6 +9,15 @@ import type { CheckoutFormState } from '~/utils/checkoutPayload'
 export const CHECKOUT_DRAFT_KEY = 'shopman-checkout-draft'
 export const CHECKOUT_DRAFT_TTL = 6 * 60 * 60 * 1000
 
+// Apaga o rascunho. Um caminho só para os dois que apagam: o checkout (pedido
+// enviado, rascunho vencido) e o sair da conta (`useShopSession().reset()`), que é
+// onde o celular emprestado deixava nome, telefone e endereço para o próximo
+// (OC-09). O acesso ao storage fica dentro do try: navegador com dado de site
+// bloqueado lança já no `localStorage`.
+export function removeCheckoutDraft (): void {
+  try { globalThis.localStorage?.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* storage indisponível */ }
+}
+
 const ADDRESS_LABEL_KEYS: readonly AddressLabelKey[] = ['home', 'work', 'other']
 
 export interface RestoredCheckoutDraft {

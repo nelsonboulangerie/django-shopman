@@ -16753,6 +16753,7 @@
             "assign_phone_handle",
             "finalize_phone_handle",
             "assign_customer",
+            "release_customer",
             "assign_handle",
             "abandon_session"
           ]
