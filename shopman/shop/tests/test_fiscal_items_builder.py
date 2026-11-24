@@ -22,6 +22,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.handlers.fiscal import NFCeEmitHandler
 from shopman.shop.models import Channel
 from shopman.shop.services import fiscal as fiscal_service
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 pytestmark = pytest.mark.django_db
 
@@ -35,7 +36,7 @@ class StubFiscalBackend:
     """Backend fiscal só para o pool não estar vazio (``fiscal.emit`` é no-op sem backend)."""
 
     def emit(self, **kwargs):
-        return FiscalDocumentResult(success=True, access_key="x", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         return FiscalDocumentResult(success=False)

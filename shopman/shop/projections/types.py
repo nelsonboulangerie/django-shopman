@@ -104,6 +104,10 @@ class Action:
     #   "none"               — repetir e inofensivo; exige justificativa na allowlist
     idempotency: str = "required"
     confirmation: dict[str, Any] = field(default_factory=dict)
+    # O que a acao `kind="copy"` copia (o copia-e-cola do Pix). Sem ele, quem nao
+    # tem botao de copiar (a conversa) so tinha o `href`, e o rotulo "Copiar
+    # codigo Pix" virava um link para a pagina do pedido (X3, OC-05).
+    value: str = ""
 
 
 @dataclass(frozen=True)

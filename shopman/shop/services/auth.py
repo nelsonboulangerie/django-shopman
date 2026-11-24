@@ -54,6 +54,107 @@ def identity_by_customer_ref(customer_ref: str):
         return None
 
 
+# ── Número que muda de dono (D3, OC-07) ──────────────────────────────
+#
+# O número prova a posse do chip, nunca a pessoa: a operadora recicla. Três peças
+# moram aqui, a ponte entre a loja/Concierge e o Guestman (a superfície não fala
+# com o kernel direto): o frescor da prova do número, o "não sou eu" e o aviso de
+# que um número saiu de um cadastro.
+
+#: Acesso de número sem uso verificado há mais disto volta a pedir prova (D3b).
+#: "Uso verificado" é o que o Guestman registra ao confirmar o número
+#: (``ContactPoint.verified_at``): o código no número (login ou confirmação) o renova;
+#: a mensagem que só chega pelo canal, não.
+NUMBER_PROOF_MAX_AGE_DAYS = 365
+
+
+def number_proof_expired(*, phone: str, customer_ref: str = "", customer_uuid=None, now=None) -> bool:
+    """A prova do número NESTE cadastro existiu e venceu (mais de 12 meses, D3b).
+
+    "Uso verificado" é o que o Guestman registra ao confirmar o número
+    (``ContactPoint.verified_at``): o código no número (login ou confirmação) renova;
+    a mensagem que só passa pelo canal, não. Número sem prova nenhuma registrada não
+    "venceu": quem decide o contato nunca verificado é o OC-08 (D4).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Max
+    from django.utils import timezone
+    from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services.identity import PHONE_FAMILY
+    from shopman.utils.phone import normalize_phone
+
+    normalized = normalize_phone(phone or "")
+    if not normalized or not (customer_ref or customer_uuid):
+        return False
+    owner = {"customer__uuid": customer_uuid} if customer_uuid else {"customer__ref": customer_ref}
+    latest = ContactPoint.objects.filter(
+        **owner,
+        type__in=PHONE_FAMILY,
+        value_normalized=normalized,
+        is_verified=True,
+    ).aggregate(latest=Max("verified_at"))["latest"]
+    if latest is None:
+        return False
+    return latest < (now or timezone.now()) - timedelta(days=NUMBER_PROOF_MAX_AGE_DAYS)
+
+
+def release_number_not_me(*, customer_uuid, phone: str) -> list[str]:
+    """"Não sou eu / troquei de número" (D3d): o número sai do cadastro em que ele caiu.
+
+    Quem chama provou a posse de ``phone`` (está numa sessão aberta por ele) e diz que
+    a conta não é dela. O número deixa de ser desta conta: chaves de login, assinante
+    do WhatsApp e conversa se desligam (``contact_reassigned``). Só o número desta
+    conta sai; número de outro cadastro não é tocado. Devolve os refs que perderam o
+    número (vazio quando o número não era desta conta).
+    """
+    from django.db import transaction
+    from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services import identity as identity_service
+    from shopman.utils.phone import normalize_phone
+
+    normalized = normalize_phone(phone or "")
+    if not normalized or not customer_uuid:
+        return []
+    with transaction.atomic():
+        owns = ContactPoint.objects.filter(
+            customer__uuid=customer_uuid,
+            type__in=identity_service.PHONE_FAMILY,
+            value_normalized=normalized,
+        ).exists()
+        if not owns:
+            return []
+        return identity_service.release_reassigned_contact(
+            normalized, source=identity_service.SOURCE_CUSTOMER_NOT_ME,
+        )
+
+
+def release_reassigned_number(phone: str, *, source: str) -> list[str]:
+    """Porta de entrada do sinal de troca de dono vindo de um provedor (D3c).
+
+    Nenhum provedor está ligado ainda (aviso de troca de identidade da Meta, API de
+    reciclagem das operadoras): quem integrar um chama esta função com o número e o
+    próprio nome em ``source``. Ver a issue ficou-de-fora de OC-07.
+    """
+    from shopman.guestman.services import identity as identity_service
+
+    return identity_service.release_reassigned_contact(phone, source=source)
+
+
+def on_number_left(receiver) -> None:
+    """Registra ``receiver(customer_ref, phone)`` para quando um número sai de um cadastro.
+
+    É como a Concierge, que é superfície, escuta o ``contact_reassigned`` do Guestman
+    sem importar o kernel.
+    """
+    from shopman.guestman.signals import contact_reassigned
+
+    def _receiver(sender, customer_ref="", value="", **kwargs):
+        receiver(customer_ref, value)
+
+    contact_reassigned.connect(_receiver, weak=False, dispatch_uid=f"shop_number_left:{receiver.__module__}.{receiver.__qualname__}")
+
+
 def identify_manychat_subject(subject: str):
     """Resolve/upsert a ManyChat subject through the opt-in Guestman bridge."""
     from shopman.guestman.adapters.auth import ManychatIdentityBridge

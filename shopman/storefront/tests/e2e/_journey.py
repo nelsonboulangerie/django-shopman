@@ -183,7 +183,10 @@ def make_customer(
     }
     if price_tier is not None:
         fields["price_tier"] = price_tier
-    return Customer.objects.create(**fields)
+    from shopman.storefront.tests.identity_fakes import proven
+
+    # A cliente da jornada já provou o telefone e o e-mail (OC-08).
+    return proven(Customer.objects.create(**fields))
 
 
 def authenticate(client: Client, customer) -> None:

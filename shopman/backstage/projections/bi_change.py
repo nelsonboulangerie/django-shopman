@@ -302,7 +302,8 @@ def _habit() -> tuple[ChangeHabit | None, ChangeMix | None, str]:
     unmeasured = 0
     # O adaptador nativo direto, não a composição: aqui a escolha de fonte é a
     # pergunta, e passar pela conciliação só traria histórico para descartar.
-    native, _cancelled = orderman.read_sales(local_window(since, until))
+    # O troco é do balcão, no dia em que o dinheiro entrou: recorte pela criação.
+    native, _cancelled = orderman.read_sales(local_window(since, until), by_created=True)
     for sale in native:
         if not sale.is_cash:
             continue
