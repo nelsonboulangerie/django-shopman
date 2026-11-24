@@ -38,7 +38,7 @@
         "backstage.aliasbenchmarkreport", "backstage.bialertevent", "backstage.biscenarioreport",
         "backstage.dailysalesfact", "backstage.dayclosing", "backstage.historicalsale",
         "backstage.importbatch", "backstage.incidentaction", "backstage.operationchecklistrun", "backstage.operationepisode",
-        "backstage.operatoralert", "backstage.printjob", "backstage.recipeversionrating",
+        "backstage.operatoralert", "backstage.prepchecklistmark", "backstage.printjob", "backstage.recipeversionrating",
         "backstage.signinevent", "customer_merge.mergeaudit", "orderman.directive", "orderman.order",
         "orderman.session", "payman.paymentintent", "shop.aiinvocation", "shop.aispendday", "shop.audiencesnapshot", "shop.contactrelease", "shop.conversationaldecision",
         "shop.conversationaloutcome", "shop.instanceapplyrecord",

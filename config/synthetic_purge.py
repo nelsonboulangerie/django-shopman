@@ -345,6 +345,7 @@ POLICY: dict[str, Rule] = {
     "backstage.OvenRun": _purge("produção do ensaio"),
     "backstage.BlindPrepCode": _purge("produção do ensaio"),
     "backstage.PlanCarryNote": _purge("produção do ensaio"),
+    "backstage.PrepChecklistMark": _purge("produção do ensaio"),
     "backstage.DayClosing": _purge("fechamento do ensaio"),
     "backstage.OperationChecklistRun": _purge("rotina do ensaio"),
     "backstage.OperationTaskRun": _purge("rotina do ensaio"),

@@ -356,6 +356,7 @@ from .print_jobs import (
     ProductionWeighingPrintJobCreateView,
 )
 from .product_promise import CatalogPromiseView, ProductPromiseView
+from .production_checklist import ProductionPrepChecklistView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
@@ -576,6 +577,11 @@ urlpatterns = [
         "production/mise-en-place/",
         ProductionMiseEnPlaceView.as_view(),
         name="api-backstage-production-mise-en-place",
+    ),
+    path(
+        "production/mise-en-place/marks/",
+        ProductionPrepChecklistView.as_view(),
+        name="api-backstage-production-prep-checklist",
     ),
     path(
         "production/weighing/",
