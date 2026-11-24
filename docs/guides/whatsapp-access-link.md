@@ -323,11 +323,13 @@ se cria outra (ADR-042). Ligar é decisão da Coordenação, e muda o app vivo:
    (env de runtime: sem rebuild).
 5. Espelhar o valor em `.do/app.alpha-subdomains.yaml` num PR, para o drift não acusar.
 
-⚠️ A chave liga as duas pontas: a Nice (este fluxo) **e** os gestos da loja do OC-16
-("Continuar pelo WhatsApp", "Trazer para cá"), que aparecem a todo cliente da loja
-quando a Concierge está atendendo. A mensagem de "Continuar pelo WhatsApp" só chega à
-Nice para quem está na coorte (`CONCIERGE_ALLOWED_SUBSCRIBERS`). Desligar é o passo 3
-com `'false'`.
+⚠️ A chave liga as duas pontas: a Nice (este fluxo) **e** os gestos da loja do OC-16.
+"Continuar pelo WhatsApp" só aparece (e a API só aceita) para quem a Nice atende: cliente
+com vínculo na coorte (`CONCIERGE_ALLOWED_SUBSCRIBERS`), ou todo visitante quando a Nice
+atender todos (o mesmo predicado da home, OC-06). "Trazer a sacola do WhatsApp" só aparece
+quando há sacola aberta na conversa. Desligar é o passo 3 com `'false'`.
+
+Estado: ligada no alpha em 24/11/2026 pela Coordenação (decisão do dono, DEV-2026-085).
 
 ## Degradação da sacola (handoff_expired)
 
