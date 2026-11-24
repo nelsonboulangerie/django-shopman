@@ -166,6 +166,14 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "change_cart.done_receipt": "{done}, a sacola foi atualizada.",
     "set_fulfillment.updated": "{noted}, atualizei o recebimento.",
     "commit_order.done_order": "Pedido {order} registrado. Acompanhar: {track}",
+    # O endereço do cadastro (#3421): a MESMA oferta de hoje (``address.saved_offer``), e a pergunta de hoje.
+    "present_terms.needs_delivery_address_saved": "Entregamos no endereço do seu cadastro, {delivery_address_saved}?",
+    "present_terms.needs_delivery_address_saved_many": ("Entregamos no endereço do seu cadastro, "
+                                                        "{delivery_address_saved}? Se preferir outro endereço "
+                                                        "cadastrado, é só dizer qual."),
+    "present_terms.needs_delivery_address_saved_declined": ("Qual é o endereço da entrega? Pode enviar a "
+                                                            "localização pelo WhatsApp ou escrever rua, número, "
+                                                            "bairro e CEP."),
     # As esperas (#3328), aprovadas em 23/11.
     "effect.pending": "Ainda estou concluindo isso. Te confirmo por aqui até {deadline}.",
     "wait.overdue": "Desculpe a demora. Até {deadline}, {owner} te responde por aqui.",

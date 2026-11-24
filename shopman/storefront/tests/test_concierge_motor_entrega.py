@@ -74,17 +74,24 @@ def test_delivery_without_address_asks_the_address_before_the_payment(conversati
     assert list(value["delivery_address"]) == []
 
 
-def test_who_has_a_saved_address_hears_it_first_by_today_closing(conversation, monkeypatch):
-    """Decisão do dono (25/09): o endereço cadastrado vem antes de qualquer pergunta. O motor não pergunta
-    o endereço novo; a condição é outra, sem molde da Nice, e o turno segue o fechamento de hoje."""
+def test_who_has_a_saved_address_hears_it_first(conversation, monkeypatch):
+    """Decisão do dono (25/09): o endereço cadastrado vem antes de qualquer pergunta. A condição é outra
+    (``delivery_address_saved``), com os endereços do cadastro por referência opaca, o padrão primeiro (#3421)."""
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
     from shopman.guestman.services import address as address_service
 
     conversation.customer_ref = "cust-1"
     conversation.save(update_fields=["customer_ref"])
-    monkeypatch.setattr(address_service, "addresses", lambda ref: [object()] if ref == "cust-1" else [])
-    missing, _ = _missing(fulfillment_type="delivery", payment={"method": "pix"})
+    when = datetime(2026, 11, 1, tzinfo=UTC)
+    saved = [SimpleNamespace(pk=3, is_default=False, updated_at=when), SimpleNamespace(pk=8, is_default=True,
+                                                                                         updated_at=when)]
+    monkeypatch.setattr(address_service, "addresses", lambda ref: saved if ref == "cust-1" else [])
+    missing, value = _missing(fulfillment_type="delivery", payment={"method": "pix"})
     assert missing == ["delivery_address_saved"]
-    assert "present_terms.needs_delivery_address_saved" not in turn_framework.nice_templates()
+    assert list(value["delivery_address_saved"]) == ["saved-address:sess-1:8", "saved-address:sess-1:3"]
+    assert "present_terms.needs_delivery_address_saved" in turn_framework.nice_templates()
 
 
 def test_a_customer_book_that_cannot_be_read_holds_the_close(conversation, monkeypatch):

@@ -52,8 +52,10 @@ Para isso, cada porta devolve:
 - **`requirements(cart_ref)`**: `Known(value={"missing": [código, ...], <código>: [opção, ...]})`, as
   condições obrigatórias dos termos ainda ausentes, NA ORDEM do fechamento (o endereço da entrega antes
   do pagamento), e as opções do canal para cada uma, nunca do texto. Códigos: `delivery_address` (sem
-  opções: lista vazia), `delivery_address_details` (o que falta no endereço, em palavras da casa),
-  `delivery_complement` (lista vazia) e `payment_method`. Código que o pacote não conhece pergunta pelo
+  opções: lista vazia), `delivery_address_saved` (os endereços do cadastro do sujeito, por referência
+  opaca, o padrão primeiro), `delivery_address_details` (o que falta no endereço, em palavras da casa),
+  `delivery_complement` (lista vazia) e `payment_method`. Com mais de uma opção, o molde
+  `present_terms.needs_<código>_many` pergunta, quando existe. Código que o pacote não conhece pergunta pelo
   molde genérico (`present_terms.needs`, `{missing}`). Com algo faltando, o `present_terms` não apresenta os
   termos: pergunta pela condição (spec 06, `present_terms.needs_<código>`). O arnês confere a forma.
 - **Comando `set_payment`**: `parameters={"method"}`, uma das formas de `requirements`; o executor recusa

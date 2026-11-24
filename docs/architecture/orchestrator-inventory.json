@@ -3110,7 +3110,8 @@
             "address_ref",
             "conversation_payment_methods",
             "instant",
-            "logger"
+            "logger",
+            "saved_address_ref"
           ]
         }
       ]

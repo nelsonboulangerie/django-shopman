@@ -87,6 +87,15 @@ novo, como a mudança com termos no ar (`changed_under_offer`): o `present_terms
 condição ou apresenta os termos, sem o cliente repetir "pode fechar". Termos apresentados com a
 pergunta de confirmação tiram o fechamento pendente do ar.
 
+**A condição que se responde com sim ou não.** O movimento que cumpre uma condição pode declará-la
+respondível por sim ou não (`ANSWERS_CONDITIONS`; hoje `set_delivery_address` declara
+`delivery_address_saved`, "entregamos no endereço do cadastro?"). Com o fechamento pedindo essa
+condição e o fato oferecendo opções, o "sim" (`answers_condition`) aceita a primeira (o comando leva a
+referência opaca dela, nunca o texto) e volta aos termos como a mudança material; o "não"
+(`declines_condition`) não desiste do pedido: o `present_terms` pergunta pelo que falta sem a opção
+(`present_terms.needs_<código>_declined`), e a próxima fala responde. A forma de pagamento não é
+condição de sim ou não: o "sim" à pergunta da forma não escolhe nada.
+
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
 `ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6), e o F9 os de
 compromisso (`09-commitments.md`, seção 4), e o F10 a recomendação (`10-outcomes.md`, seção 1).
