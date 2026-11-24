@@ -274,6 +274,27 @@ def test_a_name_far_from_the_menu_does_not_become_a_product(conversation, strict
     assert model_reader.spelled_name("brioch", ["Brioche", "Brioches"]) == ""  # dois perto demais: ninguém escolhe
 
 
+BAGUETTES = [{"sku": "TRADI", "name": "Baguette de Tradition", "can_order": True},
+             {"sku": "BGL", "name": "Baguete Lanche", "can_order": True}]
+
+
+def test_two_close_names_never_become_a_silent_choice(conversation, cart, monkeypatch):
+    """Coordenação (24/11): "baguete" com "Baguette de Tradition" e "Baguete Lanche" no cardápio. A busca devolve
+    as duas, ou o erro de digitação ("bagete") não acha nenhuma: nos dois casos o item fica em aberto (o turno
+    pergunta qual), e nem a busca nem o nome parecido escolhem por ele."""
+    from shopman.storefront.concierge import tools
+
+    monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": list(BAGUETTES)})
+    monkeypatch.setattr(model_reader, "menu_names", lambda channel_ref: [b["name"] for b in BAGUETTES])
+    ai = FakeAI([{"act": "change_quantity", "span": "2 baguetes", "product": "baguetes", "qty": 2, "change": "set"}])
+    assert _fields(_read("quero 2 baguetes", ai)[0]) == [("change_quantity", {"quantity": "2"})]
+
+    monkeypatch.setattr(tools, "execute", lambda name, args, ctx: {"ok": True, "items": []})
+    ai = FakeAI([{"act": "change_quantity", "span": "2 bagetes", "product": "bagetes", "qty": 2, "change": "set"}])
+    assert _fields(_read("quero 2 bagetes", ai)[0]) == [("change_quantity", {"quantity": "2"})]
+    assert model_reader.spelled_name("bagete", [b["name"] for b in BAGUETTES]) == ""
+
+
 def test_swap_puts_the_new_product_in_the_same_quantity_and_takes_the_old_one_out(conversation, menu, cart):
     """ "troca por pain au chocolat" depois de 2 croissants: o croissant ficava e o novo vinha sem quantidade."""
     cart.append({"sku": "CROISSANT", "name": "Croissant", "qty": 2})
