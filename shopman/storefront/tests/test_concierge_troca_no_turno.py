@@ -243,21 +243,6 @@ def _delivery_turn(conversation, monkeypatch, event_id):
 
 
 @pytest.mark.django_db(transaction=True)
-def test_delivery_for_a_customer_with_a_saved_address_goes_to_today_path(order_on_air, outbox, monkeypatch):
-    """O fechamento de hoje oferece primeiro o endereço do cadastro (dono, 25/09) e entende o "sim"; o motor ainda
-    não. O turno que escolhe entrega, com endereço salvo e nenhum na sacola, é do caminho de hoje."""
-    from shopman.storefront.concierge import address
-
-    monkeypatch.setattr(address, "saved_addresses", lambda ref: [object()])
-    why, today = [], turn_framework.today_closing_does_better
-    monkeypatch.setattr(turn_framework, "today_closing_does_better",
-                        lambda conv, rehearsal: why.append(today(conv, rehearsal)) or why[-1])
-    seen = _delivery_turn(order_on_air, monkeypatch, "entrega-salvo-1")
-    assert why == ["saved_address_offer"] and seen == [None]  # a sombra aprovou, e o motor deu a vez ao de hoje
-    assert outbox.sent and all("send_key" not in (reply.envelope or {}) for reply in _replies(order_on_air))
-
-
-@pytest.mark.django_db(transaction=True)
 def test_delivery_without_a_saved_address_stays_with_the_engine(order_on_air, outbox, monkeypatch):
     from shopman.storefront.concierge import address
 
@@ -363,3 +348,90 @@ def test_the_order_through_the_engine_sends_the_pix_apart_like_today(order_on_ai
     assert last is not None and last.chosen_moves == ["commit_order"], [(r and r.chosen_moves) for r in seen]
     assert outbox.sent[-2].startswith("Pedido ORD-PIX-1 registrado.")  # a confirmação do motor
     assert outbox.sent[-1] == PIX_CODE  # e o Pix, separado, logo depois
+
+
+
+# ── #3421: o endereço do cadastro pelo motor ────────────────────────────────────────────────────
+
+
+def _saved(pk, route, number, tag, *, default=False):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    return SimpleNamespace(pk=pk, is_default=default, updated_at=datetime(2026, 11, 1, tzinfo=UTC), route=route,
+                           street_number=number, neighborhood="Centro", formatted_address=f"{route}, {number}",
+                           label="other", label_custom=tag, display_label=tag)
+
+
+def _saved_flow(conversation, monkeypatch, script, saved):
+    """A sacola com pão, entrega e Pix; o cadastro do cliente; a leitura e a gravação do recebimento da casa."""
+    from shopman.guestman.services import address as address_service
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import address, model_reader, tools
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    monkeypatch.setattr(address_service, "addresses", lambda ref: list(saved))
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: sorted(
+        saved, key=lambda item: (not item.is_default, -item.updated_at.timestamp(), item.pk)))
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    written = []
+
+    def house_writes(ctx, **said):
+        written.append(said)
+        tools._set_session_data(ctx, ctx.conversation.session_key, {
+            "delivery_address": "Rua do Cadastro, 10 - Centro",
+            "delivery_address_structured": {"formatted_address": "Rua do Cadastro, 10 - Centro",
+                                            "route": "Rua do Cadastro", "street_number": "10",
+                                            "neighborhood": "Centro", "city": "Londrina", "state_code": "PR",
+                                            "postal_code": "86010-000", "latitude": -23.3, "longitude": -51.1,
+                                            "complement": ""}})
+        return {"ok": True}
+
+    monkeypatch.setattr(tools, "set_fulfillment", house_writes)
+    Session.objects.create(session_key="sess-salvo", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
+                           data={"fulfillment_type": "delivery", "payment": {"method": "pix"}})
+    conversation.session_key = "sess-salvo"
+    conversation.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(conversation, said, f"salvo-{index}")
+            service.run_turn(conversation.pk, _binding(conversation).pk)
+    return written
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_saved_address_is_offered_with_today_phrase_and_yes_takes_it(order_on_air, outbox, monkeypatch):
+    from shopman.storefront.concierge.address import saved_offer
+
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True)]
+    script = {"pode fechar": [{"act": "place_order"}], "sim": [{"act": "affirm"}]}
+    written = _saved_flow(order_on_air, monkeypatch, script, saved)
+    assert outbox.sent[0] == saved_offer(saved) == "Entregamos no endereço do seu cadastro, Rua do Cadastro, 10 - Centro?"
+    assert written and written[0].get("use_saved_address") is True  # o "sim" grava o endereço do cadastro
+    # O "sim" volta ao resumo, com o endereço do cadastro na linha da entrega, pronto para o "sim" do pedido.
+    assert "Entrega\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1] and outbox.sent[1].endswith("Posso registrar?")
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_to_the_saved_address_asks_today_question_and_keeps_the_close(order_on_air, outbox, monkeypatch):
+    from shopman.storefront.concierge.service import copy_message
+
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True)]
+    script = {"pode fechar": [{"act": "place_order"}], "não": [{"act": "deny"}]}
+    written = _saved_flow(order_on_air, monkeypatch, script, saved)
+    assert outbox.sent[1] == copy_message("CONCIERGE_CLOSE_ASK_ADDRESS").strip() and written == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_with_two_saved_addresses_the_name_chooses_one(order_on_air, outbox, monkeypatch):
+    from shopman.storefront.concierge.address import saved_offer
+
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True), _saved(9, "Avenida Brasil", "200", "Trabalho")]
+    script = {"pode fechar": [{"act": "place_order"}], "o do trabalho": [{"act": "give_address"}]}
+    written = _saved_flow(order_on_air, monkeypatch, script, saved)
+    assert outbox.sent[0] == saved_offer(sorted(saved, key=lambda item: not item.is_default))
+    assert written and written[0].get("saved_address_label") == "Trabalho"
