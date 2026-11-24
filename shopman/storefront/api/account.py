@@ -549,10 +549,6 @@ class ProfileView(ServerTimingMixin, APIView):
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
 
-        refused = _number_access_refused(request)
-        if refused is not None:
-            return refused
-
         payload = request.data if hasattr(request, "data") else {}
         # Nomes vao para o ticket do KDS/pedido: sanitiza controle/bidi e limita
         # o comprimento antes de persistir (clean_name), nao so ``.strip()``.
@@ -603,6 +599,18 @@ class ProfileView(ServerTimingMixin, APIView):
                     birthday = date_type.fromisoformat(birthday_raw)
                 except ValueError:
                     birthday = None
+
+        # Trocar nome ou aniversário é troca de dado (D3a): a sessão que só conhece o
+        # número confirma antes. Salvar o formulário sem mudar nada não é troca.
+        profile_changes = (
+            first_name != (customer.first_name or "")
+            or (last_name is not UNSET and last_name != (customer.last_name or ""))
+            or (birthday is not UNSET and birthday != getattr(customer, "birthday", None))
+        )
+        if profile_changes:
+            refused = _number_access_refused(request)
+            if refused is not None:
+                return refused
 
         intent = ProfileUpdateIntent(
             first_name=first_name,
