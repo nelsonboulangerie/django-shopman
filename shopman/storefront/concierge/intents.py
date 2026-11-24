@@ -666,6 +666,8 @@ class PartReply:
     verifying: bool = False
     memo: dict = field(default_factory=dict)
     tool_events: list[dict] = field(default_factory=list)
+    #: Mensagens próprias que seguem a resposta (o código Pix da consulta, para copiar).
+    extra_replies: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1311,6 +1313,47 @@ def _self_cancel(conversation, act: Act) -> str:
         return ""
 
 
+#: As partes em que "manda outro Pix", "o Pix venceu" ou "quero pagar com cartão" aparecem:
+#: a consulta de pedido, a reclamação de pagamento, o "quero pagar com…" que a regra local
+#: lê como pedido e a parte que não se encaixou (OC-12).
+REPAY_ACTS = frozenset({STATUS, COMPLAINT, ORDER, UNKNOWN})
+
+
+def _repayment(conversation, act: Act, *, context) -> PartReply | None:
+    """Pagar de novo ou de outra forma pela conversa (OC-12, ``tools.repay_order``).
+
+    ``None`` quando a fala não pede pagamento, quando a conversa não tem a autoridade de
+    pagar (a de sacola, ``tools.PAYMENT_TOOLS``; sem ela, vale a consulta de sempre) ou
+    quando não há pedido do cliente. Fora da consulta, a Nice só fica com a parte quando
+    ela é sobre um pedido que ainda pede pagamento: o pedido com produto ("quero 2
+    croissants e pago com Pix") é da sacola, e a reclamação de pagamento só fica com ela se
+    resolver (a cobrança de pé, refeita ou trocada); recusada, segue para a equipe.
+    """
+    from . import tools as tools_module
+
+    if act.act not in REPAY_ACTS or conversation is None or not _cart_authorized(conversation):
+        return None
+    if act.act == ORDER and act.product:
+        return None
+    method = tools_module.payment_request(act.span)
+    if method is None:
+        return None
+    result = tools_module.execute("repay_order", {"method": method}, context(act.span))
+    if not result.get("ok") or not result.get("order_ref"):
+        return None
+    if act.act == COMPLAINT and not result.get("payable"):
+        return None
+    if act.act in {ORDER, UNKNOWN} and not result.get("orders"):
+        return None
+    return PartReply(
+        act, text=tools_module.render_result("repay_order", result),
+        tool_events=[{"name": "repay_order", "input": {"method": method}, "ok": True, "order_found": True}],
+        # O código novo (ou o mesmo, ainda de pé), sozinho na mensagem seguinte (OC-05).
+        extra_replies=tools_module.copy_texts(result),
+        self_served=act.act != STATUS,
+    )
+
+
 def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=None) -> Execution:
     """Cada ato pelo executor determinístico que já existe. Sem modelo, sem laço."""
     from . import allergens, house_rules
@@ -1321,10 +1364,27 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     if copy is None:
         from .service import copy_message as copy
     catalog_ref = tools_module._catalog_channel_ref(channel_ref)
+
+    def context(text: str) -> ToolContext:
+        return ToolContext(
+            conversation=conversation,
+            channel_ref=channel_ref,
+            provider=str(getattr(binding, "provider", "") or ""),
+            account=str(getattr(binding, "account", "") or ""),
+            transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+            connection_key=str(getattr(binding, "connection_key", "") or ""),
+            customer_text=text,
+        )
+
     # Cancelamento que o cliente poderia fazer pelo site: a Concierge pergunta (não é equipe).
     self_cancel = {
         id(act): text for act in plan_.acts if act.act == CANCEL
         for text in (_self_cancel(conversation, act),) if text
+    }
+    # Pagar de novo ou de outra forma (OC-12): o que a página do pedido oferece, a Nice faz.
+    self_repay = {
+        id(act): reply for act in plan_.acts
+        for reply in (_repayment(conversation, act, context=context),) if reply is not None
     }
     from . import verification
 
@@ -1339,7 +1399,8 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     ) and not any(act.act in {ALLERGY, ORDER, NEGOTIATION} for act in plan_.acts)
     run = Execution(team=[
         act for act in plan_.team_acts
-        if id(act) not in self_cancel and not (complaint_by_verify and act.act == COMPLAINT)
+        if id(act) not in self_cancel and id(act) not in self_repay
+        and not (complaint_by_verify and act.act == COMPLAINT)
     ])
     offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
     run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
@@ -1353,17 +1414,6 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
 
         run.salutation = opening_salutation(texts) or (
             opening_salutation(current_customer_text(conversation)) if conversation is not None else ""
-        )
-
-    def context(text: str) -> ToolContext:
-        return ToolContext(
-            conversation=conversation,
-            channel_ref=channel_ref,
-            provider=str(getattr(binding, "provider", "") or ""),
-            account=str(getattr(binding, "account", "") or ""),
-            transport_channel=str(getattr(binding, "transport_channel", "") or ""),
-            connection_key=str(getattr(binding, "connection_key", "") or ""),
-            customer_text=text,
         )
 
     verifiable = verification.can_verify(conversation) and not team_in_turn
@@ -1460,6 +1510,9 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         if id(act) in self_cancel:
             run.replies.append(PartReply(act, text=self_cancel[id(act)], self_served=True, keeps_question=True))
             continue
+        if id(act) in self_repay:
+            run.replies.append(self_repay[id(act)])
+            continue
         if act.act == COMPLAINT and complaint_by_verify:
             reply = PartReply(act, text=copy(COMPLAINT_HEARD_COPY_KEY) or "", verifying=True)
             cart = tools_module.execute("view_cart", {}, context("")) if _cart_authorized(conversation) else {}
@@ -1521,7 +1574,10 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             result = tools_module.execute("order_status", {}, context(act.span))
             run.replies.append(PartReply(
                 act, text=tools_module.render_result("order_status", result),
-                tool_events=[{"name": "order_status", "input": {}, "ok": result.get("ok", True)}],
+                tool_events=[{"name": "order_status", "input": {}, "ok": result.get("ok", True),
+                              "order_found": bool(result.get("orders"))}],
+                # "Manda o Pix de novo": o código, sozinho na mensagem seguinte (OC-05).
+                extra_replies=tools_module.copy_texts(result),
             ))
             continue
         if act.act == ALLERGY:
@@ -2082,6 +2138,9 @@ def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text:
             return outcome
     body = compose(executed)
     outcome.reply_text = f"{lead}\n{body}" if lead and body else body
+    outcome.extra_replies = list(dict.fromkeys(
+        text for reply in executed.replies if not reply.suspended for text in reply.extra_replies
+    ))
     return outcome
 
 

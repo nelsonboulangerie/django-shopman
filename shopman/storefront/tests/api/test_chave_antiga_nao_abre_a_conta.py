@@ -14,7 +14,7 @@ import json
 import pytest
 from django.test import Client
 from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
-from shopman.guestman.models import Customer
+from shopman.guestman.models import ContactPoint, Customer
 
 pytestmark = pytest.mark.django_db
 
@@ -191,5 +191,10 @@ def test_email_antigo_nao_abre_a_conta_depois_da_troca_e_o_novo_abre(client: Cli
     estranho = entrar_por_email(EMAIL_ANTIGO)
     assert str(estranho.subject_id) != str(customer.uuid)
 
+    # O e-mail novo foi só digitado: até a prova, ele não abre a conta (OC-08).
+    assert get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login") is None
+    ContactPoint.objects.get(type=ContactPoint.Type.EMAIL, value_normalized=EMAIL_NOVO).mark_verified(
+        ContactPoint.VerificationMethod.OTP_EMAIL,
+    )
     dona = entrar_por_email(EMAIL_NOVO)
     assert str(dona.subject_id) == str(customer.uuid)

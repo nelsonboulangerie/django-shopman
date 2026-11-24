@@ -165,7 +165,9 @@ def test_trusted_device_login_stamps_an_old_customer(client: Client):
     from shopman.doorman import TrustedDevice
     from shopman.doorman.conf import doorman_settings
 
-    customer = Customer.objects.create(ref="CUS-ADULT-DEVICE", first_name="Dora", phone="+5543999990104")
+    from shopman.storefront.tests.identity_fakes import proven
+
+    customer = proven(Customer.objects.create(ref="CUS-ADULT-DEVICE", first_name="Dora", phone="+5543999990104"))
     assert ADULT_DECLARATION_KEY not in customer.metadata
     _, raw_token = TrustedDevice.create_for(
         "customer", customer.uuid, user_agent="Mozilla/5.0 Test", ip_address="127.0.0.1"

@@ -24,6 +24,7 @@ from django.conf import settings
 from shopman.utils.names import split_full_name
 
 from shopman.shop.adapters import get_adapter
+from shopman.shop.services import phone_confirmation
 
 logger = logging.getLogger(__name__)
 
@@ -241,10 +242,13 @@ def _handle_counter(order):
 
         first_name, last_name = split_full_name(name)
         ref = f"CLI-{uuid.uuid4().hex[:8].upper()}"
-        return adapter.create_customer(
+        customer = adapter.create_customer(
             ref=ref, first_name=first_name, last_name=last_name,
             phone=phone, customer_type="individual", source_system="pdv",
         )
+        # Número digitado no balcão: o titular confirma no WhatsApp (D4).
+        phone_confirmation.request_on_commit(customer["ref"], phone)
+        return customer
 
     if tax_id:
         document = "".join(filter(str.isdigit, tax_id))
@@ -294,6 +298,9 @@ def _handle_phone(order):
         ref=ref, first_name=first_name, last_name=last_name,
         phone=phone, customer_type="individual", source_system="shopman",
     )
+    # Pedido anotado por telefone: o número foi digitado pela equipe, e o
+    # titular confirma no WhatsApp (D4).
+    phone_confirmation.request_on_commit(customer["ref"], phone)
     return customer
 
 

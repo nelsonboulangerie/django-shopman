@@ -302,6 +302,22 @@ def _require_shortage_override_proof(body: dict) -> None:
     body["_approved_shortage_snapshot"] = override_shortage_snapshot(proof)
 
 
+def _require_short_lot_proof(body: dict) -> None:
+    """Accept the short-lot confirmation only as the continuation it was offered as."""
+    proof = str(body.get("short_lot_proof") or "")
+    if not proof:
+        return
+    errors = validate_override_proof(
+        override_proof=proof,
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+    )
+    if errors:
+        raise ProductionMutationValidationError({"short_lot_proof": next(iter(errors.values()))})
+    body["_approved_short_lot_snapshot"] = override_shortage_snapshot(proof)
+
+
 def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     snapshot = production_service.production_shortage_snapshot(exc)
     if snapshot is None:
@@ -340,8 +356,13 @@ def _production_error_response(
     can_override_shortage: bool = False,
     projection_generated_at=None,
     override_proof: str = "",
+    short_lot_action: str = "",
 ) -> Response | None:
     """Structured error envelope for production error states.
+
+    ``short_lot_action`` ("start" ou "finish"): a recusa de encomenda dessa ação
+    oferece "confirmar" (o lote curto segue com o número verdadeiro), assinada com
+    o mesmo impacto. Sem ela, só "Revisar quantidade".
 
     The floor app reproduces the material/order shortage modals from this
     payload (mirrors the POS error envelope shape ``{detail, error: {code,…}}``),
@@ -467,6 +488,22 @@ def _production_error_response(
                     "proof": override_proof,
                 }
             )
+        if short_lot_action and exc.confirmable and override_proof:
+            requested = _production_quantity(exc.requested)
+            possibilities.append(
+                {
+                    "kind": "confirm",
+                    "label": (
+                        # Sem prometer o aviso ao Gestor enquanto a lista daqui e o aviso de lá
+                        # saem de réguas diferentes (#3457); o WP-F08 devolve a promessa exata.
+                        f"Fechar com {requested}"
+                        if short_lot_action == "finish"
+                        else f"Abrir com {requested}"
+                    ),
+                    "enabled": True,
+                    "proof": override_proof,
+                }
+            )
         return Response(
             {
                 "detail": str(exc),
@@ -478,6 +515,7 @@ def _production_error_response(
                     "required": str(exc.required),
                     "requested": str(exc.requested),
                     "order_refs": list(exc.order_refs),
+                    "orders": [{"ref": ref, "qty": _production_quantity(quantity)} for ref, quantity in exc.orders],
                 },
             },
             status=409,
@@ -5902,6 +5940,7 @@ class WorkOrderStartView(_ProductionActionBase):
             committed_replay=body.get("_committed_replay", False),
         )
         try:
+            _require_short_lot_proof(body)
             wo_ref, quantity = production_service.apply_start(
                 work_order_id=wo_id,
                 quantity=body["quantity"],
@@ -5911,12 +5950,15 @@ class WorkOrderStartView(_ProductionActionBase):
                 actor=_production_actor(request),
                 expected_rev=body["expected_rev"],
                 idempotency_key=body["idempotency_key"],
+                approved_short_lot=body.get("_approved_short_lot_snapshot"),
             )
         except ProductionError as exc:
             return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
                 projection_generated_at=body.get("projection_generated_at"),
+                override_proof=_shortage_override_proof(body, exc),
+                short_lot_action="start",
             )
         except ValueError as exc:
             return _production_validation_error_response(
@@ -6090,6 +6132,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                         }
                     )
             _require_shortage_override_proof(body)
+            _require_short_lot_proof(body)
             current = _current_work_order_projection(wo_id)
             allow_implicit_start = bool(current and current["status"] == "planned")
             if allow_implicit_start:
@@ -6113,6 +6156,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                 yield_deviation_reason=body.get("yield_deviation_reason", ""),
                 allow_implicit_start=allow_implicit_start,
                 approved_shortage=body.get("_approved_shortage_snapshot"),
+                approved_short_lot=body.get("_approved_short_lot_snapshot"),
             )
         except ProductionError as exc:
             return _production_error_response(
@@ -6121,6 +6165,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                 can_override_shortage=request.production_access.can_override_shortage,
                 projection_generated_at=body.get("projection_generated_at"),
                 override_proof=_shortage_override_proof(body, exc),
+                short_lot_action="finish",
             )
         except ValueError as exc:
             return _production_validation_error_response(

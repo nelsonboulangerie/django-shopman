@@ -25,6 +25,7 @@ from shopman.shop.directives import FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import fiscal as fiscal_service
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 pytestmark = pytest.mark.django_db
 
@@ -46,7 +47,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult

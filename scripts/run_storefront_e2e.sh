@@ -93,6 +93,9 @@ wait_for() {
 # ── Django: migrate + canonical seed (deterministic order-scoped scenarios) ──
 "${PYTHON_BIN}" manage.py migrate --noinput
 "${PYTHON_BIN}" manage.py seed --flush
+# Experimento de prova (OC-21, X14): a coorte nasce pelo servidor, antes de o
+# Django subir (o cache das regras é por processo sem Redis). Só do harness.
+"${PYTHON_BIN}" -m shopman.shop.tests.e2e.seed_experience
 
 # ── Nuxt store: install (if needed) + production build ──
 if [[ ! -d "${NUXT_DIR}/node_modules" ]]; then
@@ -131,6 +134,7 @@ wait_for "${STOREFRONT_BASE_URL}/" "${NUXT_PID}" "Loja Nuxt" "${NUXT_LOG}"
 # ── Drive the Playwright E2E: customer flows → store, operator flows → Django ──
 # `-m browser` re-selects the suite the default config deselects (it needs servers).
 "${PYTHON_BIN}" -m pytest shopman/shop/tests/e2e/test_storefront_e2e.py \
+  shopman/shop/tests/e2e/test_experience_e2e.py \
   -m browser \
   --store-base-url="${STOREFRONT_BASE_URL}" \
   --operator-base-url="${DJANGO_BASE_URL}" \

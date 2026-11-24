@@ -1796,11 +1796,192 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "requires_payment_gate": projection.requires_payment_gate,
                 "supports_access_link": projection.supports_access_link,
                 "created_at": format_local(order.created_at, "%d/%m {clock}"),
+                "pix_sent_at": _pix_sent_at(conversation, order) if projection.source_projection == "payment" else "",
             }
         )
     if order_ref and not orders:
         return {"ok": True, "orders": [], "message": f"Não achei o pedido {order_ref} para este cliente."}
     return {"ok": True, "orders": orders}
+
+
+#: Estados de saída em que a mensagem chegou ao fornecedor (``ConversationMessage.transport_state``).
+_SENT_STATES = ("accepted", "delivered", "read")
+
+
+def _pix_sent_at(conversation, order) -> str:
+    """Quando este chat recebeu o código Pix VIGENTE do pedido: "às 14h12", ou vazio (OC-10).
+
+    Vale o aviso do pedido gravado na conversa (``notification._note_in_conversation``)
+    e a resposta da própria Concierge que já saiu. Código regenerado não conta o velho.
+    """
+    from django.db.models import Q
+
+    from shopman.shop.models import ConversationMessage
+    from shopman.shop.services.notification import ORDER_NOTICE_NOTE
+
+    code = str(((order.data or {}).get("payment") or {}).get("copy_paste") or "").strip()
+    if not code or conversation is None or not conversation.pk:
+        return ""
+    sent = (
+        ConversationMessage.objects.filter(conversation=conversation, text__contains=code)
+        .filter(
+            Q(kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_NOTE, envelope__order_ref=order.ref)
+            | Q(kind=ConversationMessage.Kind.REPLY, transport_state__in=_SENT_STATES)
+        )
+        .order_by("-pk")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if sent is None:
+        return ""
+    if timezone.localdate(sent) == timezone.localdate():
+        return format_local(sent, "às {clock}")
+    return format_local(sent, "em %d/%m, às {clock}")
+
+
+#: Pagar de novo ou de outra forma, como o cliente pede (OC-12): um pedido de pagamento
+#: ("manda outro Pix", "o Pix venceu", "tenta de novo", "quero pagar com cartão") e a forma
+#: que ele quer, quando diz. Só lê a fala: quem decide o que dá para fazer é a projeção.
+_PAYMENT_NOUN = re.compile(r"\b(?:pix|cartao|cartoes|pagamento|pagar|cobranca|codigo|qr)\b")
+_PAYMENT_ASK = re.compile(
+    r"\b(?:manda|mande|mandar|envia|envie|enviar|reenvia|reenvie|gera|gere|gerar|outro|outra|novo|nova"
+    r"|de novo|novamente|troca|troque|trocar|muda|mude|mudar|tenta|tente|tentar|venceu|vencido|vencida"
+    r"|expirou|expirado|expirada|recusou|recusado|recusada|nao passou|nao chegou|nao veio"
+    r"|quero pagar|prefiro pagar|vou pagar|pagar com|pagar no|pagar por|pagar pelo|pagar pela)\b"
+)
+#: A forma pedida vem depois da preposição ("pagar COM Pix", "troca o Pix PELO cartão").
+_PAYMENT_TARGET = re.compile(r"\b(?:com|por|pelo|pela|para|pra|no|em)\s+(?:o\s+|a\s+|um\s+)?(pix|cartao)\b")
+_PAYMENT_FORMS = {"pix": "pix", "cartao": "card"}
+
+
+def payment_request(text: str) -> str | None:
+    """O que o cliente pede para pagar: ``None`` (não pede), ``""`` (a mesma forma) ou a forma.
+
+    A forma é ``"pix"`` ou ``"card"``: a que vem depois de "com/por/para" ("o cartão não
+    passou, quero pagar com Pix"), ou a única citada ("o Pix venceu, manda outro").
+    """
+    folded = _fold(text)
+    if not (_PAYMENT_NOUN.search(folded) and _PAYMENT_ASK.search(folded)):
+        return None
+    targets = _PAYMENT_TARGET.findall(folded)
+    if targets:
+        return _PAYMENT_FORMS[targets[-1]]
+    cited = {form for word, form in _PAYMENT_FORMS.items() if re.search(rf"\b{word}\b", folded)}
+    return cited.pop() if len(cited) == 1 else ""
+
+
+def _payment_entry(ctx: ToolContext, order_ref: str) -> tuple[dict, dict | None]:
+    """A consulta (``order_status``) e o pedido de que se fala: o citado, ou o mais recente
+    que espera pagamento ou cujo prazo de pagar venceu, ou o mais recente."""
+    status = order_status(ctx, order_ref)
+    entries = (status.get("orders") or []) if status.get("ok") else []
+    entry = next(
+        (item for item in entries if item.get("needs_payment") or item.get("state") == "payment_expired"),
+        entries[0] if entries else None,
+    )
+    return status, entry
+
+
+def _repay_refusal(order, entry: dict, *, want: str, current: str) -> tuple[str, bool]:
+    """Por que não dá (a chave de ``REPAY_REFUSED``) e se o pedido ainda pede pagamento.
+
+    Não decide nada novo: lê o estado do pedido, as formas aceitas no canal e o motivo que
+    o serviço de pagamento já dá para a troca do cartão por Pix (``pix_switch_blocker``).
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services import payment as payment_service
+
+    cancelled = order.status == Order.Status.CANCELLED
+    if entry.get("state") == "payment_expired":
+        return ("payment_expired_cancelled" if cancelled else "payment_expired"), False
+    if cancelled:
+        return "order_cancelled", False
+    if payment_service.has_sufficient_captured_payment(order) is True:
+        return "already_paid", False
+    if (payment_service.get_payment_status(order) or "").lower() == "authorized":
+        return "card_authorized", False
+    if not entry.get("needs_payment"):
+        return "not_awaiting_payment", False
+    accepted = {
+        str(method or "").lower() for method in ChannelConfig.for_channel(order.channel_ref).payment.available_methods
+    }
+    if want == "card" and not accepted & payment_service.HOSTED_CHECKOUT_METHODS:
+        return "method_not_accepted", True
+    if want == "pix" and "pix" not in accepted:
+        return "method_not_accepted", True
+    if want == "card":
+        return "pix_to_card", True
+    if want == "pix":
+        blocker = payment_service.pix_switch_blocker(order) if current == "card" else ""
+        return ("card_to_pix_after_decline" if blocker == "not_declined" else "card_to_pix"), True
+    return "not_awaiting_payment", True
+
+
+def repay_order(ctx: ToolContext, order_ref: str = "", method: str = "") -> dict:
+    """Pagar de novo ou de outra forma pela conversa (OC-12), pelo mesmo serviço da página.
+
+    A Nice só faz o que a página do pedido oferece agora (as ações da projeção, X1):
+
+    - ``pay_with_pix`` e o cliente quer Pix: a troca do cartão recusado por Pix
+      (``switch_declined_card_to_pix``, ou ``switch_repayment_to_pix`` na espera do novo
+      pagamento), o mesmo comando do botão "Pagar com Pix";
+    - ``retry_payment``: a conferência que refaz a cobrança que não nasceu
+      (``check_payment``), o mesmo comando do "Tentar novamente";
+    - cobrança de pé na forma pedida: nada muda, e a resposta traz o mesmo código ou o
+      mesmo link (pedir duas vezes não abre outra cobrança, X4).
+
+    Fora disso, a recusa com o motivo. O Pix cujo prazo venceu não renasce: o prazo de
+    pagar cancela o pedido (ADR-036, ``handlers/payment_timeout``).
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment as payment_service
+    from shopman.storefront.services import orders as order_service
+
+    want = {"pix": "pix", "card": "card"}.get(str(method or "").strip().lower(), "")
+    status, entry = _payment_entry(ctx, order_ref)
+    if entry is None:
+        return status
+    order = Order.objects.get(ref=entry["order_ref"])
+    current = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
+    same_form = want in {"", current} or (want == "card" and current in payment_service.HOSTED_CHECKOUT_METHODS)
+    offered = {action.get("ref") for action in entry.get("actions", []) if action.get("enabled")}
+    code = "ready"
+    if want == "pix" and "pay_with_pix" in offered:
+        if payment_service.awaiting_repayment(order) is not None:
+            try:
+                payment_service.switch_repayment_to_pix(order)
+            except payment_service.RepaymentSwitchRefused as refusal:
+                return {"ok": True, "code": "refused", "order_ref": order.ref, "lead": _sentence(refusal.message),
+                        "orders": [entry], "payable": False}
+        elif not order_service.switch_declined_card_to_pix(order):
+            return {"ok": True, "code": "refused", "order_ref": order.ref, "payable": False,
+                    "lead": REPAY_REFUSED["card_to_pix"].format(ref=order.ref), "orders": [entry]}
+        code = "switched_to_pix"
+    elif "retry_payment" in offered and same_form:
+        order_service.check_payment(order)
+        code = "retried"
+    elif not (same_form and offered & {"copy_pix", "pay_card"}):
+        reason, still_due = _repay_refusal(order, entry, want=want, current=current)
+        lead = REPAY_REFUSED[reason].format(ref=order.ref, method=PAYMENT_FORM_WORDS.get(want, ""))
+        if reason in {"payment_expired_cancelled", "payment_expired"} and current == "pix":
+            lead = f"{lead} {OLD_PIX_CODE_WARNING}"
+        # Recusada a troca, a cobrança que vale continua embaixo (o código ou o link).
+        return {"ok": True, "code": reason, "order_ref": order.ref, "lead": lead, "payable": False,
+                "orders": [entry] if still_due else [], "order_url": entry["tracking_url"]}
+    if code == "ready":
+        return {"ok": True, "code": code, "order_ref": order.ref, "lead": "", "orders": [entry], "payable": True}
+    status, entry = _payment_entry(ctx, order.ref)
+    if entry is None:
+        return status
+    payable_now = any(
+        action.get("enabled") and (action.get("ref") == "pay_card" or str(action.get("value") or "").strip())
+        for action in entry.get("actions", [])
+    )
+    lead = REPAY_DONE[code if payable_now else "still_failing"].format(ref=order.ref)
+    return {"ok": True, "code": code, "order_ref": order.ref, "lead": lead, "orders": [entry], "payable": payable_now}
 
 
 def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
@@ -2046,10 +2227,14 @@ READ_TOOLS = frozenset({"search_storefront", "view_cart", "last_order", "order_s
 CART_TOOLS = frozenset({"set_item", "set_fulfillment", "review_order", "place_order"})
 
 
+#: Pagar o próprio pedido de novo ou de outra forma (OC-12): a autoridade de sacola basta.
+PAYMENT_TOOLS = frozenset({"repay_order"})
+
+
 def _authority_level(name: str):
     if name in READ_TOOLS:
         return False
-    return CART_LEVEL if name in CART_TOOLS else True
+    return CART_LEVEL if name in CART_TOOLS | PAYMENT_TOOLS else True
 
 
 def _guard(handler):
@@ -2079,6 +2264,10 @@ def _guard(handler):
 
 for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "add_to_order", "send_web_link", "notify_when_available"):
     globals()[_name] = _guard(globals()[_name])
+#: Refazer ou trocar a cobrança do PRÓPRIO pedido é pagar (D3: o número verificado pede,
+#: vê os pedidos recentes e paga): vale com a autoridade de sacola, a mesma que fecha o
+#: pedido pelo código (ADR-050). Não move dinheiro: só refaz o código ou troca a forma.
+repay_order = _guard(repay_order)
 
 
 def _display_text(value) -> str:
@@ -2105,6 +2294,85 @@ def _sentence(text) -> str:
     if not text:
         return ""
     return text if text[-1] in ".!?…:" else text + "."
+
+
+#: O código Pix sai SOZINHO na mensagem seguinte (``extra_replies``), para o cliente
+#: copiar no WhatsApp sem ruído; esta é a linha que avisa, no pedido e na consulta.
+PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
+
+
+#: O que a Nice faz pela conversa quando a ação da projeção é um comando (POST/API), não
+#: uma página: a instrução no lugar do endereço. Ação de comando fora desta lista some da
+#: resposta, porque endereço de API não abre como link (X3). Cancelar é a J4 da Nice
+#: (``concierge/cancellation.py``, pela mesma régua do site). Tentar pagar de novo e pagar
+#: com Pix são a J4 do pagamento (``repay_order``, pelo mesmo serviço dos botões, OC-12).
+CONVERSATION_EQUIVALENTS = {
+    "cancel_order": "Se quiser cancelar, é só me dizer.",
+    "retry_payment": "Se quiser tentar pagar de novo, é só me dizer.",
+    "pay_with_pix": "Se preferir pagar com Pix, é só me dizer.",
+}
+
+
+#: O que a Nice diz depois de refazer ou trocar a cobrança pela conversa (OC-12). O código
+#: novo segue sozinho na mensagem seguinte (``PIX_CODE_FOLLOWS``); o link do cartão, na linha.
+REPAY_DONE = {
+    "switched_to_pix": "Pronto, troquei o pagamento do pedido {ref} para Pix.",
+    "retried": "Pronto, gerei de novo a cobrança do pedido {ref}.",
+    "still_failing": "Ainda não consegui gerar a cobrança do pedido {ref}. Me peça de novo daqui a pouco.",
+}
+#: Por que a Nice não refaz nem troca a cobrança (OC-12): o estado do pedido, as formas do
+#: canal e o motivo que o serviço de pagamento dá, ditos ao cliente. Sem "acabou" (a R2 o
+#: troca por "indisponível") e sem "pedido ... confirmado" (promessa da R6 sem recibo).
+REPAY_REFUSED = {
+    "payment_expired_cancelled": "O prazo para pagar o pedido {ref} venceu, e o pedido foi cancelado.",
+    "payment_expired": "O prazo para pagar o pedido {ref} venceu.",
+    "order_cancelled": "O pedido {ref} foi cancelado, então não há nada a pagar.",
+    "already_paid": "O pedido {ref} já está pago. Não precisa pagar de novo.",
+    "card_authorized": "O cartão do pedido {ref} já foi autorizado. Não precisa pagar de novo.",
+    "not_awaiting_payment": "O pedido {ref} não está esperando pagamento agora.",
+    "method_not_accepted": "Por aqui, não aceitamos pagamento com {method}.",
+    "pix_to_card": "Neste pedido, não dá para trocar o Pix por cartão.",
+    "card_to_pix_after_decline": "Neste pedido, a troca do cartão por Pix só fica disponível se o cartão for recusado.",
+    "card_to_pix": "Neste pedido, não dá para trocar o cartão por Pix.",
+}
+#: Prazo de pagar vencido num pedido de Pix: o código antigo não se paga (o aviso da página).
+OLD_PIX_CODE_WARNING = "Não pague o código Pix antigo."
+#: A forma de pagar como entra na frase ("não aceitamos pagamento com cartão").
+PAYMENT_FORM_WORDS = {"pix": "Pix", "card": "cartão"}
+
+
+def _opens_as_page(action: dict) -> bool:
+    """A ação leva a uma página que o cliente abre (GET), e não a um comando da API.
+
+    Decide pela natureza do destino, não pelo nome: tem endereço, o método é GET (ou
+    nenhum), não é comando (``mutation``) e o endereço fica fora de ``/api/``.
+    """
+    from urllib.parse import urlsplit
+
+    href = str(action.get("href") or "")
+    method = str(action.get("method") or "GET").upper()
+    return (
+        bool(href)
+        and method == "GET"
+        and action.get("kind") != "mutation"
+        and not urlsplit(href).path.startswith("/api/")
+    )
+
+
+def copy_texts(result: dict) -> list[str]:
+    """O que as ações de copiar da consulta copiam (o copia-e-cola do Pix), um por mensagem.
+
+    A conversa não tem botão de copiar: o texto da ação ``copy`` vai em mensagem própria,
+    e a linha de ``render_result`` só avisa. Nunca o ``href``: link com o rótulo
+    "Copiar código Pix" é rótulo que mente (X3).
+    """
+    texts: list[str] = []
+    for order in result.get("orders", []) if result.get("ok") else []:
+        for action in order.get("actions", []):
+            value = str(action.get("value") or "").strip()
+            if action.get("enabled") and action.get("kind") == "copy" and value and value not in texts:
+                texts.append(value)
+    return texts
 
 
 def render_result(name: str, result: dict) -> str:
@@ -2171,7 +2439,10 @@ def render_result(name: str, result: dict) -> str:
         if payment.get("pending_setup"):
             text += " O pagamento ainda não está disponível; consulte o mesmo pedido para acompanhar."
         elif payment.get("pix_code_prepared_separately"):
-            text += " O pagamento está pendente; o código Pix é apresentado em um bloco separado."
+            text += f" {PIX_CODE_FOLLOWS}"
+        elif payment.get("checkout_url"):
+            # Cartão: o link do gateway já no pedido, com o mesmo rótulo da consulta.
+            text += f"\nPagar com cartão: {payment['checkout_url']}"
         text += f"\nAcompanhar: {result['tracking_url']}"
         return text
     if name == "order_status":
@@ -2184,14 +2455,38 @@ def render_result(name: str, result: dict) -> str:
             if str(order.get("total") or "").strip():
                 parts.append(f"Total: {order['total']}.")
             rows.append(f"Pedido {order['order_ref']}{when}: " + " ".join(p for p in parts if p))
+            if order.get("pix_sent_at"):
+                # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
+                rows.append(f"Já te mandei o código Pix por aqui {order['pix_sent_at']}.")
             for action in order.get("actions", []):
-                if action.get("enabled"):
-                    href = action.get("href") or order["tracking_url"]
+                if action.get("enabled") and action.get("kind") == "copy":
+                    # O que se copia vai sozinho na mensagem seguinte (``copy_texts``); sem
+                    # o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
+                    if str(action.get("value") or "").strip() and action.get("ref") == "copy_pix":
+                        rows.append(PIX_CODE_FOLLOWS)
+                elif action.get("enabled") and _opens_as_page(action):
+                    href = action["href"]
                     if href.startswith("/") and not href.startswith("//"):
                         href = _storefront_base_url() + href
                     rows.append(f"{action['label']}: {href}")
+                elif action.get("enabled") and CONVERSATION_EQUIVALENTS.get(action.get("ref")):
+                    # Comando que a Nice faz pela conversa: a instrução, nunca o endereço.
+                    rows.append(CONVERSATION_EQUIVALENTS[action["ref"]])
             rows.append(f"Acompanhar: {order['tracking_url']}")
         return "\n".join(rows) or "Não encontrei pedidos para este acesso."
+    if name == "repay_order":
+        # O que a Nice fez (ou por que não fez) e, embaixo, o pedido como a consulta o mostra:
+        # o mesmo código, o mesmo link, as mesmas instruções (OC-12).
+        if not result.get("orders") and not result.get("lead"):
+            return render_result("order_status", result)
+        rows = [result["lead"]] if result.get("lead") else []
+        if result.get("orders"):
+            rows.append(render_result("order_status", result))
+        elif result.get("order_url"):
+            # A página do pedido (``/pedido/<ref>/``), não o link do entregador: esse só
+            # se lê por ``courier.proven_tracking``.
+            rows.append(f"Acompanhar: {result['order_url']}")
+        return "\n".join(rows)
     if name == "send_web_link":
         return f"Continue no site: {result['url']}"
     if name == "last_order":
@@ -2283,6 +2578,13 @@ INPUT_SCHEMAS: dict[str, dict] = {
         },
         "required": ["order_ref", "sku", "qty"],
     },
+    "repay_order": {
+        "properties": {
+            "order_ref": {"type": "string"},
+            "method": {"type": "string", "enum": ["", "pix", "card"]},
+        },
+        "required": [],
+    },
     "last_order": {
         "properties": {},
         "required": [],
@@ -2312,6 +2614,7 @@ _HANDLERS = {
     "place_order": place_order,
     "order_status": order_status,
     "add_to_order": add_to_order,
+    "repay_order": repay_order,
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,

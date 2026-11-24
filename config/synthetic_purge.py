@@ -159,6 +159,8 @@ POLICY: dict[str, Rule] = {
     "orderman.FulfillmentItem": _purge(_ORDERS),
     "orderman.Directive": _purge(_ORDERS),
     "orderman.IdempotencyKey": _purge(_ORDERS),
+    # fiscalman
+    "fiscalman.FiscalDocument": _purge("notas de homologação dos pedidos do ensaio; vão junto com os pedidos"),
     # payman
     "payman.PaymentIntent": _purge(_ORDERS),
     "payman.PaymentTransaction": _purge(_ORDERS),
