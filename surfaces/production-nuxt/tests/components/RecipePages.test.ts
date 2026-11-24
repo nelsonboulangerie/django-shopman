@@ -412,6 +412,40 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     expect(warning?.findAll("button")).toHaveLength(0);
   });
 
+  it("reads the batches each version made: the timeline line and the card of the selected one (#2387)", async () => {
+    routeParams = { ref: "pao-b" };
+    const usageRow = {
+      version_ref: "pao-b@1", version_number: 1, is_versioned: true, label: "Versão 1", batches: 12,
+      batches_display: "12 lotes", planned_display: "", finished_display: "", loss_display: "", yield_pct: "96",
+      yield_display: "96%", started_assumed_batches: 0, avg_loss: "", avg_loss_display: "", loss_pct_display: "",
+      summary_display: "12 lotes; aproveitamento médio 96%",
+      quality: [{ grade_ref: "a", label: "Primeira", quantity_display: "110", share_display: "92%" }],
+    };
+    installEntry(
+      { current_version_number: 1, usage: { date_from: "", date_to: "", bake_loss_basis: "", caveats: [], versions: [usageRow], unversioned: null } },
+      true,
+      { status: "published", status_label: "Publicada" },
+    );
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-version-usage]").text()).toBe("12 lotes · aproveitamento 96%");
+    const card = wrapper.find("[data-version-batches]");
+    expect(card.text()).toContain("Lotes da versão 1");
+    expect(card.text()).toContain("12 lotes; aproveitamento médio 96%.");
+    expect(card.text()).toContain("Primeira: 110 (92%)");
+  });
+
+  it("a version that never baked says so, without a usage line", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry();
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-version-usage]").exists()).toBe(false);
+    expect(wrapper.find("[data-version-batches]").text()).toContain("Nenhum lote fechado com esta versão.");
+  });
+
   it("puts OperatorRecordNav in the header status with the recipe trail and recipe addresses", async () => {
     routeParams = { ref: "pao-b" };
     installEntry();

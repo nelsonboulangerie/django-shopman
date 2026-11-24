@@ -362,6 +362,10 @@ function onQuantityBound(index: number, field: "minimum" | "target" | "maximum",
     quantity: { ...item.quantity, [field]: value == null ? (field === "target" ? 0 : null) : value },
   });
 }
+function onItemNote(index: number, value: unknown) {
+  formula.value = updateItem(formula.value, index, { note: String(value ?? "") });
+}
+
 function onComposition(index: number, composition: string) {
   formula.value = updateItem(formula.value, index, { composition: composition === "included" ? "included" : "additional" });
 }
@@ -1214,6 +1218,19 @@ const mobileSaveAction = computed<OperatorActionBarAction>(() => ({
                     </div>
                   </NuxtCard>
                 </div>
+                <!-- A anotação do item (#2386) viaja na fórmula e chega à ficha ao publicar. -->
+                <label class="grid gap-1 border-t p-3 text-xs font-medium text-muted-foreground" data-ingredient-note>
+                  Nota do ingrediente
+                  <NuxtTextarea
+                    :model-value="item.note ?? ''"
+                    :rows="1"
+                    autoresize
+                    class="w-full"
+                    :ui="{ base: 'bg-muted' }"
+                    :aria-label="`Nota de ${item.name || 'ingrediente'}`"
+                    @update:model-value="onItemNote(index, $event)"
+                  />
+                </label>
               </li>
             </ol>
             <div class="border-t p-3" data-testid="add-ingredient-footer">

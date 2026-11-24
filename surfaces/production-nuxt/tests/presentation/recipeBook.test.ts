@@ -14,6 +14,10 @@ import {
   bookQuery,
   compareQuery,
   comparePath,
+  compareSides,
+  purchaseMaterialsHref,
+  versionUsage,
+  versionUsageLine,
   downscaleTarget,
   emptyFormula,
   emptyItem,
@@ -149,6 +153,7 @@ function lensItem(over: Partial<FormulaItemProjection> = {}): FormulaItemProject
     composition: "additional",
     composition_label: "Adicional",
     quantity_rule_display: "Exata",
+    note: "",
     ...over,
   };
 }
@@ -590,5 +595,45 @@ describe("tempo e temperatura da etapa (beta 05/11/2026, PROD-19)", () => {
     expect(readStepTemperature("230")).toEqual({ celsius: 230, error: "" });
     expect(readStepTemperature("-18")).toEqual({ celsius: -18, error: "" });
     expect(readStepTemperature("26,55")).toEqual({ celsius: 26.6, error: "" });
+  });
+});
+
+describe("receitas que se leem (WP-F05)", () => {
+  it("compareSides says which side is published and since when", () => {
+    const sides = compareSides({
+      a_title: "Pão (versão 1)", a_status: "superseded", a_status_label: "Substituída", a_is_current: false, a_when_display: "publicada 02/10/2026 05:40",
+      b_title: "Pão (versão 2)", b_status: "published", b_status_label: "Publicada", b_is_current: true, b_when_display: "publicada 18/11/2026 06:10",
+      rows: [],
+      metrics: [],
+    });
+    expect(sides.map((side) => [side.key, side.statusLabel, side.isCurrent, side.when])).toEqual([
+      ["a", "Substituída", false, "publicada 02/10/2026 05:40"],
+      ["b", "Publicada", true, "publicada 18/11/2026 06:10"],
+    ]);
+  });
+
+  it("versionUsage finds the executed batches of a version, never a version without batches", () => {
+    const row = (number: number | null, batches: number) => ({
+      version_ref: "", version_number: number, is_versioned: number != null, label: "", batches,
+      batches_display: batches === 1 ? "1 lote" : `${batches} lotes`, planned_display: "", finished_display: "",
+      loss_display: "", yield_pct: "", yield_display: batches ? "96%" : "", started_assumed_batches: 0, avg_loss: "",
+      avg_loss_display: "", loss_pct_display: "", summary_display: "", quality: [],
+    });
+    const usage = {
+      date_from: "", date_to: "", bake_loss_basis: "", caveats: [],
+      versions: [row(2, 12), row(1, 0)],
+      unversioned: row(null, 4),
+    };
+    expect(versionUsageLine(versionUsage(usage, 2))).toBe("12 lotes · aproveitamento 96%");
+    expect(versionUsage(usage, 1)).toBeNull();
+    expect(versionUsage(usage, 3)).toBeNull();
+    expect(versionUsage(null, 2)).toBeNull();
+    expect(versionUsageLine(null)).toBe("");
+  });
+
+  it("purchaseMaterialsHref opens the materials of the Compras, or nothing without it", () => {
+    expect(purchaseMaterialsHref("https://compras.exemplo.test/")).toBe("https://compras.exemplo.test/base/materials");
+    expect(purchaseMaterialsHref("https://compras.exemplo.test")).toBe("https://compras.exemplo.test/base/materials");
+    expect(purchaseMaterialsHref("")).toBe("");
   });
 });

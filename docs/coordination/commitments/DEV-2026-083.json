@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-083",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "WP-F05 Receitas que se leem: a nota do item aparece, comparar versões diz qual é qual, e o vazio da busca de insumo leva ao Compras",
+  "dono": "Engenharia",
+  "criado": "2026-11-23",
+  "revisar_em": "2026-11-30",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

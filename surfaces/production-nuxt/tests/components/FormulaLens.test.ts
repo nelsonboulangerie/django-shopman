@@ -67,6 +67,7 @@ function item(over: Partial<FormulaItemProjection> = {}): FormulaItemProjection 
     composition: "additional",
     composition_label: "Adicional",
     quantity_rule_display: "Exata",
+    note: "",
     ...over,
   };
 }
@@ -199,5 +200,22 @@ describe("FormulaLens", () => {
     expect(mountLens({ lens: null, pending: true }).text()).toContain("Calculando…");
     expect(mountLens({ lens: lens(), error: "Não foi possível calcular a prévia." }).text()).toContain("Não foi possível calcular a prévia.");
     expect(mountLens({ lens: lens({ ingredients: [] }) }).text()).toContain("Nenhum ingrediente ainda.");
+  });
+});
+
+describe("FormulaLens: a nota do item (#2386)", () => {
+  it("shows the item note under its name, and nothing for items without one", () => {
+    const w = mountLens({
+      lens: lens({
+        ingredients: [
+          item(),
+          item({ ref: "ingredient-water", sku: "AGUA", name: "Água", is_anchor: false, note: "A conferir: no inverno pede 680 g." }),
+        ],
+      }),
+    });
+    const notes = w.findAll("[data-item-note]");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.text()).toContain("A conferir: no inverno pede 680 g.");
+    expect(notes[0]!.element.closest("tr")?.getAttribute("data-row")).toBe("ingredient-water");
   });
 });
