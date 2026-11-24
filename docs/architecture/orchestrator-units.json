@@ -16864,7 +16864,8 @@
             "abandon_session",
             "OpenSessionElsewhere",
             "open_sessions_for_customer",
-            "_summaries"
+            "_summaries",
+            "open_session_summary"
           ]
         }
       ],
@@ -16928,7 +16929,10 @@
             "CONVERSATION_MESSAGE_MARKER",
             "_CONVERSATION_MESSAGE",
             "conversation_number",
-            "offer_to_conversation"
+            "offer_to_conversation",
+            "CART_ONLY_METADATA_KEY",
+            "_ITEMS_ONLY_KEYS",
+            "_items_only_data"
           ]
         }
       ],

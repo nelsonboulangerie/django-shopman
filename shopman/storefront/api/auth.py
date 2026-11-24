@@ -20,6 +20,7 @@ from shopman.shop.services import access as access_service
 from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
 from shopman.shop.services import storefront_links
+from shopman.shop.services.session_transfer import CART_ONLY_METADATA_KEY
 from shopman.storefront.constants import HAS_AUTH, STOREFRONT_CHANNEL_REF
 from shopman.storefront.identity import (
     IDENTITY_DEVICE,
@@ -282,6 +283,8 @@ def exchange_access_token(request, token: str) -> Response:
         return Response({"ok": True, "redirect": storefront_links.path_home(), **_session_payload(None)})
 
     metadata = access_service.token_metadata(token)
+    if isinstance(metadata, dict) and metadata.get(CART_ONLY_METADATA_KEY) is True:
+        return _exchange_cart_only(request, token, metadata)
     # Antes do resgate: depois dele o token está gasto e a origem já não se lê.
     source = access_service.token_source(token)
     result = access_service.exchange_token(token, request)
@@ -385,6 +388,29 @@ def exchange_access_token(request, token: str) -> Response:
         payload["notice"] = resolve_copy("LOGIN_HANDOFF_EXPIRED", moment="*").message
     response.data = payload
     return response
+
+
+def _exchange_cart_only(request, token: str, metadata: dict) -> Response:
+    """O convite da Nice que leva SÓ a sacola (OC-18, #3529): o link se gasta e ninguém entra.
+
+    Saiu pela autoridade de sacola (ADR-050), então não prova quem abre: a troca não abre
+    sessão, não confia no dispositivo e não devolve dado de pessoa. A sacola chega sem dono
+    e só com itens e quantidades (``session_transfer`` ``items_only``); quem já estava
+    neste navegador continua como estava. A prova de quem é acontece no site, no fechamento.
+    """
+    if not access_service.redeem_without_session(token):
+        return Response({"detail": "Este link expirou ou já foi usado."}, status=status.HTTP_400_BAD_REQUEST)
+    customer = get_authenticated_customer(request)
+    cart_transfer = _adopt_carried_cart(request, metadata, customer) if hasattr(request, "session") else None
+    payload = {
+        "ok": True,
+        "redirect": _access_link_redirect(metadata),
+        "identity_strength": identity_strength(request),
+        **_session_payload(customer),
+    }
+    if cart_transfer is not None:
+        payload["cart_transfer"] = cart_transfer
+    return Response(payload)
 
 
 def _adopt_carried_cart(request, metadata, customer) -> dict | None:

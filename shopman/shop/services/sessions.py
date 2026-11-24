@@ -518,6 +518,18 @@ def open_sessions_for_customer(
     return _summaries(candidates)
 
 
+def open_session_summary(channel_ref: str, session_key: str) -> OpenSessionElsewhere | None:
+    """Uma sacola aberta, com itens, contada como em ``open_sessions_for_customer``.
+
+    Para a Nice dizer onde está a sacola que a conversa mandou ao site (OC-18, §4.4),
+    sem abrir as linhas dela. Leitura pura.
+    """
+    if not (channel_ref and session_key):
+        return None
+    found = _summaries(Session.objects.filter(state="open", channel_ref=channel_ref, session_key=session_key))
+    return found[0] if found else None
+
+
 def _summaries(candidates) -> tuple[OpenSessionElsewhere, ...]:
     found = []
     for session in candidates:

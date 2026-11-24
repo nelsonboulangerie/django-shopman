@@ -180,8 +180,10 @@ lines_total_q, issued_at e validity=`session_open_and_current_policy`. Sem TTL c
 provider + nova entrada verificada são a evidência; replay usa IdempotencyKey.
 A passagem da sacola da conversa para a loja é a oferta de `shop/services/session_transfer.offer`
 (OC-15), que viaja em `AccessLink.metadata["cart_transfer"]`: `{offer_id, source_channel, source_key,
-rev, total_q, dest_channel, customer_ref, actor, at}` (`customer_ref` é o dono da sacola na hora da
-oferta, vazio na sacola anônima). Oferecer não toca a origem nem a conversa; quem transfere é
+rev, total_q, dest_channel, customer_ref, actor, at, items_only}` (`customer_ref` é o dono da sacola na hora da
+oferta, vazio na sacola anônima; `items_only` é o convite pela autoridade de sacola, OC-18/#3529, que
+leva só itens, quantidades e a data e o horário da fornada, e vem com `AccessLink.metadata["cart_only"] = true`:
+a troca gasta o link sem abrir sessão e a sacola chega sem dono). Oferecer não toca a origem nem a conversa; quem transfere é
 `session_transfer.accept`, na troca do link (`storefront/api/auth.exchange_access_token`), e o recibo
 fica na origem (`Session.data["transfer_receipt"]`). `cart_session_key` no mesmo metadado é outra
 coisa: a sacola da loja que segue dentro da própria loja (login pelo código NB, travessia do navegador

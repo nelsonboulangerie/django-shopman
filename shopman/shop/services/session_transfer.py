@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 TRANSFER_METADATA_KEY = "cart_transfer"
 #: A sacola da loja que segue dentro da própria loja (código NB, travessia do navegador).
 CARRIED_CART_METADATA_KEY = "cart_session_key"
+#: O link que leva SÓ a sacola (OC-18, #3529): a troca gasta o link e não abre sessão.
+CART_ONLY_METADATA_KEY = "cart_only"
+#: O que uma oferta só de itens (``items_only``) leva da ``Session.data``: o quando, nunca o quem.
+_ITEMS_ONLY_KEYS = ("origin_channel", "delivery_date", "delivery_time_slot")
 
 #: Força de identidade de quem entrou por um dispositivo que já provou ser da pessoa.
 STRENGTH_DEVICE = "device"
@@ -98,11 +102,18 @@ class TransferOffer:
     customer_ref: str | None
     actor: str = ""
     at: str = ""
+    #: Só itens e quantidades (OC-18, #3529): o convite que sai pela autoridade de sacola.
+    #: Nenhum dado de pessoa viaja (cliente, endereço, presente, observação, pagamento,
+    #: cupom), e quem aceita não precisa ser o dono: a sacola chega SEM dono, e o
+    #: portador do link de uso único é quem a recebe.
+    items_only: bool = False
 
     @property
     def offer_id(self) -> str:
         rev = "carried" if self.rev is None else str(self.rev)
         raw = f"{self.source_channel}:{self.source_key}:{rev}:{self.dest_channel}"
+        if self.items_only:
+            raw += ":items"
         return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
     @property
@@ -126,6 +137,7 @@ class TransferOffer:
                 customer_ref=str(value.get("customer_ref") or ""),
                 actor=str(value.get("actor") or ""),
                 at=str(value.get("at") or ""),
+                items_only=value.get("items_only") is True,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise TransferRefused("invalid_offer") from exc
@@ -185,10 +197,14 @@ class TransferReceipt:
         return cls(**{key: value.get(key) for key in known})
 
 
-def offer(source_channel: str, source_key: str, dest_channel: str, *, customer_ref: str, actor: str) -> TransferOffer:
+def offer(
+    source_channel: str, source_key: str, dest_channel: str, *, customer_ref: str, actor: str,
+    items_only: bool = False,
+) -> TransferOffer:
     """O convite para levar a sacola aberta de ``source_channel`` a ``dest_channel``.
 
     Só lê. ``customer_ref`` é quem oferece: numa sacola com dono, tem de ser o dono.
+    ``items_only`` é o convite que leva só itens e quantidades (OC-18, #3529).
     """
     session = None
     if source_key:
@@ -207,6 +223,7 @@ def offer(source_channel: str, source_key: str, dest_channel: str, *, customer_r
         customer_ref=owner,
         actor=actor,
         at=timezone.now().isoformat(),
+        items_only=items_only,
     )
 
 
@@ -304,7 +321,10 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
         if offer.customer_ref is not None and _owner_ref(source) != offer.customer_ref:
             # O dono mudou sem mexer na revisão (identificar não incrementa ``rev``).
             raise TransferRefused("source_changed")
-        _authorize(source, dest_context)
+        if not offer.items_only:
+            # Só itens: o portador do link de uso único recebe a sacola sem dono, e nada
+            # de pessoa viaja (``_items_only_data``); não há dono a conferir do lado de lá.
+            _authorize(source, dest_context)
 
         # A sacola com itens que o destino já tem recebe os que chegam: a do
         # navegador ou a da conversa, se for uma delas; senão, a mais antiga.
@@ -329,8 +349,8 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
             offer,
             into=into,
             source_lines=source_lines,
-            source_data=source_data,
-            same_owner=bool(_owner_ref(source)),
+            source_data=_items_only_data(source_data) if offer.items_only else source_data,
+            same_owner=bool(_owner_ref(source)) and not offer.items_only,
             principal=principal,
             dest_context=dest_context,
             transferred_from={
@@ -341,6 +361,12 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
                 "by": actor,
             },
         )
+        if offer.items_only:
+            # O que ficou para trás de propósito vira diferença, pelo NOME do campo, nunca o valor:
+            # o site diz que o endereço e o presente não vieram, e pede ao fechar.
+            left = [key for key in (*_DELIVERY_KEYS, *_GIFT_KEYS) if key in source_data]
+            if left:
+                differences.append({"kind": "details_not_carried", "fields": left})
         receipt = TransferReceipt(
             offer_id=offer.offer_id,
             source_channel=offer.source_channel,
@@ -417,6 +443,16 @@ def _lock_principal(customer_ref: str):
         return account_service.lock_active_customer(customer_ref=customer_ref)
     except account_service.AccountUnavailable as exc:
         raise TransferRefused("not_authorized") from exc
+
+
+def _items_only_data(source_data: dict) -> dict:
+    """A ``Session.data`` que um convite só de itens leva: a data e o horário da fornada.
+
+    Nem cliente, nem endereço, nem presente, nem observação, nem pagamento, nem cupom
+    (OC-18, #3529, condição 1). A data e o horário ficam porque a reserva do destino cai
+    na fornada que a sacola prometia, e não dizem quem é a pessoa.
+    """
+    return {key: source_data[key] for key in _ITEMS_ONLY_KEYS if source_data.get(key) not in (None, "")}
 
 
 def _authorize(source: Session, dest_context: TransferDestination) -> None:

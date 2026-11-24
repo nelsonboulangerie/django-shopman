@@ -324,6 +324,13 @@ def open_elsewhere(customer_ref: str, channel_ref: str):
     return open_sessions_for_customer(customer_ref, exclude_channel=channel_ref)
 
 
+def offered_cart(channel_ref: str, session_key: str):
+    """A sacola de outro canal que uma passagem aponta (``transferred_to``), contada; ``None`` se fechou."""
+    from shopman.shop.services.sessions import open_session_summary
+
+    return open_session_summary(channel_ref, session_key)
+
+
 def conversation_number_available() -> bool:
     """A loja tem WhatsApp para a mensagem pronta de "Continuar pelo WhatsApp" (X1)."""
     from shopman.shop.services.session_transfer import conversation_number

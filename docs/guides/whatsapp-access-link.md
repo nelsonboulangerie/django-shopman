@@ -262,6 +262,73 @@ login no ManyChat. Ela precisa cair na automação que entrega a mensagem à Nic
 padrão). Se cair no Flow de login por engano, o access link sai sem sacola: a troca do link
 ignora a chave `conversation_cart_transfer`, e a sacola continua na loja.
 
+## A Nice manda o site e diz onde a sacola está (OC-18)
+
+O caminho inverso, pela conversa (§4.4 do plano da Etapa II omnicanal). Tudo em
+`storefront/concierge/site_passage.py`, chamado em `service.run_turn` logo depois da
+chegada pelo código `NB-` e antes do motor; frase da casa, sem modelo. Com a ponte
+desligada, nada disto responde e o turno segue como antes.
+
+```
+1. "quero ver as fotos no site" / "manda o link do site" / "prefiro terminar pelo site"
+   → tools.send_web_link (checkout quando a conversa tem sacola, cardápio quando não)
+   → "Continue no site: <link>" + "Sua sacola vai junto."
+     (oferecer não tira a sacola daqui; a troca do link é o aceite)
+2. A mensagem seguinte, com a sacola aceita no site (Session.data["transferred_to"]):
+   a resposta do turno + "Sua sacola está no site, com 2 itens (R$ 1,80). Se quiser
+   pedir por aqui, me peça que eu trago os itens para cá."
+   Uma vez só (a conversa esquece a chave), e só com a sacola do site ainda aberta. A
+   oferta inversa só aparece quando é possível agora (ponte ligada, número verificado).
+3. "traz a sacola pra cá" / "prefiro pedir por aqui" → tools.bring_site_cart: oferta e
+   aceite no mesmo turno (session_transfer.offer + accept), a mesma régua do "Trazer
+   para cá" da loja. Com sacola aqui também, os itens entram nela (mescla, decisão do
+   dono de 24/11): "Trouxe os itens do site para cá."
+```
+
+**Pela entrada sem identificador de mensagem (ADR-050), decisão da Coordenação na #3529.**
+A entrada de hoje do ManyChat só dá a autoridade de sacola, e com ela o convite com a sacola
+vale em três condições, escritas no código e testadas em `test_ponte_da_nice.py`
+(`test_3529_condition_*`):
+
+1. **O link só leva a sacola.** A oferta é `items_only` (só itens, quantidades e a data e o
+   horário da fornada: nada de cliente, endereço, presente, observação, pagamento ou cupom) e
+   o `AccessLink` leva `cart_only`: a troca (`auth._exchange_cart_only`) gasta o link sem abrir
+   sessão (`access.redeem_without_session`), não confia no dispositivo e não devolve nome nem
+   telefone. A sacola chega sem dono; a prova de quem é acontece no site, no fechamento.
+2. **O mesmo crachá do convite de hoje.** O mesmo `AccessLink`, com a mesma audiência e o
+   mesmo prazo (`ACCESS_LINK_EXCHANGE_TTL_MINUTES`), de uso único pelo mesmo portão do doorman.
+3. **Só para aquele assinante.** O link só se cunha dentro do turno da conversa (a cerca do
+   turno e o vínculo, `assert_turn_authority`) e sai na resposta dela; a ferramenta não aceita
+   destinatário.
+
+Sem sacola, o link seria um acesso à conta, e por esta entrada vai o endereço público do
+cardápio. A volta acha a sacola que a conversa mandou pelo `transferred_to` dela, mesmo sem
+dono.
+
+O cliente que não pede o site nunca recebe o link (§5.3, C09). Frase com negação ("não
+quero o site", "o site não abre") não é pedido; a fala que só diz o canal ("prefiro pedir
+por aqui") recebe "Claro, seguimos por aqui na conversa." e a sacola, se houver.
+
+### Ligar a ponte no ambiente de testes
+
+A chave é `CONCIERGE_TRANSFER_ENABLED` (env de runtime, nível de app, lida em
+`config/settings.py` como `SHOPMAN_CONCIERGE["transfer_enabled"]`). Ela já existe: não
+se cria outra (ADR-042). Ligar é decisão da Coordenação, e muda o app vivo:
+
+1. `make deploy-spec-drift context=shopman-do-app-admin` (o versionado contra o vivo).
+2. `doctl apps spec get <APP_ID> --context shopman-do-app-admin > /tmp/spec-vivo.yaml`
+   (o contexto que lê databases; nunca aplicar `.do/app.alpha-subdomains.yaml` por cima).
+3. No bloco `envs:` do app, `CONCIERGE_TRANSFER_ENABLED` de `'false'` para `'true'`.
+4. `doctl apps update <APP_ID> --spec /tmp/spec-vivo.yaml --context shopman-do-app-admin --wait`
+   (env de runtime: sem rebuild).
+5. Espelhar o valor em `.do/app.alpha-subdomains.yaml` num PR, para o drift não acusar.
+
+⚠️ A chave liga as duas pontas: a Nice (este fluxo) **e** os gestos da loja do OC-16
+("Continuar pelo WhatsApp", "Trazer para cá"), que aparecem a todo cliente da loja
+quando a Concierge está atendendo. A mensagem de "Continuar pelo WhatsApp" só chega à
+Nice para quem está na coorte (`CONCIERGE_ALLOWED_SUBSCRIBERS`). Desligar é o passo 3
+com `'false'`.
+
 ## Degradação da sacola (handoff_expired)
 
 Omotenashi: nunca sumir com a sacola em silêncio. Se o código veio mas **não resolveu**
