@@ -675,8 +675,11 @@ useSeoMeta({
         <template v-else>
         <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
              campos. `data-focus-target` aplica a régua única do Storefront —
-             exatamente a base visual da navbar (4rem + fio Brass de 6px). -->
-        <section :data-focus-target="step" class="shop-stack-block outline-none" tabindex="-1">
+             exatamente a base visual da navbar (4rem + fio Brass de 6px).
+             O respiro entre o cabeçalho e o título é do BLOCO, como no checkout
+             (o passo tem py-4): `-mt-4 pt-4` põe 16px acima do título sem mexer
+             no lugar dele na página parada. Sem isso o título encostava no fio. -->
+        <section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>

@@ -92,7 +92,7 @@ describe('focusRulerAllowance', () => {
     expect(focusRulerAllowance(900)).toBe(0)
   })
 
-  it('em qualquer bloco e qualquer estado de partida, o topo do bloco fica abaixo do chrome', () => {
+  it('em qualquer bloco e qualquer estado de partida, o bloco para NA linha de foco, nunca sob o chrome', () => {
     const NAVBAR = 70
     // O cabeçalho é sticky e ocupa o fluxo: conteúdo nenhum começa acima dele.
     const firstContent = NAVBAR + STATUS_BAR_HEIGHT
@@ -102,8 +102,18 @@ describe('focusRulerAllowance', () => {
         const ruler = NAVBAR + focusRulerAllowance(base)
         const landing = Math.max(0, blockTop - ruler)
         const visibleTop = blockTop - landing
-        expect(visibleTop, `bloco em ${blockTop}, partida ${startCollapsed ? 'recolhida' : 'de pé'}`)
-          .toBeGreaterThanOrEqual(chromeAt(startCollapsed, landing))
+        const chrome = chromeAt(startCollapsed, landing)
+        const where = `bloco em ${blockTop}, partida ${startCollapsed ? 'recolhida' : 'de pé'}`
+        expect(visibleTop, where).toBeGreaterThanOrEqual(chrome)
+        // A MESMA linha da régua padrão (barra recolhida, régua do CSS): o topo do
+        // bloco encosta na base do chrome que está à vista, com a status bar de pé
+        // ou não. O respiro até o conteúdo é do próprio bloco (o passo do checkout
+        // tem py-4; o do /entrar, -mt-4 pt-4), então ele é o mesmo nos dois estados.
+        // Exceções medidas: a página no topo (não dá para subir mais) e a parada
+        // exata na reexpansão com a barra recolhida (36px a mais, à vista).
+        const clamped = landing === 0
+        const expandEdge = startCollapsed && landing === HEADER_EXPAND_AT
+        if (!clamped && !expandEdge) expect(visibleTop - chrome, where).toBe(0)
       }
     }
   })

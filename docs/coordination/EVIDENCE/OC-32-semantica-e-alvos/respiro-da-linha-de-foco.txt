@@ -1,0 +1,14 @@
+OC-32, revisão: respiro entre a base do cabeçalho à vista e o título levado pelo próximo foco.
+Prévia local (Nuxt dev + Django, seed qa), 24/11/2026. Base do chrome = caixa do header + fio Brass de 6px.
+respiroBloco = topo do bloco [data-focus-target] menos a base do chrome; respiroTitulo = topo do título menos a base do chrome.
+
+{"vp":"375","tela":"termos#pickup-and-delivery","scrollY":1934,"statusBar":"recolhida","title":"Retirada e entrega","chromeBottom":70,"blockTop":70,"titleTop":103,"respiroTitulo":33,"respiroBloco":0}
+{"vp":"375","tela":"entrar: passo do código","scrollY":2,"statusBar":"de pé","title":"Informe o código","chromeBottom":106,"blockTop":106,"titleTop":122,"respiroTitulo":16,"respiroBloco":0}
+{"vp":"375","tela":"entrar: Trocar telefone","scrollY":2,"statusBar":"de pé","title":"Entre pelo WhatsApp","chromeBottom":106,"blockTop":106,"titleTop":122,"respiroTitulo":16,"respiroBloco":0}
+{"vp":"desktop","tela":"termos#pickup-and-delivery","scrollY":1426,"statusBar":"recolhida","title":"Retirada e entrega","chromeBottom":70,"blockTop":70,"titleTop":103,"respiroTitulo":33,"respiroBloco":0}
+{"vp":"desktop","tela":"entrar: passo do código","scrollY":18,"statusBar":"de pé","title":"Informe o código","chromeBottom":106,"blockTop":106,"titleTop":122,"respiroTitulo":16,"respiroBloco":0}
+{"vp":"desktop","tela":"entrar: Trocar telefone","scrollY":18,"statusBar":"de pé","title":"Entre pelo WhatsApp","chromeBottom":106,"blockTop":106,"titleTop":122,"respiroTitulo":16,"respiroBloco":0}
+
+Leitura: a régua padrão (barra recolhida, scroll-margin-top do CSS) põe o topo do BLOCO na base do chrome, com 0px.
+O respiro até o título é do próprio bloco: Termos pt-8 + fio (33px medido), passo do checkout py-4 (16px, pela classe, não medido aqui).
+O /entrar passa a ter o bloco na mesma linha (0px, de pé ou recolhida) e o título a 16px, como o passo do checkout.

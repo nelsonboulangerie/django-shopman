@@ -729,6 +729,9 @@ describe('surface UX guardrails', () => {
     // rolagem/foco escritos à mão na página.
     expect(login).toContain('useNextFocus(step)')
     expect(login).toContain(':data-focus-target="step"')
+    // O título do passo para na linha de foco COM respiro: 16px do bloco
+    // (`-mt-4 pt-4`, o mesmo py-4 do passo do checkout), sem encostar no fio.
+    expect(login).toContain('<section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">')
     expect(login).not.toContain('scrollTo(')
     expect(login).not.toContain('.focus(')
     expect(login).toContain('data-login-moment')
