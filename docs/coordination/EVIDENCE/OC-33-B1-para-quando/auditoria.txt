@@ -1,0 +1,10 @@
+[375 1 para quando] regioes=1 fontes=[14, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[375 2 cardapio do dia] regioes=2 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=['Mostrar só disponíveis:32x18'] cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[375 3 sacola] regioes=1 fontes=[14] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[375 4 checkout] resumo_do_quando='qui, 26/11 · A partir das 15h'
+[375 4 checkout] regioes=1 fontes=[14, 16] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[desktop 1 para quando] regioes=1 fontes=[14, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[desktop 2 cardapio do dia] regioes=2 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=['Mostrar só disponíveis:32x18'] cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[desktop 3 sacola] regioes=1 fontes=[14] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[desktop 4 checkout] resumo_do_quando='qui, 26/11 · A partir das 15h'
+[desktop 4 checkout] regioes=1 fontes=[14, 16] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
