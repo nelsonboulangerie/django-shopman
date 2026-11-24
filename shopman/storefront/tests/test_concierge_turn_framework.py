@@ -199,6 +199,10 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "present_terms.needs_delivery_address_saved_many": ("Entregamos no endereço do seu cadastro, "
                                                         "{delivery_address_saved}? Se preferir outro endereço "
                                                         "cadastrado, é só dizer qual."),
+    # O quando (#3482): as perguntas de hoje do fechamento, letra por letra; o horário com as opções do dia.
+    "present_terms.needs_fulfillment_date": "Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?",
+    "present_terms.needs_fulfillment_type": "Você vai retirar aqui na loja ou prefere entrega?",
+    "present_terms.needs_delivery_time_slot": "Qual horário de retirada fica melhor? {delivery_time_slot}",
     # O "outro" à oferta (#3454): a MESMA lista de hoje (``address.saved_listing``).
     "present_terms.needs_delivery_address_saved_options": ("Seus endereços cadastrados: "
                                                            "{delivery_address_saved_options}. Em qual entregamos?"),
@@ -345,3 +349,14 @@ def test_the_judge_reads_an_effect_turn_by_its_templates():
     other = gap + [Finding("number_without_fact", 0)]
     assert turn_framework.judge(shadow(other), enabled=frozenset({"order"}), approved=approved).reason == (
         "held:number_without_fact")
+
+
+def test_the_turn_reads_ceiling_fits_a_close_with_every_effect():
+    """P16 (#3482): o teto do motor conta LEITURAS, não as voltas da IA do caminho de hoje. Com 5, "pra amanhã,
+    pode fechar" estourava e os termos não se apresentavam. Cabe: cotação e o que falta, os nomes de uma sacola
+    grande, e cotar de novo e reler o que falta depois de cada efeito da sequência."""
+    from conversational_commerce.engine.turn import EFFECT_SEQUENCE
+
+    from shopman.storefront.concierge.profile import _max_steps
+
+    assert _max_steps() >= 2 + 8 + 2 * len(EFFECT_SEQUENCE)

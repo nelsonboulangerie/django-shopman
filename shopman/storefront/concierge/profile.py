@@ -218,8 +218,16 @@ def _retention(measured: Mapping[str, Any]) -> dict[str, int]:
     return {"observation": days} if 1 <= days <= 30 else {}
 
 
-def _max_steps() -> int:
-    """O teto de passos do turno do framework: o ``MAX_LOOPS`` do handler (P16)."""
-    from .handler import MAX_LOOPS
+#: O teto de LEITURAS do turno do motor (P16, Engenharia). Não é o ``MAX_LOOPS`` do handler, que conta voltas da
+#: IA com ferramentas (e nenhuma leitura de ferramenta): o motor conta cada leitura do sistema de registro. Um
+#: fechamento lê a cotação, o que falta e o nome de cada item; cada efeito do turno (a sacola, o recebimento,
+#: o endereço, o pagamento) cota de novo e relê o que falta. Com o teto 5 de antes, "pra amanhã, pode fechar"
+#: já estourava (calibragem de 23/11, #3482), e uma sacola de 3 produtos estourava com um efeito só: o que falta
+#: ficava sem leitura, os termos não se apresentavam e a Nice dizia que não conseguia. 2 (cotação e o que
+#: falta) + 8 nomes + 4 efeitos × 2 + 2 de folga (catálogo, item consultado).
+MAX_READS_PER_TURN = 20
 
-    return int(MAX_LOOPS)
+
+def _max_steps() -> int:
+    """O teto de passos do turno do framework: as leituras do motor (P16)."""
+    return MAX_READS_PER_TURN

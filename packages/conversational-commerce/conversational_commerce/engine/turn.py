@@ -502,8 +502,10 @@ class Engine:
                 state.subject = self.subject_of(ctx, event)
                 self._quote(ctx, state, budget, refresh=True)
                 requoted = True
-            elif action in ("set_payment", "set_delivery_address"):
-                self._quote(ctx, state, budget, refresh=True)  # a condição mudou: termos novos
+            elif action in ("set_payment", "set_delivery_address", "set_fulfillment"):
+                # A condição mudou (o recebimento também é dos termos: o dia e o horário estão no resumo, e o
+                # quando é condição para registrar): termos novos.
+                self._quote(ctx, state, budget, refresh=True)
                 requoted = True
             elif action == "commit_order" and receipt.domain_refs.get("effect"):
                 ref = receipt.domain_refs["effect"]

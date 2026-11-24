@@ -85,3 +85,6 @@ class SyntheticState:
     address: dict[str, dict] = field(default_factory=dict)
     # Os endereços do cadastro do sujeito, por carrinho (o texto; o padrão primeiro).
     saved_addresses: dict[str, list[str]] = field(default_factory=dict)
+    # Os horários de retirada do canal. Com eles, o canal exige o quando (dia, modo, horário) antes dos
+    # termos, como o fechamento da casa; sem eles (o padrão), o falso não exige.
+    pickup_slots: tuple[str, ...] = ()

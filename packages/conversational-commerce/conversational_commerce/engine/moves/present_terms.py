@@ -26,6 +26,13 @@ TEMPLATES = (
     # ``requirements.<carrinho>``. Um molde por condição; o genérico diz só o que falta.
     Template("present_terms.needs_payment_method", "1", MOVE, "How would you like to pay? {payment_method}",
              {"payment_method": SlotSpec(("fact",), "payment_method")}),
+    # O quando, na ordem do fechamento: o dia, retirar ou entregar, e o horário da retirada (lista lastreada
+    # no fato). Sem ele, os termos se apresentariam sem o que o sistema de registro exige para gravar.
+    Template("present_terms.needs_fulfillment_date", "1", MOVE,
+             "When is the order for? Today, tomorrow or another day (day/month)?"),
+    Template("present_terms.needs_fulfillment_type", "1", MOVE, "Will you pick it up at the store, or should we deliver?"),
+    Template("present_terms.needs_delivery_time_slot", "1", MOVE, "Which pickup time works best? {delivery_time_slot}",
+             {"delivery_time_slot": SlotSpec(("fact",), "delivery_time_slot")}),
     # A entrega (spec 08 §6): o endereço, o que falta nele (lista lastreada no fato) e o complemento.
     Template("present_terms.needs_delivery_address", "1", MOVE,
              "What is the delivery address? Send your location or write street, number and district."),

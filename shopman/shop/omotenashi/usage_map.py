@@ -189,6 +189,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_CLOSE_ASK_DATE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_CLOSE_ASK_FULFILLMENT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -203,6 +204,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_CLOSE_ASK_SLOT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_CLOSE_CONFIRM_CODE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
