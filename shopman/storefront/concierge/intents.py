@@ -666,6 +666,8 @@ class PartReply:
     verifying: bool = False
     memo: dict = field(default_factory=dict)
     tool_events: list[dict] = field(default_factory=list)
+    #: Mensagens próprias que seguem a resposta (o código Pix da consulta, para copiar).
+    extra_replies: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1522,6 +1524,8 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             run.replies.append(PartReply(
                 act, text=tools_module.render_result("order_status", result),
                 tool_events=[{"name": "order_status", "input": {}, "ok": result.get("ok", True)}],
+                # "Manda o Pix de novo": o código, sozinho na mensagem seguinte (OC-05).
+                extra_replies=tools_module.copy_texts(result),
             ))
             continue
         if act.act == ALLERGY:
@@ -2082,6 +2086,9 @@ def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text:
             return outcome
     body = compose(executed)
     outcome.reply_text = f"{lead}\n{body}" if lead and body else body
+    outcome.extra_replies = list(dict.fromkeys(
+        text for reply in executed.replies if not reply.suspended for text in reply.extra_replies
+    ))
     return outcome
 
 

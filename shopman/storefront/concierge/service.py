@@ -463,7 +463,9 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
         if created and conversation.state == Conversation.State.HANDOFF:
             from . import verification
 
-            if verification.returns_on_new_message(conversation) and return_to_concierge(conversation):
+            if verification.returns_on_new_message(conversation) and return_to_concierge(
+                conversation, answer_waiting=True
+            ):
                 # Foi à equipe só pelo prazo do "vou verificar" e o cliente escreveu de novo
                 # (dono, 20/11/2026, #2836): volta à Concierge, que responde (a devolução
                 # agenda o turno das mensagens sem resposta, esta inclusive).
@@ -625,6 +627,66 @@ def _scope_connection(scope: TransportScope):
     if not _subject_allowed(connection, scope.subject):
         return None
     return connection
+
+
+def detach_reassigned_number(customer_ref: str, phone: str) -> int:
+    """O número saiu do cadastro (``contact_reassigned``, D3): a conversa dele se desliga.
+
+    No WhatsApp o endereço do transporte é o assinante, e o assinante é o número: quem
+    herda o número escreve pelo MESMO vínculo e cairia na conversa, na sacola e na
+    identidade de quem tinha o número. O vínculo é rebaixado (sem verificação), sai
+    de serviço e solta o endereço, para que a próxima mensagem daquele número abra
+    uma conversa nova, sem herdar nada; a conversa antiga fica intacta, com o dono
+    de antes. Turno em andamento perde a autoridade (cerca). Devolve quantos
+    vínculos soltou.
+    """
+    if not customer_ref or not phone:
+        return 0
+    now = timezone.now()
+    detached = 0
+    conversation_ids = list(
+        Conversation.objects.filter(customer_ref=customer_ref, phone=phone).values_list("pk", flat=True)
+    )
+    for conversation_id in conversation_ids:
+        conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
+        bindings = ConversationBinding.objects.select_for_update().filter(
+            conversation=conversation,
+        ).exclude(status=ConversationBinding.Status.DISABLED)
+        for binding in bindings:
+            binding.identity_assurance = ConversationBinding.IdentityAssurance.UNVERIFIED
+            binding.status = ConversationBinding.Status.DISABLED
+            binding.deactivated_at = now
+            # O endereço é único por provedor: só solto ele nasce o vínculo do novo titular.
+            binding.subject = f"{binding.subject}#desligado-{binding.pk}"[:512]
+            binding.save(update_fields=["identity_assurance", "status", "deactivated_at", "subject", "updated_at"])
+            detached += 1
+        Conversation.objects.filter(pk=conversation.pk).update(
+            turn_fence=F("turn_fence") + 1,
+            claim_until=None,
+        )
+    if detached:
+        logger.warning("concierge.binding_detached_number_left customer=%s bindings=%s", customer_ref, detached)
+    return detached
+
+
+def _number_proof_lapsed(conversation: Conversation, binding: ConversationBinding) -> bool:
+    """O vínculo verificado vale enquanto o número tiver prova recente (D3b).
+
+    Acesso de número sem uso verificado há mais de 12 meses volta a pedir prova: o
+    vínculo cai para sem verificação, e o turno segue sem autoridade comercial até a
+    pessoa confirmar o acesso pelo site (o caminho de prova que a Concierge já usa).
+    """
+    if binding.identity_assurance != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER:
+        return False
+    if not conversation.customer_ref or not conversation.phone:
+        return False
+    from shopman.shop.services import auth as auth_service
+
+    if not auth_service.number_proof_expired(customer_ref=conversation.customer_ref, phone=conversation.phone):
+        return False
+    binding.identity_assurance = ConversationBinding.IdentityAssurance.UNVERIFIED
+    binding.save(update_fields=["identity_assurance", "updated_at"])
+    return True
 
 
 def attach_binding(
@@ -882,6 +944,7 @@ def _claim(conversation_id: int, binding_id: int):
         conversation.turn_fence += 1
         conversation.claim_until = timezone.now() + timedelta(seconds=120)
         conversation.save(update_fields=["turn_fence", "claim_until"])
+        _number_proof_lapsed(conversation, binding)
         adapter = transport.adapter_for(binding)
         connection = transport.connection_for(binding)
         conversation._turn_fence = conversation.turn_fence
@@ -1760,8 +1823,30 @@ def mark_handoff(
     return accepted
 
 
-def return_to_concierge(conversation: Conversation) -> bool:
-    """Reativa somente após aceite remoto em todos os vínculos ativos."""
+#: ``ConversationMessage.envelope["kind"]`` da nota da devolução. Ver docs/reference/data-schemas.md.
+RETURN_NOTE = "returned_from_team"
+#: ``envelope["kind"]`` da nota de aviso de pedido gravada pela notificação (OC-10).
+ORDER_NOTICE_KIND = "order_notice"
+
+
+def return_to_concierge(conversation: Conversation, *, answer_waiting: bool = False) -> bool:
+    """Reativa somente após aceite remoto em todos os vínculos ativos.
+
+    A Concierge retoma relendo o domínio, não o diálogo (OC-13, J8 do plano omnicanal):
+    o ManyChat não entrega ao Shopman o que a equipe escreve no Live Chat (D6: a Page API
+    não tem leitura de mensagens nem assinatura de evento,
+    ``evidence/conversational/whatsapp-window/message-identity-audit.json``; o External
+    Request só dispara com a fala do cliente), então nada do que a casa perguntou antes
+    da equipe vale. A
+    memória recomeça do pedido aberto (``dialogue.after_team``), a pergunta de
+    cancelamento no ar cai, e a nota da devolução grava o que o domínio dizia na hora
+    (sacola, pedido aberto, avisos que saíram enquanto a equipe atendia).
+
+    ``answer_waiting=False`` (a equipe devolveu, pelo Admin ou pela porta do framework):
+    o que o cliente escreveu até aqui foi lido e respondido pela equipe, e a Concierge
+    não executa de novo (N19). ``True`` só na volta sozinha do "vou verificar" vencido
+    (#2836): ninguém da equipe assumiu, e a mensagem que acabou de chegar é respondida.
+    """
     if not config().get("human_return_enabled") or not is_enabled():
         return False
     with transaction.atomic():
@@ -1811,30 +1896,56 @@ def return_to_concierge(conversation: Conversation) -> bool:
                 handoff_sync_state="routing_mismatch"
             )
         if synced:
-            # A equipe falou coisas que o sistema não viu: a memória da conversa zera.
-            from . import dialogue
+            from . import cancellation, dialogue
 
-            dialogue.forget(current.pk)
-            current.refresh_from_db(fields=["flags"])
+            team_since = current.handoff_at
             current.state = Conversation.State.ACTIVE
             current.turn_fence += 1
             current.handoff_reason = ""
             current.handoff_at = None
+            # A equipe falou coisas que o sistema não vê (D6): a memória do diálogo cai e
+            # recomeça do domínio, relido agora. A pergunta de cancelamento no ar cai junto:
+            # um "sim" depois da volta nunca cancela pedido (C08).
+            facts = dialogue.load_facts(current)
+            flags = dict(current.flags or {})
+            flags.pop(cancellation.PENDING_FLAG, None)
+            memory = dialogue.after_team(facts, fence=current.turn_fence)
+            if memory:
+                flags[dialogue.FLAG_KEY] = memory
+            else:
+                flags.pop(dialogue.FLAG_KEY, None)
+            current.flags = flags
             current.save(
                 update_fields=[
                     "state",
                     "turn_fence",
                     "handoff_reason",
                     "handoff_at",
+                    "flags",
                     "updated_at",
                 ]
             )
+            revoked = []
+            if not answer_waiting:
+                # O que o cliente escreveu até a devolução é do episódio da equipe: ela leu e
+                # respondeu no Live Chat. A Concierge não executa de novo (N19).
+                waiting = current.messages.filter(
+                    kind=ConversationMessage.Kind.INBOUND, automation_eligible=True, consumed_by__isnull=True
+                )
+                revoked = list(waiting.order_by("pk").values_list("pk", flat=True))
+                waiting.update(consumed_by=current.turn_fence)
             ConversationMessage.objects.create(
                 conversation=current,
                 role=ConversationMessage.Role.ASSISTANT,
                 kind=ConversationMessage.Kind.NOTE,
                 text="Voltou para o concierge.",
-                envelope={"version": 3, "turn_fence": current.turn_fence},
+                envelope={
+                    "version": 3,
+                    "kind": RETURN_NOTE,
+                    "turn_fence": current.turn_fence,
+                    "domain": _domain_on_return(current, facts, team_since=team_since),
+                    "revoked_inbound_ids": revoked,
+                },
             )
             for binding in bindings:
                 if unanswered_inbound(current, binding):
@@ -1853,6 +1964,30 @@ def return_to_concierge(conversation: Conversation) -> bool:
         # Voltou à Concierge: o cartão de atendimento humano desta conversa acabou.
         _close_card(conversation, "concierge_handoff", actor="concierge")
     return synced
+
+
+def _domain_on_return(conversation: Conversation, facts, *, team_since) -> dict:
+    """O que o domínio dizia na devolução: o que a Concierge relê, gravado para quem audita.
+
+    Sacola e pedidos vêm dos fatos já lidos (``dialogue.load_facts``); os avisos de pedido
+    são as notas que a notificação gravou na conversa (OC-10) desde que a equipe assumiu.
+    """
+    notices = []
+    if team_since is not None:
+        notices = [
+            {"order_ref": (envelope or {}).get("order_ref", ""), "template": (envelope or {}).get("template", ""),
+             "at": created_at.isoformat()}
+            for envelope, created_at in conversation.messages.filter(
+                kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_KIND, created_at__gte=team_since
+            ).order_by("pk").values_list("envelope", "created_at")
+        ]
+    open_order = facts.open_order
+    return {
+        "session_key": conversation.session_key,
+        "cart": [{"sku": sku, "qty": str(line.get("qty") or "")} for sku, line in facts.cart.items()],
+        "open_order": {"ref": open_order.ref, "status": open_order.status} if open_order else None,
+        "notices": notices,
+    }
 
 
 #: Falhas seguidas da resposta automática antes de a conversa ir para a equipe.

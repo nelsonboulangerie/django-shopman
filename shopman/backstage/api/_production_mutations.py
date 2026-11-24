@@ -210,7 +210,7 @@ class ProductionNotFoundErrorEnvelope:
 
 @dataclass(frozen=True)
 class ProductionShortagePossibility:
-    kind: Literal["retry", "force"]
+    kind: Literal["retry", "force", "confirm"]
     label: str
     enabled: bool
     proof: str
@@ -242,6 +242,12 @@ class ProductionMaterialShortageErrorEnvelope:
 
 
 @dataclass(frozen=True)
+class ProductionOrderShortageLine:
+    ref: str
+    qty: str
+
+
+@dataclass(frozen=True)
 class ProductionOrderShortageErrorBody:
     code: Literal["order_shortage"]
     work_order_ref: str
@@ -250,6 +256,7 @@ class ProductionOrderShortageErrorBody:
     required: str
     requested: str
     order_refs: tuple[str, ...]
+    orders: tuple[ProductionOrderShortageLine, ...]
 
 
 @dataclass(frozen=True)
@@ -396,6 +403,13 @@ class ProductionPlanMutationSerializer(MutationAttemptSerializer):
 
 
 class ProductionStartMutationSerializer(ExistingWorkOrderMutationSerializer):
+    # A confirmação do lote curto (decisão 1 do dono, 23/11/2026): a prova assinada
+    # que a recusa de encomenda devolveu, com o impacto exato que a pessoa leu.
+    short_lot_proof = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=4096,
+    )
     quantity = serializers.DecimalField(
         max_digits=12,
         decimal_places=3,
@@ -463,6 +477,13 @@ class ProductionPartitionGroupSerializer(StrictMutationSerializer):
 
 
 class ProductionFinishMutationSerializer(ExistingWorkOrderMutationSerializer):
+    # A confirmação do lote curto (decisão 1 do dono, 23/11/2026): a prova assinada
+    # que a recusa de encomenda devolveu, com o impacto exato que a pessoa leu.
+    short_lot_proof = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=4096,
+    )
     override_proof = serializers.CharField(
         required=False,
         allow_blank=False,
@@ -743,6 +764,7 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionMaterialShortageItem,
     ProductionMaterialShortageErrorBody,
     ProductionMaterialShortageErrorEnvelope,
+    ProductionOrderShortageLine,
     ProductionOrderShortageErrorBody,
     ProductionOrderShortageErrorEnvelope,
 )
