@@ -365,11 +365,23 @@ def test_the_turn_reads_ceiling_fits_a_close_with_every_effect():
 
 
 
-def test_grid_labels_inside_a_sentence_start_in_lower_case():
-    """Regra do dono: maiúscula só em valor isolado. Os rótulos da grade, encaixados na pergunta, começam
-    minúsculos; o rótulo em si não muda."""
+@pytest.mark.parametrize(("before", "closes", "expected"), [
+    # Depois de "?": frase nova, a primeira opção com maiúscula, as demais minúsculas, e o ponto que fecha.
+    ("Qual horário de retirada fica melhor? ", True, "A partir das 9h, a partir das 12h ou a partir das 15h."),
+    # No começo do texto: maiúscula também.
+    ("", False, "A partir das 9h, a partir das 12h ou a partir das 15h"),
+    # No meio da frase: tudo minúsculo.
+    ("Temos horários ", False, "a partir das 9h, a partir das 12h ou a partir das 15h"),
+])
+def test_grid_labels_follow_the_position_in_the_sentence(before, closes, expected):
+    """Regra do dono (coordenação, 24/11): maiúscula só em início de frase; dentro dela, minúscula. O rótulo da
+    grade não muda."""
     labels = ["A partir das 9h", "A partir das 12h", "A partir das 15h"]
-    expected = "a partir das 9h, a partir das 12h ou a partir das 15h"
-    assert turn_framework.pickup_slots_text(None)(labels) == expected
-    assert turn_framework.delivery_windows_text(None)(labels) == expected
+    assert turn_framework.labels_in_sentence(labels, before=before, closes=closes) == expected
     assert labels[0] == "A partir das 9h"
+
+
+def test_the_questions_say_the_grid_after_the_question_mark(db):
+    labels = ["A partir das 9h", "A partir das 15h"]
+    assert turn_framework.pickup_slots_text(None)(labels) == "A partir das 9h ou a partir das 15h."
+    assert turn_framework.delivery_windows_text(None)(labels) == "A partir das 9h ou a partir das 15h."
