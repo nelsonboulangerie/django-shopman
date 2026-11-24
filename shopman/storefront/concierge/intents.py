@@ -732,6 +732,8 @@ _PLAIN_PRODUCT_WORDS = frozenset({
     "ainda", "custa", "custam", "disponivel", "disponiveis", "fica", "hoje", "preco", "precos",
     "quanto", "quantos", "sai", "temos", "tem", "tinha", "valor", "vende", "vendem", "voces",
     "amanha", "agora", "unidade", "unidades",
+    # "mas a baguete de tradição, não tem?": o "mas" e o "não" perguntam presença, não atributo.
+    "mas", "nao", "sim", "entao",
 })
 #: "Ele é doce?" sem o produto resolvido: de quem se fala a busca não sabe.
 #: Sem "esta": sem acento é o verbo ("está disponível?", "ainda está aí?"), não "esta aqui".
@@ -949,6 +951,124 @@ def _cited(act: Act, conversation) -> str:
     return " ".join(words).strip(" ?!.,") or (act.product or act.span)
 
 
+# ── Duas coisas numa pergunta, e o nome como o cliente fala ──────────
+#
+# "Ainda tem pão champagne e folhado de maçã?" (dono, 24/11/2026): a casa respondeu
+# "Não encontrei “pão champagne e folhado de maçã”". Duas coisas pedidas têm cada uma a
+# sua resposta, e "champagne" é o "campagne" do cardápio dito como se fala.
+
+#: O quanto uma palavra fora do cardápio precisa parecer com uma do cardápio para ser ela.
+SPELLING_CUTOFF = 0.85
+_ASKED_SEPARATOR = re.compile(r"\s*[,;+]\s*|\s+(?:e|ou)\s+", re.IGNORECASE)
+
+
+def _menu_names(channel_ref: str) -> list[str]:
+    """Os nomes do cardápio do canal (vazio quando o cardápio não abre)."""
+    from shopman.storefront.presentation.catalog import build_catalog
+
+    try:
+        catalog = build_catalog(channel_ref=channel_ref)
+    except Exception:
+        logger.warning("concierge.intents.menu_names_failed channel=%s", channel_ref, exc_info=True)
+        return []
+    return [str(item.name or "") for item in catalog.items]
+
+
+def _distinctive(text: str) -> set[str]:
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+
+    return {
+        word_stem(word) for word in tools_module._public_search_terms(text)
+        if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
+        and word not in _CITE_LEADING
+    }
+
+
+def _named_by(items: list[dict], words: list[str]) -> list[dict]:
+    """Os itens que levam no NOME uma das palavras (a corrigida é o que o cliente pediu)."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    wanted = {word_stem(word) for word in words}
+    return [
+        item for item in items
+        if wanted & {word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))}
+    ]
+
+
+def asked_pieces(asked: str, menu_names: list[str]) -> list[str]:
+    """As coisas pedidas, uma por pedaço ("pão champagne e folhado de maçã" são duas).
+
+    Só separa quando cada pedaço tem palavra que distingue produto e nenhum nome do
+    cardápio leva o conjunto ("Romeu e Julieta" é um item só).
+    """
+    folded = _fold(asked)
+    for name in menu_names:
+        joined = _fold(name)
+        if _ASKED_SEPARATOR.search(joined) and joined in folded:
+            return [asked]
+    pieces = [piece.strip(" ?!.") for piece in _ASKED_SEPARATOR.split(asked) if piece.strip(" ?!.")]
+    if len(pieces) < 2 or not all(_distinctive(piece) for piece in pieces):
+        return [asked]
+    return pieces
+
+
+#: Como se escreve o que se ouve: "campanha" é "campagne" (o "gn" francês é o nosso "nh"),
+#: "ciabata" é "ciabatta", "capuccino" é "cappuccino", "tradição" é "tradition". A chave
+#: compara o som, não a letra.
+_SOUND_RULES = (("tion", "sao"), ("cao", "sao"), ("gn", "nh"), ("ph", "f"), ("th", "t"), ("ch", "x"), ("sh", "x"), ("y", "i"), ("w", "v"),
+                ("qu", "k"), ("c", "k"), ("ç", "s"))
+
+
+def _sound_key(word: str) -> str:
+    key = _fold(word)
+    for written, heard in _SOUND_RULES:
+        key = key.replace(written, heard)
+    key = re.sub(r"(.)\1+", r"\1", key)  # letra dobrada soa como uma: "baguette", "ciabatta"
+    key = re.sub(r"s$", "", key)  # o plural: "croassants" pede o croissant
+    return re.sub(r"[eao]$", "", key)  # a vogal final some na fala: "campagne" e "campanha"
+
+
+def spelled_as_menu(text: str, menu_names: list[str]) -> tuple[str, list[str]]:
+    """O texto com cada palavra fora do cardápio trocada pela única do cardápio que ela parece.
+
+    Devolve (texto, palavras corrigidas). Duas palavras do cardápio igualmente perto: nada
+    se troca (a busca segue como veio). Só palavra que distingue produto, de cinco letras
+    ou mais: "pão" e "de" nunca viram outra coisa.
+    """
+    import difflib
+
+    from shopman.storefront.presentation.public_information import word_stem
+
+    vocabulary = sorted({
+        word for name in menu_names for word in re.findall(r"[a-z0-9]+", _fold(name)) if len(word) >= 5
+    })
+    stems = {word_stem(word) for word in vocabulary}
+    corrected: list[str] = []
+    words = []
+    for word in text.split():
+        folded = _fold(word).strip("?!.,;:")
+        if (
+            len(folded) >= 5 and folded.isalpha() and word_stem(folded) not in stems
+            and folded not in _GENERIC_PRODUCT_WORDS and folded not in _ORDER_FILLER
+        ):
+            heard = _sound_key(folded)
+            close = {word for word in vocabulary if _sound_key(word) == heard} or set(
+                difflib.get_close_matches(folded, vocabulary, n=2, cutoff=SPELLING_CUTOFF)
+            ) or {
+                word for word in vocabulary
+                if difflib.SequenceMatcher(None, heard, _sound_key(word)).ratio() >= SPELLING_CUTOFF
+            }
+            if len(close) == 1:
+                (match,) = close
+                corrected.append(match)
+                words.append(match)
+                continue
+        words.append(word)
+    return (" ".join(words), corrected) if corrected else (text, [])
+
+
 def dialogue_number_words() -> frozenset:
     from . import dialogue
 
@@ -1117,8 +1237,17 @@ def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemRea
     )
     if not query.strip():
         return None
+    names = _menu_names(tools_module._catalog_channel_ref(context("").channel_ref))
+    query, corrected = spelled_as_menu(query, names)
+    if corrected:
+        # "dois croassant", "um ciabata": o nome como o cliente escreve é o do cardápio.
+        act = Act(act.act, span=spelled_as_menu(act.span, names)[0], product=query if act.product else "",
+                  qty=act.qty)
     found = tools_module.execute("search_storefront", {}, context(query))
     items = list(found.get("items") or []) if found.get("ok") and not found.get("overview") else []
+    if corrected:
+        named = _named_by(items, corrected)
+        items = named or items
     if not items:
         return None
     if _weak_match(act, conversation, items):
@@ -1457,7 +1586,17 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     verifiable = verification.can_verify(conversation) and not team_in_turn
     unclear_before = bool((getattr(conversation, "flags", None) or {}).get(UNCLEAR_FLAG))
 
-    def search(act: Act, *, consult: bool = False) -> PartReply:
+    names: list[str] | None = None
+
+    def menu() -> list[str]:
+        nonlocal names
+        if names is None:
+            names = _menu_names(catalog_ref)
+        return names
+
+    def search(act: Act, *, consult: bool = False, piece: bool = False) -> PartReply:
+        from shopman.storefront.presentation.public_information import word_stem
+
         from . import dialogue
 
         if consult and act.act == PRODUCT and not act.product and _points_back(act.span):
@@ -1488,22 +1627,61 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             # A IA disse que nenhuma FAQ cobre: a casa verifica, sem colar FAQ vizinha.
             uncovered_by_faq = composed is not None
 
+        asked = act
+        corrected: list[str] = []
+        if act.act in {PRODUCT, ORDER} and not uncovered_by_faq:
+            # "pão champagne": o cliente fala como ouve; o cardápio diz "campagne".
+            span, corrected = spelled_as_menu(act.span, menu())
+            if corrected:
+                product = spelled_as_menu(act.product, menu())[0] if act.product else ""
+                act = Act(act.act, span=span, product=product, qty=act.qty)
         query = _search_text(act)
+        if corrected:
+            # Só as palavras que distinguem produto: "pão" casava todo pão da seção, e a lista
+            # cortada em três deixava de fora um dos Campagne.
+            query = " ".join(
+                word for word in tools_module._public_search_terms(query)
+                if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER
+                and word not in _ORDER_WORDS and word not in _CITE_LEADING
+            ) or query
         result = _own_source(act, tools_module.execute("search_storefront", {}, context(query)))
+        if corrected and result.get("items") and not result.get("overview"):
+            # A palavra corrigida é o que o cliente pediu: só os itens que a levam no nome
+            # (a busca por "pão campagne" trazia também os pães sem relação).
+            named = _named_by(result["items"], corrected)
+            if named:
+                result = {**result, "items": named, "count": len(named)}
         if uncovered_by_faq:
             result = {**result, "found": False}
-        not_in_menu = (
+        partial = (
+            piece and act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found")
+            and result.get("items") and not result.get("overview")
+            and not any(
+                _distinctive(act.product or act.span) <= {
+                    word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))
+                }
+                for item in result["items"]
+            )
+        )
+        not_in_menu = not partial and (
             act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found") and not result.get("overview")
             and _weak_match(act, conversation, list(result.get("items") or []))
         )
-        if not_in_menu:
+        if partial:
+            # Uma das coisas pedidas, e nenhum item é ela ("folhado de maçã" com só o de frango):
+            # a casa diz que não tem e mostra o que há de perto, sem fingir que achou.
+            result = {**result, "code": "not_in_menu"}
+        elif not_in_menu:
             # O que o cliente citou não está no cardápio de hoje: no lugar de "qual deles?" com
             # itens sem relação, o cardápio do que há (o mesmo de "o que tem disponível?").
             overview = tools_module.execute("search_storefront", {}, context("o que tem disponível"))
             result = {**overview, "code": "not_in_menu"} if overview.get("overview") else {**result, "found": False}
 
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
-        sheet = _sheet_reply(act, result) if consult and act.act == PRODUCT else None
+        sheet = (
+            _sheet_reply(act, result)
+            if consult and act.act == PRODUCT and result.get("code") != "not_in_menu" else None
+        )
         # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
         # sobre um atributo dele, a pergunta inteira ("Sobre “o croissant é grande”"):
         # citar só o produto diria que a casa não sabe nada do croissant.
@@ -1519,7 +1697,7 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             if result.get("code") == "not_in_menu":
                 # Nada do cardápio casa com o que o cliente citou: nada de "qual deles?" com
                 # itens sem relação. Diz que não achou e mostra o que há hoje.
-                lead = _fill(copy(NOT_IN_MENU_COPY_KEY) or "", part=_clip(_cited(act, conversation)))
+                lead = _fill(copy(NOT_IN_MENU_COPY_KEY) or "", part=_clip(_cited(asked, conversation)))
                 reply.text = "\n".join(part for part in (lead, reply.text) if part)
             elif consult and not sheet and len(items) == 1 and not items[0].get("can_order"):
                 # "tem croissant?" e não tem: no lugar, o que a casa tem (as alternativas da Loja).
@@ -1574,9 +1752,29 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             if text:
                 run.replies.append(PartReply(act, text=text, keeps_question=True))
                 continue
+        if act.act == PRODUCT:
+            pieces = asked_pieces(_cited(act, conversation), menu())
+            if len(pieces) > 1:
+                # Duas coisas numa pergunta: cada uma com a sua resposta, nunca um nome só.
+                run.replies.extend(
+                    search(Act(PRODUCT, span=piece, product=piece), consult=True, piece=True) for piece in pieces
+                )
+                continue
         if act.act in {PRODUCT, HOURS, HOUSE}:
             run.replies.append(search(act, consult=True))
             continue
+        if act.act == ORDER and not team_in_turn:
+            pieces = asked_pieces(act.product or act.span, menu())
+            if len(pieces) > 1:
+                # "uma baguete e um ciabata": cada coisa vai à sacola por si (a leitura às vezes
+                # junta as duas num nome só, como no ar em 24/11/2026).
+                for piece in pieces:
+                    one = Act(ORDER, span=piece, product="", qty=0)
+                    changed = None if negotiating else _cart_change(
+                        one, conversation=conversation, context=context, copy=copy,
+                    )
+                    run.replies.append(changed if changed is not None else search(one, piece=True))
+                continue
         if act.act == ORDER:
             if team_in_turn:
                 # A equipe vai assumir: nada de pedido pela metade feito pelo robô.
