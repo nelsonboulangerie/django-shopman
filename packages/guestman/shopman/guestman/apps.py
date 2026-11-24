@@ -10,6 +10,11 @@ class GuestmanConfig(AppConfig):
 
     def ready(self):
         self._register_ref_types()
+        # O número que sai de um cadastro avisa (``contact_reassigned``) por qualquer
+        # caminho que apague o contato.
+        from shopman.guestman.services import identity
+
+        identity.connect_signals()
 
     def _register_ref_types(self):
         try:

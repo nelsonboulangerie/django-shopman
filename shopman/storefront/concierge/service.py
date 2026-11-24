@@ -629,6 +629,66 @@ def _scope_connection(scope: TransportScope):
     return connection
 
 
+def detach_reassigned_number(customer_ref: str, phone: str) -> int:
+    """O número saiu do cadastro (``contact_reassigned``, D3): a conversa dele se desliga.
+
+    No WhatsApp o endereço do transporte é o assinante, e o assinante é o número: quem
+    herda o número escreve pelo MESMO vínculo e cairia na conversa, na sacola e na
+    identidade de quem tinha o número. O vínculo é rebaixado (sem verificação), sai
+    de serviço e solta o endereço, para que a próxima mensagem daquele número abra
+    uma conversa nova, sem herdar nada; a conversa antiga fica intacta, com o dono
+    de antes. Turno em andamento perde a autoridade (cerca). Devolve quantos
+    vínculos soltou.
+    """
+    if not customer_ref or not phone:
+        return 0
+    now = timezone.now()
+    detached = 0
+    conversation_ids = list(
+        Conversation.objects.filter(customer_ref=customer_ref, phone=phone).values_list("pk", flat=True)
+    )
+    for conversation_id in conversation_ids:
+        conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
+        bindings = ConversationBinding.objects.select_for_update().filter(
+            conversation=conversation,
+        ).exclude(status=ConversationBinding.Status.DISABLED)
+        for binding in bindings:
+            binding.identity_assurance = ConversationBinding.IdentityAssurance.UNVERIFIED
+            binding.status = ConversationBinding.Status.DISABLED
+            binding.deactivated_at = now
+            # O endereço é único por provedor: só solto ele nasce o vínculo do novo titular.
+            binding.subject = f"{binding.subject}#desligado-{binding.pk}"[:512]
+            binding.save(update_fields=["identity_assurance", "status", "deactivated_at", "subject", "updated_at"])
+            detached += 1
+        Conversation.objects.filter(pk=conversation.pk).update(
+            turn_fence=F("turn_fence") + 1,
+            claim_until=None,
+        )
+    if detached:
+        logger.warning("concierge.binding_detached_number_left customer=%s bindings=%s", customer_ref, detached)
+    return detached
+
+
+def _number_proof_lapsed(conversation: Conversation, binding: ConversationBinding) -> bool:
+    """O vínculo verificado vale enquanto o número tiver prova recente (D3b).
+
+    Acesso de número sem uso verificado há mais de 12 meses volta a pedir prova: o
+    vínculo cai para sem verificação, e o turno segue sem autoridade comercial até a
+    pessoa confirmar o acesso pelo site (o caminho de prova que a Concierge já usa).
+    """
+    if binding.identity_assurance != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER:
+        return False
+    if not conversation.customer_ref or not conversation.phone:
+        return False
+    from shopman.shop.services import auth as auth_service
+
+    if not auth_service.number_proof_expired(customer_ref=conversation.customer_ref, phone=conversation.phone):
+        return False
+    binding.identity_assurance = ConversationBinding.IdentityAssurance.UNVERIFIED
+    binding.save(update_fields=["identity_assurance", "updated_at"])
+    return True
+
+
 def attach_binding(
     conversation_id: int,
     scope: TransportScope,
@@ -884,6 +944,7 @@ def _claim(conversation_id: int, binding_id: int):
         conversation.turn_fence += 1
         conversation.claim_until = timezone.now() + timedelta(seconds=120)
         conversation.save(update_fields=["turn_fence", "claim_until"])
+        _number_proof_lapsed(conversation, binding)
         adapter = transport.adapter_for(binding)
         connection = transport.connection_for(binding)
         conversation._turn_fence = conversation.turn_fence

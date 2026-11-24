@@ -9159,6 +9159,7 @@
         "shop.services-auth-customer-profile",
         "shop.services-auth-device-trust",
         "shop.services-auth-login-session",
+        "shop.services-auth-number-ownership",
         "shop.services-auth-otp-request",
         "shop.services-auth-otp-verification",
         "shop.services-auth-passkey"

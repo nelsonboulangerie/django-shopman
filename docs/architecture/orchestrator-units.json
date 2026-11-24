@@ -5543,6 +5543,48 @@
       ]
     },
     {
+      "id": "shop.services-auth-number-ownership",
+      "question": "O número de telefone ainda prova esta conta, e o que acontece quando ele muda de dono?",
+      "owner": "identity.auth.number.ownership",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.auth:number_proof_expired",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/auth.py",
+          "symbols": [
+            "NUMBER_PROOF_MAX_AGE_DAYS",
+            "number_proof_expired",
+            "release_number_not_me",
+            "release_reassigned_number",
+            "on_number_left"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "guestman"
+      ],
+      "ports": [],
+      "events": [
+        "contact_reassigned"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/security/test_number_changes_owner.py::test_prova_do_numero_vence_em_12_meses",
+        "shopman/storefront/tests/security/test_number_changes_owner.py::test_codigo_no_numero_renova_a_prova"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.auth:number_proof_expired"
+      ]
+    },
+    {
       "id": "shop.services-auth-login-session",
       "question": "Como um dispositivo confiável inicia a sessão autenticada do cliente?",
       "owner": "identity.auth.login.session",
