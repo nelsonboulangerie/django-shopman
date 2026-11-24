@@ -134,7 +134,7 @@ def test_sem_a_regra_na_loja_o_gesto_nao_existe(fim_do_expediente):
 def test_a_migracao_grava_a_regra_e_respeita_a_que_ja_existe():
     from django.apps import apps
 
-    migration = importlib.import_module("shopman.shop.migrations.0140_retencao_do_nao_retirado")
+    migration = importlib.import_module("shopman.shop.migrations.0141_retencao_do_nao_retirado")
     sem_regra = Shop.objects.create(name="Sem regra", defaults={"menu": {"x": 1}})
 
     migration.add_retention(apps, None)

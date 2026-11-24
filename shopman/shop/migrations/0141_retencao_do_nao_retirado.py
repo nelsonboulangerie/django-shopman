@@ -30,6 +30,6 @@ def add_retention(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("shop", "0139_paleta_cor_da_promocao")]
+    dependencies = [("shop", "0140_proximo_lote_diz_disponivel")]
 
     operations = [migrations.RunPython(add_retention, migrations.RunPython.noop)]

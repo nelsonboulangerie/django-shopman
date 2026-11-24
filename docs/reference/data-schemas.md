@@ -2138,7 +2138,7 @@ preservadas.
 | `no_show.tolerance_minutes` | `int` (>= 0) | `60` | Pedido NÃO pago libera em `hora combinada + tolerância`; sem hora combinada, em `ready_at + tolerância` |
 | `no_show.cutoff_minutes_before_close` | `int` (>= 0) | `0` | Pedido PAGO libera no corte do dia combinado: o fechamento da loja naquele dia (`business_calendar.selling_hours_for`) menos estes minutos. Dia combinado já passado: liberado. Dia sem expediente declarado: vale a régua do não pago |
 | `no_show.paid_waits_cutoff` | `bool` | `true` | `false`: o pago segue a mesma régua do não pago |
-| `no_show.retention` | `dict` | **sem padrão** | Quanto a loja retém dos itens FEITOS para a encomenda não retirada: `{"percent": 40, "decided_at": "2026-11-24", "provisional": true}` (DEV-2026-089, decisão do dono; gravado pela `shop.0140` e pelo seed). A revenda e o que volta à venda voltam inteiros. Sem a regra, ou com `percent` fora de 0 a 100 ou acima do teto dos Termos (`TERMS_RETENTION_CAP_PERCENT`, 40), o gesto do não retirado recusa com o motivo |
+| `no_show.retention` | `dict` | **sem padrão** | Quanto a loja retém dos itens FEITOS para a encomenda não retirada: `{"percent": 40, "decided_at": "2026-11-24", "provisional": true}` (DEV-2026-089, decisão do dono; gravado pela `shop.0141` e pelo seed). A revenda e o que volta à venda voltam inteiros. Sem a regra, ou com `percent` fora de 0 a 100 ou acima do teto dos Termos (`TERMS_RETENTION_CAP_PERCENT`, 40), o gesto do não retirado recusa com o motivo |
 
 ### Produção — `Shop.defaults["production"]`
 
