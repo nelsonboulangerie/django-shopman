@@ -195,6 +195,17 @@ Só o "sim" no turno seguinte cancela; qualquer outra fala apaga a chave. O canc
 `Order.data["cancelled_by"] = "concierge"`, o evento `concierge_cancelled` (ator `concierge`,
 `payload = {note: "Cancelado pela Concierge a pedido do cliente: \"<fala>\"", conversation_id}`) e
 uma nota na conversa (`ConversationMessage` `kind=note`).
+Avisos de pedido na conversa (OC-10, Etapa III omnicanal, 23/11/2026; `shopman/shop/services/notification.py`,
+`_note_in_conversation`): aviso de pedido ENTREGUE pelo WhatsApp (backend `manychat` ou `whatsapp`) a um
+contato que tem conversa (o assinante é o `subject` de um vínculo, ou o telefone é o `Conversation.phone`;
+a conversa mais recente que não está encerrada) vira uma nota na transcrição: `kind=note`, `role=assistant`,
+`text` = o aviso como a casa o monta (o mesmo do envio em texto livre; sem o código Pix quando saiu pelo
+template aprovado, que não o leva) e `envelope` = `{version: 3, kind: "order_notice", order_ref, template,
+backend, approved_template}` (`template` é o nome qualificado, ex. `order_ready_pickup`; `approved_template`
+é `true` quando saiu pelo template da Meta). A hora é o `created_at`. Só grava: nada é reenviado, e falha ao
+gravar não falha o aviso. Lida por `concierge/tools.py` (`_pix_sent_at`): na consulta do pedido que aguarda
+pagamento, a nota (ou a resposta da Concierge já enviada) que traz o código Pix VIGENTE vira "Já te mandei o
+código Pix por aqui às 14h12."
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`): o único

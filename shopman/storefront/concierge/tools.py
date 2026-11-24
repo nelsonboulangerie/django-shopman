@@ -1790,11 +1790,47 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "requires_payment_gate": projection.requires_payment_gate,
                 "supports_access_link": projection.supports_access_link,
                 "created_at": format_local(order.created_at, "%d/%m {clock}"),
+                "pix_sent_at": _pix_sent_at(conversation, order) if projection.source_projection == "payment" else "",
             }
         )
     if order_ref and not orders:
         return {"ok": True, "orders": [], "message": f"Não achei o pedido {order_ref} para este cliente."}
     return {"ok": True, "orders": orders}
+
+
+#: Estados de saída em que a mensagem chegou ao fornecedor (``ConversationMessage.transport_state``).
+_SENT_STATES = ("accepted", "delivered", "read")
+
+
+def _pix_sent_at(conversation, order) -> str:
+    """Quando este chat recebeu o código Pix VIGENTE do pedido: "às 14h12", ou vazio (OC-10).
+
+    Vale o aviso do pedido gravado na conversa (``notification._note_in_conversation``)
+    e a resposta da própria Concierge que já saiu. Código regenerado não conta o velho.
+    """
+    from django.db.models import Q
+
+    from shopman.shop.models import ConversationMessage
+    from shopman.shop.services.notification import ORDER_NOTICE_NOTE
+
+    code = str(((order.data or {}).get("payment") or {}).get("copy_paste") or "").strip()
+    if not code or conversation is None or not conversation.pk:
+        return ""
+    sent = (
+        ConversationMessage.objects.filter(conversation=conversation, text__contains=code)
+        .filter(
+            Q(kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_NOTE, envelope__order_ref=order.ref)
+            | Q(kind=ConversationMessage.Kind.REPLY, transport_state__in=_SENT_STATES)
+        )
+        .order_by("-pk")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if sent is None:
+        return ""
+    if timezone.localdate(sent) == timezone.localdate():
+        return format_local(sent, "às {clock}")
+    return format_local(sent, "em %d/%m, às {clock}")
 
 
 def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
@@ -2178,6 +2214,9 @@ def render_result(name: str, result: dict) -> str:
             if str(order.get("total") or "").strip():
                 parts.append(f"Total: {order['total']}.")
             rows.append(f"Pedido {order['order_ref']}{when}: " + " ".join(p for p in parts if p))
+            if order.get("pix_sent_at"):
+                # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
+                rows.append(f"Já te mandei o código Pix por aqui {order['pix_sent_at']}.")
             for action in order.get("actions", []):
                 if action.get("enabled"):
                     href = action.get("href") or order["tracking_url"]
