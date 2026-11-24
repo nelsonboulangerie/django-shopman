@@ -109,8 +109,10 @@ a presentation via `projection_data()`.
 
 **`Action` é o contrato canônico de toda afordância** (`shop/projections/types.py`):
 `ref, kind ("link"|"mutation"|"external"|"copy"), label (pt-BR), priority, enabled, reason, href,
-method, payload_schema, idempotency ("required"|"recommended"|"none"), confirmation`. O Nuxt renderiza
-por `kind` (link→navega; mutation→POST com schema+confirm; external→nova aba; copy→clipboard).
+method, payload_schema, idempotency ("required"|"recommended"|"none"), confirmation, value`. O Nuxt renderiza
+por `kind` (link→navega; mutation→POST com schema+confirm; external→nova aba; copy→clipboard). `value` é o
+texto que a ação `copy` copia (o copia-e-cola do Pix em `copy_pix`): a conversa, que não tem clipboard,
+entrega esse texto em mensagem própria, nunca um link com o rótulo da cópia (OC-05).
 
 **Máquinas de estado de promessa** (emitem `Action` + tom + deadline): **pagamento**
 (`payment_status.py`: pix_*/card_*/paid/expired/cancelled/intent_error) e **tracking**

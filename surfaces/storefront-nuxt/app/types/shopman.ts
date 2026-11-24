@@ -991,6 +991,8 @@ export interface Action {
   payload_schema: Record<string, unknown>
   idempotency: 'none' | 'recommended' | 'required' | string
   confirmation: Record<string, unknown>
+  /** O que a ação `copy` copia (o copia-e-cola do Pix); vazio nas demais. */
+  value?: string
 }
 
 export interface CheckoutCopyProjection {
