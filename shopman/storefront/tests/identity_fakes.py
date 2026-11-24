@@ -3,6 +3,25 @@ from __future__ import annotations
 from shopman.doorman.protocols.identity import IdentityHandle, IdentityView
 
 
+def proven(customer):
+    """O cliente que já provou os contatos (entrou por código antes).
+
+    Contato só gravado, sem prova, não abre a conta (D4, OC-08). Os testes em que o
+    dono da conta entra, por código ou pelo dispositivo confiável, partem de quem
+    já provou o número; o contato digitado pela equipe tem teste próprio.
+    """
+    from shopman.guestman.models import ContactPoint
+
+    methods = {
+        ContactPoint.Type.PHONE: ContactPoint.VerificationMethod.OTP_SMS,
+        ContactPoint.Type.WHATSAPP: ContactPoint.VerificationMethod.OTP_WHATSAPP,
+        ContactPoint.Type.EMAIL: ContactPoint.VerificationMethod.OTP_EMAIL,
+    }
+    for contact in customer.contact_points.filter(is_verified=False):
+        contact.mark_verified(methods.get(contact.type, ContactPoint.VerificationMethod.MANUAL))
+    return customer
+
+
 class CapturingSender:
     """Explicit development-only OTP sink for behavioral tests."""
 

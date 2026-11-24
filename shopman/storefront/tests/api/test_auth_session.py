@@ -526,10 +526,14 @@ def test_auth_device_check_trusted_cookie_creates_json_session(client: Client):
     from shopman.doorman import TrustedDevice
     from shopman.doorman.conf import doorman_settings
 
-    customer = Customer.objects.create(
-        ref="CUS-AUTH-DEVICE",
-        first_name="Dora",
-        phone="+5543999990012",
+    from shopman.storefront.tests.identity_fakes import proven
+
+    customer = proven(
+        Customer.objects.create(
+            ref="CUS-AUTH-DEVICE",
+            first_name="Dora",
+            phone="+5543999990012",
+        )
     )
     _, raw_token = TrustedDevice.create_for("customer", customer.uuid,
         user_agent="Mozilla/5.0 Test",

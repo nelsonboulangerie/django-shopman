@@ -119,6 +119,13 @@ class ManychatService:
             # Try to find existing customer by Manychat ID
             customer = cls._find_by_manychat_id(manychat_id)
 
+            if customer and cls._subscriber_number_moved(customer, manychat_id, incoming_phone):
+                # O assinante fala por um número que não é mais deste cadastro: no
+                # WhatsApp o assinante É o número, e quem herdou o número não herda a
+                # conta. O identificador sai e a busca segue pelo número, como para
+                # um assinante novo.
+                customer = None
+
             if customer:
                 customer = cls._lock_active_customer(customer.pk)
                 if not customer.phone and not incoming_phone:
@@ -247,6 +254,46 @@ class ManychatService:
             return None
 
     @classmethod
+    def _subscriber_number_moved(cls, customer: Customer, manychat_id: str, incoming_phone: str) -> bool:
+        """O assinante chegou com um número que o cadastro já não tem? Então corta o elo.
+
+        Só decide quando há os dois lados: o número que o assinante traz e algum
+        número no cadastro. Cadastro sem telefone (veio do Instagram) recebe o número
+        como sempre recebeu. Quando o elo cai, o identificador sai e o Guestman avisa
+        (``contact_reassigned``) que o número deixou de ser deste cadastro, para quem
+        ainda o trata como dele (a conversa) soltar também.
+        """
+        from shopman.guestman.models import ContactPoint
+        from shopman.guestman.services import identity as identity_service
+
+        if not incoming_phone:
+            return False
+        own_numbers = set(
+            ContactPoint.objects.filter(
+                customer=customer,
+                type__in=identity_service.PHONE_FAMILY,
+            ).values_list("value_normalized", flat=True)
+        )
+        if customer.phone:
+            own_numbers.add(customer.phone)
+        if not own_numbers or incoming_phone in own_numbers:
+            return False
+        CustomerIdentifier.objects.filter(
+            customer=customer,
+            identifier_type=IdentifierType.MANYCHAT,
+            identifier_value=manychat_id,
+        ).delete()
+        identity_service.announce_contact_left(
+            customer.pk,
+            ContactPoint.Type.WHATSAPP,
+            incoming_phone,
+            source=identity_service.SOURCE_PROVIDER_SUBSCRIBER_MOVED,
+            verification_ref=manychat_id,
+        )
+        logger.warning("manychat.subscriber_number_moved customer=%s", customer.ref)
+        return True
+
+    @classmethod
     def _find_by_identifiers(cls, data: dict) -> Customer | None:
         """Try to find customer by phone, email, or other identifiers."""
         # Try phone
@@ -310,6 +357,10 @@ class ManychatService:
         # Generate ref from Manychat ID
         hash_value = hashlib.md5(data["id"].encode()).hexdigest()[:8].upper()
         ref = f"MC-{hash_value}"
+        if Customer.objects.filter(ref=ref).exists():
+            # O assinante já nomeou um cadastro: o de quem tinha o número antes
+            # (``_subscriber_number_moved``). Quem herdou o número ganha ref próprio.
+            ref = Customer.generate_ref()
 
         first_name, last_name = cls._incoming_name(data)
         metadata = {"manychat_custom_fields": data.get("custom_fields", {})}

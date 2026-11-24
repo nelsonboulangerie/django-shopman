@@ -2,11 +2,42 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxLengthValidator
 from django.db import models
 from django.utils.text import slugify
 from simple_history.models import HistoricalRecords
+
+#: As perguntas que a loja responde pela configuração, não pelo cadastro (a FAQ
+#: operacional do storefront). Quando uma curada repete uma destas, o site mostra só a
+#: resposta da configuração (OC-31): duas respostas para a mesma pergunta, de fontes
+#: diferentes, podiam se contradizer.
+OPERATIONAL_QUESTIONS: dict[str, str] = {
+    "delivery": "Vocês fazem entrega?",
+    "hours": "Quais são os horários de funcionamento?",
+    "location": "Onde vocês ficam?",
+    "payment": "Como posso pagar?",
+    "preorder": "Posso encomendar para outro dia?",
+    "allergens": "Os produtos têm alérgenos?",
+    "contact": "Como falar com vocês?",
+}
+
+
+def normalized_question(text: str) -> str:
+    """A pergunta sem acento, caixa, pontuação e espaço sobrando.
+
+    "Posso encomendar para outro dia?" e "posso  encomendar para outro dia" são a
+    mesma pergunta; é por esta forma que a FAQ pública deduplica.
+    """
+    folded = unicodedata.normalize("NFKD", str(text or "").casefold())
+    folded = "".join(char for char in folded if not unicodedata.combining(char))
+    return " ".join(re.findall(r"[a-z0-9]+", folded))
+
+
+_OPERATIONAL_BY_NORMALIZED = {normalized_question(question): question for question in OPERATIONAL_QUESTIONS.values()}
 
 
 class FAQEntry(models.Model):
@@ -61,6 +92,11 @@ class FAQEntry(models.Model):
 
     def __str__(self) -> str:
         return self.question
+
+    @property
+    def repeated_operational_question(self) -> str:
+        """A pergunta operacional que esta curada repete, ou ``""``."""
+        return _OPERATIONAL_BY_NORMALIZED.get(normalized_question(self.question), "")
 
     def clean(self):
         super().clean()

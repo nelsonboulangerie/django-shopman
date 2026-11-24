@@ -342,7 +342,7 @@ def answers(said: Said, pending: dict) -> bool:
 
 
 def _methods(channel_ref: str) -> list[str]:
-    from shopman.shop.conversational.commerce_read import conversation_payment_methods
+    from shopman.shop.policies.order_payment import conversation_payment_methods
 
     return conversation_payment_methods(channel_ref)
 

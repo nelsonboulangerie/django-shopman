@@ -1078,6 +1078,10 @@ def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = F
             receipts.add(CART)
         elif name == "place_order":
             receipts.add(ORDER)
+        elif name in {"order_status", "repay_order"} and event.get("order_found"):
+            # O pedido lido no domínio (consulta, ou a cobrança refeita na conversa, OC-12):
+            # "seu pedido está registrado", a frase da página, é fato, não promessa.
+            receipts.add(ORDER)
         elif name == "notify_when_available":
             receipts.add(NOTIFY)
     return frozenset(receipts)

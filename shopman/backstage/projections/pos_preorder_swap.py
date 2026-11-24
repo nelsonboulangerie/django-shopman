@@ -122,7 +122,7 @@ def editable_lines(order) -> list:
     """As linhas de produto do pedido (sem a taxa de entrega e afins), como a edição as lê."""
     from shopman.shop.services import order_edit
 
-    return [item for item in order_composition.effective_items(order) if not order_edit._is_fixed_line(item)]
+    return [item for item in order_composition.effective_items(order) if not order_edit.is_fixed_line(item)]
 
 
 def swapped_lines(order, sku: str, offer: str) -> list[dict] | None:

@@ -23,11 +23,14 @@ from shopman.storefront.presentation.catalog import (
     build_featured_items,
     fresh_from_oven_skus,
 )
-from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
+from shopman.storefront.presentation.public_information import HOME_FAQ_LIMIT, FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
 
 logger = logging.getLogger(__name__)
+
+#: A superfície nos experimentos de experiência (``ExperienceRule.params["surface"]``).
+STOREFRONT_SURFACE = "storefront"
 
 
 @dataclass(frozen=True)
@@ -247,6 +250,18 @@ def _environment_notice() -> str:
 
 
 @dataclass(frozen=True)
+class ExperienceProjection:
+    """Uma versão que esta sessão vê de um experimento (R4 do release, OC-20).
+
+    Quem decide é o servidor (``shopman.shop.services.experience.resolve``). Só
+    ``ref`` e ``variant`` saem: coorte, motivo e dono nunca chegam à loja.
+    """
+
+    ref: str
+    variant: str
+
+
+@dataclass(frozen=True)
 class StorefrontShellProjection:
     """Projeção global leve, sem catálogo nem histórico de pedidos.
 
@@ -264,6 +279,10 @@ class StorefrontShellProjection:
     faq: tuple[FAQItemProjection, ...]
     origin_channel: str | None
     public_config: PublicConfigProjection
+    # Lista, não mapa: cada item tem a forma {ref, variant} que o contrato do
+    # release fixou, a ordem é estável (por ref) e o item pode ganhar campo sem
+    # mudar o tipo do valor. Experimento desligado não aparece: ausente = padrão.
+    experience: tuple[ExperienceProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -290,12 +309,17 @@ def build_shell(
     request: HttpRequest,
     *,
     cart_has_items: bool | None = None,
+    experience=None,
 ) -> StorefrontShellProjection:
     """Build only the state shared by every storefront route.
 
     Deliberately excludes ``build_featured_items`` and ``_reorder_context``. Those are
     home-page concerns and are orders of magnitude more expensive than the
     identity, brand, operational status and copy needed by the global shell.
+
+    ``experience`` são as versões já resolvidas pela view
+    (``shopman.shop.services.experience.resolve``): a apresentação só lê e não
+    conversa com serviço. Sem elas, o shell sai sem experimento (todos no padrão).
     """
     from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
@@ -397,6 +421,9 @@ def build_shell(
         ),
         origin_channel=origin_channel,
         public_config=public_config,
+        experience=tuple(
+            ExperienceProjection(ref=a.ref, variant=a.variant) for a in (experience or ())
+        ),
     )
 
 
@@ -431,7 +458,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         shop_status=shell.shop_status,
         notices=shell.notices,
         opening_hours=shell.opening_hours,
-        faq=shell.faq,
+        faq=shell.faq[:HOME_FAQ_LIMIT],
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
@@ -642,10 +669,56 @@ def _home_sections_copy(
         how_facets=_home_facets(omotenashi, default_city=default_city),
         tomorrow_label=_copy_entry("HOME_TOMORROW_LABEL", omotenashi=omotenashi),
         tomorrow_hook=_copy_entry("TRACKING_TOMORROW_HOOK", omotenashi=omotenashi),
-        whatsapp_cta=_copy_entry("HOME_WHATSAPP_CTA", omotenashi=omotenashi),
+        whatsapp_cta=_copy_entry(
+            "HOME_WHATSAPP_CTA_CONCIERGE" if _concierge_answers_whatsapp() else "HOME_WHATSAPP_CTA",
+            omotenashi=omotenashi,
+        ),
         whatsapp_cta_label=_copy_entry("HOME_WHATSAPP_CTA_LABEL", omotenashi=omotenashi),
         faq_heading=_copy_entry("HOME_FAQ_HEADING", omotenashi=omotenashi),
     )
+
+
+def _concierge_answers_whatsapp() -> bool:
+    """A Concierge responde TODO visitante no WhatsApp da casa?
+
+    A frase da home só promete o que é verdade para quem lê (X1 do plano da Etapa
+    II). Por isso não basta a Concierge estar ligada: com coorte fechada
+    (``allowed_subjects`` da conexão), quem está fora dela continua atendido como
+    antes, e para esse visitante "de pessoa para pessoa" é a verdade.
+
+    A pergunta vai à mesma admissão do runtime: ``service.is_enabled`` (contrato,
+    modo ``assist``, chave ligada) e ``service.is_allowed`` para um visitante que
+    não está em lista nenhuma, numa conexão ativa do canal WhatsApp. Hoje nenhuma
+    configuração admite esse visitante (lista vazia fecha a conexão), então a home
+    mantém o texto de sempre; quando abrir a coorte ganhar mecanismo na admissão
+    (#3430), esta função passa a valer sem mudar. É estado do deployment, igual
+    para todo visitante: a home pública pode ficar em cache sem vazar nada.
+    """
+    from types import SimpleNamespace
+
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import service, transport
+
+    if not service.is_enabled():
+        return False
+    for connection in transport.configured_connections():
+        if connection.channel != "whatsapp":
+            continue
+        unknown_visitor = SimpleNamespace(
+            provider=connection.provider,
+            account=connection.account,
+            transport_channel=connection.channel,
+            subject=_UNLISTED_VISITOR,
+            connection_key=connection.key,
+            status=ConversationBinding.Status.ACTIVE,
+        )
+        if service.is_allowed(unknown_visitor):
+            return True
+    return False
+
+
+#: Assinante que nenhuma lista contém: quem a home tem diante de si.
+_UNLISTED_VISITOR = "home:visitante-fora-de-qualquer-lista"
 
 
 def _home_facets(
