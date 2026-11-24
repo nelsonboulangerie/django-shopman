@@ -407,15 +407,27 @@ class StorefrontShellView(ServerTimingMixin, APIView):
     authentication_classes = []
 
     def get(self, request):
+        from shopman.shop.services import experience as experience_service
+        from shopman.storefront.presentation.home import STOREFRONT_SURFACE
+
         cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+        assignments = experience_service.resolve(request, STOREFRONT_SURFACE)
         shell = build_shell(
             request=request,
             cart_has_items=cart.items_count > 0 and not cart.is_empty,
+            experience=assignments,
         )
-        return Response({
+        response = Response({
             "shell": projection_data(shell),
             "cart": projection_data(cart),
         })
+        if experience_service.has_non_default(assignments):
+            # X14: versão fora do padrão é de alguém. A borda ignora ``Vary``, então
+            # o corpo nunca pode ser cacheável. Quem tem sessão nem chega à gêmea
+            # pública (``carries_credentials`` recusa cookie), e a gêmea, sem
+            # cliente, só resolve o padrão.
+            response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
 
 
 @extend_schema_view(

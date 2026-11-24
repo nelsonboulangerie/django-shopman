@@ -25,6 +25,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
 | `concierge` | `dict` | `storefront.concierge.tools` (sessão aberta pelo concierge de WhatsApp) | Admin da conversa, diagnóstico | `{conversation_id}`: a `Conversation` que abriu esta sacola. Só presente em sessões do canal `whatsapp` criadas pelo concierge; acompanha `origin_channel = "whatsapp"`. Ver [Concierge de WhatsApp](#concierge-de-whatsapp) |
+| `experience` | `dict` | `storefront.cart.CartService` (toda escrita da sacola: `add_item`, `update_qty`, `remove_item`) e o login com a sacola aberta (`reprice_cart_on_login`), por `shop/services/sessions.assign_experience` | CommitService → `Order.data` | **De qual versão da loja a sacola veio** (OC-22, R4 do release). `{<ref do experimento>: {variant, generation}}`, um item por experimento LIGADO da superfície `storefront` que vale nesta instância, com a variante que `shop/services/experience.resolve` deu ao cliente nesta escrita. Experimento vencido (`remove_after`) ou de outro ambiente não entra. **Ausente = nenhum experimento valendo**, que é diferente de `{"para-quando": {"variant": "a", ...}}` (estava no experimento e viu o padrão): a métrica de pedido separa "sem experimento" de "braço A". Regravada a cada escrita (o experimento desligado some da chave). Sem PII: só ref, variante e geração; a coorte e o motivo nunca são gravados. Nunca escrita num GET |
 | `coupon_code` | `string` | CartService.apply_coupon | CouponModifier, CartService.get_cart_summary | Código do cupom aplicado (uppercase) |
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) · `shop/services/ifood_ingest.py` · concierge do WhatsApp (`set_fulfillment`, montado por `storefront/concierge/address.py`) | CommitService · `backstage/projections/order_queue._delivery_address` · `backstage/services/receipt_escpos._delivery_lines` | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}`. **Do concierge do WhatsApp** o endereço é montado na conversa (decisão do dono, 25/09/2026): pela localização (pin → `geocoding.reverse_geocode`, sem o `street_number` do Google, que é interpolado), pelo texto (`geocoding.forward_geocode_structured`) e pelas partes que o cliente diz depois; `formatted_address` é recomposto das partes, `is_verified` é `false`, e `coordinates_source` (`"pin"` \| `"geocoded"` \| `"saved"`) diz de onde veio a coordenada da taxa (o pin não se move quando o cliente corrige a rua; `"saved"` = endereço do cadastro aceito na conversa, que entra com o `formatted_address` e o `is_verified` do cadastro). `complement: ""` gravado = o cliente respondeu que não tem; ausente = ainda não perguntado. **Do iFood vêm só três**: `complement`, `delivery_instructions` (o `reference` do cliente — é o que as duas telas de despacho imprimem sob "Referência:") e `postal_code`; o endereço formatado NÃO é repetido aqui, porque ele já é `delivery_address` e dois donos do mesmo texto divergem. Ausente no pedido iFood cujo endereço não traz nenhum dos três |
@@ -195,6 +196,17 @@ Só o "sim" no turno seguinte cancela; qualquer outra fala apaga a chave. O canc
 `Order.data["cancelled_by"] = "concierge"`, o evento `concierge_cancelled` (ator `concierge`,
 `payload = {note: "Cancelado pela Concierge a pedido do cliente: \"<fala>\"", conversation_id}`) e
 uma nota na conversa (`ConversationMessage` `kind=note`).
+Avisos de pedido na conversa (OC-10, Etapa III omnicanal, 23/11/2026; `shopman/shop/services/notification.py`,
+`_note_in_conversation`): aviso de pedido ENTREGUE pelo WhatsApp (backend `manychat` ou `whatsapp`) a um
+contato que tem conversa (o assinante é o `subject` de um vínculo, ou o telefone é o `Conversation.phone`;
+a conversa mais recente que não está encerrada) vira uma nota na transcrição: `kind=note`, `role=assistant`,
+`text` = o aviso como a casa o monta (o mesmo do envio em texto livre; sem o código Pix quando saiu pelo
+template aprovado, que não o leva) e `envelope` = `{version: 3, kind: "order_notice", order_ref, template,
+backend, approved_template}` (`template` é o nome qualificado, ex. `order_ready_pickup`; `approved_template`
+é `true` quando saiu pelo template da Meta). A hora é o `created_at`. Só grava: nada é reenviado, e falha ao
+gravar não falha o aviso. Lida por `concierge/tools.py` (`_pix_sent_at`): na consulta do pedido que aguarda
+pagamento, a nota (ou a resposta da Concierge já enviada) que traz o código Pix VIGENTE vira "Já te mandei o
+código Pix por aqui às 14h12."
 `Conversation.summary` recebe o resumo de uma ou duas linhas (redigido) a cada turno. O
 filtro "triagem" do Admin lê `flags__triage__destination`.
 Intenções no plural (OBS0310-Q, 03/10/2026; `shopman/storefront/concierge/intents.py`): o único
@@ -302,9 +314,24 @@ sessão, e o pedido registrado encerra a chave. Vale como `listed` e `focus`; e 
 respondeu", "e a minha pergunta?") responde de novo (as `unanswered`; se nenhuma, todas menos as de
 equipe). Pedido
 recente (entregue ou cancelado há até `SHOPMAN_CONCIERGE["recent_order_days"]` dias, 7 por padrão, e
-sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Zerado quando a equipe
-devolve a conversa (`return_to_concierge`). Lido por `dialogue.for_turn`; nada de pedido, sacola ou
-preço mora aqui.
+sem pedido mais novo) NÃO é guardado aqui: vem do Orderman a cada turno. Quando a equipe devolve a
+conversa (`return_to_concierge`, OC-13), o diálogo cai e a memória recomeça do domínio
+(`dialogue.after_team`): só `order` = `{ref, open: true}` do pedido aberto do cliente, relido do
+Orderman, com `fence` da devolução; sem pedido aberto, a chave sai. Lido por `dialogue.for_turn`; nada
+de pedido, sacola ou preço mora aqui.
+
+Devolução da equipe à Concierge (OC-13, Etapa III omnicanal, 23/11/2026; `service.return_to_concierge`,
+atrás de `SHOPMAN_CONCIERGE["human_return_enabled"]`): a nota `kind=note` "Voltou para o concierge." tem
+`envelope` = `{version: 3, kind: "returned_from_team", turn_fence, domain, revoked_inbound_ids}`.
+`domain` é o que a Concierge releu na hora: `{session_key, cart: [{sku, qty}], open_order: {ref, status}
+| null, notices: [{order_ref, template, at}]}`, com `notices` = as notas de aviso de pedido
+(`envelope.kind = "order_notice"`, OC-10) gravadas desde que a equipe assumiu (`handoff_at`).
+`revoked_inbound_ids` são as entradas do cliente ainda sem turno na hora da devolução: foram lidas e
+respondidas pela equipe no Live Chat (o ManyChat não entrega ao Shopman o que a equipe escreve, D6),
+ganham `consumed_by` = o `turn_fence` da devolução e a Concierge não as executa de novo (N19). Lista
+vazia na volta sozinha do "vou verificar" vencido (#2836), em que ninguém da equipe assumiu e a
+mensagem nova é respondida. A devolução também apaga `flags["pending_cancel"]`: um "sim" depois da
+volta nunca cancela pedido (C08).
 "Vou verificar" (WP-05, bloco 4 de `docs/plans/CONCIERGE-ARQUITETURA-ALVO-V2.md`;
 `shopman/storefront/concierge/verification.py`): a parte de consulta (produto, horário ou entrega,
 como funciona a casa) sem fato vira pergunta à equipe, e a conversa segue com a Concierge.
@@ -367,12 +394,15 @@ A lista de chaves propagadas está explícita em `commit.py`, método `_do_commi
 
 ```python
 for key in (
-    "customer", "fulfillment_type", "delivery_address",
+    "customer", "customer_ref", "fulfillment_type", "delivery_address",
+    "save_as_default", "saved_address_id", "address_label",
     "delivery_address_structured", "delivery_date",
     "delivery_time_slot", "order_notes",
-    "origin_channel", "payment",
-    "delivery_fee_q",
+    "origin_channel", "payment", "loyalty", "fiscal", "receipt",
+    "delivery_fee_q", "delivery_distance_km",
     "is_gift", "recipient", "gift_message", "gift_hide_values",
+    "transferred_from",
+    "experience",
 ):
 ```
 
@@ -401,6 +431,7 @@ for key in (
 |-------|------|-------------|----------|-----------|
 | `seating_spot_ref` | `string` | `shop/services/pos._mark_tab_committed` (da `Session.data`) | B.I. (lotação real por mesa: pedido × `SeatingSpot.ref`, com `seats` vigente no dia) | A mesa da comanda que virou o pedido, quando o operador vinculou uma (opcional). Ausente na venda sem mesa |
 | `transferred_from` | `dict` | CommitService (da `Session.data`) | `projections/order_queue.transferred_from_label` (linha "Transferida da comanda #13" no detalhe do pedido, Gestor e PDV) | O rastro da comanda do PDV que nasceu de uma transferência: `{tab_ref, tab_display, session_key, at, by}`. Ausente no resto |
+| `experience` | `dict` | CommitService (da `Session.data`) | Métricas de pedido do experimento de versão da loja (§7.4 do plano da Etapa II: conversão, cancelamento, falha de pagamento, pedido recuperado, por braço), lidas do banco, sem rastreador | `{<ref>: {variant, generation}}`: as versões da loja que o cliente via na última escrita da sacola. Mesma forma de `Session.data.experience`. Ausente = o pedido não veio de nenhum experimento (canal que não é a loja, ou nenhum experimento ligado) |
 | `payment` | `dict` | CommitService (propaga `{method}` de Session.data), `payment.initiate()`, webhooks | Muitos (ver abaixo) | Dados de pagamento. Contrato: `{intent_ref, method}`. Todo pedido nasce com `method` (não existe pedido sem forma de pagamento; o seed se confere no fim). Status de pagamento vive em Payman — nunca duplicado aqui. Ver detalhamento abaixo. |
 | `customer_ref` | `string` | CustomerIdentificationHandler | CheckoutInferDefaultsHandler | Ref do Customer criado/encontrado |
 | `fulfillment_created` | `bool` | FulfillmentCreateHandler | FulfillmentCreateHandler (idempotência) | Flag: Fulfillment object criado |
@@ -421,12 +452,13 @@ for key in (
 | _(estorno tentado de novo)_ | — | `backstage.services.refund_retry.retry` (API `POST orders/<ref>/refund-retry/`, WP-G13), sob lock do pedido e das cobranças, sempre após `validate_manager_override` | `order_pending` (a linha "Estorno não saiu" da faixa do detalhe), `order_queue._build_timeline`, o próprio `refund_retry` (a base e a chave da tentativa seguinte) | **Não cria chave em `Order.data`**: a tentativa é o evento `payment.refund_retry` no OrderEvent, um por cobrança pedida ao gateway: `{intent_ref, method, amount_q, approved_by, outcome, error_code, message, gateway_message, gateway_key}`. Quem tentou é o `actor` do evento, e a hora é a do evento; `approved_by` é o `username` verificado do Gerente que assinou. `outcome` ∈ `refunded` (o gateway confirmou; o mesmo gesto grava o `payment.refunded` de todo estorno), `refused` (o gateway disse não; a tentativa seguinte leva outra chave), `unconfirmed` (o gateway não respondeu: a tentativa seguinte da MESMA cobrança, com o mesmo valor, reapresenta `gateway_key`, para o gateway devolver a mesma devolução) e `unrecorded` (o dinheiro saiu e o livro não gravou: bloqueia novas tentativas até o suporte acertar). `message` é a frase do BALCÃO para a tentativa que não saiu (`refund_retry.counter_message`: "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte."; vazio quando saiu), e é ela que a faixa e a linha do tempo mostram; `gateway_message` é o que o gateway respondeu, na língua do Admin, guardado só para o suporte e o log; `gateway_key` é a chave de idempotência enviada ao gateway (`order-refund-retry:<ref>:<intent>:<resumo da chave da intenção>`, por `refund_retry.fresh_gateway_key`). Só existe para pedido em "Estorno não saiu": o cancelado (`payment.cancelled_money` em `refund_requested` com o aviso `payment_refund_failed` aberto) e, desde a #2727, o que falhou fora dele com o aviso aberto (a devolução registrada, a encomenda editada que ficou mais barata, o pagamento digital que chegou depois de o balcão receber). O valor é o de `payment.gateway_refund_owed_q`: no cancelado, o que falta voltar, limitado por `payment.refund_ceiling_q` no "não retirado"; fora dele, `payment.overpaid_q` mais o pagamento que chegou depois do balcão (`counter_takeover.late_payment_of_takeover`), descontado o que a gaveta e a maquininha devolvem. A primeira tentativa de uma cobrança reapresenta a chave do estorno automático que pode ter saído sem resposta (a directive `payment.refund` que esgotou, ou `counter_takeover.late_refund_key`). A transação do Payman leva o motivo `Estorno no Gestor por <ator>, autorizado por <gerente>` |
 | _(estorno de UM pedido no Gestor)_ | — | `backstage.services.order_refund.refund` (API `POST orders/<ref>/refund/`, #2727 item 5), sob lock do pedido e das cobranças, só com `backstage.refund_single_order` | `order_queue._build_timeline`, o próprio `order_refund` (a base e a chave da tentativa seguinte) | **Não cria chave em `Order.data`**: a tentativa é o evento `payment.order_refund` no OrderEvent: `{intent_ref, method, amount_q, outcome, error_code, message, gateway_message, gateway_key}`. Quem estornou é o `actor` do evento. `outcome` e `message` seguem a régua do `payment.refund_retry` (`refunded`, `refused`, `unconfirmed`, `unrecorded`; a frase do balcão por `refund_retry.counter_message`). `gateway_key` é `order-refund-gestor:<ref>:<intent>:<resumo da chave da intenção>` (`order_refund.fresh_gateway_key`); a tentativa seguinte à `unconfirmed`, com o mesmo valor, reapresenta a mesma chave. O que sai também grava o `payment.refunded` de todo estorno. Uma cobrança só: o pedido com duas cobranças online com dinheiro não tem o gesto. A transação do Payman leva o motivo `Estorno no Gestor por <ator>` |
 | `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
-| `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
+| _(a nota fiscal)_ | — | `shopman.fiscalman.services` (chamado por `NFCeEmitHandler` e `NFCeCancelHandler`) | os handlers fiscais (idempotência da emissão e do cancelamento) | **A autoridade da nota é o `fiscalman.FiscalDocument`** (D-037, #3428), uma linha por `(kind, reference)`, com `reference` = `Order.ref`. A linha nasce `pending` ANTES do POST ao provedor; a autorização (ou a adoção por consulta) completa a MESMA linha, e o cancelamento grava ao lado, sem tocar chave e protocolo. As chaves `nfce_*` abaixo (menos `nfce_email_sent_at` e `nfce_return_notes`, que não são da nota) são **espelho** do documento, escrito na mesma transação, para os leitores que ainda as usam |
+| `nfce_access_key` | `string` | NFCeEmitHandler (espelho do `FiscalDocument`) | ReturnService, `services.fiscal`, projections | Chave de acesso NFCe |
 | `nfce_authorized_at` | `string` | NFCeEmitHandler (`_record`, de `data_autorizacao` da Focus) | `services.fiscal.cancellation_path` | ISO datetime da **Autorização de Uso** na SEFAZ — não da emissão nem da gravação. É o instante de onde conta o prazo de cancelamento (RICMS/PR, Anexo III, Subanexo I, art. 35: 30 minutos). Vazio quando a Focus não devolveu a data: aí o prazo **não é chutado**, o operador é avisado de que não deu para medir |
 | `nfce_number` | `int` | NFCeEmitHandler | — | Número do documento |
 | `nfce_danfe_url` | `string` | NFCeEmitHandler | acompanhamento da loja (`projections/order_tracking._fiscal_note` → `fiscal_note`), mensagens de status que levam a nota (`services/notification._fiscal_note_carriage` → `fiscal_note_url`/`fiscal_note_suffix`), aviso `fiscal_note_ready` (`services/notification._build_context` → `danfe_url`) | URL do DANFE hospedado pelo provedor. É o link que o cliente da loja online recebe: a nota chega DIGITAL, na página do pedido e no aviso de nota autorizada (decisão do dono, 25/09/2026) |
 | `nfce_qrcode_url` | `string` | NFCeEmitHandler | os mesmos do `nfce_danfe_url`, como reserva quando ele falta | URL de consulta da SEFAZ (a do QR code) |
-| `nfce_cancelled` | `bool` | NFCeCancelHandler | NFCeCancelHandler (idempotência) | NFCe cancelada |
+| `nfce_cancelled` | `bool` | NFCeCancelHandler (espelho do `FiscalDocument`) | `services.fiscal` | NFCe cancelada |
 | `nfce_cancellation_protocol` | `string` | NFCeCancelHandler | — | Protocolo de cancelamento |
 | `nfce_return_notes` | `list[dict]` | `services.fiscal.open_return_note` (chamado por `fiscal.cancel`, por `NFCeCancelHandler` quando a fila executa depois da janela e pela devolução parcial em `ReturnHandler`) | `services.fiscal.open_return_note` (idempotência) | **Pendências "nota de estorno"** (P1-12, 14/10/2026): a NFC-e autorizada que não pode mais ser cancelada, porque a mercadoria saiu (`returned`, ou pedido vivo fora de `GOODS_NOT_DISPATCHED`), o prazo do art. 35 passou (30 min da Autorização de Uso) ou a devolução é parcial. Uma entrada por origem: `{source, reason, opened_at}`. `source` = `"order"` (a venda inteira desfeita) ou `"return:<i>"` (a devolução parcial `returns[i]`); `reason` ∈ `window_closed`, `goods_dispatched`, `partial_return`; `opened_at` ISO datetime. Cada entrada abre o aviso `fiscal_return_note_due` no Gestor com o roteiro para o contador (pedido, chave da NFC-e, itens e valores devolvidos, motivo). O sistema **não emite** a nota de estorno: com a pendência aberta, `fiscal.cancel` não tenta cancelar. Sem a hora da autorização e com a mercadoria na casa, o prazo não se mede e a tentativa de cancelar segue como antes |
 | `nfce_series` | `string` | `shop/handlers/fiscal.py` (FocusNFe) | — | Série do documento NFC-e emitido via FocusNFe |

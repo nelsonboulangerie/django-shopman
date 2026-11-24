@@ -170,12 +170,14 @@ def test_failed_nfce_cancellation_closes_once_the_note_is_cancelled():
 
 
 def test_failed_nfce_cancellation_closes_live_when_a_retry_succeeds():
-    from types import SimpleNamespace
+    from shopman.fiscalman.contracts import FiscalCancellationResult
 
     from shopman.shop.handlers.fiscal import NFCeCancelHandler
+    from shopman.shop.tests.fiscal_document_support import authorized_note
 
     order = Order.objects.create(ref="WEB-NC3", channel_ref="web", status="cancelled", total_q=1000,
                                  data={"nfce_access_key": "3" * 44})
+    authorized_note(order, access_key="3" * 44)
     alert = _alert("fiscal_cancel_failed", "WEB-NC3", severity="critical")
-    NFCeCancelHandler._record_cancelled(order, SimpleNamespace(protocol_number="P-1"))
+    NFCeCancelHandler._record_cancelled(order, FiscalCancellationResult(success=True, protocol_number="P-1"))
     assert _closed_by(alert) == "nfce-cancelled"

@@ -2,7 +2,9 @@
 // O diálogo de planejar, nos três sentidos do gesto (planejar, ajustar o planejado,
 // somar um lote novo). O estado e as contas moram na grade (`ProductionStageGrid`);
 // aqui só se mostra e se avisa.
-import { ref } from "vue";
+import { computed, ref } from "vue";
+
+import LotVoidStakes from "./LotVoidStakes.vue";
 
 import type {
   ProductionMatrixRowProjection,
@@ -10,7 +12,7 @@ import type {
 } from "~/types/production";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
-defineProps<{
+const props = defineProps<{
   row: ProductionMatrixRowProjection | null;
   title: string;
   description: string;
@@ -26,6 +28,15 @@ defineProps<{
 }>();
 
 const qty = defineModel<string>("qty", { required: true });
+// Zerar um lote que existe é cancelar o lote (#3400): pede o motivo de quem decide.
+const removeReason = defineModel<string>("removeReason", { required: true });
+
+// Tirar do plano é com quem pode cancelar lote (o mesmo `can_void` do "Cancelar
+// lote…"). Para os outros, a tela diz quem cancela no lugar do botão, em vez de
+// deixar tocar e recusar depois.
+const removeAllowed = computed(
+  () => !props.removes || !!props.selectedOrder?.can_void,
+);
 
 const emit = defineEmits<{
   close: [];
@@ -140,6 +151,13 @@ defineExpose({
             @click="emit('bump', 1)"
           />
         </div>
+        <LotVoidStakes
+          v-if="removes && selectedOrder?.can_void"
+          v-model:reason="removeReason"
+          :commitments="selectedOrder.order_commitments ?? []"
+          :unit="row?.output_unit"
+          consequence="O lote planejado sai do dia."
+        />
         <NuxtAlert
           v-if="outsized"
           color="warning"
@@ -156,15 +174,25 @@ defineExpose({
       </div>
     </template>
     <template #footer>
-      <div class="flex w-full justify-end gap-2">
+      <div class="flex w-full flex-wrap items-center justify-end gap-2">
+        <!-- No lugar do "Remover do plano", quem cancela; à esquerda, longe do
+             "Fechar", para não ler como um botão só. -->
+        <p
+          v-if="!removeAllowed"
+          class="op-label mr-auto text-muted-foreground"
+          data-remove-hint
+        >
+          Cancelar lote é com o gerente.
+        </p>
         <NuxtButton
           color="neutral"
           variant="outline"
           size="xl"
-          label="Cancelar"
+          label="Fechar"
           @click="emit('cancel')"
         />
         <NuxtButton
+          v-if="removeAllowed"
           size="xl"
           :disabled="
             !qty.trim() ||
@@ -172,6 +200,7 @@ defineExpose({
             !actionAllowed ||
             submitting ||
             needsDoubleCheck ||
+            (removes && !removeReason.trim()) ||
             (!!row?.planned_orders.length && !selectedOrder)
           "
           aria-keyshortcuts="Enter"

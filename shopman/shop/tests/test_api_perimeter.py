@@ -138,9 +138,14 @@ def test_legacy_doorman_login_routes_are_not_mounted(path):
 def test_manychat_bridge_and_link_fallback_stay_mounted():
     """Consumidores nomeados: o External Request do ManyChat, e a entrada de
     reserva do `AccessLinkService._build_url` quando a loja não está configurada."""
-    from django.urls import reverse
+    from django.urls import resolve, reverse
+    from shopman.doorman.views.access_link import AccessLinkCreateView
 
-    assert _view_module("/api/auth/access/create/") == "shopman.doorman.views.access_link"
+    # A ponte é a do doorman, montada pela subclasse do orquestrador que aplica a
+    # régua da loja (teto de prazo e audiência, OC-09).
+    bridge = resolve("/api/auth/access/create/").func.view_class
+    assert issubclass(bridge, AccessLinkCreateView)
+    assert bridge.__module__ == "shopman.shop.views.access_link"
     assert reverse("doorman:access-exchange") == "/auth/access/"
 
 

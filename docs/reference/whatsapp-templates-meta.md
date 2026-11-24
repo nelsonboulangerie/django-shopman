@@ -96,19 +96,17 @@ acompanha. **Todo template novo nasce com `www.`.**
 (`storefront_links.path_order_tracking`). Acompanhar e pagar são a MESMA tela: o Pix e o
 cartão vivem inline no acompanhamento (PAYMENT-TRACKING-MERGE). Não há tela de pagamento.
 
-**3. O magic link NÃO pode ser o botão — e não é escolha, é impossibilidade.**
-No caminho de flow, as variáveis do template aprovado saem dos **campos personalizados** do
-assinante (`_push_custom_fields`). E `notification_manychat._safe_field_value` recusa, por
-construção, gravar link de acesso pessoal como campo personalizado: o token passaria a viver
-em texto claro no perfil do cliente dentro de uma ferramenta SaaS de marketing, legível por
-qualquer pessoa com acesso à conta e utilizável enquanto o cliente não clicasse.
+**3. O aviso de pedido não leva credencial nenhuma.** Desde a decisão D5 do dono
+(23/11/2026, OC-01), `tracking_url`, `payment_url` e `reorder_url` são os links COMUNS do
+pedido (`/pedido/{ref}` e `/conta/pedidos`), em todo canal: mensagem se encaminha, e um link
+que entrasse na conta entregaria a conta a quem recebesse o encaminhamento. No celular do
+próprio cliente a loja reconhece a sessão ou o dispositivo confiável e abre direto.
 
-> ⚠️ Essa recusa nascera olhando só o `action_url` (campanha/estoque) e **não via** os três
-> links que todo aviso de pedido carrega — `tracking_url`, `payment_url`, `reorder_url` saíam
-> com o token inteiro. Era inerte apenas porque nenhum flow estava mapeado; **mapear o
-> primeiro flow é que ligava o vazamento**. Corrigido em 02/09: a recusa passou a ser do
-> VALOR (qualquer chave com `?t=`), com gêmea pública `<nome>_public` informada pelo emissor.
-> Guardado por `test_the_order_links_do_not_leak_either`.
+A trava do ManyChat continua por desenho: `notification_manychat._safe_field_value` recusa
+gravar link de acesso pessoal (qualquer valor com `?t=`) como campo personalizado, porque o
+token passaria a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
+marketing. Hoje só o `action_url` de campanha carrega link pessoal, e a gêmea pública
+`<nome>_public` informada pelo emissor é o que sai no lugar dele.
 
 ### Decisão: o botão leva a REF, não o link
 
@@ -670,9 +668,9 @@ para isto ("o sufixo que o template gruda no fim do link do botão", diz o comen
 `storefront/services/stock_alerts.py`), e está em `_ALERT_FLOW_FIELDS` para os dois eventos.
 Ligar o botão ao `sku` produz um botão em branco, em silêncio.
 
-⚠️ **`Pedir de novo` é estático de propósito.** O `reorder_url` do contexto é link pessoal e
-não pode virar campo personalizado. `…/conta/pedidos` (`storefront_links.path_order_history`)
-resolve sem token: sem sessão, a loja pede o telefone e devolve a pessoa para lá.
+⚠️ **`Pedir de novo` é estático de propósito.** O botão aponta para `…/conta/pedidos`
+(`storefront_links.path_order_history`), o mesmo destino do `reorder_url` do contexto, e por
+isso não precisa de variável: sem sessão, a loja pede o telefone e devolve a pessoa para lá.
 
 ### O que falta decidir: `Ver novidade`
 

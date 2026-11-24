@@ -8,7 +8,7 @@ import { exceedsPaymentConstraint, pixProviderTestConstraint } from '~/presentat
 import { PICKUP_TAX_ID_WHY, TAX_ID_WHY, taxIdError, formatTaxId, isValidTaxId, taxIdDigits, taxIdLooksComplete } from '~/presentation/taxId'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { checkoutBagRefusal, ORDER_ALREADY_SENT_MESSAGE } from '~/utils/checkoutBagRefusal'
-import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
+import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft, removeCheckoutDraft } from '~/utils/checkoutDraft'
 import { CHECKOUT_RECOVERY_DELAYS_MS, startCheckoutRecovery, type CheckoutRecoveryLoop, type CheckoutRecoveryOutcome } from '~/utils/checkoutRecovery'
 import { buildCheckoutPayload, checkoutBaseline, createCheckoutAttemptKey, noteTaxId, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
@@ -863,7 +863,7 @@ const primaryAction = computed<CheckoutPrimaryAction>(() => {
 let draftRestored = false
 let hasRestoredCheckoutDraft = false
 function clearCheckoutDraft () {
-  if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
+  if (import.meta.client) removeCheckoutDraft()
 }
 // O rascunho mora no localStorage, que o servidor não vê. Aplicá-lo durante a
 // hidratação fazia o primeiro render do cliente divergir do HTML do servidor

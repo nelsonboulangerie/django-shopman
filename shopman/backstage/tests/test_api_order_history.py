@@ -213,6 +213,24 @@ def test_ordered_basis_counts_by_the_day_the_order_was_made(client, manager, sho
     assert _get(client, manager, date_basis="sideways").json()["field"] == "date_basis"
 
 
+def test_ordered_basis_is_the_agreed_day_of_a_preorder(client, manager, shop):
+    """#3427: a encomenda feita ontem para hoje é venda de hoje no B.I., e é hoje
+    que o "Abrir os N pedidos" (``date_basis=ordered``) a abre."""
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    order = _order("H-AGREED", day=today)
+    Order.objects.filter(pk=order.pk).update(
+        created_at=_at(yesterday, 9), data={**order.data, "delivery_date": today.isoformat()},
+    )
+
+    on_today = _get(client, manager, date_from=today.isoformat(), date_to=today.isoformat(), date_basis="ordered")
+    on_yesterday = _get(
+        client, manager, date_from=yesterday.isoformat(), date_to=yesterday.isoformat(), date_basis="ordered"
+    )
+    assert "H-AGREED" in _refs(on_today)
+    assert "H-AGREED" not in _refs(on_yesterday)
+
+
 def test_history_and_detail_show_the_edited_total(client, manager, orders):
     """G20: o histórico fechado não volta ao total selado antes da edição."""
     from shopman.shop.projections.order_tracking import build_tracking
