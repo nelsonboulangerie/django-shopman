@@ -206,7 +206,7 @@ function pickMenuDay (value: string) {
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 function proceedWithoutRefused () {
   const refusal = dayChangeRefusal.value
-  if (refusal) void moveCartTo(refusal.date, refusal.items.map(item => item.sku))
+  if (refusal) void moveCartTo(refusal.date, refusal.items.map(item => item.ref || item.sku))
 }
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22

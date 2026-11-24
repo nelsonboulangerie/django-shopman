@@ -487,7 +487,8 @@ export interface CartDayChangeRefusal {
   detail: string
   date: string
   date_label: string
-  items: Array<{ sku: string, name: string, requested_qty: number, available_qty: number }>
+  // `ref`: o que volta em `without` para seguir sem o item (o SKU, ou a linha de lote).
+  items: Array<{ ref: string, sku: string, name: string, requested_qty: number, available_qty: number }>
 }
 
 // A sacola aberta em outro canal (OC-17). `bring` é a ação de trazê-la para cá:

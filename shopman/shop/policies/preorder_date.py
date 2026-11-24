@@ -73,12 +73,13 @@ def cart_day_change_refusal(*, day_label: str, names: list[str]) -> dict[str, st
     Nomeia cada item que não dá no dia novo. Nada mudou ainda: a cliente escolhe
     seguir sem eles ou manter o dia que tinha.
     """
+    # Forma neutra: a casa não sabe o gênero de cada produto ("a baguete", "o pão").
     if len(names) == 1:
         title = f"{names[0]} não está disponível para {day_label}"
-        detail = f"Você pode seguir para {day_label} sem ele, ou manter o dia que tinha."
+        detail = f"Você pode seguir para {day_label} sem esse item, ou manter o dia que tinha."
     else:
         title = f"Estes itens não estão disponíveis para {day_label}"
-        detail = f"Você pode seguir para {day_label} sem eles, ou manter o dia que tinha."
+        detail = f"Você pode seguir para {day_label} sem esses itens, ou manter o dia que tinha."
     return {"title": title, "detail": detail}
 
 

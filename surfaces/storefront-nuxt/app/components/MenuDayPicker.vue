@@ -52,7 +52,7 @@ watch(otherDate, value => {
         <p>{{ refusal.detail }}</p>
         <div class="mt-2 flex flex-wrap gap-2">
           <UiButton :loading="busy" data-menu-day-proceed @click="emit('proceedWithout')">
-            {{ refusal.items.length > 1 ? 'Seguir sem eles' : 'Seguir sem ele' }}
+            {{ refusal.items.length > 1 ? 'Seguir sem esses itens' : 'Seguir sem esse item' }}
           </UiButton>
           <UiButton variant="outline" :disabled="busy" data-menu-day-keep @click="emit('keep')">Manter o dia que tinha</UiButton>
         </div>

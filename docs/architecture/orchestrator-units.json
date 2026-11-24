@@ -7549,6 +7549,8 @@
             "change_cart_day",
             "CartDayChangeRefused",
             "_DayChangeRollback",
+            "_is_lot_line",
+            "_without_lot",
             "_cart_date",
             "_date_that_serves",
             "_catalog_product",

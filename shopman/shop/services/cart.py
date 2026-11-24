@@ -158,6 +158,37 @@ class CartDayChangeRefused(Exception):
         self.detail = detail
 
 
+def _is_lot_line(item: dict) -> bool:
+    """A linha tem PREÇO de lote: o desconto de lote estampado, ou um lote com desconto.
+
+    É a linha que não muda de dia (a sobra de hoje não lastreia outro dia, e o preço
+    do lote não viaja). Linha que só guarda o lote de onde a reserva saiu, sem
+    desconto nenhum, muda de dia sem ele (:func:`_without_lot`).
+    """
+    meta = item.get("meta") or {}
+    if (meta.get("_disc") or {}).get("type") == "lot_discount":
+        return True
+    batch_ref = str(meta.get("batch_ref") or "")
+    return bool(batch_ref) and lot_pricing.percent_for_lot(batch_ref) > 0
+
+
+def _without_lot(items: list[dict]) -> list[dict] | None:
+    """As linhas sem a marca de lote da reserva antiga; ``None`` quando nenhuma tinha.
+
+    A reserva do dia novo não é a do lote antigo: a linha não leva o ``batch_ref``
+    para o outro dia, e o ``LotDiscountModifier`` nunca o lê lá.
+    """
+    changed = False
+    out: list[dict] = []
+    for item in items:
+        meta = item.get("meta") or {}
+        if meta.get("batch_ref"):
+            item = {**item, "meta": {k: v for k, v in meta.items() if k != "batch_ref"}}
+            changed = True
+        out.append(item)
+    return out if changed else None
+
+
 class _DayChangeRollback(Exception):
     """Interno: desfaz a troca inteira (savepoint) e leva a recusa para fora."""
 
@@ -183,8 +214,12 @@ def change_cart_day(
     - dia que a casa não combina: :class:`CartDateRefused`, sacola intacta;
     - item que não dá no dia novo: :class:`CartDayChangeRefused` nomeando cada um,
       sacola intacta (a transação desfaz o que foi solto e refeito);
-    - ``without_skus``: "seguir sem ele". Esses itens saem da sacola na mesma
-      escrita, e o resto vai para o dia novo.
+    - ``without_skus``: "seguir sem esse item". Cada referência é o ``ref`` que a
+      recusa devolveu (o SKU, ou a ``line_id`` da linha de lote); esses itens saem
+      da sacola na mesma escrita, e o resto vai para o dia novo;
+    - linha com preço de lote nunca vai para outro dia (a sobra de hoje não
+      lastreia outro dia): ela volta nomeada na recusa, como item que não dá. A
+      que só guarda o lote da reserva antiga vai, sem ele.
 
     Hoje é a régua de sempre para dizer "dá?" (o pronto e a fornada de hoje), e a
     escolha de dia sai da sessão. ``None`` = não há sacola aberta.
@@ -202,17 +237,29 @@ def change_cart_day(
     if session is None:
         return None
 
-    dropped = {str(sku) for sku in without_skus if sku}
+    dropped = {str(ref) for ref in without_skus if ref}
     lines = [
         item for item in (session.items or [])
         if item.get("sku") and item.get("sku") != "__DELIVERY_FEE__"
         and (item.get("meta") or {}).get("type") != "delivery_fee"
     ]
+
+    def leaves(item) -> bool:
+        return str(item["sku"]) in dropped or str(item.get("line_id") or "") in dropped
+
     wanted: dict[str, Decimal] = {}
     names: dict[str, str] = {}
+    # A linha de LOTE (o "Ontem" de balcão, ou qualquer preço ou desconto atrelado a
+    # lote) nunca vai para outro dia: a sobra de hoje não lastreia outro dia (dono,
+    # 18/11/2026), e o preço do lote não viaja. Ela é "não dá nesse dia", nomeada
+    # pela linha, e sai em "Seguir sem esse item".
+    lot_lines: list[dict] = []
     for item in lines:
         sku = str(item["sku"])
-        if sku in dropped:
+        if leaves(item):
+            continue
+        if _is_lot_line(item):
+            lot_lines.append(item)
             continue
         wanted[sku] = wanted.get(sku, Decimal("0")) + Decimal(str(item.get("qty") or 0))
         names.setdefault(sku, str(item.get("name") or sku))
@@ -220,7 +267,16 @@ def change_cart_day(
     try:
         with transaction.atomic():
             availability.release_session_holds(session_key)
-            missing: list[dict] = []
+            missing: list[dict] = [
+                {
+                    "ref": str(item.get("line_id") or item["sku"]),
+                    "sku": str(item["sku"]),
+                    "name": str(item.get("name") or item["sku"]),
+                    "requested_qty": _whole(Decimal(str(item.get("qty") or 0))),
+                    "available_qty": 0,
+                }
+                for item in lot_lines
+            ]
             for sku, qty in wanted.items():
                 if qty <= 0:
                     continue
@@ -229,6 +285,7 @@ def change_cart_day(
                 )
                 if not result["ok"]:
                     missing.append({
+                        "ref": sku,
                         "sku": sku,
                         "name": names[sku],
                         "requested_qty": _whole(qty),
@@ -247,11 +304,14 @@ def change_cart_day(
                 data.pop("delivery_date", None)
             session.data = data
             session.save(update_fields=["data"])
+            stripped = _without_lot(list(session.items or []))
+            if stripped is not None:
+                session.update_items(stripped)
     except _DayChangeRollback as rollback:
         raise rollback.refusal from None
 
     availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
-    ops = [{"op": "remove_line", "line_id": item["line_id"]} for item in lines if str(item["sku"]) in dropped]
+    ops = [{"op": "remove_line", "line_id": item["line_id"]} for item in lines if leaves(item)]
     return session_service.modify_session(session_key=session_key, channel_ref=channel_ref, ops=ops)
 
 

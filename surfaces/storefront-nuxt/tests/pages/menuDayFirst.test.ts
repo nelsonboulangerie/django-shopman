@@ -55,10 +55,10 @@ registerEndpoint('/api/v1/cart/day/', {
       return {
         error_code: 'cart_day_change_refused',
         title: 'Tabatière não está disponível para quinta, 26/11',
-        detail: 'Você pode seguir para quinta, 26/11 sem ele, ou manter o dia que tinha.',
+        detail: 'Você pode seguir para quinta, 26/11 sem esse item, ou manter o dia que tinha.',
         date: '2026-11-26',
         date_label: 'quinta, 26/11',
-        items: [{ sku: 'TABAT', name: 'Tabatière', requested_qty: 1, available_qty: 0 }]
+        items: [{ ref: 'TABAT', sku: 'TABAT', name: 'Tabatière', requested_qty: 1, available_qty: 0 }]
       }
     }
     return { cart: { ...useState<CartProjection>('storefront-cart').value, day: { date: '2026-11-26', label: 'quinta, 26/11' } } }
@@ -155,7 +155,7 @@ describe('cardápio: "Para quando?" antes da lista (OC-33 B1)', () => {
     useState<CartProjection>('storefront-cart').value = { ...useState<CartProjection>('storefront-cart').value, is_empty: true, day: null }
   })
 
-  it('B, "Trocar" com a sacola cheia: o item que não dá é nomeado, e "Seguir sem ele" leva o resto', async () => {
+  it('B, "Trocar" com a sacola cheia: o item que não dá é nomeado, e "Seguir sem esse item" leva o resto', async () => {
     useState<CartProjection>('storefront-cart').value = {
       ...(useState<CartProjection>('storefront-cart').value || {}),
       is_empty: false,
@@ -173,6 +173,9 @@ describe('cardápio: "Para quando?" antes da lista (OC-33 B1)', () => {
     await vi.waitFor(() => expect(page.find('[data-menu-day-refusal]').exists()).toBe(true))
     expect(page.find('[data-menu-day-refusal]').text()).toContain('Tabatière não está disponível para quinta, 26/11')
     expect(dayCalls[0]).toEqual({ date: '2026-11-26', without: [] })
+    // Forma neutra: a casa não sabe o gênero de cada produto.
+    expect(page.find('[data-menu-day-refusal]').text()).toContain('sem esse item')
+    expect(page.find('[data-menu-day-proceed]').text()).toBe('Seguir sem esse item')
 
     await page.find('[data-menu-day-proceed]').trigger('click')
     await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
