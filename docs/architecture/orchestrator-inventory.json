@@ -178,6 +178,7 @@
             "connect_saved",
             "create",
             "exists",
+            "handled_since",
             "oldest_open_created_at",
             "open_counts",
             "open_pk",

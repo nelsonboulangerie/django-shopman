@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 #: que o perfil não liga) nunca sai pelo motor no N9.
 ACTION_CLASSES = {
     "inform": ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification"),
-    "handoff": ("handoff",),
+    "handoff": ("handoff", "wait"),  # o aviso de prazo vencido é do compromisso com a equipe
     "order": ("present_terms", "change_cart", "set_fulfillment", "set_delivery_address", "set_payment",
               "commit_order"),
 }
@@ -522,7 +522,7 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
     profile = build_profile(environment=environment)
     ctx = TrustedContext(tenant=profile.tenant, environment=environment, subject=subject_of(conversation.pk))
     bodies: dict[str, str] = {}
-    channel = replace(channel, bodies=bodies)
+    channel = replace(channel, bodies=bodies, handoffs=[])
     channel_ref = conversation.channel_ref or "whatsapp"
     ports = Ports(
         channel=channel, model=NiceReader(),
@@ -731,6 +731,11 @@ def run(conversation, message, *, channel=None, interrupted=None):
                         conversation.pk, result.outcome, list(result.fallbacks))
             return None
         send_house_extras(conversation, result, live)
+        handoffs = list(getattr(live.ports.channel, "handoffs", None) or [])
+        if handoffs:
+            # A resposta ("Solicitei atendimento a alguém da equipe…") já saiu; o serviço entrega a conversa à
+            # equipe ao fechar o turno (``service.run_turn``), pelo caminho de hoje, uma vez só.
+            conversation._framework_handoff = handoffs[0]
         return result
     except Exception:  # noqa: BLE001 — o motor que cai nunca derruba o turno: segue o caminho de hoje
         logger.warning("concierge.turn_framework.failed conversation=%s", getattr(conversation, "pk", None),
@@ -757,7 +762,6 @@ def _due_conversations(ctx: TrustedContext) -> list[int]:
     from shopman.shop.conversational.store import _scope, instant
     from shopman.shop.models import Conversation, ConversationalCommitment, ConversationalEpisode
 
-    from .ports import SUBJECT_PREFIX
 
     now = instant(timezone.now())
     episodes = set()
@@ -767,9 +771,41 @@ def _due_conversations(ctx: TrustedContext) -> list[int]:
             episodes.add(row.episode_id)
     subjects = set(ConversationalEpisode.objects.filter(**_scope(ctx), episode_id__in=episodes)
                    .values_list("subject", flat=True))
-    pks = sorted({int(s[len(SUBJECT_PREFIX):]) for s in subjects
-                  if s.startswith(SUBJECT_PREFIX) and s[len(SUBJECT_PREFIX):].isdigit()})
-    return list(Conversation.objects.filter(pk__in=pks).values_list("pk", flat=True))
+    pks = sorted({pk for subject in subjects for pk in _conversations_of_subject(subject)})
+    # A frase do encaminhamento promete "te aviso por aqui até {deadline}": com a conversa na equipe e NINGUÉM
+    # tendo assumido, o aviso sai (a Nice nunca afirma falso). Se alguém da equipe assumiu, o tick cala.
+    found = Conversation.objects.filter(pk__in=pks, state__in=(Conversation.State.ACTIVE, Conversation.State.HANDOFF))
+    return [conversation.pk for conversation in found
+            if conversation.state == Conversation.State.ACTIVE or not team_took_over(conversation)]
+
+
+def team_took_over(conversation) -> bool:
+    """Alguém da equipe assumiu o atendimento depois do encaminhamento: o cartão de "cliente esperando atendente"
+    (``concierge_handoff``) reconhecido ou resolvido por uma pessoa.
+
+    É o único sinal que a casa registra: a resposta pelo Live Chat do provedor não chega aqui. Sem ele, o prazo
+    prometido ao cliente vale, e o aviso sai."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    pk = ((conversation.flags or {}).get("alerts") or {}).get("concierge_handoff")
+    return bool(pk) and alert_adapter.handled_since(int(pk), conversation.handoff_at)
+
+
+def _conversations_of_subject(subject: str) -> set[int]:
+    """As conversas do sujeito do episódio: ``binding:<canal>:<assinante>`` (o vínculo de transporte, como o
+    motor o chave, ``workflow.correlation.subject_key``), ou ``conversation:<pk>``."""
+    from shopman.shop.models import ConversationBinding
+
+    from .ports import SUBJECT_PREFIX
+
+    if subject.startswith(SUBJECT_PREFIX) and subject[len(SUBJECT_PREFIX):].isdigit():
+        return {int(subject[len(SUBJECT_PREFIX):])}
+    kind, _, rest = subject.partition(":")
+    channel, _, subscriber = rest.partition(":")
+    if kind != "binding" or not channel or not subscriber:
+        return set()
+    return set(ConversationBinding.objects.filter(transport_channel=channel, subject=subscriber)
+               .values_list("conversation_id", flat=True))
 
 
 def _only_this_conversation(engine, conversation) -> None:
@@ -780,7 +816,11 @@ def _only_this_conversation(engine, conversation) -> None:
     from .ports import subject_of
 
     ctx = engine.ports.clock.ctx
-    mine = set(ConversationalEpisode.objects.filter(**_scope(ctx), subject=subject_of(conversation.pk))
+    from shopman.shop.models import ConversationBinding
+
+    subjects = {f"binding:{channel}:{subscriber}" for channel, subscriber in ConversationBinding.objects.filter(
+        conversation=conversation).values_list("transport_channel", "subject")} | {subject_of(conversation.pk)}
+    mine = set(ConversationalEpisode.objects.filter(**_scope(ctx), subject__in=subjects)
                .values_list("episode_id", flat=True))
     ledger = engine.commitments
     ledger.entries = {cid: entry for cid, entry in ledger.entries.items() if entry.commitment.episode_id in mine}

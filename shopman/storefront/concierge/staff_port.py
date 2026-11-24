@@ -43,6 +43,10 @@ from shopman.shop.conversational.store import instant
 from .ports import SUBJECT_PREFIX
 
 TICKET_PREFIX = "verify"
+HANDOFF_TICKET_PREFIX = "handoff"
+#: A pergunta que o movimento ``handoff`` faz à equipe (``engine/moves/handoff.py``): não é pergunta a
+#: responder, é a conversa a assumir. A entrega é a de hoje (``service.mark_handoff``, ao fechar o turno).
+HANDOFF_QUESTION = "take over the conversation"
 EPISODE_PREFIX = "conversation-"
 RETURN_SCHEMA = "nice.staff_return"
 ACTOR = "framework"
@@ -61,6 +65,26 @@ def _conversation_of(ctx: TrustedContext, episode_id: str = ""):
             except ValueError:
                 continue
     return None
+
+
+def _customer_words(conversation) -> str:
+    """A fala do cliente que abriu o turno: a última entrada da conversa (o que a equipe lê no cartão)."""
+    from shopman.shop.models import ConversationMessage
+
+    last = (ConversationMessage.objects.filter(conversation=conversation, kind=ConversationMessage.Kind.INBOUND)
+            .order_by("-pk").values_list("text", flat=True).first())
+    return " ".join(str(last or "").split())
+
+
+def _handoff_state(ticket: str) -> StaffTicket:
+    """O encaminhamento: a equipe atende pelo Live Chat, e a casa não registra quem assumiu. Sem prova de aceite,
+    o tíquete segue "routed" (nada afirma que alguém aceitou, K20)."""
+    from shopman.shop.models import Conversation
+
+    _, pk, episode_id = (ticket.split(":", 2) + ["", ""])[:3]
+    if not pk.isdigit() or not Conversation.objects.filter(pk=int(pk)).exists():
+        raise PortError("object_forbidden", "tíquete de encaminhamento sem conversa")
+    return StaffTicket(ticket_id=ticket, episode_id=episode_id, state="routed")
 
 
 def ticket_id(conversation_pk: int, record_id: str) -> str:
@@ -97,10 +121,21 @@ class NiceStaff:
                                         "routed_is_not_accepted": True, "queue": "operator_alert"})
 
     def ask(self, ctx: TrustedContext, question: StaffQuestion) -> StaffTicket:
+        """A pergunta à equipe. O encaminhamento não abre cartão de verificar: a conversa vai à equipe pelo
+        caminho de hoje (um cartão só, o de "cliente esperando atendente"). O "vou verificar" abre o cartão com a
+        FALA do cliente, lida aqui na mensagem que abriu o turno (P17: a fala não entra na pergunta, no tíquete
+        nem em contrato do motor; a pergunta do motor é interna e a equipe nunca a lê)."""
         from .verification import open_for
 
         conversation = _conversation_of(ctx, question.episode_id)
-        record = open_for(conversation, question.question, actor=ACTOR) if conversation is not None else None
+        if question.question == HANDOFF_QUESTION:
+            if conversation is None:
+                return StaffTicket(ticket_id=f"{HANDOFF_TICKET_PREFIX}:none:{question.episode_id}"[:128],
+                                   episode_id=question.episode_id, state="rejected")
+            return StaffTicket(ticket_id=f"{HANDOFF_TICKET_PREFIX}:{conversation.pk}:{question.episode_id}"[:128],
+                               episode_id=question.episode_id, state="routed")
+        said = _customer_words(conversation) if conversation is not None else ""
+        record = open_for(conversation, said, actor=ACTOR) if conversation is not None and said else None
         if record is None:
             # Sem conversa ativa ou sem prazo possível: ninguém recebeu, e nada diz que recebeu.
             return StaffTicket(ticket_id=f"{TICKET_PREFIX}:none:{question.episode_id}"[:128],
@@ -109,9 +144,13 @@ class NiceStaff:
                            state="routed")
 
     def record_acceptance(self, ctx: TrustedContext, ticket: str) -> StaffTicket:
-        """O desfecho do cartão, lido: ``taken_over`` é aceite nominal; o resto não é."""
+        """O desfecho do cartão, lido: ``taken_over`` é aceite nominal; o resto não é.
+
+        O encaminhamento: sem registro de quem assumiu, segue esperando (``_handoff_state``)."""
         from .verification import ANSWERED, TAKEN_OVER
 
+        if (ticket or "").startswith(f"{HANDOFF_TICKET_PREFIX}:"):
+            return _handoff_state(ticket)
         conversation, record = _record_of(ticket)
         if record is None:
             raise PortError("object_forbidden", "tíquete sem verificação")
