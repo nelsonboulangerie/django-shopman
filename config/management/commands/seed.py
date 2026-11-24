@@ -15,6 +15,7 @@ IMPORTANTE — Não-determinismo deliberado:
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 import uuid
@@ -1966,6 +1967,14 @@ class Command(BaseCommand):
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
+
+        # A nota fiscal dos pedidos de exemplo (D-037, #3428) vai junto com eles.
+        # O FiscalDocument não tem FK para o pedido (um Core não importa outro),
+        # então apagar os pedidos não a leva: sem esta linha, a segunda passada
+        # achava a nota órfã do pedido apagado.
+        from shopman.fiscalman.models import FiscalDocument
+
+        FiscalDocument.objects.all().delete()
 
         # Marketing é um ledger protegido e precisa sair antes de cliente, catálogo e
         # usuário. Não basta apagar ``Announcement`` no fim: snapshots ainda ligados a
@@ -7251,9 +7260,11 @@ class Command(BaseCommand):
 
         # Chave de acesso NFC-e (44 dígitos): cUF(41=PR)+AAMM+CNPJ+mod(65)+série+nNF+
         # tpEmis(2=homolog)+cNF+cDV. Formato realista; exemplo de homologação.
+        # O cNF sai do pedido: a chave é única no FiscalDocument, e um seed rodado
+        # de novo que escolha outro pedido não pode repetir a chave do anterior.
         now = timezone.now()
-        chave = f"41{now:%y%m}99999999000191650010000012342{'87654321'}0"
-        chave = "".join(ch for ch in chave if ch.isdigit())[:44].ljust(44, "0")
+        cnf = int(hashlib.sha256(order.ref.encode()).hexdigest(), 16) % 10**8
+        chave = f"41{now:%y%m}99999999000191650010000012342{cnf:08d}0"
         # O exemplo não é autorizado na SEFAZ. Não fabrique uma consulta com
         # hash fictício: só uma emissão real do provedor fornece esse QR.
 
