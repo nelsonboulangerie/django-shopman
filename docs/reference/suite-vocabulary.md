@@ -378,9 +378,16 @@ frase que diz quando o produto pode ser pedido fala em **Disponível**, e o esta
 
 A frase vem de um lugar só, `shopman/storefront/presentation/promise.py` (o texto) e
 `surfaces/storefront-nuxt/app/presentation/promise.ts` (onde cada pedaço aparece). Saiu o
-"Pronto agora" e saiu o "Fica pronto amanhã" do card. **"Fica pronto" segue só na frase
-sobre o PEDIDO** ("Seu pedido fica pronto hoje, a partir das 15h", no alto da sacola e no
-checkout), até o dono decidir sobre ela.
+"Pronto agora" e saiu o "Fica pronto amanhã" do card.
+
+⛔ **A fronteira: "Disponível" é do PRODUTO; "fica pronto" é do PEDIDO** (dono, 24/11/2026;
+não se reabre). A frase sobre o pedido fica como está: "Seu pedido fica pronto hoje, a
+partir das 15h" no alto da sacola, "Seu pedido fica pronto para retirada hoje…" no checkout
+e "Fica pronto por volta de 12h40" no acompanhamento. A régua é o sujeito da frase. Quando
+o sujeito é o item (página do produto, card, vitrine, linha do item na sacola), a palavra é
+**Disponível**. Quando é o pedido, a palavra é **fica pronto**. Uma mesma tela pode ter as
+duas: na sacola, a linha do item diz "Disponível amanhã, quarta, a partir das 7h", e o alto
+diz "Seu pedido fica pronto amanhã, quarta, a partir das 7h".
 
 ⛔ **A linha da loja no produto é curta: "Disponível hoje na Nelson Boulangerie"**, sem
 endereço e sem "Retirada grátis" (dono, 24/11/2026: com uma loja só, o endereço "chega a
