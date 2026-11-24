@@ -292,7 +292,7 @@ def product_lines(order) -> list[dict]:
     return [
         {"line_id": item.line_id, "sku": item.sku, "qty": str(item.qty), "name": item.name or item.sku}
         for item in order_composition.effective_items(order)
-        if not _is_fixed_line(item)
+        if not is_fixed_line(item)
     ]
 
 
@@ -327,8 +327,8 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
     data = order.data or {}
     current = order_composition.effective_items(order)
     fee_lines = [item for item in current if _is_fee_line(item)]
-    other_fixed = [item for item in current if _is_fixed_line(item) and not _is_fee_line(item)]
-    editable = [item for item in current if not _is_fixed_line(item)]
+    other_fixed = [item for item in current if is_fixed_line(item) and not _is_fee_line(item)]
+    editable = [item for item in current if not is_fixed_line(item)]
     next_revision = int((order_composition.adjustment(order) or {}).get("revision") or 0) + 1
 
     # ── produtos
@@ -1334,7 +1334,7 @@ def _is_fee_line(item) -> bool:
     return str(item.sku or "") == DELIVERY_FEE_SKU or meta.get("type") == "delivery_fee"
 
 
-def _is_fixed_line(item) -> bool:
+def is_fixed_line(item) -> bool:
     """Linha que não é produto (taxa de entrega e afins): a lista de itens não a toca."""
     return str(item.sku or "").startswith("__") or _is_fee_line(item)
 
@@ -1452,6 +1452,7 @@ __all__ = [
     "money_for_customer",
     "edit",
     "fiscal_authorized",
+    "is_fixed_line",
     "plan",
     "product_lines",
     "refund_route",

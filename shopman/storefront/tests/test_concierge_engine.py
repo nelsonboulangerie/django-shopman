@@ -640,6 +640,27 @@ def test_place_order_refuses_a_payment_method_the_channel_does_not_offer(ctx):
     assert refused["error"] == "invalid_payment_method"
 
 
+def test_cash_in_the_channel_config_never_reaches_the_conversation(ctx):
+    """D-003: dinheiro não entra no fluxo remoto, nem com o canal mal configurado (OC-14).
+
+    Uma régua só (``policies.order_payment.conversation_payment_methods``): o orçamento
+    da Concierge e a porta de leitura da conversa oferecem as mesmas formas, e com
+    "pix + dinheiro" no canal as duas assumem o Pix, a única que a conversa oferece.
+    """
+    from shopman.shop.conversational.commerce_read import _fulfillment_conditions
+
+    channel = Channel.objects.get(ref=CHANNEL)
+    channel.config["payment"]["method"] = ["pix", "cash"]
+    channel.save()
+    tools.set_item(ctx, SKU, 1)
+
+    review = tools.review_order(ctx)
+    assert [method["ref"] for method in review["payment_methods"]] == ["pix"]
+    assert review["payment_method"] == "pix"
+    assert tools.review_order(ctx, "cash")["error"] == "invalid_payment_method"
+    assert {"code": "payment_method", "value": "pix"} in _fulfillment_conditions({}, CHANNEL)
+
+
 def test_set_fulfillment_validates_the_slot_like_the_site(ctx):
     tools.set_item(ctx, SKU, 1)
     bad = tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-99", "")
