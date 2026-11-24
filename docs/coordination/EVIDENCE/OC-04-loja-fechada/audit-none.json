@@ -6,13 +6,13 @@
       "viewport": "m375",
       "noHorizontalScroll": true,
       "eyebrow": {
-        "text": "Fechado agora. Abrimos amanhã às 9h. Hoje não há encomenda aberta. No cardápio, toque em “Me avise” no item que você quer.",
+        "text": "Hoje não há encomenda aberta. Toque em “Me avise” no item.",
         "fontSizePx": 14,
         "fontWeight": "600",
         "contrastOverPhoto": {
-          "worst": 4.43,
-          "p05": 8.96,
-          "median": 16.54
+          "worst": 4.58,
+          "p05": 8.87,
+          "median": 15.96
         },
         "aboveTitle": true,
         "centeredWithTitle": true,
@@ -51,7 +51,7 @@
         "title": "Hoje não há encomenda aberta",
         "titleFontSizePx": 18,
         "titleContrast": 11.27,
-        "message": "No cardápio, toque em “Me avise” no item que você quer, e avisamos quando ele voltar.",
+        "message": "Toque em “Me avise” no item do cardápio.",
         "messageFontSizePx": 14,
         "messageContrast": 5.38,
         "titleAboveMessage": true,
@@ -64,13 +64,13 @@
       "viewport": "desktop",
       "noHorizontalScroll": true,
       "eyebrow": {
-        "text": "Fechado agora. Abrimos amanhã às 9h. Hoje não há encomenda aberta. No cardápio, toque em “Me avise” no item que você quer.",
+        "text": "Hoje não há encomenda aberta. Toque em “Me avise” no item.",
         "fontSizePx": 14,
         "fontWeight": "600",
         "contrastOverPhoto": {
-          "worst": 3.55,
-          "p05": 6.13,
-          "median": 16.14
+          "worst": 4.44,
+          "p05": 6.7,
+          "median": 16.33
         },
         "aboveTitle": true,
         "centeredWithTitle": true,
@@ -109,7 +109,7 @@
         "title": "Hoje não há encomenda aberta",
         "titleFontSizePx": 18,
         "titleContrast": 11.27,
-        "message": "No cardápio, toque em “Me avise” no item que você quer, e avisamos quando ele voltar.",
+        "message": "Toque em “Me avise” no item do cardápio.",
         "messageFontSizePx": 14,
         "messageContrast": 5.38,
         "titleAboveMessage": true,

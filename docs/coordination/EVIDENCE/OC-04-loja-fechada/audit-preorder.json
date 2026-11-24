@@ -6,13 +6,13 @@
       "viewport": "m375",
       "noHorizontalScroll": true,
       "eyebrow": {
-        "text": "Fechado agora. Abrimos amanhã às 9h. Você já pode encomendar para amanhã, terça. Conferimos o pedido quando abrirmos.",
+        "text": "Fechado agora. Encomende para amanhã, terça.",
         "fontSizePx": 14,
         "fontWeight": "600",
         "contrastOverPhoto": {
-          "worst": 4.35,
-          "p05": 9.03,
-          "median": 16.85
+          "worst": 5.32,
+          "p05": 9.28,
+          "median": 15.25
         },
         "aboveTitle": true,
         "centeredWithTitle": true,
@@ -68,13 +68,13 @@
       "viewport": "desktop",
       "noHorizontalScroll": true,
       "eyebrow": {
-        "text": "Fechado agora. Abrimos amanhã às 9h. Você já pode encomendar para amanhã, terça. Conferimos o pedido quando abrirmos.",
+        "text": "Fechado agora. Encomende para amanhã, terça.",
         "fontSizePx": 14,
         "fontWeight": "600",
         "contrastOverPhoto": {
-          "worst": 3.47,
-          "p05": 6.12,
-          "median": 16.14
+          "worst": 4.71,
+          "p05": 6.58,
+          "median": 11.27
         },
         "aboveTitle": true,
         "centeredWithTitle": true,

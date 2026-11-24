@@ -487,8 +487,7 @@ def _without_preorder_offer(
 ) -> HomeSectionsCopyProjection:
     """Sem nada encomendável, a faceta de encomenda sai de "Como funciona" (OC-04, X1).
 
-    "Escolha o dia ao finalizar o pedido. Encomendas com até 30 dias de
-    antecedência" convida a encomendar; o laudo da Etapa II (U1) a mediu na home
+    "Encomendas com até 30 dias de antecedência" convida a encomendar; o laudo da Etapa II (U1) a mediu na home
     às 22h, com 0 de 31 itens podendo ir à sacola. Com ``ordering.state ==
     "none"`` ela some; com algo encomendável, fica como está.
     """

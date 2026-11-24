@@ -238,8 +238,8 @@ def test_x1_nada_encomendavel_a_home_e_a_sacola_nao_oferecem_finalizar():
 
     O cenário do laudo: 22h, casa fechada, todo item esgotado e nenhuma fornada
     planejada. O card de cada item não acende o botão, e a home e a sacola não
-    podem dizer o contrário: nem a faceta "Escolha o dia ao finalizar o pedido.
-    Encomendas com até 30 dias" de "Como funciona", que o laudo mediu na home.
+    podem dizer o contrário: nem a faceta "Encomendas com até 30 dias de
+    antecedência" de "Como funciona", que o laudo mediu na home.
     A frase do topo do hero mora no Nuxt e é provada no vitest
     (``homePresentation.test.ts``).
     """

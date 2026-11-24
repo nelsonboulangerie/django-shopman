@@ -138,8 +138,8 @@ describe('contrato compartilhado: storefront_ordering (OC-04)', () => {
     expect(Object.keys(orderingContract.home).sort()).toEqual(['day_label', 'next_date', 'state'])
     expect(orderingContract.home.state).toBe('now')
     expect(heroEyebrow({ statusOpen: false, statusLabel: 'Fechado agora', ordering: orderingContract.home }))
-      .toBe('Fechado agora. Você já pode finalizar o pedido, e conferimos quando abrirmos.')
+      .toBe('Fechado agora. Já dá para pedir.')
     const none: OrderingProjection = { ...orderingContract.home, state: 'none', next_date: null, day_label: '' }
-    expect(heroEyebrow({ statusOpen: false, statusLabel: 'Fechado agora', ordering: none })).not.toMatch(/finalizar/)
+    expect(heroEyebrow({ statusOpen: false, statusLabel: 'Fechado agora', ordering: none })).not.toMatch(/pedir|finalizar|Encomende/)
   })
 })

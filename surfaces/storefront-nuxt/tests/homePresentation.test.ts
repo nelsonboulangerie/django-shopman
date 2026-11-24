@@ -14,14 +14,14 @@ const NONE: OrderingProjection = { state: 'none', next_date: null, day_label: ''
 const CLOSED = 'Fechado agora. Abrimos amanhã às 9h'
 
 // Toda frase que convida a pedir (finalizar, encomendar, fazer pedido).
-const ORDER_OFFER = /finalizar|encomendar para|Fazer pedido/
+const ORDER_OFFER = /finalizar|encomendar para|Encomende|dá para pedir|Fazer pedido/
 
 describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () => {
   it('X1: com nada encomendável, a home não oferece finalização, aberta ou fechada', () => {
     const closed = heroEyebrow({ statusOpen: false, statusLabel: CLOSED, ordering: NONE })
     const open = heroEyebrow({ statusOpen: true, statusLabel: 'Aberto até 18h', ordering: NONE })
 
-    expect(closed).toBe(`Fechado agora. Abrimos amanhã às 9h. ${NO_ORDERING_HINT}`)
+    expect(closed).toBe('Hoje não há encomenda aberta. Toque em “Me avise” no item.')
     expect(open).toBe(NO_ORDERING_HINT)
     for (const text of [closed, open]) {
       expect(text).not.toMatch(ORDER_OFFER)
@@ -31,22 +31,22 @@ describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () =>
     expect(closedHeroCtaLabel(NONE)).toBeUndefined()
   })
 
-  it('casa fechada que ainda abre hoje: dá para finalizar já, e a casa confere na abertura', () => {
+  it('casa fechada que ainda abre hoje: já dá para pedir (a hora da abertura fica na faixa do topo)', () => {
     expect(heroEyebrow({ statusOpen: false, statusLabel: 'Fechado agora. Abrimos hoje às 7h', ordering: NOW }))
-      .toBe('Fechado agora. Abrimos hoje às 7h. Você já pode finalizar o pedido, e conferimos quando abrirmos.')
+      .toBe('Fechado agora. Já dá para pedir.')
     expect(closedHeroCtaLabel(NOW)).toBe('Fazer pedido')
   })
 
   it('casa fechada com encomenda para outro dia: a frase diz o dia', () => {
     expect(heroEyebrow({ statusOpen: false, statusLabel: `${CLOSED}.`, ordering: PREORDER }))
-      .toBe('Fechado agora. Abrimos amanhã às 9h. Você já pode encomendar para amanhã, quarta. Conferimos o pedido quando abrirmos.')
-    expect(preorderHint('quinta, 19/11')).toBe('Você já pode encomendar para quinta, 19/11. Conferimos o pedido quando abrirmos.')
+      .toBe('Fechado agora. Encomende para amanhã, quarta.')
+    expect(preorderHint('quinta, 19/11')).toBe('Encomende para quinta, 19/11.')
     expect(closedHeroCtaLabel(PREORDER)).toBe('Fazer pedido')
   })
 
   it('preorder sem o dia escrito cai na frase sem data, nunca numa data inventada', () => {
     expect(heroEyebrow({ statusOpen: false, statusLabel: CLOSED, ordering: { ...PREORDER, day_label: ' ' } }))
-      .toBe(`Fechado agora. Abrimos amanhã às 9h. ${CLOSED_HERO_HINT}`)
+      .toBe(`Fechado agora. ${CLOSED_HERO_HINT}`)
   })
 
   it('casa aberta com o que pedir: o topo não ganha linha extra', () => {
@@ -61,10 +61,11 @@ describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () =>
     expect(closedHeroCtaLabel(undefined)).toBeUndefined()
   })
 
-  it('frases sem travessão e sem "finaliza quando abrirmos" (beta 06/11)', () => {
+  it('frases curtas, sem travessão e sem "finaliza quando abrirmos" (beta 06/11; dono 24/11: prolixo)', () => {
     for (const text of [CLOSED_HERO_HINT, NO_ORDERING_HINT, preorderHint('amanhã, quarta')]) {
       expect(text).not.toMatch(/[—–]/)
       expect(text).not.toMatch(/finaliza quando abrirmos/)
+      expect(text.split(/\s+/).length).toBeLessThanOrEqual(12)
     }
   })
 })

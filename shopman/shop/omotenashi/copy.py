@@ -154,7 +154,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Hoje não há encomenda aberta",
-                message="No cardápio, toque em “Me avise” no item que você quer, e avisamos quando ele voltar.",
+                message="Toque em “Me avise” no item do cardápio.",
             ),
         },
     },
@@ -402,7 +402,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Peça ao atendente. Preparamos na hora.")},
     },
     "HOW_PREORDER_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Escolha o dia ao finalizar o pedido. Encomendas com até {window} de antecedência.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Encomendas com até {window} de antecedência.")},
     },
     "HOW_TRACKING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Use seu telefone para consultar o status dos pedidos a qualquer momento.")},
