@@ -151,8 +151,37 @@ class TurnState:
                 and need.answers_question == self.offer.question_id)
 
     def declines_terms(self, need: NeedSpec) -> bool:
-        """O "não" aos termos no ar, ou ao fechamento que pergunta por uma condição ("deixa pra lá")."""
-        return self.declines_offer(need) or (self.offer is None and self.closing and need.act == "deny")
+        """O "não" aos termos no ar, ou ao fechamento que pergunta por uma condição ("deixa pra lá").
+
+        O "não" à condição que se responde com sim ou não ("entregamos no endereço do cadastro?") não é
+        desistir: é recusar aquela opção, e o fechamento segue (``declines_condition``)."""
+        return self.declines_offer(need) or (self.offer is None and self.closing and need.act == "deny"
+                                             and not self.declines_condition(need))
+
+    def pending_condition(self) -> str | None:
+        """A condição que o fechamento no ar pergunta: a primeira que falta, com o fechamento pendente."""
+        missing = self.missing_conditions()
+        return missing[0] if self.closing and self.offer is None and missing else None
+
+    def _yes_no_condition(self) -> str | None:
+        """A condição pendente que se responde com sim ou não, e que tem opção a aceitar.
+
+        Quem a declara é o movimento que a cumpre (``ANSWERS_CONDITIONS``): a forma de pagamento não é
+        pergunta de sim ou não (são duas formas), o endereço do cadastro é ("entregamos nele?")."""
+        from .moves import yes_no_conditions
+
+        code = self.pending_condition()
+        if code is None or code not in yes_no_conditions() or not self.offered(self.subject.cart_ref, code):
+            return None
+        return code
+
+    def answers_condition(self, need: NeedSpec) -> bool:
+        """O "sim" à condição pendente de sim ou não: aceita a primeira opção que o fato oferece."""
+        return need.act == "affirm" and self._yes_no_condition() is not None
+
+    def declines_condition(self, need: NeedSpec) -> bool:
+        """O "não" à condição pendente de sim ou não: recusa a opção, e o fechamento pergunta o que falta."""
+        return need.act == "deny" and self._yes_no_condition() is not None
 
     def has_fresh_terms(self) -> bool:
         """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
@@ -172,7 +201,7 @@ class TurnState:
         """
         if (self.offer is None and not self.closing) or not self.has_fresh_terms():
             return False
-        if need.act in MATERIAL_ACTS:
+        if need.act in MATERIAL_ACTS or self.answers_condition(need):
             receipt = self.receipts.get(need.need_id)
             return receipt is not None and receipt.status == "success"
         # "Sim, e põe quatro": o "sim" do mesmo turno também pede os termos novos (as duas portas juntas).
@@ -182,7 +211,7 @@ class TurnState:
 
     def wants_terms(self, need: NeedSpec) -> bool:
         """Esta necessidade pede termos (novos): fechar o pedido, ou confirmação que não valeu mais."""
-        if need.act == "place_order" or self.changed_under_offer(need):
+        if need.act == "place_order" or self.changed_under_offer(need) or self.declines_condition(need):
             return True
         if not self.answers_offer(need):
             return False

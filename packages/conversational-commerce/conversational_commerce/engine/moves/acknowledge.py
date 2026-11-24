@@ -22,6 +22,8 @@ TEMPLATES = (
 def propose(state, need):
     if need.act not in COURTESY_ACTS | ANSWER_ACTS | DECLARATION_ACTS or state.answers_offer(need):
         return None  # o "sim" aos termos é confirmação: quem responde é o fechamento do pedido
+    if state.answers_condition(need) or state.declines_condition(need):
+        return None  # o "sim" ou o "não" à condição pendente: quem responde é quem a cumpre, ou o fechamento
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE, content={},
                     situation=state.situation(need, reply_only_courtesy=True))
 

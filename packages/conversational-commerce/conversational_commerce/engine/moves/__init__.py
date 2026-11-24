@@ -11,6 +11,7 @@ Sem lista central: um WP que acrescenta movimento (F8, F9, F10) cria
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import pkgutil
 import sys
@@ -63,3 +64,10 @@ def registry() -> dict[str, ModuleType]:
 
 def templates() -> dict:
     return {template.template_id: template for module in registry().values() for template in module.TEMPLATES}
+
+
+@functools.cache
+def yes_no_conditions() -> frozenset[str]:
+    """As condições que se respondem com sim ou não, declaradas pelos movimentos que as cumprem
+    (``ANSWERS_CONDITIONS``). Lidas uma vez: o registro não muda em execução."""
+    return frozenset(code for module in registry().values() for code in getattr(module, "ANSWERS_CONDITIONS", ()))

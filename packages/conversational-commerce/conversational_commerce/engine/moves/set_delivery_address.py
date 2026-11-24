@@ -41,23 +41,36 @@ REFUSALS = {ErrorCode.FULFILLMENT_UNAVAILABLE.value: NOT_DELIVERED, ErrorCode.IN
 TEMPLATES = (TEMPLATES_BY_ID["set_delivery_address.done"], NOT_DELIVERED, NOT_LOCATED, ASK_MODE, *SHARED)
 
 
+#: A condição que se responde com sim ou não: "entregamos no endereço do cadastro?". O "sim" aceita a primeira
+#: opção do fato (``requirements``), uma referência opaca do endereço cadastrado; o "não" pede outro endereço.
+ANSWERS_CONDITIONS = ("delivery_address_saved",)
+
+
+def _source(state, need) -> str:
+    """De onde vem o endereço: a fala (``content_ref``), ou a opção aceita pelo "sim" (a referência opaca)."""
+    if state.answers_condition(need):
+        options = state.offered(state.subject.cart_ref, state.pending_condition() or "")
+        return str(options[0]) if options else ""
+    return state.content_ref or ""
+
+
 def _by_reference(state, need) -> bool:
-    """Uma leitura só, sem campo nenhum, e a fala com referência protegida."""
-    return len(need.readings) == 1 and not dict(need.readings[0]) and bool(state.content_ref)
+    """Uma leitura só, sem campo nenhum, e a fonte por referência (a da fala, ou a da opção aceita)."""
+    return len(need.readings) == 1 and not dict(need.readings[0]) and bool(_source(state, need))
 
 
 def propose(state, need):
-    if need.act != ACT or len(need.readings) != 1 or state.subject.cart_ref is None \
-            or need.need_id in state.refused:
+    if not (need.act == ACT or state.answers_condition(need)) or len(need.readings) != 1 \
+            or state.subject.cart_ref is None or need.need_id in state.refused:
         return None
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE,
-                    content={"source": state.content_ref or ""},
+                    content={"source": _source(state, need)},
                     situation=state.situation(need, address_by_reference=_by_reference(state, need),
                                               change_reversible=True))
 
 
 def effect(state, need) -> EffectPlan:
-    return EffectPlan(action=MOVE, target=state.subject.cart_ref, parameters={"source": state.content_ref or ""},
+    return EffectPlan(action=MOVE, target=state.subject.cart_ref, parameters={"source": _source(state, need)},
                       expected_versions={}, basis="line")
 
 
