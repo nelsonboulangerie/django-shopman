@@ -6,7 +6,8 @@ Dois níveis, por dependência de dados:
 
 `resilience.spec.ts` e `guards.spec.ts` cobrem comportamentos do app que não
 precisam de dados de negócio: shell degradado com backend vazio, banner offline
-(reconexão), guard de `/conta` (redireciona ao login), página 404 (noindex).
+(reconexão), guard de `/conta` (redireciona ao login), página 404 (noindex), e o
+documento com cookie de sessão saindo `private, no-store` em qualquer rota (#3474).
 
 Sobem automaticamente um **mock backend** (`mockBackend.mjs`, respostas `{}`
 rápidas) e o `nuxt preview` apontado a ele.
@@ -33,7 +34,10 @@ precisa do Django real semeado, e por isso não vive aqui. Ele está em
   decidiu. A coorte nasce pelo servidor (`seed_experience.py`, uma `RuleConfig` com
   `CLI-003` na coorte `internal`, gravada antes de o Django subir), nunca por query:
   fora da coorte e anônimo veem `a`; na coorte, `b`, sem alternar na recarga, com o
-  documento e o shell saindo `private, no-store`.
+  documento e o shell saindo `private, no-store`. Documento com sessão (#3474): com
+  a cliente logada (`CLI-005`), cardápio, produto, páginas legais e home saem
+  `private, no-store`; anônimas (`TestSessionDocumentIsNeverShared`), as mesmas
+  páginas seguem sem `no-store`.
 
 Para rodar localmente, da raiz do repositório:
 

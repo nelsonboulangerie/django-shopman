@@ -1,17 +1,14 @@
 // OC-21: a loja lê a versão que o servidor decidiu, e a versão não vaza entre
-// visitantes (X14) nem no BFF nem no documento SSR.
+// visitantes (X14) no BFF. No documento SSR, quem garante é a regra de sessão
+// (#3474, tests/sessionDocumentCache.test.ts): versão fora da padrão só existe
+// com sessão, e todo documento com sessão sai `private, no-store`.
 import { readFileSync } from 'node:fs'
 import { IncomingMessage, ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
 import { createEvent, type H3Event } from 'h3'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { proxyDjangoPath } from '../server/utils/djangoProxy'
-import {
-  DEFAULT_EXPERIENCE_VARIANT,
-  experienceVariant,
-  hasNonDefaultExperience,
-  privateDocumentCacheControl
-} from '~/utils/experience'
+import { DEFAULT_EXPERIENCE_VARIANT, experienceVariant } from '~/utils/experience'
 import type { ExperienceProjection, ShellResponse } from '~/types/shopman'
 
 function shellWith (experience?: ExperienceProjection[]): ShellResponse {
@@ -40,33 +37,6 @@ describe('experienceVariant', () => {
   it('variante vazia ou ilegível vira a padrão, nunca uma terceira', () => {
     expect(experienceVariant(shellWith([{ ref: 'prova', variant: '' }]), 'prova')).toBe('a')
     expect(experienceVariant(shellWith([{ ref: 'prova', variant: null as never }]), 'prova')).toBe('a')
-  })
-})
-
-describe('hasNonDefaultExperience', () => {
-  it('só a versão fora da padrão torna o shell de uma pessoa', () => {
-    expect(hasNonDefaultExperience(undefined)).toBe(false)
-    expect(hasNonDefaultExperience(shellWith(undefined))).toBe(false)
-    expect(hasNonDefaultExperience(shellWith([]))).toBe(false)
-    expect(hasNonDefaultExperience(shellWith([{ ref: 'prova', variant: 'a' }]))).toBe(false)
-    expect(hasNonDefaultExperience(shellWith([{ ref: 'outro', variant: 'a' }, { ref: 'prova', variant: 'b' }]))).toBe(true)
-  })
-})
-
-describe('privateDocumentCacheControl (X14 no documento SSR)', () => {
-  it('documento sem cabeçalho sai private, no-store', () => {
-    expect(privateDocumentCacheControl(undefined)).toBe('private, no-store')
-    expect(privateDocumentCacheControl('')).toBe('private, no-store')
-  })
-
-  it('a home mantém o no-transform da regra de rota e ganha no-store', () => {
-    expect(privateDocumentCacheControl('private, no-transform')).toBe('private, no-store, no-transform')
-  })
-
-  it('nenhuma diretiva de cache compartilhado sobrevive', () => {
-    const value = privateDocumentCacheControl('public, max-age=60, s-maxage=300, stale-while-revalidate=30, no-transform')
-    expect(value).toBe('private, no-store, no-transform')
-    expect(value).not.toMatch(/public|max-age/)
   })
 })
 

@@ -13,7 +13,11 @@ O que se prova:
 - quem está fora da coorte (``CLI-005``) e o anônimo veem a versão padrão ``a``;
 - quem está na coorte vê ``b``, e recarregar não alterna;
 - a resposta B é privada nas duas bordas do Nitro: o documento SSR (que embute o
-  shell no payload) e a API do shell pelo BFF saem ``private, no-store``;
+  shell no payload) e a API do shell pelo BFF saem ``private, no-store``. No
+  documento, quem garante é a regra de sessão (#3474): versão fora da padrão só
+  existe com sessão, e todo documento com sessão sai privado;
+- documento com sessão é privado em qualquer rota, inclusive na versão padrão; o
+  anônimo segue cacheável (#3474);
 - o login gravou a aderência na sessão do servidor (``shopman_experience``);
 - parâmetro de URL não troca a versão de ninguém.
 
@@ -127,6 +131,26 @@ def _is_private(cache_control: str) -> bool:
     return {"private", "no-store"} <= directives and "public" not in directives
 
 
+# Páginas que o anônimo recebe sem ``no-store`` (cacheáveis) e que, com sessão,
+# embutem o nome e a sacola da cliente no payload do Nuxt (#3474).
+PUBLIC_WHEN_ANONYMOUS = (
+    storefront_links.path_menu(),
+    storefront_links.path_product("TRADI"),
+    "/termos",
+    "/privacidade",
+    "/faq",
+)
+
+
+def _assert_session_documents_are_private(page, store_base_url: str) -> None:
+    """#3474: com sessão, todo documento sai ``private, no-store``, em qualquer rota."""
+    for path in (*PUBLIC_WHEN_ANONYMOUS, storefront_links.path_home()):
+        document = _open(page, store_base_url, path)
+        expect(page.locator("main").first).to_be_visible()
+        cache = document.headers.get("cache-control") or ""
+        assert _is_private(cache), f"{path} com sessão saiu '{cache}'"
+
+
 class TestExperienceDecidedByTheServer:
     def test_anonymous_sees_the_default_and_the_url_does_not_choose(self, page, store_base_url):
         _open(page, store_base_url, storefront_links.path_menu())
@@ -142,9 +166,12 @@ class TestExperienceDecidedByTheServer:
         document = _open(page, store_base_url, storefront_links.path_menu())
         shell = _read_shell(page)
         assert _variant(shell["items"]) == "a"
-        # Versão padrão não torna o cardápio privado a mais.
-        assert "no-store" not in (document.headers.get("cache-control") or "")
+        # Com sessão o documento é privado mesmo na versão padrão: ele embute o nome
+        # e a sacola da cliente (#3474, regra de sessão, não de experimento).
+        document_cache = document.headers.get("cache-control") or ""
+        assert _is_private(document_cache), f"cardápio com sessão saiu '{document_cache}'"
         assert _session_experience(django_db_blocker, page.context)[EXPERIMENT_REF]["variant"] == "a"
+        _assert_session_documents_are_private(page, store_base_url)
 
     def test_customer_in_the_cohort_sees_b_privately_and_reload_does_not_switch(
         self, page, store_base_url, django_db_blocker
@@ -174,3 +201,17 @@ class TestExperienceDecidedByTheServer:
         # Nenhum parâmetro tira ninguém da coorte.
         _open(page, store_base_url, f"{storefront_links.path_menu()}?experience=a&{EXPERIMENT_REF}=a")
         assert _variant(_read_shell(page, "?experience=a")["items"]) == "b"
+
+
+class TestSessionDocumentIsNeverShared:
+    """#3474: o documento SSR com sessão embute nome e sacola; nenhuma rota é de todos.
+
+    O lado com sessão roda dentro de ``test_customer_outside_the_cohort_sees_a``
+    (:func:`_assert_session_documents_are_private`): o mesmo telefone não pede um
+    segundo código de SMS na mesma corrida (a espera de reenvio do Doorman).
+    """
+
+    def test_anonymous_document_keeps_its_cache_policy(self, page, store_base_url):
+        for path in PUBLIC_WHEN_ANONYMOUS:
+            document = _open(page, store_base_url, path)
+            assert "no-store" not in (document.headers.get("cache-control") or ""), path
