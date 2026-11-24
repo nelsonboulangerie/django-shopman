@@ -6,6 +6,7 @@ import {
   inCartWhenLine,
   orderReadyLine,
   pickupStoreLines,
+  productPromiseLine,
   promiseAddLabel,
   promiseBadgeLabel,
   promiseHour
@@ -16,12 +17,12 @@ import {
 // do roteiro: pronto agora, fica pronto hoje mais tarde, encomenda para amanhã
 // (fornada ou casa fechada) e sem promessa.
 
-const READY: ReadyPromise = { kind: 'ready', date: '2026-11-17', ready_at: '10:30', day_label: 'hoje', text: 'Pronto agora' }
-const LATER: ReadyPromise = { kind: 'batch', date: '2026-11-17', ready_at: '15:00', day_label: 'hoje', text: 'Fica pronto hoje às 15h' }
-const TOMORROW: ReadyPromise = { kind: 'batch', date: '2026-11-18', ready_at: '15:30', day_label: 'amanhã, quarta', text: 'Fica pronto amanhã, quarta, a partir das 15h30' }
-const CLOSED: ReadyPromise = { kind: 'preorder', date: '2026-11-18', ready_at: '09:00', day_label: 'amanhã, quarta', text: 'Fica pronto amanhã, quarta, a partir das 9h' }
-const THURSDAY: ReadyPromise = { kind: 'batch', date: '2026-11-19', ready_at: '09:00', day_label: 'quinta, 19/11', text: 'Fica pronto quinta, 19/11, a partir das 9h' }
-const SATURDAY: ReadyPromise = { kind: 'batch', date: '2026-11-21', ready_at: '09:00', day_label: 'sábado, 21/11', text: 'Fica pronto sábado, 21/11, a partir das 9h' }
+const READY: ReadyPromise = { kind: 'ready', date: '2026-11-17', ready_at: '10:30', day_label: 'hoje', text: 'Disponível agora' }
+const LATER: ReadyPromise = { kind: 'batch', date: '2026-11-17', ready_at: '15:00', day_label: 'hoje', text: 'Disponível a partir das 15h' }
+const TOMORROW: ReadyPromise = { kind: 'batch', date: '2026-11-18', ready_at: '15:30', day_label: 'amanhã, quarta', text: 'Disponível amanhã, quarta, a partir das 15h30' }
+const CLOSED: ReadyPromise = { kind: 'preorder', date: '2026-11-18', ready_at: '09:00', day_label: 'amanhã, quarta', text: 'Disponível amanhã, quarta, a partir das 9h' }
+const THURSDAY: ReadyPromise = { kind: 'batch', date: '2026-11-19', ready_at: '09:00', day_label: 'quinta, 19/11', text: 'Disponível quinta, 19/11, a partir das 9h' }
+const SATURDAY: ReadyPromise = { kind: 'batch', date: '2026-11-21', ready_at: '09:00', day_label: 'sábado, 21/11', text: 'Disponível sábado, 21/11, a partir das 9h' }
 const STORE = { name: 'Nelson Boulangerie', address: 'Rua das Flores, 100, Centro, Londrina - PR' }
 
 describe('promiseHour', () => {
@@ -51,19 +52,34 @@ describe('promiseBadgeLabel: o selo curto do card', () => {
     expect(promiseBadgeLabel(null)).toBe('')
   })
   it('hoje leva a hora; outro dia leva o dia', () => {
-    expect(promiseBadgeLabel(LATER)).toBe('Fica pronto hoje às 15h')
-    expect(promiseBadgeLabel(TOMORROW)).toBe('Fica pronto amanhã')
-    expect(promiseBadgeLabel(THURSDAY)).toBe('Fica pronto na quinta')
-    expect(promiseBadgeLabel(SATURDAY)).toBe('Fica pronto no sábado')
+    expect(promiseBadgeLabel(LATER)).toBe('Disponível a partir das 15h')
+    expect(promiseBadgeLabel(TOMORROW)).toBe('Disponível amanhã')
+    expect(promiseBadgeLabel(THURSDAY)).toBe('Disponível na quinta')
+    expect(promiseBadgeLabel(SATURDAY)).toBe('Disponível no sábado')
+  })
+  it('sobre o produto fala de disponibilidade, nunca de prontidão (dono, 24/11/2026)', () => {
+    for (const promise of [LATER, TOMORROW, CLOSED, THURSDAY, SATURDAY]) {
+      expect(promiseBadgeLabel(promise)).not.toMatch(/pront/i)
+    }
+  })
+})
+
+describe('productPromiseLine: a página do produto só fala quando difere do normal', () => {
+  it('disponível agora não se diz', () => {
+    expect(productPromiseLine(READY)).toBe('')
+    expect(productPromiseLine(null)).toBe('')
+  })
+  it('mais tarde hoje ou outro dia: a frase do servidor', () => {
+    expect(productPromiseLine(LATER)).toBe('Disponível a partir das 15h')
+    expect(productPromiseLine(CLOSED)).toBe('Disponível amanhã, quarta, a partir das 9h')
   })
 })
 
 describe('pickupStoreLines: em qual loja e se está disponível hoje (#2652)', () => {
-  it('promessa de hoje: disponível hoje na loja, com o endereço', () => {
+  it('promessa de hoje: disponível hoje na loja, numa linha curta, sem endereço', () => {
     expect(pickupStoreLines(READY, STORE)).toEqual({
       availability: 'Disponível hoje na Nelson Boulangerie',
-      availableToday: true,
-      address: 'Rua das Flores, 100, Centro, Londrina - PR. Retirada grátis.'
+      availableToday: true
     })
     expect(pickupStoreLines(LATER, STORE)?.availableToday).toBe(true)
   })
@@ -74,15 +90,15 @@ describe('pickupStoreLines: em qual loja e se está disponível hoje (#2652)', (
   it('sem promessa ou sem loja, a tela não afirma nada', () => {
     expect(pickupStoreLines(null, STORE)).toBeNull()
     expect(pickupStoreLines(READY, null)).toBeNull()
-    expect(pickupStoreLines(READY, { name: 'Nelson', address: '' })).toBeNull()
+    expect(pickupStoreLines(READY, { name: '', address: 'Rua A, 1' })).toBeNull()
   })
-  it('endereço com ponto final não ganha dois pontos', () => {
-    expect(pickupStoreLines(READY, { name: 'N', address: 'Rua A, 1.' })?.address).toBe('Rua A, 1. Retirada grátis.')
+  it('o endereço não entra na linha: com uma loja só, ele era ruído (dono, 24/11/2026)', () => {
+    expect(JSON.stringify(pickupStoreLines(READY, STORE))).not.toContain('Rua das Flores')
   })
   it('nenhuma frase usa travessão', () => {
     for (const promise of [READY, LATER, TOMORROW, CLOSED]) {
       const lines = pickupStoreLines(promise, STORE)
-      expect(`${lines?.availability} ${lines?.address}`).not.toMatch(/[—–]/)
+      expect(lines?.availability).not.toMatch(/[—–]/)
     }
   })
 })
@@ -120,8 +136,8 @@ describe('orderReadyLine: o checkout diz quando o pedido fica pronto para retira
 // só descobria o "amanhã" no checkout).
 describe('cartLinePromise: a linha da sacola diz a fornada do item', () => {
   it('o item de fornada leva a frase inteira do servidor', () => {
-    expect(cartLinePromise(TOMORROW)).toBe('Fica pronto amanhã, quarta, a partir das 15h30')
-    expect(cartLinePromise(LATER)).toBe('Fica pronto hoje às 15h')
+    expect(cartLinePromise(TOMORROW)).toBe('Disponível amanhã, quarta, a partir das 15h30')
+    expect(cartLinePromise(LATER)).toBe('Disponível a partir das 15h')
   })
   it('pronto agora é o normal: sem frase', () => {
     expect(cartLinePromise(READY)).toBe('')
