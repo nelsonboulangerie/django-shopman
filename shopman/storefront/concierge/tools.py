@@ -763,12 +763,45 @@ def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
     }
 
 
+def _open_elsewhere(ctx: ToolContext) -> list[dict]:
+    """As sacolas abertas deste cliente nos outros canais (OC-17, C06).
+
+    Só leitura: a Nice diz que a outra sacola existe e não a toca, nem junta com
+    esta. O dono é o ``customer_ref`` da conversa (vínculo verificado), nunca o
+    telefone (X7).
+    """
+    from shopman.shop.projections.cart import items_phrase, open_elsewhere
+
+    ref = ctx.conversation.customer_ref
+    if not ref:
+        return []
+    return [
+        {
+            "channel": entry.channel_ref,
+            "where": "no site" if entry.channel_ref == _storefront_ref() else f"no {entry.channel_name}",
+            "items": items_phrase(entry),
+            "subtotal": _money(entry.subtotal_q),
+        }
+        for entry in open_elsewhere(ref, ctx.channel_ref)
+    ]
+
+
+def _with_open_elsewhere(ctx: ToolContext, result: dict) -> dict:
+    elsewhere = _open_elsewhere(ctx)
+    if elsewhere:
+        result["open_elsewhere"] = elsewhere
+    return result
+
+
 def view_cart(ctx: ToolContext) -> dict:
     """A sacola desta conversa, com totais e o que falta para fechar."""
     session = _open_session(ctx)
     if session is None:
-        return {"ok": True, "empty": True, "count": 0, "lines": [], "total": _money(0), "fulfillment": _fulfillment_payload({})}
-    return {"ok": True, **_cart_payload(ctx, session)}
+        return _with_open_elsewhere(
+            ctx,
+            {"ok": True, "empty": True, "count": 0, "lines": [], "total": _money(0), "fulfillment": _fulfillment_payload({})},
+        )
+    return _with_open_elsewhere(ctx, {"ok": True, **_cart_payload(ctx, session)})
 
 
 def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
@@ -998,8 +1031,8 @@ def set_fulfillment(
     grava nada: devolve a OFERTA do endereço padrão (``saved_address_offer``),
     para o cliente responder antes de qualquer pergunta.
     """
+    from shopman.shop.policies.preorder_date import preorder_date_errors
     from shopman.shop.services import cart as cart_service
-    from shopman.storefront.intents.checkout import _validate_preorder
     from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
 
     fulfillment_type = str(fulfillment_type or "").strip().lower()
@@ -1021,7 +1054,7 @@ def set_fulfillment(
 
     errors: dict[str, str] = {}
     errors.update(
-        _validate_preorder(
+        preorder_date_errors(
             when,
             cart_lines=list(session.items or []),
             channel_ref=ctx.channel_ref,
@@ -1221,20 +1254,22 @@ def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
 
 def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | None = None) -> dict:
     """O orçamento: recap completo, o que falta e o token que autoriza o pedido."""
-    from shopman.shop.config import ChannelConfig
-    from shopman.storefront.intents.checkout import _validate_preorder
+    from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
+    from shopman.shop.policies.preorder_date import preorder_date_errors
 
     session = _open_session(ctx)
     if session is None or not (session.items or []):
-        return {"ok": True, "ready": False, "missing": ["items"], "message": "A sacola está vazia."}
+        return _with_open_elsewhere(
+            ctx, {"ok": True, "ready": False, "missing": ["items"], "message": "A sacola está vazia."}
+        )
 
     from shopman.shop.services import cart as cart_service
     if order_notes is not None:
         if not isinstance(order_notes, str) or len(order_notes) > 300:
             return _error("invalid_input", "A observação deve ter até 300 caracteres.")
         session = _set_session_data(ctx, session.session_key, {"order_notes": " ".join(order_notes.split())})
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
-    selected = payment_method or (session.data or {}).get("payment", {}).get("method") or (methods[0] if len(methods) == 1 else "")
+    methods = conversation_payment_methods(ctx.channel_ref)
+    selected = payment_method or (session.data or {}).get("payment", {}).get("method") or sole_payment_method(methods)
     if selected and selected not in methods:
         return _error("invalid_payment_method", "Escolha uma forma de pagamento disponível.")
     if selected:
@@ -1274,7 +1309,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
     if not ctx.conversation.phone:
         missing.append("customer_phone")
     if data.get("delivery_date"):
-        date_errors = _validate_preorder(
+        date_errors = preorder_date_errors(
             str(data["delivery_date"]),
             cart_lines=list(session.items or []),
             channel_ref=ctx.channel_ref,
@@ -1284,7 +1319,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
             missing.append("delivery_date")
             payload["date_error"] = " ".join(date_errors.values())
 
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     result = {
         "ok": True,
         "ready": not missing,
@@ -1293,6 +1328,8 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         "payment_methods": [{"ref": m, "label": PAYMENT_LABELS.get(m, m)} for m in methods],
         "payment_method": selected,
     }
+    # Fora do ``payload``: o resumo (e o orçamento que ele grava) é só desta sacola.
+    _with_open_elsewhere(ctx, result)
     if payload.get("suggestion"):
         # Uma sugestão por CONVERSA. Medido em 04/09: Pain Grillé num recap, Água no
         # seguinte; a regra do prompt ("uma vez, nunca de novo") precisa do código.
@@ -1469,7 +1506,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     """Compra autorizada por revisão oferecida; recibo e efeito local compartilham commit."""
     from shopman.orderman.models import Order, Session
 
-    from shopman.shop.config import ChannelConfig
+    from shopman.shop.policies.order_payment import conversation_payment_methods
     from shopman.shop.services import checkout as checkout_service
     from shopman.shop.services import remote_mutations
     from shopman.shop.services.customer_orders import customer_identity_filter
@@ -1485,7 +1522,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     if not isinstance(quote_token, str) or not quote_token or not isinstance(payment_method, str) or not isinstance(order_notes, str):
         return _error("invalid_input", "Confira a revisão e a forma de pagamento.")
     payment_method = payment_method.strip().lower()
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     if payment_method not in methods:
         return _error("invalid_payment_method", "Forma de pagamento indisponível neste canal.")
     if len(order_notes) > 300:
@@ -1584,8 +1621,8 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             fresh = _cart_payload(ctx, locked)
             if fresh["total_q"] != quote["total_q"]:
                 return _error("revision_conflict", "O total mudou; confira a diferença antes de confirmar.", previous_total_q=quote["total_q"], current_total_q=fresh["total_q"]), 409
-            from shopman.storefront.intents.checkout import _validate_preorder
-            errors = _validate_preorder(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
+            from shopman.shop.policies.preorder_date import preorder_date_errors
+            errors = preorder_date_errors(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
                 channel_ref=ctx.channel_ref, session_key=locked.session_key)
             if locked.data.get("fulfillment_type") == "pickup":
                 from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
@@ -2440,8 +2477,28 @@ def copy_texts(result: dict) -> list[str]:
     return texts
 
 
+def _open_elsewhere_rows(result: dict) -> list[str]:
+    """Uma linha por sacola aberta em outro canal: avisa, não sincroniza (OC-17)."""
+    rows = []
+    for entry in result.get("open_elsewhere") or []:
+        where = _display_text(entry.get("where", ""))
+        rows.append(
+            f"{where[:1].upper()}{where[1:]}, você tem outra sacola aberta, "
+            f"com {_display_text(entry.get('items', ''))} ({_display_text(entry.get('subtotal', ''))}); "
+            "ela fica lá, separada desta conversa."
+        )
+    return rows
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre nunca entra na resposta."""
+    text = _render_facts(name, result)
+    if name in {"view_cart", "review_order"} and result.get("ok") and result.get("open_elsewhere"):
+        return "\n".join(part for part in (text, *_open_elsewhere_rows(result)) if part)
+    return text
+
+
+def _render_facts(name: str, result: dict) -> str:
     if not result.get("ok"):
         return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
     if result.get("message") and (

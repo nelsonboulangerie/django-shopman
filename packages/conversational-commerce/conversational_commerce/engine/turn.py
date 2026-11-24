@@ -970,8 +970,9 @@ class Engine:
             dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch}}
             code = state.missing_conditions()[0]
             options = state.offered(subject.cart_ref, code)
-            asked_code = any(str(t).startswith(f"present_terms.needs_{code}") and not str(t).endswith("_declined")
-                             for t in reply.template_ids)
+            # A lista das opções ("outro") não é pergunta de sim ou não: o "sim" a ela não escolhe a primeira.
+            asked_code = any(str(t).startswith(f"present_terms.needs_{code}")
+                             and not str(t).endswith(("_declined", "_options")) for t in reply.template_ids)
             if code in yes_no_conditions() and options and asked_code:
                 # A pergunta de sim ou não fica no ar, com a opção oferecida: o "sim" responde a ESTA pergunta.
                 question_id = clock.new_id("q")

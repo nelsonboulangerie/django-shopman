@@ -493,7 +493,7 @@ def _lines_without_the_missing(order, risky) -> tuple[list[OrderPromiseEditLineP
     """
     from shopman.shop.services import order_edit
 
-    editable = [item for item in order_composition.effective_items(order) if not order_edit._is_fixed_line(item)]
+    editable = [item for item in order_composition.effective_items(order) if not order_edit.is_fixed_line(item)]
     keep = {item.line_id: Decimal(str(item.qty)) for item in editable}
     whole = True
     for risk in risky:

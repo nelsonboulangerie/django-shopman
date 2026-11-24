@@ -22,7 +22,7 @@ TEMPLATES = (
 def propose(state, need):
     if need.act not in COURTESY_ACTS | ANSWER_ACTS | DECLARATION_ACTS or state.answers_offer(need):
         return None  # o "sim" aos termos é confirmação: quem responde é o fechamento do pedido
-    if state.answers_condition(need) or state.declines_condition(need):
+    if state.answers_condition(need) or state.declines_condition(need) or state.asks_condition_options(need):
         return None  # o "sim" ou o "não" à condição pendente: quem responde é quem a cumpre, ou o fechamento
     if need.act == "deny" and state.closing and any(
             other.need_id != need.need_id and other.act in CHANGE_ACTS for other in state.needs):

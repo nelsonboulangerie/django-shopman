@@ -146,7 +146,7 @@ def _read_grid(day: date, *, now: datetime) -> tuple[time, ...]:
         return ()
     starts: list[time] = []
     for window in context.get("windows") or []:
-        start = fulfillment_window._window_start(window)
+        start = fulfillment_window.slot_start(window)
         if start is not None and window.get("enabled"):
             starts.append(start.replace(second=0, microsecond=0))
     return tuple(sorted(starts))

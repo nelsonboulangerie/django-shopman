@@ -9,6 +9,7 @@ conta**, e só para o cliente identificado que tem a conta na casa
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from shopman.shop.rules import BaseRule
@@ -20,6 +21,32 @@ PAYMENT_METHODS = frozenset(
 )
 
 MISSING_MESSAGE = "Escolha a forma de pagamento antes de fechar o pedido."
+
+
+def conversation_payment_methods(channel_ref: str) -> list[str]:
+    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
+
+    D-003: dinheiro não entra no fluxo remoto; troco e dinheiro vivo moram na
+    encomenda anotada pelo operador. Régua ÚNICA das portas da conversa: o
+    orçamento e o pedido da Concierge (``concierge.tools``), o ``requirements``
+    e as condições dos termos (``conversational.commerce_read``) e o fechamento
+    de hoje (``concierge.order_closing``) leem as opções daqui.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
+
+
+def sole_payment_method(offered: Sequence[str]) -> str:
+    """A forma que vale quando o cliente não escolheu: a única oferecida, ou nenhuma (``""``).
+
+    Régua ÚNICA de "assumir a única forma": o orçamento da Concierge
+    (``concierge.tools.review_order``) e as condições dos termos da conversa
+    (``conversational.commerce_read._fulfillment_conditions``) decidem por ela.
+    Cada porta passa a lista que ela oferece; com mais de uma, ou nenhuma, nada
+    se assume e quem chama pergunta.
+    """
+    return offered[0] if len(offered) == 1 else ""
 
 
 def payment_refusal(data: dict | None) -> tuple[str, str] | None:

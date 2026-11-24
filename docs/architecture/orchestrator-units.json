@@ -4896,7 +4896,9 @@
             "MISSING_MESSAGE",
             "PAYMENT_METHODS",
             "PaymentMethodRule",
-            "payment_refusal"
+            "conversation_payment_methods",
+            "payment_refusal",
+            "sole_payment_method"
           ]
         }
       ],
@@ -5900,11 +5902,11 @@
           "symbols": [
             "BUNDLE_PARENT_SKU_META",
             "CART_SOURCE_SKU_META",
-            "_channel_hold_ttl_minutes",
             "_reserve_across_quants",
             "_reserve_bundle_components",
             "_reserve_checked_status",
             "_reserve_listing_gate_error",
+            "channel_hold_ttl_minutes",
             "check",
             "reserve",
             "session_holds_after",
@@ -16854,7 +16856,9 @@
             "release_customer",
             "assign_experience",
             "assign_handle",
-            "abandon_session"
+            "abandon_session",
+            "OpenSessionElsewhere",
+            "open_sessions_for_customer"
           ]
         }
       ],
@@ -17306,6 +17310,42 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_order_date_before_batch.py::TestRecusaAntesDoFechamento::test_data_anterior_a_fornada_devolve_a_recusa_com_item_e_dia"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "preorder.date-with-cart",
+      "question": "Esta data de encomenda pode ser combinada para esta sacola (data da casa, fornada da sacola e antecedência de cada produto)?",
+      "owner": "preorder.date-with-cart",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.preorder_date:preorder_date_errors",
+      "authoritative_symbols": [
+        "shopman.shop.policies.preorder_date:preorder_date_errors"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/preorder_date.py",
+          "symbols": [
+            "_lead_time_refusal",
+            "preorder_date_errors"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/test_preorder_localdate.py::test_preorder_for_local_today_not_rejected_as_past"
       ],
       "test_gap_reason": null,
       "policy": true,

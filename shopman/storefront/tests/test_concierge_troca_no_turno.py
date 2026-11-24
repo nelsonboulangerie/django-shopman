@@ -441,6 +441,36 @@ def test_with_two_saved_addresses_the_name_chooses_one(order_on_air, outbox, mon
 
 
 @pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("another", ["outro", "Quero outro", "outro endereço?", "quais?"])
+def test_another_lists_the_saved_addresses_with_today_phrase_and_the_name_chooses(
+        order_on_air, outbox, monkeypatch, another):
+    """#3454: "outro" à oferta, com dois endereços no cadastro, lista os dois pela frase de hoje (sem a IA), e o
+    nome em seguida escolhe. A lista não é pergunta de sim ou não: nada se grava até o nome."""
+    from shopman.storefront.concierge.address import saved_listing
+
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True), _saved(9, "Avenida Brasil", "200", "Trabalho")]
+    script = {"pode fechar": [{"act": "place_order"}]}  # o "outro" e o nome não vão à IA
+    written = _saved_flow(order_on_air, monkeypatch, script, saved,
+                          said_in_order=["pode fechar", another, "o do trabalho"])
+    assert outbox.sent[1] == saved_listing(sorted(saved, key=lambda item: not item.is_default)) == (
+        "Seus endereços cadastrados: Casa: Rua do Cadastro, 10 - Centro; Trabalho: Avenida Brasil, 200 - Centro. "
+        "Em qual entregamos?")
+    assert written and written[0].get("saved_address_label") == "Trabalho"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_another_with_a_single_saved_address_asks_today_question(order_on_air, outbox, monkeypatch):
+    """Com um endereço só não há lista: "outro" é "esse não", e pergunta o endereço como o "não" (nunca grava
+    "outro" como endereço)."""
+    from shopman.storefront.concierge.service import copy_message
+
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True)]
+    written = _saved_flow(order_on_air, monkeypatch, {"pode fechar": [{"act": "place_order"}]}, saved,
+                          said_in_order=["pode fechar", "outro"])
+    assert outbox.sent[1] == copy_message("CONCIERGE_CLOSE_ASK_ADDRESS").strip() and written == []
+
+
+@pytest.mark.django_db(transaction=True)
 def test_no_with_the_name_in_the_same_message_chooses_by_the_name(order_on_air, outbox, monkeypatch):
     """ "Não, o do trabalho": o "não" é correção, e ganha a escolha pela etiqueta. A IA lê o nome mascarado."""
     saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True), _saved(9, "Avenida Brasil", "200", "Trabalho")]

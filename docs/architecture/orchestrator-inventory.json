@@ -3110,7 +3110,6 @@
             "_fulfillment_conditions",
             "_text",
             "address_ref",
-            "conversation_payment_methods",
             "instant",
             "logger",
             "parse_saved_address_ref",
@@ -7569,6 +7568,20 @@
       "support_claims": []
     },
     {
+      "path": "shopman/shop/policies/preorder_date.py",
+      "touchpoints": [
+        "outro"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "preorder.date-with-cart"
+      ],
+      "responsibilities": [
+        "decisão"
+      ],
+      "support_claims": []
+    },
+    {
       "path": "shopman/shop/policies/preorder_kitchen_policy.py",
       "touchpoints": [
         "outro"
@@ -7882,7 +7895,9 @@
             "build_delivery_minimum_progress",
             "build_free_delivery_progress",
             "build_minimum_order_progress",
+            "items_phrase",
             "logger",
+            "open_elsewhere",
             "reservation_lapsed_at",
             "reserved_until",
             "shop_rule_q"
@@ -10864,10 +10879,10 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "_grid_for",
-            "_hour_pair",
             "_local_today",
-            "_window_start",
+            "hour_pair",
             "logger",
+            "slot_start",
             "window_end"
           ]
         }
@@ -13390,7 +13405,6 @@
             "_int",
             "_intents",
             "_is_fee_line",
-            "_is_fixed_line",
             "_is_one",
             "_is_weighed_line",
             "_kept",
@@ -13409,6 +13423,7 @@
             "_schedule",
             "_settlement",
             "_tender_route",
+            "is_fixed_line",
             "logger"
           ]
         }

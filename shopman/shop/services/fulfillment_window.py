@@ -60,7 +60,7 @@ from shopman.utils.formatting import format_clock
 logger = logging.getLogger(__name__)
 
 
-def _window_start(slot: dict) -> time | None:
+def slot_start(slot: dict) -> time | None:
     """A que horas esta janela COMEÇA.
 
     Duas grades, dois formatos, e por isso a hora sai do próprio slot:
@@ -130,7 +130,7 @@ def canonical_slots() -> list[dict]:
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
-def _hour_pair(slot_ref: str) -> tuple[time, time] | None:
+def hour_pair(slot_ref: str) -> tuple[time, time] | None:
     """``"14:00-14:30"`` → as duas pontas; qualquer outra coisa → ``None``.
 
     A meia hora do expediente se lê SOZINHA porque o ref dela É o par de horas
@@ -174,7 +174,7 @@ def window_label(slot_ref: str | None, *, for_customer: bool = False) -> str:
     ref = str(slot_ref or "").strip()
     if not ref:
         return ""
-    par = _hour_pair(ref)
+    par = hour_pair(ref)
     if par is not None:
         return f"{format_clock(par[0])} às {format_clock(par[1])}"
     for slot in canonical_slots():
@@ -195,12 +195,12 @@ def window_start_time(slot_ref: str | None) -> time | None:
     ref = str(slot_ref or "").strip()
     if not ref:
         return None
-    par = _hour_pair(ref)
+    par = hour_pair(ref)
     if par is not None:
         return par[0]
     for slot in canonical_slots():
         if str(slot.get("ref") or "") == ref:
-            return _window_start(slot)
+            return slot_start(slot)
     return None
 
 
@@ -254,7 +254,7 @@ def window_end(source) -> datetime | None:
     if ifood_schedule.is_scheduled(source):
         return ifood_schedule.delivery_end(source)
     data = getattr(source, "data", None) or {}
-    par = _hour_pair(str(data.get("delivery_time_slot") or "").strip())
+    par = hour_pair(str(data.get("delivery_time_slot") or "").strip())
     if par is None:
         return None
     day = get_commitment_date(source)
@@ -299,7 +299,7 @@ def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict
     abre, fecha = janela
     dentro = []
     for slot in slots:
-        inicio = _window_start(slot)
+        inicio = slot_start(slot)
         if inicio is None or (abre <= inicio < fecha):
             dentro.append(slot)
     return dentro
@@ -461,7 +461,7 @@ def annotate(
     earliest_ref = ""
     for slot in raw:
         ref = str(slot.get("ref") or "")
-        start = _window_start(slot)
+        start = slot_start(slot)
         enabled = True
         reason = ""
         # O corte é o mesmo nas duas grades. Numa meia hora ele apaga
@@ -528,7 +528,7 @@ def validate(
     # justamente o caso do pedido antigo, depois de a casa mudar o expediente.
 
     conhecido = next((w for w in context["windows"] if w.get("ref") == ref), None)
-    start = _window_start(conhecido) if conhecido else _window_start({"ref": ref})
+    start = slot_start(conhecido) if conhecido else slot_start({"ref": ref})
 
     # ⚠️ Janela de HOJE que já começou NÃO é recusada, e a decisão é deliberada.
     #

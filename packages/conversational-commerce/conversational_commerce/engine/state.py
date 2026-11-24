@@ -185,6 +185,10 @@ class TurnState:
         """O "não" à pergunta da condição: recusa a opção, e o fechamento pergunta o que falta sem ela."""
         return need.act == "deny" and self._answers_condition_question(need, codes)
 
+    def asks_condition_options(self, need: NeedSpec, codes=None) -> bool:
+        """O "outro" à pergunta da condição: nem aceita nem recusa a opção; pede as opções que o fato oferece."""
+        return need.act == "ask_options" and self._answers_condition_question(need, codes)
+
     def has_fresh_terms(self) -> bool:
         """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
         from conversational_commerce.contracts import Known
@@ -213,7 +217,8 @@ class TurnState:
 
     def wants_terms(self, need: NeedSpec) -> bool:
         """Esta necessidade pede termos (novos): fechar o pedido, ou confirmação que não valeu mais."""
-        if need.act == "place_order" or self.changed_under_offer(need) or self.declines_condition(need):
+        if need.act == "place_order" or self.changed_under_offer(need) or self.declines_condition(need) \
+                or self.asks_condition_options(need):
             return True
         if not self.answers_offer(need):
             return False
