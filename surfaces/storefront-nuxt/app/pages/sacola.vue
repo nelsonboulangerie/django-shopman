@@ -258,9 +258,12 @@ useSeoMeta({
               <div
                 v-for="line in cart.items"
                 :key="line.line_id"
-                class="flex gap-3 border-b py-3"
+                class="flex flex-wrap gap-3 border-b py-3"
                 data-cart-line-item
               >
+                <!-- A coluna do item tem piso de 10rem (ou a largura toda, se menor), que cresce com a fonte: com a fonte do
+                     sistema a 200 % a foto deixava 100 px para nome, preço e quantidade, e o
+                     seletor saía da tela (X11, OC-30). Aí a coluna desce para baixo da foto. -->
                 <div class="size-24 shrink-0 self-start drop-shadow-sm transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
                   <div class="shop-photo-frame shop-photo-frame-sm size-full">
                     <div class="shop-photo-mat-sm size-full overflow-hidden bg-muted">
@@ -280,7 +283,7 @@ useSeoMeta({
                   </div>
                 </div>
 
-                <div class="min-w-0 flex-1">
+                <div class="min-w-[min(10rem,100%)] flex-1 basis-0">
                   <div class="flex items-start gap-2">
                     <h3 class="shop-item-title line-clamp-2 min-w-0 flex-1">{{ line.name }}</h3>
                     <UiButton
@@ -296,7 +299,7 @@ useSeoMeta({
                   </div>
                   <!-- O unitário que a cliente paga; com promoção do produto, o
                        cheio vem riscado depois, com "antes" (como no cardápio). -->
-                  <p class="mt-0.5 shop-meta" data-cart-line-price>
+                  <p class="mt-0.5 shop-meta" data-cart-line-price data-decisive="price">
                     {{ line.qty }} ×
                     <template v-if="linePrice(line).original">
                       <span class="font-semibold text-foreground">{{ linePrice(line).current }}</span>
@@ -304,8 +307,8 @@ useSeoMeta({
                     </template>
                     <template v-else>{{ linePrice(line).current }} cada</template>
                   </p>
-                  <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
-                  <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>
+                  <p v-if="line.discount_label" class="mt-0.5 text-sm font-semibold text-promotion" data-decisive="price">{{ line.discount_label }}</p>
+                  <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-sm text-destructive" data-decisive="availability">{{ line.availability_warning }}</p>
 
                   <!-- Preparado na hora: promessa DECLARADA da casa (finalizado no
                        momento de servir). Eixo próprio — o croque da vitrine tem o
@@ -322,7 +325,7 @@ useSeoMeta({
                        produto, escrita pelo servidor. Só a de fornada aparece na
                        linha; pronto agora é o normal, e casa fechada é dito uma
                        vez no alto da sacola. -->
-                  <p v-if="cartLinePromise(line.promise)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise>
+                  <p v-if="cartLinePromise(line.promise)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise data-decisive="availability">
                     <Icon name="lucide:clock" class="mt-px size-3.5 shrink-0" />
                     {{ cartLinePromise(line.promise) }}
                   </p>
@@ -379,9 +382,10 @@ useSeoMeta({
                   </div>
                   <p
                     v-if="availabilityCeiling(line) !== null"
-                    class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+                    class="mt-1 flex items-center gap-1 shop-meta"
                     aria-live="polite"
                     data-cart-line-ceiling
+                    data-decisive="availability"
                   >
                     <Icon name="lucide:info" class="size-3.5 shrink-0" />
                     Por hoje, temos {{ formatCount(availabilityCeiling(line)!, 'unidade', 'unidades') }} deste item.
@@ -455,7 +459,7 @@ useSeoMeta({
               >
                 {{ checkoutAction?.label || 'Finalizar pedido' }}
               </UiButton>
-              <p v-if="checkoutDisabled && checkoutReason" class="text-center shop-meta">
+              <p v-if="checkoutDisabled && checkoutReason" class="text-center shop-meta" data-decisive="state">
                 {{ checkoutReason }}
               </p>
               <UiButton
@@ -476,9 +480,9 @@ useSeoMeta({
         class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
         data-focus-obstruction
       >
-        <div class="flex items-baseline justify-between gap-3">
-          <p class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</p>
-          <p class="shop-price-strong" :class="cart.summary_pending ? 'opacity-70' : ''">{{ cart.grand_total_display }}</p>
+        <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p class="shop-body text-ink-foreground/80">Total do pedido</p>
+          <p class="shop-price-strong" :class="cart.summary_pending ? 'opacity-70' : ''" data-decisive="total">{{ cart.grand_total_display }}</p>
         </div>
         <UiButton
           :to="checkoutTarget"
@@ -490,7 +494,7 @@ useSeoMeta({
         >
           {{ checkoutAction?.label || 'Finalizar pedido' }}
         </UiButton>
-        <p v-if="checkoutDisabled && checkoutReason" class="text-center text-xs text-ink-foreground/70">
+        <p v-if="checkoutDisabled && checkoutReason" class="text-center text-sm text-ink-foreground/80" data-decisive="state">
           {{ checkoutReason }}
         </p>
       </div>

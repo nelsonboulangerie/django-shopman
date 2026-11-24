@@ -734,7 +734,7 @@ useSeoMeta({
 
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar
                      o dado ficar velho pelo limiar de frescor. -->
-                <p v-if="showOfflineBanner" class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300" role="status">
+                <p v-if="showOfflineBanner" class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-sm text-amber-800 dark:text-amber-300" role="status" data-decisive="state">
                   <Icon name="lucide:wifi-off" class="size-3.5 shrink-0" />
                   Sem conexão no momento. Reconectamos e atualizamos assim que a internet voltar.
                 </p>
@@ -745,7 +745,7 @@ useSeoMeta({
                   <div class="flex items-center gap-2 text-sm font-semibold">
                     <Icon name="lucide:timer" :size="18" :class="deadlineUrgent ? 'text-destructive' : statusPanelIconClass" />
                     <span class="text-muted-foreground">{{ tracking.promise_deadline_label || 'Tempo restante' }}</span>
-                    <span class="ml-auto tabular-nums" :class="deadlineUrgent ? 'text-destructive' : 'text-foreground'">{{ deadlineCount.mmss }}</span>
+                    <span class="ml-auto tabular-nums" :class="deadlineUrgent ? 'text-destructive' : 'text-foreground'" data-decisive="state">{{ deadlineCount.mmss }}</span>
                   </div>
                   <UiProgress :model-value="deadlinePct" :class="deadlineUrgent ? '[&>div]:bg-destructive' : ''" />
                 </div>
@@ -936,8 +936,8 @@ useSeoMeta({
                           {{ item.name }}
                         </span>
                         <span class="flex shrink-0 items-baseline gap-2 tabular-nums" data-tracking-item-price>
-                          <span v-if="item.full_total_display" class="shop-meta text-muted-foreground" data-tracking-item-full-price><span class="sr-only">antes </span><s>{{ item.full_total_display }}</s></span>
-                          <span>{{ item.total_display }}</span>
+                          <span v-if="item.full_total_display" class="shop-meta text-muted-foreground" data-tracking-item-full-price data-decisive="price"><span class="sr-only">antes </span><s>{{ item.full_total_display }}</s></span>
+                          <span data-decisive="price">{{ item.total_display }}</span>
                         </span>
                       </li>
                     </ul>
@@ -946,19 +946,19 @@ useSeoMeta({
                     <dl class="mt-3 space-y-1 border-t pt-3 text-sm" data-tracking-summary-bill>
                       <div v-if="tracking.subtotal_display" class="flex items-baseline justify-between gap-3">
                         <dt class="shop-muted">Subtotal</dt>
-                        <dd class="tabular-nums">{{ tracking.subtotal_display }}</dd>
+                        <dd class="tabular-nums" data-decisive="price">{{ tracking.subtotal_display }}</dd>
                       </div>
                       <div v-for="discount in tracking.discount_lines || []" :key="discount.label" class="flex items-baseline justify-between gap-3">
                         <dt class="shop-muted">{{ discount.label }}</dt>
-                        <dd class="tabular-nums text-primary">- {{ discount.amount_display }}</dd>
+                        <dd class="tabular-nums text-promotion" data-decisive="price">- {{ discount.amount_display }}</dd>
                       </div>
                       <div v-if="tracking.delivery_fee_display" class="flex items-baseline justify-between gap-3">
                         <dt class="shop-muted">Entrega<span v-if="tracking.delivery_distance_display"> · {{ tracking.delivery_distance_display }}</span></dt>
-                        <dd class="tabular-nums">{{ tracking.delivery_fee_display }}</dd>
+                        <dd class="tabular-nums" data-decisive="price">{{ tracking.delivery_fee_display }}</dd>
                       </div>
                       <div class="flex items-baseline justify-between gap-3">
                         <dt class="shop-body font-semibold">{{ tracking.copy.total_label }}</dt>
-                        <dd class="font-semibold tabular-nums">{{ tracking.total_display }}</dd>
+                        <dd class="font-semibold tabular-nums" data-decisive="total">{{ tracking.total_display }}</dd>
                       </div>
                     </dl>
 
@@ -997,7 +997,7 @@ useSeoMeta({
                     </UiAlert>
                     <UiItem v-for="fulfillment in tracking.fulfillments" :key="`${fulfillment.status}-${fulfillment.tracking_code}`" class="rounded-lg border p-3">
                       <UiItemContent>
-                        <UiItemTitle>{{ fulfillment.status_label }}</UiItemTitle>
+                        <UiItemTitle data-decisive="state">{{ fulfillment.status_label }}</UiItemTitle>
                         <UiItemDescription v-if="fulfillment.tracking_label">{{ fulfillment.tracking_label }}</UiItemDescription>
                       </UiItemContent>
                       <UiItemActions>

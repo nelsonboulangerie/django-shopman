@@ -270,7 +270,7 @@ useSeoMeta({ title: 'Preferências' })
             <UiCheckbox v-model="adultDeclared" aria-label="Confirmar maioridade para este aviso" class="mt-0.5" />
             <span>Declaro ter 18 anos ou mais e quero continuar recebendo este aviso.</span>
           </label>
-          <p v-if="adultDeclarationError" class="shop-meta text-destructive" role="alert">{{ adultDeclarationError }}</p>
+          <p v-if="adultDeclarationError" class="shop-meta text-destructive" role="alert" data-decisive="error">{{ adultDeclarationError }}</p>
           <UiButton
             type="submit"
             size="lg"
