@@ -12603,15 +12603,11 @@
         "service"
       ],
       "domains": [
-        "doorman",
         "guestman",
         "orderman",
         "payman"
       ],
-      "ports": [
-        "shopman.doorman.conf:get_adapter",
-        "shopman.doorman.protocols.identity"
-      ],
+      "ports": [],
       "events": [],
       "directives": [],
       "config_surface": [

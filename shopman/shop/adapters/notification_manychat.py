@@ -673,8 +673,8 @@ _FIELD_DENYLIST = frozenset({
 
 #: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser
 #: substituído pelo link COMUM (ver `_safe_field_value`). Elas mesmas nunca viajam.
-#: É sufixo, e não uma lista, porque toda chave de link ganhou a sua gêmea pública —
-#: uma lista voltaria a ficar para trás na próxima.
+#: É sufixo, e não uma lista, porque qualquer chave que um dia carregar link pessoal
+#: ganha a sua gêmea pública pelo mesmo nome; uma lista voltaria a ficar para trás.
 _PUBLIC_SUFFIX = "_public"
 
 
@@ -686,12 +686,13 @@ _ACCESS_TOKEN_IN_QUERY = re.compile(r"[?&]t=")
 def _safe_field_value(name: str, value, ctx: dict):
     """O valor que pode SAIR daqui, ou ``None`` para "não mande este campo".
 
-    ⚠️ Os links de cliente (`tracking_url`, `payment_url`, `reorder_url`, `action_url`)
-    carregam um LINK DE ACESSO PESSOAL: o despacho o cunha por destinatário, ele vale
-    horas e cria sessão de cliente identificado. Como campo personalizado, esse token
-    passa a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
-    marketing — legível por qualquer pessoa com acesso à conta, e utilizável enquanto o
-    cliente não clicar.
+    ⚠️ O link de campanha (`action_url`) carrega um LINK DE ACESSO PESSOAL: o despacho o
+    cunha por destinatário, ele vale horas e cria sessão de cliente identificado. Os
+    links do aviso de pedido (`tracking_url`, `payment_url`, `reorder_url`) são os
+    COMUNS do pedido, sem credencial (decisão D5 do dono, OC-01), e passam por aqui
+    intactos. Como campo personalizado, um token passa a viver em texto claro no perfil
+    do cliente dentro de uma ferramenta SaaS de marketing — legível por qualquer pessoa
+    com acesso à conta, e utilizável enquanto o cliente não clicar.
 
     ⚠️ E simplesmente NÃO mandar não serve: o flow do ManyChat não lê o `flow_token`,
     as variáveis dele saem dos campos personalizados. Um link ausente sai como botão EM
@@ -702,10 +703,9 @@ def _safe_field_value(name: str, value, ctx: dict):
     seguro dele.
 
     ⚠️ A recusa vale para QUALQUER chave, não para uma lista delas. Ela nasceu olhando
-    só o `action_url` (campanha/estoque), e por isso não via os três links que TODO aviso
-    de pedido carrega: `tracking_url`, `payment_url` e `reorder_url` saíam com o token
-    inteiro. Era inerte só porque nenhum flow estava mapeado — mapear o primeiro é que
-    ligava o vazamento. Filtro que depende de lembrarem de o inscrever não é filtro.
+    só o `action_url` (campanha/estoque), e por isso não via os links do aviso de pedido,
+    que naquela época saíam com o token inteiro. Filtro que depende de lembrarem de o
+    inscrever não é filtro.
     """
     if not _ACCESS_TOKEN_IN_QUERY.search(str(value)):
         return value
