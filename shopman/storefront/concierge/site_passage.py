@@ -35,27 +35,26 @@ logger = logging.getLogger(__name__)
 #: Onde a sacola está, dito uma vez na mensagem seguinte ao aceite no site.
 CART_IS_THERE = "Sua sacola está {where}, com {items} ({subtotal})."
 #: A oferta inversa, só quando a cliente pode trazer a sacola (X1).
-BRING_IT_HERE = "Se quiser pedir por aqui, me peça que eu trago os itens para cá."
+BRING_IT_HERE = "Posso trazer os itens para cá, se quiser."
 #: O link pedido depois da passagem: a sacola já está lá.
 ALREADY_THERE = "Sua sacola já está no site."
 #: O link pedido com sacola que não pôde ir junto (sem acesso para levar a sacola).
 CART_STAYS_HERE = "Sua sacola continua aqui na conversa."
 BRING_REFUSED = {
-    "source_changed": "A sacola do site mudou agora há pouco. Me peça de novo para trazer a versão nova.",
+    "source_changed": "A sacola do site acabou de mudar. Tente de novo.",
     "not_authorized": (
-        "Para trazer a sacola do site, este número precisa estar confirmado na sua conta. "
-        "Ela continua no site, como estava."
+        "Para trazer a sacola do site, este número precisa estar confirmado na sua conta."
     ),
-    "nothing_available": "Nenhum item da sacola do site está disponível aqui agora. Ela continua no site.",
+    "nothing_available": "Nenhum item da sacola do site está disponível aqui agora.",
 }
-BRING_UNAVAILABLE = "Não consegui trazer a sacola do site agora. Ela continua no site, como estava."
+BRING_UNAVAILABLE = "Não consegui trazer a sacola do site agora."
 #: Pediu a sacola aqui e ela já está aqui.
 ALREADY_HERE = "Sua sacola já está aqui na conversa."
 #: Pediu a sacola do site e não há sacola aberta no site.
-NO_SITE_CART = "Não encontrei sacola aberta no site. Seguimos por aqui na conversa: o que você quer pedir?"
+NO_SITE_CART = "Não encontrei sacola aberta no site. O que você quer pedir?"
 #: A cliente disse só que prefere a conversa (C09): a Nice segue, sem insistir no site.
-STAY_HERE = "Claro, seguimos por aqui na conversa."
-STAY_HERE_ASK = "Claro, seguimos por aqui na conversa. O que você quer pedir?"
+STAY_HERE = "Claro, seguimos por aqui."
+STAY_HERE_ASK = "Claro, seguimos por aqui. O que você quer pedir?"
 
 _NEGATION = re.compile(r"\b(nao|nem|sem|nunca)\b")
 #: O site com problema é reclamação ou dúvida, não pedido de link.

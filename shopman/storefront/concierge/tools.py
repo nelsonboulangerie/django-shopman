@@ -1851,7 +1851,7 @@ def _amendment_actions(conversation, order) -> list[dict]:
     """As alterações que a Nice faz neste pedido agora (OC-11), como ações de conversa.
 
     Só com a autoridade que a ``amend_order`` exige, e só as que o serviço do balcão aceita
-    agora (``order_amendment.offered``, X1): a resposta diz "é só me dizer", nunca um endereço.
+    agora (``order_amendment.offered``, X1): a resposta oferece ("Posso…, se quiser"), nunca um endereço.
     """
     if not (getattr(conversation, "_cart_authority", False) or getattr(conversation, "_commercial_authority", False)):
         return []
@@ -2466,7 +2466,7 @@ def bring_site_cart(ctx: ToolContext) -> dict:
     from shopman.shop.services import session_transfer
 
     if not _transfer_enabled():
-        return _error("transfer_disabled", "A passagem da sacola entre o site e a conversa não está disponível agora.")
+        return _error("transfer_disabled", "Não consigo trazer a sacola do site agora.")
     entry = site_cart(ctx)
     if entry is None:
         return _error("no_cart", session_transfer.REFUSAL_MESSAGES["no_cart"])
@@ -2635,6 +2635,9 @@ def _sentence(text) -> str:
 #: O código Pix sai SOZINHO na mensagem seguinte (``extra_replies``), para o cliente
 #: copiar no WhatsApp sem ruído; esta é a linha que avisa, no pedido e na consulta.
 PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
+#: O que este chat já recebeu (OC-10), sozinho ou com o código indo de novo, numa linha só.
+PIX_SENT = "Já te mandei o código Pix por aqui {when}."
+PIX_SENT_AGAIN = "Já te mandei o código Pix por aqui {when}. Mando de novo na próxima mensagem."
 
 
 #: O que a Nice faz pela conversa quando a ação da projeção é um comando (POST/API), não
@@ -2643,25 +2646,27 @@ PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
 #: (``concierge/cancellation.py``, pela mesma régua do site). Tentar pagar de novo e pagar
 #: com Pix são a J4 do pagamento (``repay_order``, pelo mesmo serviço dos botões, OC-12).
 CONVERSATION_EQUIVALENTS = {
-    "cancel_order": "Se quiser cancelar, é só me dizer.",
-    "retry_payment": "Se quiser tentar pagar de novo, é só me dizer.",
-    "pay_with_pix": "Se preferir pagar com Pix, é só me dizer.",
+    "cancel_order": "Posso cancelar, se quiser.",
+    "retry_payment": "Posso gerar a cobrança de novo, se quiser.",
+    "pay_with_pix": "Posso trocar para Pix, se preferir.",
     # As alterações do pedido já feito (OC-11, ``amend_order``), só quando o serviço do
     # balcão aceita agora (``order_amendment.offered``). Juntas, saem numa linha só.
-    "reschedule_order": "Se quiser trocar o dia ou o horário, é só me dizer.",
-    "remove_item": "Se quiser tirar um item, é só me dizer.",
-    "change_address": "Se quiser trocar o endereço da entrega, é só me dizer.",
+    "reschedule_order": "Posso trocar o dia ou o horário, se quiser.",
+    "remove_item": "Posso tirar um item, se quiser.",
+    "change_address": "Posso trocar o endereço da entrega, se quiser.",
 }
 
 
 #: As alterações do pedido já feito (OC-11), como entram na frase quando são mais de uma
-#: ("Se quiser remarcar ou tirar um item, é só me dizer"; e no motivo que a equipe lê).
+#: ("Posso remarcar ou tirar um item, se quiser"; e no motivo que a equipe lê).
 AMEND_GESTURES = {
     "reschedule_order": "remarcar",
     "remove_item": "tirar um item",
     "change_address": "trocar o endereço da entrega",
 }
-AMEND_OFFER = "Se quiser {gestures}, é só me dizer."
+#: Cancelar e as alterações, juntos na mesma oferta da consulta.
+OFFER_GESTURES = {**AMEND_GESTURES, "cancel_order": "cancelar"}
+AMEND_OFFER = "Posso {gestures}, se quiser."
 AMEND_MODE_WORDS = {"pickup": "retirada", "delivery": "entrega"}
 #: A prévia da alteração (OC-11): o efeito em fatos do sistema e o código que confirma.
 AMEND_PREVIEW_LEAD = "Confira a alteração do pedido {ref}:"
@@ -2681,7 +2686,7 @@ AMEND_EFFECT = {
     "new_pix": "O código Pix muda para o novo valor.",
 }
 AMEND_CONFIRM = "Para confirmar, responda: confirmo {code}"
-AMEND_STALE = "O pedido {ref} mudou desde a minha pergunta. Confira de novo:"
+AMEND_STALE = "O pedido {ref} mudou. Confira de novo:"
 AMEND_DONE = {
     "applied": "Pronto, alterei o pedido {ref}.",
     "already_applied": "Essa alteração do pedido {ref} já está feita.",
@@ -2691,16 +2696,16 @@ AMEND_ASK = {
     "reschedule_order": "Qual horário fica melhor para {day}? {options}",
     "no_slots": "Não tenho horário de {mode} para {day}. Me diga outro dia (dia/mês).",
     "remove_item": "Qual item sai do pedido {ref}? {options}",
-    "change_address": "Qual é o endereço novo da entrega? Escreva rua, número, bairro e CEP.",
+    "change_address": "Qual o endereço novo? Rua, número, bairro e CEP.",
     "address_incomplete": (
-        "Para trocar o endereço, preciso dele completo: falta {words}. Escreva rua, número, bairro e CEP."
+        "Falta {words} no endereço. Mande rua, número, bairro e CEP."
     ),
 }
 #: Por que a Nice não altera o pedido. O que o serviço recusa com motivo próprio (data,
 #: horário, estoque) sai com a frase dele; o que pede gente sai com a equipe chamada.
 AMEND_STATUS_REFUSED = {
-    "ready": "O pedido {ref} já está pronto, e aí não dá mais para alterar.",
-    "dispatched": "O pedido {ref} já saiu para entrega, e aí não dá mais para alterar.",
+    "ready": "O pedido {ref} já está pronto e não muda mais.",
+    "dispatched": "O pedido {ref} já saiu para entrega e não muda mais.",
     "delivered": "O pedido {ref} já foi entregue.",
     "completed": "O pedido {ref} já foi concluído.",
     "cancelled": "O pedido {ref} foi cancelado.",
@@ -2708,37 +2713,37 @@ AMEND_STATUS_REFUSED = {
 }
 AMEND_REFUSED = {
     "no_order": "Não achei pedido seu por aqui.",
-    "many_orders": "Você tem mais de um pedido em andamento ({refs}). Me diga o número do pedido que quer alterar.",
+    "many_orders": "Você tem mais de um pedido em andamento ({refs}). Qual quer alterar?",
     "nothing_pending": "Não há alteração de pedido esperando confirmação.",
-    "unchanged": "O pedido {ref} já está assim, então nada muda.",
-    "marketplace_order": "O pedido {ref} é do iFood, e a alteração se faz pelo próprio iFood.",
-    "marketplace_schedule": "O pedido {ref} é do iFood, e a alteração se faz pelo próprio iFood.",
+    "unchanged": "O pedido {ref} já está assim.",
+    "marketplace_order": "O pedido {ref} é do iFood. Para alterar, use o iFood.",
+    "marketplace_schedule": "O pedido {ref} é do iFood. Para alterar, use o iFood.",
     "test_order": "O pedido {ref} é de teste e não se altera.",
-    "fiscal_authorized": "A nota fiscal do pedido {ref} já foi emitida, e aí a alteração precisa da equipe.",
-    "already_in_preparation": "O pedido {ref} já está em preparo, e aí o dia não muda mais.",
+    "fiscal_authorized": "A nota fiscal do pedido {ref} já foi emitida.",
+    "already_in_preparation": "O pedido {ref} já está em preparo e o dia não muda mais.",
     "no_slot_at": "Não tenho horário de {mode} às {time} para {day}.",
     "slot_closed": "O horário {slot} não está disponível para {day}: {reason}.",
     "item_not_found": "Não achei {item} no pedido {ref}. O pedido tem: {items}.",
-    "empty_order": "Esse é o único item do pedido {ref}. Se quiser desistir dele, é só pedir o cancelamento.",
-    "pickup_order": "O pedido {ref} é para retirada na loja, então não tem endereço de entrega.",
-    "delivery_out_of_area": "Esse endereço fica fora da nossa área de entrega. O pedido {ref} continua como estava.",
+    "empty_order": "Esse é o único item do pedido {ref}. Para tirá-lo, só cancelando o pedido.",
+    "pickup_order": "O pedido {ref} é para retirada na loja, sem entrega.",
+    "delivery_out_of_area": "Esse endereço fica fora da nossa área de entrega.",
     "address_not_located": "Não consegui localizar esse endereço.",
-    "manager_approval_required": "O pedido {ref} já está pago, e a devolução de {amount} precisa da equipe.",
+    "manager_approval_required": "O pedido {ref} já está pago, e a mudança devolve {amount}.",
     "open_digital_charge": (
-        "O pedido {ref} tem um pagamento esperando com o valor de agora, e aí o valor não muda por aqui."
+        "O pedido {ref} tem um pagamento em aberto, e o valor não muda por aqui."
     ),
     "delivery_payment_method_required": (
-        "Com a mudança, fica um valor a pagar na entrega, e a forma de pagar na porta precisa da equipe."
+        "Com a mudança, fica um valor a pagar na entrega."
     ),
-    "mixed_payment_refund": "O pedido {ref} foi pago em mais de uma forma, e aí a diferença precisa da equipe.",
-    "on_account_total_locked": "O pedido {ref} está na conta da casa, e o valor dele não muda por aqui.",
+    "mixed_payment_refund": "O pedido {ref} foi pago em mais de uma forma.",
+    "on_account_total_locked": "O pedido {ref} está na conta da casa, e o valor não muda por aqui.",
     "split_pending_tenders": (
-        "O pagamento do pedido {ref} está dividido em mais de uma forma, e aí a diferença precisa da equipe."
+        "O pagamento do pedido {ref} está dividido em mais de uma forma."
     ),
     "payment_unreadable": "Não consegui conferir o pagamento do pedido {ref} agora.",
-    "pix_paid_meanwhile": "O Pix do pedido {ref} foi pago agora há pouco, e aí a alteração precisa da equipe.",
+    "pix_paid_meanwhile": "O Pix do pedido {ref} acabou de ser pago.",
     "open_pix_not_cancelled": (
-        "Não consegui cancelar o código Pix antigo do pedido {ref} agora, e aí o pedido continua como estava."
+        "Não consegui cancelar o código Pix antigo do pedido {ref}. O pedido não mudou."
     ),
     "activation_running": "O pedido {ref} está indo para a cozinha neste instante.",
     "generic": "Não consigo fazer essa alteração no pedido {ref} por aqui.",
@@ -2751,7 +2756,7 @@ AMEND_TEAM_SUFFIX = "Já chamei a equipe para ver isso com você."
 REPAY_DONE = {
     "switched_to_pix": "Pronto, troquei o pagamento do pedido {ref} para Pix.",
     "retried": "Pronto, gerei de novo a cobrança do pedido {ref}.",
-    "still_failing": "Ainda não consegui gerar a cobrança do pedido {ref}. Me peça de novo daqui a pouco.",
+    "still_failing": "Ainda não consegui gerar a cobrança do pedido {ref}. Tente de novo daqui a pouco.",
 }
 #: Por que a Nice não refaz nem troca a cobrança (OC-12): o estado do pedido, as formas do
 #: canal e o motivo que o serviço de pagamento dá, ditos ao cliente. Sem "acabou" (a R2 o
@@ -2759,13 +2764,13 @@ REPAY_DONE = {
 REPAY_REFUSED = {
     "payment_expired_cancelled": "O prazo para pagar o pedido {ref} venceu, e o pedido foi cancelado.",
     "payment_expired": "O prazo para pagar o pedido {ref} venceu.",
-    "order_cancelled": "O pedido {ref} foi cancelado, então não há nada a pagar.",
-    "already_paid": "O pedido {ref} já está pago. Não precisa pagar de novo.",
-    "card_authorized": "O cartão do pedido {ref} já foi autorizado. Não precisa pagar de novo.",
+    "order_cancelled": "O pedido {ref} foi cancelado.",
+    "already_paid": "O pedido {ref} já está pago.",
+    "card_authorized": "O cartão do pedido {ref} já foi autorizado.",
     "not_awaiting_payment": "O pedido {ref} não está esperando pagamento agora.",
     "method_not_accepted": "Por aqui, não aceitamos pagamento com {method}.",
     "pix_to_card": "Neste pedido, não dá para trocar o Pix por cartão.",
-    "card_to_pix_after_decline": "Neste pedido, a troca do cartão por Pix só fica disponível se o cartão for recusado.",
+    "card_to_pix_after_decline": "A troca do cartão por Pix só vale se o cartão for recusado.",
     "card_to_pix": "Neste pedido, não dá para trocar o cartão por Pix.",
 }
 #: Prazo de pagar vencido num pedido de Pix: o código antigo não se paga (o aviso da página).
@@ -2774,10 +2779,10 @@ OLD_PIX_CODE_WARNING = "Não pague o código Pix antigo."
 PAYMENT_FORM_WORDS = {"pix": "Pix", "card": "cartão"}
 #: Variante "oferecer" (OC-12): o pedido que venceu sem pagamento pode ser remontado na
 #: sacola, pela recompra da loja, com preço e disponibilidade de agora e confirmação nova.
-REPEAT_OFFER = "Se quiser, monto o mesmo pedido de novo, com os preços e a disponibilidade de agora. É só me dizer “monta de novo”."
-REPEAT_DONE = "Pronto, montei de novo na sacola os itens do pedido {ref}, com os preços de agora."
+REPEAT_OFFER = "Se quiser, monto o mesmo pedido de novo, com os preços de agora."
+REPEAT_DONE = "Pronto, montei o pedido {ref} de novo na sacola, com os preços de agora."
 REPEAT_SKIPPED = "Indisponível agora: {items}."
-REPEAT_NOTHING = "Nenhum item do pedido {ref} está disponível agora, então a sacola continua vazia."
+REPEAT_NOTHING = "Nenhum item do pedido {ref} está disponível agora."
 
 
 def _opens_as_page(action: dict) -> bool:
@@ -2821,8 +2826,7 @@ def _open_elsewhere_rows(result: dict) -> list[str]:
         where = _display_text(entry.get("where", ""))
         rows.append(
             f"{where[:1].upper()}{where[1:]}, você tem outra sacola aberta, "
-            f"com {_display_text(entry.get('items', ''))} ({_display_text(entry.get('subtotal', ''))}); "
-            "ela fica lá, separada desta conversa."
+            f"com {_display_text(entry.get('items', ''))} ({_display_text(entry.get('subtotal', ''))})."
         )
     return rows
 
@@ -2914,21 +2918,29 @@ def _render_facts(name: str, result: dict) -> str:
             if str(order.get("total") or "").strip():
                 parts.append(f"Total: {order['total']}.")
             rows.append(f"Pedido {order['order_ref']}{when}: " + " ".join(p for p in parts if p))
+            pix_follows = any(
+                action.get("enabled") and action.get("kind") == "copy" and action.get("ref") == "copy_pix"
+                and str(action.get("value") or "").strip()
+                for action in order.get("actions", [])
+            )
             if order.get("pix_sent_at"):
                 # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
-                rows.append(f"Já te mandei o código Pix por aqui {order['pix_sent_at']}.")
-            amendments = [
+                # Com o código indo de novo, as duas coisas numa linha só.
+                template = PIX_SENT_AGAIN if pix_follows else PIX_SENT
+                rows.append(template.format(when=order["pix_sent_at"]))
+            elif pix_follows:
+                rows.append(PIX_CODE_FOLLOWS)
+            offers = [
                 action["ref"] for action in order.get("actions", [])
-                if action.get("enabled") and action.get("ref") in AMEND_GESTURES
+                if action.get("enabled") and action.get("ref") in OFFER_GESTURES
             ]
             for action in order.get("actions", []):
-                if action.get("ref") in AMEND_GESTURES:
-                    continue  # as alterações do pedido saem juntas, numa linha só (abaixo)
+                if action.get("ref") in OFFER_GESTURES:
+                    continue  # cancelar e as alterações do pedido saem juntos, numa linha só (abaixo)
                 if action.get("enabled") and action.get("kind") == "copy":
-                    # O que se copia vai sozinho na mensagem seguinte (``copy_texts``); sem
-                    # o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
-                    if str(action.get("value") or "").strip() and action.get("ref") == "copy_pix":
-                        rows.append(PIX_CODE_FOLLOWS)
+                    # O que se copia vai sozinho na mensagem seguinte (``copy_texts``), avisado
+                    # acima; sem o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
+                    continue
                 elif action.get("enabled") and _opens_as_page(action):
                     href = action["href"]
                     if href.startswith("/") and not href.startswith("//"):
@@ -2937,10 +2949,12 @@ def _render_facts(name: str, result: dict) -> str:
                 elif action.get("enabled") and CONVERSATION_EQUIVALENTS.get(action.get("ref")):
                     # Comando que a Nice faz pela conversa: a instrução, nunca o endereço.
                     rows.append(CONVERSATION_EQUIVALENTS[action["ref"]])
-            if len(amendments) == 1:
-                rows.append(CONVERSATION_EQUIVALENTS[amendments[0]])
-            elif amendments:
-                gestures = [AMEND_GESTURES[ref] for ref in amendments]
+            # Cancelar por último: "Posso remarcar, tirar um item ou cancelar, se quiser."
+            offers.sort(key=lambda ref: ref == "cancel_order")
+            if len(offers) == 1:
+                rows.append(CONVERSATION_EQUIVALENTS[offers[0]])
+            elif offers:
+                gestures = [OFFER_GESTURES[ref] for ref in offers]
                 rows.append(AMEND_OFFER.format(gestures=", ".join(gestures[:-1]) + " ou " + gestures[-1]))
             rows.append(f"Acompanhar: {order['tracking_url']}")
         return "\n".join(rows) or "Não encontrei pedidos para este acesso."
