@@ -41,7 +41,7 @@ def test_materialized_channel_is_resolved_without_reading_the_descriptor(monkeyp
     [
         pytest.param(lambda: waitlist.config("missing"), id="waitlist"),
         pytest.param(lambda: fomo._channel_config("missing"), id="fomo"),
-        pytest.param(lambda: availability._channel_hold_ttl_minutes("missing"), id="hold-ttl"),
+        pytest.param(lambda: availability.channel_hold_ttl_minutes("missing"), id="hold-ttl"),
         pytest.param(lambda: checkout._payment_methods("missing"), id="checkout-payment-methods"),
     ],
 )

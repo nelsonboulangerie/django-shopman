@@ -582,6 +582,35 @@ SHADOW_EFFECT_GAPS = frozenset({"receipt_not_in_evidence", "action_without_recei
 REFUSAL_TEMPLATE = "inform_limitation.offer_team"
 
 
+#: Os moldes aprovados que só valem em parte dos casos em que o motor os usa. Fora deles, o turno vai pelo
+#: caminho de hoje, que responde certo (calibragem do básico, 23/11). Sem frase nova: só quem responde.
+#:
+#: - ``acknowledge.thanks`` é o agradecimento de hoje ("Nós que agradecemos!"). O motor o usa também para o
+#:   cumprimento; "oi" respondido com "Nós que agradecemos" é falso. O cumprimento de hoje (``small_talk``)
+#:   devolve o "Bom dia" e se apresenta. Só o cumprimento: o "sim" e o "não" se julgam na sombra sem a
+#:   pergunta do turno vivo, e lá viram agradecimento mesmo quando, ao vivo, respondem aos termos.
+THANKS_TEMPLATE = "acknowledge.thanks"
+GREETING_ACT = "greet"
+#: - ``inform_limitation.offer_team`` pergunta "Quer que eu chame alguém da equipe?", e o "sim" a ela não
+#:   chama ninguém pelo motor (o "sim" não se liga à oferta): a frase promete o que o turno seguinte não faz.
+#:   O caminho de hoje diz o que falta (o produto que não tem, a sacola vazia) e chama a equipe de verdade.
+#: - ``ask_clarification.more`` diz "não entendi bem" a falas que o caminho de hoje responde: a pergunta
+#:   da casa (endereço, Wi-Fi, horário de entrega), "quanto deu?" e "vou pagar".
+TODAY_ANSWERS = frozenset({"inform_limitation.offer_team", "ask_clarification.more"})
+
+
+def today_answers_better(result, template_ids) -> str:
+    """O molde aprovado que, neste turno, diria algo falso ou inútil; vazio quando não há."""
+    found = sorted(str(t) for t in template_ids if t in TODAY_ANSWERS)
+    if found:
+        return found[0]
+    understanding = getattr(result, "understanding", None)
+    acts = {act.act for act in (understanding.acts if understanding is not None else ())}
+    if THANKS_TEMPLATE in template_ids and GREETING_ACT in acts:
+        return THANKS_TEMPLATE
+    return ""
+
+
 def effect_outcomes(move: str) -> frozenset[str]:
     """Os moldes de todos os desfechos do efeito: o sucesso, os degraus, a falha e as recusas próprias."""
     from conversational_commerce.engine.moves import registry
@@ -608,6 +637,9 @@ def judge(result, *, enabled: frozenset[str], approved: frozenset[str]) -> Verdi
     off = sorted({move for move in moves if CLASS_OF_MOVE.get(move) not in enabled})
     if off:
         return Verdict(False, f"class_off:{','.join(off)}", moves, template_ids)
+    better = today_answers_better(result, template_ids)
+    if better:
+        return Verdict(False, f"today_answers:{better}", moves, template_ids)
     effects = sorted({move for move in moves if effect_outcomes(move)})
     needed = set(template_ids).union(*(effect_outcomes(move) for move in effects))
     missing = sorted({str(t) for t in needed if t not in approved})

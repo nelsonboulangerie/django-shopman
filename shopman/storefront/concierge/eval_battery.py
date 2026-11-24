@@ -19,7 +19,8 @@ from __future__ import annotations
 import calendar
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -200,9 +201,36 @@ def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], to
     return erros
 
 
+@contextmanager
+def leitura_do_cardapio() -> Iterator[None]:
+    """A busca do cardápio no ensaio, sem a trava de posse do turno.
+
+    No ar, a busca (``search_storefront``) só roda dentro de um turno com posse (``assert_turn_authority``),
+    e o leitor acha o produto por ela. A conversa do ensaio é de memória, nunca gravada, e não tem posse:
+    sem isto, TODA leitura de produto do ensaio voltava vazia (``claim_required``), e a bateria e os
+    cartões reprovavam por um motivo que o ar não tem. Os testes do ensaio não viam, porque trocam a
+    ferramenta inteira (``tools.execute``). Só a busca, que é leitura, e só enquanto o ensaio roda.
+    """
+    from . import tools
+
+    guarded = tools._HANDLERS["search_storefront"]
+    tools._HANDLERS["search_storefront"] = guarded.__wrapped__
+    try:
+        yield
+    finally:
+        tools._HANDLERS["search_storefront"] = guarded
+
+
 def rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int, max_usd: float = 0.0,
           model: str = "", only: str = "") -> tuple[list[Resultado], dict]:
     """A bateria pelo leitor. ``reader_for(conversa, linhas)`` monta o leitor com a sacola em memória."""
+    with leitura_do_cardapio():
+        return _rodar(reader_for, channel_ref=channel_ref, today=today, max_calls=max_calls, max_usd=max_usd,
+                      model=model, only=only)
+
+
+def _rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: int, max_usd: float,
+           model: str, only: str) -> tuple[list[Resultado], dict]:
     from conversational_commerce.engine.acts import ACTS
     from conversational_commerce.ports import InterpretRequest, ModelRequest, TrustedContext
 

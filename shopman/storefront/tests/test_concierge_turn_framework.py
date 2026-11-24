@@ -126,6 +126,34 @@ def test_the_judge_needs_a_switched_on_class_and_a_nice_template_for_every_part(
     assert turn_framework.judge(ok, enabled=frozenset({"inform"}), approved=approved).eligible
 
 
+def _said(*acts):
+    return SimpleNamespace(acts=tuple(SimpleNamespace(act=act) for act in acts))
+
+
+@pytest.mark.parametrize(("acts", "moves", "template", "reason"), [
+    # "oi" respondido com "Nós que agradecemos" é falso: o cumprimento é o de hoje.
+    (("greet",), ["acknowledge"], "acknowledge.thanks", "today_answers:acknowledge.thanks"),
+    (("greet", "change_quantity"), ["acknowledge", "change_cart"], "acknowledge.thanks",
+     "today_answers:acknowledge.thanks"),
+    # "Quer que eu chame alguém da equipe?": o "sim" não chama ninguém pelo motor.
+    (("change_quantity",), ["inform_limitation"], "inform_limitation.offer_team",
+     "today_answers:inform_limitation.offer_team"),
+    # "Não entendi bem" a "quanto deu?", "vou pagar" e à pergunta da casa, que o caminho de hoje responde.
+    (("choose_payment",), ["ask_clarification"], "ask_clarification.more", "today_answers:ask_clarification.more"),
+    (("unknown",), ["ask_clarification"], "ask_clarification.more", "today_answers:ask_clarification.more"),
+    # O agradecimento ao agradecimento, e o "sim" (que a sombra julga sem a pergunta do turno vivo), seguem.
+    (("thank",), ["acknowledge"], "acknowledge.thanks", ""),
+    (("affirm",), ["acknowledge"], "acknowledge.thanks", ""),
+])
+def test_an_approved_phrase_that_would_be_false_in_this_turn_goes_to_today_path(acts, moves, template, reason):
+    """Calibragem do básico (23/11): a frase aprovada que, NESTE turno, mente ou não ajuda, cede ao caminho de hoje."""
+    reply = SimpleNamespace(text="x", template_ids=(template,) + (("change_cart.done",) if len(moves) > 1 else ()))
+    result = SimpleNamespace(chosen_moves=moves, reply=reply, understanding=_said(*acts))
+    approved = frozenset({template, "change_cart.done"})
+    verdict = turn_framework.judge(result, enabled=frozenset({"inform", "order"}), approved=approved)
+    assert verdict.reason == reason and verdict.eligible is (not reason)
+
+
 APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "ask_clarification.more": "Desculpe, não entendi bem. Pode me dizer o que você gostaria?",
     "effect.failed": ("Não consegui concluir esta ação. Suas escolhas foram preservadas. "

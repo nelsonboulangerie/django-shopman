@@ -57,7 +57,7 @@ def house(monkeypatch):
     monkeypatch.setattr(tools, "execute", execute)
     monkeypatch.setattr(tools, "_ensure_session", lambda ctx: Session.objects.get(session_key="sess-1"))
     monkeypatch.setattr(order_closing, "_fulfillment_types", lambda channel_ref: list(state.types))
-    monkeypatch.setattr("shopman.storefront.intents.checkout._validate_preorder",
+    monkeypatch.setattr("shopman.shop.policies.preorder_date.preorder_date_errors",
                         lambda day, **kw: dict(state.preorder))
     monkeypatch.setattr("shopman.shop.services.sessions.modify_session",
                         lambda **kw: calls.append(("modify_session", kw["ops"])))
