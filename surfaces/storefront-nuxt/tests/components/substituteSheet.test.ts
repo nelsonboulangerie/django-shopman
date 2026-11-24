@@ -91,12 +91,23 @@ describe('SubstituteSheet', () => {
 
   it('adjust refusal shows the line ceiling as a total, not the free delta', async () => {
     // Fornada de 4, sacola com 2, pediu 6.
-    await setIssue({ ...OUT_OF_STOCK, requested_qty: 6, available_qty: 4, line_qty: 2, is_planned: true, planned_offer_title: 'Já vem quentinho', planned_offer_message: 'Sai fresquinho no próximo lote.', substitutes: [] })
+    await setIssue({ ...OUT_OF_STOCK, requested_qty: 6, available_qty: 4, line_qty: 2, is_planned: true, planned_offer_title: 'Disponível amanhã, quarta, a partir das 7h', planned_offer_message: '', substitutes: [] })
     await mountSuspended(SubstituteSheet)
     await nextTick()
     const body = document.body.textContent || ''
-    expect(body).toContain('Pré-reservar 4 unidades no total')
-    expect(body).not.toContain('Pré-reservar 2')
+    expect(body).toContain('Reservar 4 unidades no total')
+    expect(body).not.toContain('Reservar 2')
+  })
+
+  it('o próximo lote diz quando fica disponível e oferece Reservar, sem outra frase (dono, 24/11/2026)', async () => {
+    await setIssue({ ...OUT_OF_STOCK, requested_qty: 6, available_qty: 4, is_planned: true, planned_offer_title: 'Disponível a partir das 15h', planned_offer_message: '', substitutes: [] })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const body = document.body.textContent || ''
+    expect(body).toContain('Disponível a partir das 15h')
+    expect(body).toContain('Reservar 4 unidades')
+    expect(body).not.toContain('Agora temos')
+    expect(body).not.toMatch(/pront/i)
   })
 
   it('a line already at its ceiling is told so, with no button that shrinks it', async () => {

@@ -175,6 +175,47 @@ def _date_mismatch_payload(exc, *, product=None) -> dict:
     }
 
 
+def _planned_offer_title(exc) -> str:
+    """"Disponível a partir das 15h": quando o próximo lote deixa o item disponível.
+
+    O pedaço de quando sai da MESMA promessa do card e do produto
+    (``presentation/promise``), para o dia que a reserva vai segurar. Sem promessa
+    (prontidão não apurada), a frase não inventa hora: "no próximo lote".
+    """
+    template = resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").title or "Disponível {when}"
+    return template.replace("{when}", _planned_offer_when(exc))
+
+
+def _planned_offer_when(exc) -> str:
+    from datetime import date, time
+
+    from shopman.utils.formatting import format_clock
+
+    from shopman.shop.projections.ready_promise import read_promise_facts
+    from shopman.storefront.presentation.promise import KIND_READY, promise_for
+
+    planned = exc.planned_target_date
+    if isinstance(planned, str):
+        try:
+            planned = date.fromisoformat(planned)
+        except ValueError:
+            planned = None
+    try:
+        facts = read_promise_facts([exc.sku], channel_ref=STOREFRONT_CHANNEL_REF)
+        promise = promise_for(exc.sku, facts, orderable=True, planned_for=planned)
+    except Exception:
+        logger.warning("planned offer: promessa do próximo lote indisponível sku=%s", exc.sku, exc_info=True)
+        promise = None
+    # Pronto agora não é próximo lote: a folha só sobe porque o de agora acabou.
+    if promise is None or promise.kind == KIND_READY:
+        return "no próximo lote"
+    hours, minutes = promise.ready_at.split(":")
+    hour = format_clock(time(int(hours), int(minutes)))
+    if promise.day_label == "hoje":
+        return f"a partir das {hour}"
+    return f"{promise.day_label}, a partir das {hour}"
+
+
 def _stock_error_payload(exc, *, product=None, request=None, name: str = "") -> dict:
     if isinstance(exc, CartDateMismatchError):
         return _date_mismatch_payload(exc, product=product)
@@ -260,12 +301,9 @@ def _stock_error_payload(exc, *, product=None, request=None, name: str = "") -> 
         # Pré-reserva: item planejado tem próximo lote conhecido. Enquadra a escassez
         # como oferta ("garantir o seu") em vez de só "esgotou". A reserva de fato é o
         # planned-hold que já existe no carrinho.
-        "planned_offer_title": (
-            resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").title or "Já vem quentinho"
-        ) if exc.is_planned else "",
+        "planned_offer_title": _planned_offer_title(exc) if exc.is_planned else "",
         "planned_offer_message": (
             resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").message
-            or "Fica pronto no próximo lote, fresquinho. Quer garantir o seu?"
         ) if exc.is_planned else "",
         # Kintsugi: enquadra a escassez com voz acolhedora (registro, admin-configurável).
         # Um enquadramento só — a pausa não ganha manchete própria, senão o cliente

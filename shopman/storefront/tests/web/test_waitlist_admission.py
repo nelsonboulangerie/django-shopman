@@ -189,7 +189,11 @@ class TestWaitlistAdmitsUpToTheKnownLimit:
         assert body["is_planned"] is True, (
             "recusa honesta de fila: 'próximo lote', não 'o último acabou de sair'"
         )
-        assert body["planned_offer_title"]
+        # Diz QUANDO o próximo lote deixa o item disponível, com a hora da promessa
+        # (dono, 24/11/2026): "Disponível amanhã, <dia>, a partir das 7h".
+        assert body["planned_offer_title"].startswith("Disponível ")
+        assert "a partir das" in body["planned_offer_title"] or body["planned_offer_title"] == "Disponível no próximo lote"
+        assert body["planned_offer_message"] == ""
 
     def test_the_queue_is_first_come_first_served(self, client, channel, product):
         _ensure_listing_item(channel, product, price_q=90)
