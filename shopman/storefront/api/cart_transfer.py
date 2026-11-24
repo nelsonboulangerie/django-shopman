@@ -41,7 +41,7 @@ REFUSALS = {
     "no_cart": "Não há sacola com itens para levar.",
     "invalid_offer": "Não foi possível levar esta sacola. Sua sacola daqui continua como estava.",
     "not_authorized": "Esta sacola é de outra conta. Sua sacola daqui continua como estava.",
-    "source_changed": "A outra sacola mudou agora há pouco. Toque de novo para trazer a versão nova.",
+    "source_changed": "A outra sacola mudou. Toque de novo para trazer a versão nova.",
     "destination_conflict": "Aqui já existe uma sacola com itens. Escolha qual manter.",
     "nothing_available": "Nenhum item da outra sacola está disponível aqui agora. Ela continua onde estava.",
     "transfer_unavailable": "A passagem da sacola entre a loja e o WhatsApp não está disponível agora.",

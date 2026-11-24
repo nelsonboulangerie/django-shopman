@@ -6,7 +6,7 @@ import type { Action, CartOpenElsewhere, CartProjection } from '~/types/shopman'
 
 export interface OpenElsewhereNotice {
   channel: string
-  // "No WhatsApp, você tem outra sacola aberta, com 3 itens (R$ 2,70)."
+  // "Você tem outra sacola no WhatsApp: 3 itens (R$ 2,70)."
   text: string
   // O que acontece ao trazer, dito antes do toque (só com a ação ligada).
   consequence: string
@@ -18,10 +18,10 @@ export function openElsewhereNotices (cart: Pick<CartProjection, 'open_elsewhere
     const bring = entry.bring?.enabled ? entry.bring : null
     return {
       channel: entry.channel,
-      text: `No ${entry.channel_label}, você tem outra sacola aberta, com ${entry.items_phrase} (${entry.subtotal_display}).`,
+      text: `Você tem outra sacola no ${entry.channel_label}: ${entry.items_phrase} (${entry.subtotal_display}).`,
       consequence: bring
-        ? `Ao trazer, ela sai do ${entry.channel_label} e fica só aqui.`
-        : 'Ela continua lá, separada desta.',
+        ? `Ao trazer, ela sai do ${entry.channel_label}.`
+        : 'Ela fica lá, separada desta.',
       bring
     }
   })
@@ -34,8 +34,8 @@ export function continueInConversationAction (cart: Pick<CartProjection, 'contin
   return action && action.enabled ? action : null
 }
 
-export const CONTINUE_IN_CONVERSATION_HINT = 'Abre o WhatsApp com uma mensagem pronta. Ao enviar, a sacola passa para a conversa com a Nice e sai daqui.'
-export const CONTINUE_IN_CONVERSATION_SENT = 'Envie a mensagem no WhatsApp. Até a Nice receber, a sacola continua aqui.'
+export const CONTINUE_IN_CONVERSATION_HINT = 'Ao enviar a mensagem pronta, a sacola passa para a conversa com a Nice.'
+export const CONTINUE_IN_CONVERSATION_SENT = 'Envie a mensagem no WhatsApp. Até lá, a sacola fica aqui.'
 export const PASSAGE_FALLBACK_ERROR = 'Não foi possível agora. Suas sacolas continuam como estavam.'
 
 // A frase da recusa que o servidor mandou, ou a genérica que não promete nada.

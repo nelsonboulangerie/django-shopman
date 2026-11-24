@@ -201,7 +201,7 @@ def test_c02_anonymous_store_cart_becomes_the_verified_customers_in_the_conversa
     web.refresh_from_db()
     assert web.state == "abandoned" and web.data["transferred_to"]["session_key"] == arrived.session_key
     assert _holds(web.session_key) == [] and len(_holds(arrived.session_key)) == 1  # nenhuma reserva dobrada
-    assert reply.startswith("Sua sacola do site chegou aqui na conversa.")
+    assert reply.startswith("Sua sacola do site chegou.")
     assert "2 × “Pão Francês”: R$ 1,80" in reply and "Total: R$ 1,80" in reply
     assert "—" not in reply
 
@@ -213,7 +213,7 @@ def test_c02_a_store_cart_with_an_owner_goes_only_to_the_owner(conversation, out
 
     reply = _turn(conversation, started["message"])
 
-    assert reply.startswith("Recebi o código da sacola do site, mas ela é de outra conta")
+    assert reply.startswith("Não consegui trazer: a sacola é de outra conta")
     web.refresh_from_db()
     assert web.state == "open" and "transferred_to" not in web.data
     assert _conversation_cart(conversation) is None
@@ -229,7 +229,7 @@ def test_c02_an_unverified_number_does_not_take_an_anonymous_cart(conversation, 
 
     web.refresh_from_db()
     assert web.state == "open"
-    assert "A sacola continua no site" in reply
+    assert "Ela continua no site." in reply
 
 
 def test_x4_the_same_message_twice_lands_on_one_cart(conversation, outbox, bridge):
@@ -240,7 +240,7 @@ def test_x4_the_same_message_twice_lands_on_one_cart(conversation, outbox, bridg
 
     again = _turn(conversation, started["message"])
 
-    assert again.startswith("Sua sacola do site já está aqui na conversa.")
+    assert again.startswith("Sua sacola do site já está aqui.")
     assert _conversation_cart(conversation).session_key == first.session_key
     assert Session.objects.filter(channel_ref=CHANNEL).count() == 1
     assert len(_holds(first.session_key)) == 1
@@ -254,21 +254,17 @@ def test_x5_a_store_cart_that_changed_after_the_offer_is_offered_again(conversat
 
     reply = _turn(conversation, started["message"])
 
-    assert reply.startswith("A sacola do site mudou depois que você tocou em Continuar pelo WhatsApp.")
+    assert reply.startswith("A sacola do site mudou depois do toque.")
     web.refresh_from_db()
     assert web.state == "open"
     assert _conversation_cart(conversation) is None
     # A loja oferece de novo, e a nova oferta passa.
     assert _cart(browser)["continue_in_conversation"]["enabled"] is True
     fresh = _continue(browser).data
-    assert _turn(conversation, fresh["message"]).startswith("Sua sacola do site chegou aqui na conversa.")
+    assert _turn(conversation, fresh["message"]).startswith("Sua sacola do site chegou.")
 
 
-ASK = (
-    "Você já tem uma sacola aqui, com 1 item (R$ 0,90). A do site tem 2 itens (R$ 1,80). Qual quer usar?\n"
-    "Responda “a do site” para trazer a do site (a daqui é descartada) ou “a daqui” para ficar com "
-    "esta (a do site continua lá)."
-)
+ASK = "Você já tem uma sacola aqui (1 item, R$ 0,90). A do site tem 2 itens (R$ 1,80). Qual fica: a do site ou a daqui?"
 
 
 def _both_sides(ctx):
@@ -301,7 +297,7 @@ def test_3520_answer_from_the_site_replaces_and_never_merges(ctx, outbox, bridge
 
     reply = _turn(conversation, "a do site")
 
-    assert reply.startswith("Sua sacola do site chegou aqui na conversa.")
+    assert reply.startswith("Pronto, trouxe a do site.")
     arrived = _conversation_cart(conversation)
     assert arrived.session_key != own.session_key
     assert [(item["sku"], int(item["qty"])) for item in arrived.items] == [(SKU, 2)]
@@ -322,7 +318,7 @@ def test_3520_answer_from_here_keeps_both_where_they_are(ctx, outbox, bridge):
 
     reply = _turn(conversation, "a daqui")
 
-    assert reply == "Combinado: fica a sacola daqui. A do site continua lá, como estava."
+    assert reply == "Pronto, fica a daqui."
     web.refresh_from_db()
     assert web.state == "open"
     assert _conversation_cart(conversation).session_key == own.session_key
@@ -350,7 +346,7 @@ def test_x5_the_answer_after_the_site_changed_is_refused(ctx, outbox, bridge):
 
     reply = _turn(conversation, "a do site")
 
-    assert reply.startswith("A sacola do site mudou depois que você tocou em Continuar pelo WhatsApp.")
+    assert reply.startswith("A sacola do site mudou depois do toque.")
     web.refresh_from_db()
     assert web.state == "open"
     assert _conversation_cart(conversation).session_key == own.session_key
@@ -371,8 +367,7 @@ def test_an_expired_code_says_how_to_get_another(conversation, outbox, bridge):
     reply = _turn(conversation, "Olá! Quero continuar por aqui a sacola que montei no site (ref. NB-ABCDEF)")
 
     assert reply == (
-        "Esse código de sacola venceu ou já foi usado. No site, toque de novo em Continuar pelo WhatsApp "
-        "para gerar outro."
+        "Esse código venceu ou já foi usado. No site, toque de novo em Continuar pelo WhatsApp."
     )
 
 
@@ -385,7 +380,7 @@ def test_differences_are_said_one_per_line(conversation, outbox, bridge):
 
     reply = _turn(conversation, started["message"])
 
-    assert "Chegou com estas mudanças:\n• Pão Francês: o preço aqui é R$ 1,20 (era R$ 0,90)." in reply
+    assert "O que mudou:\n• Pão Francês: agora R$ 1,20 (era R$ 0,90)." in reply
 
 
 # ── #3515: "Trazer para cá" na loja ──────────────────────────────────
@@ -454,8 +449,8 @@ def test_3517_the_store_shows_each_difference_after_the_transfer(ctx, customer, 
 
     arrival = cart["transfer_arrival"]
     assert arrival["title"] == "Sua sacola veio do WhatsApp com mudanças"
-    assert arrival["lines"] == ["Pão Francês: o preço aqui é R$\u00a01,00 (era R$\u00a00,90)."]
-    assert arrival["total_line"] == "Soma dos itens agora: R$\u00a03,00 (era R$\u00a02,70)."
+    assert arrival["lines"] == ["Pão Francês: agora R$\u00a01,00 (era R$\u00a00,90)."]
+    assert arrival["total_line"] == "Soma dos itens: R$\u00a03,00 (era R$\u00a02,70)."
     assert "—" not in repr(arrival)
 
 
@@ -475,11 +470,8 @@ def test_3517_a_browser_with_a_cart_is_asked_keep_or_replace(ctx, customer, brid
 
     assert asked.data["cart_transfer"] == {"status": "refused", "code": "destination_conflict"}
     conflict = asked.data["cart"]["transfer_conflict"]
-    assert conflict["title"] == "Qual sacola você quer usar aqui?"
-    assert conflict["message"] == (
-        "Aqui já existe uma sacola, com 1 item (R$\u00a00,90). A do WhatsApp tem 3 itens (R$\u00a02,70). "
-        "Se trouxer a do WhatsApp, a daqui é descartada. Se ficar com a daqui, a do WhatsApp continua lá."
-    )
+    assert conflict["title"] == "Qual sacola você quer usar?"
+    assert conflict["message"] == "Aqui: 1 item (R$\u00a00,90). No WhatsApp: 3 itens (R$\u00a02,70)."
     assert asked.data["cart"]["open_elsewhere"] == []  # a pergunta já diz o que a outra sacola tem
     assert (conflict["replace"]["label"], conflict["keep"]["label"]) == ("Trazer a do WhatsApp", "Ficar com a daqui")
     source.refresh_from_db()

@@ -43,33 +43,26 @@ _LOGIN_MARKERS = ("quero entrar no site", "#menu")
 #: O corpo de um código ``NB-`` cunhado pelo doorman (``link_state.new_code``).
 _CODE_BODY_LENGTH = 6
 
-ARRIVED = "Sua sacola do site chegou aqui na conversa."
-ARRIVED_AGAIN = "Sua sacola do site já está aqui na conversa."
-CHANGED = "Chegou com estas mudanças:"
+ARRIVED = "Sua sacola do site chegou."
+ARRIVED_AGAIN = "Sua sacola do site já está aqui."
+REPLACED = "Pronto, trouxe a do site."
+CHANGED = "O que mudou:"
 REFUSED = {
     "not_authorized": (
-        "Recebi o código da sacola do site, mas ela é de outra conta, ou este número ainda não foi "
-        "verificado. A sacola continua no site, como estava."
+        "Não consegui trazer: a sacola é de outra conta ou este número ainda não foi verificado. "
+        "Ela continua no site."
     ),
     "source_changed": (
-        "A sacola do site mudou depois que você tocou em Continuar pelo WhatsApp. Para trazer a versão "
-        "nova, toque de novo nesse botão, no site."
+        "A sacola do site mudou depois do toque. No site, toque de novo em Continuar pelo WhatsApp."
     ),
-    "nothing_available": "Nenhum item da sacola do site está disponível aqui agora. Ela continua no site.",
-    "no_cart": "A sacola do site já não está aberta. Monte de novo por aqui ou no site.",
+    "nothing_available": "Nenhum item da sacola do site está disponível aqui. Ela continua no site.",
+    "no_cart": "A sacola do site já não está aberta.",
 }
 #: A mesma pergunta do site ("Qual sacola você quer usar aqui?"), com as duas respostas.
-ASK = (
-    "Você já tem uma sacola aqui, com {here}. A do site tem {there}. Qual quer usar?\n"
-    "Responda “a do site” para trazer a do site (a daqui é descartada) ou “a daqui” para ficar com "
-    "esta (a do site continua lá)."
-)
-KEPT = "Combinado: fica a sacola daqui. A do site continua lá, como estava."
-EXPIRED = (
-    "Esse código de sacola venceu ou já foi usado. No site, toque de novo em Continuar pelo WhatsApp "
-    "para gerar outro."
-)
-UNAVAILABLE = "Não consegui trazer a sacola do site agora. Ela continua no site, como estava."
+ASK = "Você já tem uma sacola aqui ({here}). A do site tem {there}. Qual fica: a do site ou a daqui?"
+KEPT = "Pronto, fica a daqui."
+EXPIRED = "Esse código venceu ou já foi usado. No site, toque de novo em Continuar pelo WhatsApp."
+UNAVAILABLE = "Não consegui trazer a sacola do site agora. Ela continua lá."
 
 #: As respostas à pergunta. Só vale a resposta que aponta UMA das duas.
 _REPLACE_ANSWERS = ("a do site", "do site", "trazer", "substituir", "substitui", "troca")
@@ -161,8 +154,8 @@ def _context(conversation: Conversation, binding, text: str):
     )
 
 
-def _summary(channel_ref: str, session_key: str) -> str:
-    """"2 itens (R$ 1,80)": a sacola contada como a loja conta, sem abrir as linhas."""
+def _summary(channel_ref: str, session_key: str, *, inline: bool = False) -> str:
+    """"2 itens (R$ 1,80)", ou "2 itens, R$ 1,80" dentro de parênteses: sem abrir as linhas."""
     from shopman.shop.projections.cart import items_phrase, offered_cart
 
     from .tools import _money
@@ -170,6 +163,8 @@ def _summary(channel_ref: str, session_key: str) -> str:
     entry = offered_cart(channel_ref, session_key)
     if entry is None:
         return ""
+    if inline:
+        return f"{items_phrase(entry)}, {_money(entry.subtotal_q)}"
     return f"{items_phrase(entry)} ({_money(entry.subtotal_q)})"
 
 
@@ -223,7 +218,7 @@ def _accept(conversation, binding, text: str, code: str, offer: dict, *, replace
         error = str(result.get("error") or "")
         logger.info("concierge.cart_arrival.refused code=%s", error)
         if error == "destination_conflict":
-            here = _summary(ctx.channel_ref, ctx.conversation.session_key)
+            here = _summary(ctx.channel_ref, ctx.conversation.session_key, inline=True)
             there = _summary(str(offer.get("source_channel") or ""), str(offer.get("source_key") or ""))
             if here and there:
                 from django.utils import timezone
@@ -237,20 +232,24 @@ def _accept(conversation, binding, text: str, code: str, offer: dict, *, replace
         return TurnOutcome(reply_text=REFUSED.get(error, UNAVAILABLE), layer=metrics.LAYER_CONTEXT)
     _write_flags(conversation, **{FLAG: {"code": code, "offer": offer}, PENDING_FLAG: None})
     return TurnOutcome(
-        reply_text=arrival_text(result, cart_text=tools.render_result("view_cart", tools.view_cart(ctx))),
+        reply_text=arrival_text(
+            result,
+            cart_text=tools.render_result("view_cart", tools.view_cart(ctx)),
+            headline=REPLACED if replace_existing else ARRIVED,
+        ),
         layer=metrics.LAYER_CONTEXT,
         tool_events=[{"name": "receive_site_cart", "ok": True, "replayed": bool(result.get("replayed"))}],
     )
 
 
-def arrival_text(result: dict, *, cart_text: str = "") -> str:
+def arrival_text(result: dict, *, cart_text: str = "", headline: str = ARRIVED) -> str:
     """A frase de chegada, as diferenças uma por linha, e a sacola como está."""
     from shopman.storefront.presentation.cart import transfer_difference_lines
 
     if result.get("replayed"):
         return "\n".join(part for part in (ARRIVED_AGAIN, cart_text) if part)
     differences = transfer_difference_lines(result.get("differences") or ())
-    parts = [ARRIVED]
+    parts = [headline]
     if differences:
         parts.append("\n".join([CHANGED, *(f"• {line}" for line in differences)]))
     if cart_text:

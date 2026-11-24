@@ -916,8 +916,8 @@ def _continue_in_conversation(request: HttpRequest, channel_ref: str, *, is_empt
 
 
 #: Como a loja e a Nice nomeiam o que não viajou na passagem da sacola (OC-16, #3517).
-_FULFILLMENT_NAMES = {"delivery": "A entrega", "pickup": "A retirada"}
-_PAYMENT_NAMES = {"pix": "Pix", "card": "cartão", "cash": "dinheiro", "external": "pagamento externo"}
+_FULFILLMENT_NAMES = {"delivery": "Entrega", "pickup": "Retirada"}
+_PAYMENT_NAMES = {"pix": "Pix", "card": "Cartão", "cash": "Dinheiro", "external": "Pagamento externo"}
 _ADDRESS_FIELDS = frozenset(
     {"delivery_address", "delivery_address_structured", "saved_address_id", "address_label"}
 )
@@ -937,26 +937,26 @@ def transfer_difference_lines(differences) -> list[str]:
         kind = diff.get("kind")
         name = str(diff.get("name") or diff.get("sku") or "Um item")
         if kind == "price_changed":
-            lines.append(f"{name}: o preço aqui é {_plain_money(diff.get('to_q'))} (era {_plain_money(diff.get('from_q'))}).")
+            lines.append(f"{name}: agora {_plain_money(diff.get('to_q'))} (era {_plain_money(diff.get('from_q'))}).")
         elif kind == "qty_reduced":
-            lines.append(f"{name}: temos {diff.get('to_qty')} agora, em vez de {diff.get('from_qty')}.")
+            lines.append(f"{name}: só temos {diff.get('to_qty')} (eram {diff.get('from_qty')}).")
         elif kind == "unavailable":
-            lines.append(f"{name}: indisponível aqui, ficou fora da sacola.")
+            lines.append(f"{name}: indisponível, ficou de fora.")
         elif kind == "fulfillment_not_available":
-            label = _FULFILLMENT_NAMES.get(str(diff.get("fulfillment_type") or ""), "A forma de receber escolhida")
-            lines.append(f"{label} não está disponível aqui. Escolha como receber ao finalizar.")
+            label = _FULFILLMENT_NAMES.get(str(diff.get("fulfillment_type") or ""), "A forma de receber")
+            lines.append(f"{label} indisponível aqui: escolha outra ao finalizar.")
         elif kind == "payment_not_available":
-            method = _PAYMENT_NAMES.get(str(diff.get("method") or ""), "a forma escolhida")
-            lines.append(f"O pagamento por {method} não está disponível aqui. Escolha outra forma ao finalizar.")
+            method = _PAYMENT_NAMES.get(str(diff.get("method") or ""), "A forma de pagamento")
+            lines.append(f"{method} indisponível aqui: escolha outra forma ao finalizar.")
         elif kind == "coupon_not_applied":
             code = str(diff.get("code") or "")
             lines.append(f"O cupom {code} não vale aqui." if code else "O cupom não vale aqui.")
         elif kind == "details_not_carried":
             fields = set(diff.get("fields") or ())
             if fields & _ADDRESS_FIELDS:
-                lines.append("O endereço de entrega não veio junto. Informe ao finalizar.")
+                lines.append("Endereço de entrega: informe ao finalizar.")
             if fields & _GIFT_FIELDS:
-                lines.append("Os dados do presente não vieram junto. Informe ao finalizar.")
+                lines.append("Dados do presente: informe ao finalizar.")
         else:
             lines.append("Um item chegou diferente. Confira a sacola.")
     return lines
@@ -966,7 +966,7 @@ def transfer_total_line(source_total_q, dest_total_q) -> str:
     """A soma dos itens depois da passagem, com a de antes quando mudou; vazio quando igual."""
     if source_total_q is None or dest_total_q is None or int(source_total_q) == int(dest_total_q):
         return ""
-    return f"Soma dos itens agora: {_plain_money(dest_total_q)} (era {_plain_money(source_total_q)})."
+    return f"Soma dos itens: {_plain_money(dest_total_q)} (era {_plain_money(source_total_q)})."
 
 
 def _plain_money(value_q) -> str:
@@ -1011,12 +1011,8 @@ def _transfer_conflict(request: HttpRequest, data) -> CartTransferConflictProjec
     where = offered.channel_name
     return CartTransferConflictProjection(
         channel=offered.channel_ref,
-        title="Qual sacola você quer usar aqui?",
-        message=_glued(
-            f"Aqui já existe uma sacola, com {here} ({_money(data.subtotal_q)}). "
-            f"A do {where} tem {there} ({_money(offered.subtotal_q)}). "
-            f"Se trouxer a do {where}, a daqui é descartada. Se ficar com a daqui, a do {where} continua lá."
-        ),
+        title="Qual sacola você quer usar?",
+        message=_glued(f"Aqui: {here} ({_money(data.subtotal_q)}). No {where}: {there} ({_money(offered.subtotal_q)})."),
         replace=Action(
             ref="replace_cart",
             kind="mutation",
