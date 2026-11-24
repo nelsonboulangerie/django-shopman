@@ -4297,9 +4297,11 @@ _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
 _PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded", "account_debt_reduced"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
-#: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
+#: acrescenta itens e altera o pedido (data, item, endereço, OC-11) pelo MESMO
+#: serviço (``order_edit``), e a equipe lê no histórico.
 _EDIT_SOURCE_LABELS = {
     "concierge:add": "Itens acrescentados pela Concierge a pedido do cliente",
+    "concierge:amend": "Pedido alterado pela Concierge a pedido do cliente",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
@@ -4559,7 +4561,7 @@ def _event_detail(payload: dict) -> str:
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
         return f"{moved}: {payload['reason']}" if payload.get("reason") else moved
-    if payload.get("source") in {"pos:edit", "concierge:add"} and payload.get("customer_note"):
+    if payload.get("source") in {"pos:edit", *_EDIT_SOURCE_LABELS} and payload.get("customer_note"):
         # Edição da encomenda: a MESMA frase que o cliente recebeu — o que
         # mudou, o total novo e o destino da diferença.
         return str(payload["customer_note"])

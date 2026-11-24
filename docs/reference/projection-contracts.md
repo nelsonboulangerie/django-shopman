@@ -50,12 +50,17 @@ resolvidas pelo backend. Rotas e ownership:
 O Histórico (`shopman/backstage/projections/order_history.py`,
 `GET /api/v1/backstage/orders/history/`) conta o período pelo dia em que o pedido
 **fechou** (`Coalesce(completed_at, cancelled_at, returned_at, updated_at)`). O B.I.
-conta a venda pelo dia em que o pedido foi **feito** (`created_at`). Uma encomenda
-feita num dia e retirada no outro cai em dias diferentes nas duas leituras.
+conta a venda pelo **dia do pedido**: o dia combinado (`data.delivery_date`), e sem ele
+o dia em que o pedido foi feito (`order_helpers.agreed_day`; dono, 23/11/2026, #3427).
+A encomenda feita na quinta para sábado é venda de sábado, o dia em que a fornada a
+atende. O troco do balcão (`bi_change`) segue pelo dia em que o pedido foi feito, que
+é quando o dinheiro entrou. A margem da fornada não depende de data de pedido: parte
+das baixas dos lotes dela.
 
 Por isso o link "Abrir os N pedidos" do B.I. (`overShortOrdersHref`) manda
 `basis=ordered` na URL do Gestor, que vira `date_basis=ordered` no endpoint: o
-Histórico filtra por `created_at` e abre os mesmos N que o B.I. contou. Sem o
+Histórico filtra pela mesma régua (`order_helpers.in_agreed_days`) e abre os mesmos N
+que o B.I. contou. Sem o
 parâmetro (`date_basis=closed`, o padrão), vale o eixo do fechamento. Tirar o
 recorte do produto tira o eixo junto. Trava:
 `test_ordered_basis_counts_by_the_day_the_order_was_made` e

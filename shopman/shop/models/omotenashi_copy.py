@@ -70,8 +70,10 @@ class OmotenashiCopy(models.Model):
 
 # ── Cache invalidation ─────────────────────────────────────────────────
 #
-# The resolver caches DB rows in-process. We invalidate on every write so
-# admin edits take effect immediately — no need to restart the process.
+# Cada processo guarda as linhas num memo local, conferido contra uma versão no
+# cache compartilhado. Toda gravação troca a versão (depois do commit), e assim
+# a edição feita no Admin (``web-operator``) chega à loja (``web-storefront``)
+# no request seguinte, sem deploy.
 
 
 @receiver(post_save, sender=OmotenashiCopy)

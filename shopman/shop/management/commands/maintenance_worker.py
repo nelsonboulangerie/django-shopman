@@ -130,6 +130,9 @@ MAINTENANCE_COMMANDS = (
     "refresh_catalog_structure",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
+    # Experimento de versão vencido (R4, OC-20): o GET já serve o padrão a todos;
+    # aqui o operador fica sabendo. O debounce do alerta segura a repetição.
+    "alert_expired_experiments",
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
     # off por default e o comando continua servindo de reconciler/canary explícito.
     "process_marketing_outbox",

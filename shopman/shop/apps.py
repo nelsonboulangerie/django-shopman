@@ -114,6 +114,16 @@ class ShopmanConfig(AppConfig):
             weak=False,
         )
 
+        # Experimento de versão (R4, OC-20): a aderência nasce no login, que é
+        # comando, e nunca no GET do shell (a leitura não grava a sessão).
+        from shopman.shop.services import experience
+
+        user_logged_in.connect(
+            experience.on_user_logged_in,
+            dispatch_uid="shop.experience.remember_on_login",
+            weak=False,
+        )
+
     def _connect_unhandled_exception_alert(self):
         """Exceção não tratada vira alerta operacional.
 

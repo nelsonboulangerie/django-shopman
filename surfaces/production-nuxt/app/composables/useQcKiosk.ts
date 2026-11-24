@@ -99,6 +99,9 @@ export function useQcKiosk(initialDate = "") {
     yieldDeviationConfirmed = false,
     yieldDeviationReason = "",
     overrideProof = "",
+    // A confirmação do lote curto (decisão 1 do dono, 23/11/2026): a prova que a
+    // recusa de encomenda devolveu, na MESMA tentativa (mesma chave).
+    shortLotProof = "",
   ) =>
     post(`finish:${pk}`, (idempotencyKey, metadata) =>
       finishProductionWorkOrder(pk, {
@@ -114,6 +117,7 @@ export function useQcKiosk(initialDate = "") {
         idempotency_key: idempotencyKey,
         ...(force ? { reason: reason.trim() } : {}),
         ...(force && overrideProof ? { override_proof: overrideProof } : {}),
+        ...(shortLotProof ? { short_lot_proof: shortLotProof } : {}),
       }),
     );
 

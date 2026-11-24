@@ -25,6 +25,7 @@ from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests.danfe_fixtures import xml_for_key
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 
 def _brasilia(hour, minute, *, day=30, month=9):
@@ -50,7 +51,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult

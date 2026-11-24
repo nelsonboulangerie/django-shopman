@@ -68,9 +68,9 @@ def customer_pricing_hints(request) -> tuple[str, str]:
 #
 # Uma pergunta só, e ela decide tudo o que as telas mostram: **este aparelho é conhecido?**
 #
-# ⚠️ Não é a `audience` do `AccessLink`. Ela existe no model e ninguém a aplica
-# (`exchange_token` nunca passa `required_audience`), então usá-la como cerca seria confiar
-# num campo que ninguém lê.
+# ⚠️ Não é a `audience` do `AccessLink`. A troca aplica a audiência só para decidir se o
+# link abre sessão NESTA porta (`access.STORE_ENTRY_AUDIENCES`, OC-09); todas as
+# audiências da loja abrem a mesma sessão, então ela não diz quanto sabemos da pessoa.
 
 #: O cookie de confiança deste navegador já provou identidade por OTP algum dia
 #: (`DeviceTrustService`). Sabemos que é a pessoa: nada é reduzido.

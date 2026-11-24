@@ -1664,6 +1664,7 @@
         "handler"
       ],
       "domains": [
+        "fiscalman",
         "orderman"
       ],
       "ports": [],
@@ -1706,6 +1707,7 @@
         "handler"
       ],
       "domains": [
+        "fiscalman",
         "orderman"
       ],
       "ports": [],
@@ -5543,6 +5545,48 @@
       ]
     },
     {
+      "id": "shop.services-auth-number-ownership",
+      "question": "O número de telefone ainda prova esta conta, e o que acontece quando ele muda de dono?",
+      "owner": "identity.auth.number.ownership",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.auth:number_proof_expired",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/auth.py",
+          "symbols": [
+            "NUMBER_PROOF_MAX_AGE_DAYS",
+            "number_proof_expired",
+            "release_number_not_me",
+            "release_reassigned_number",
+            "on_number_left"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "guestman"
+      ],
+      "ports": [],
+      "events": [
+        "contact_reassigned"
+      ],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/storefront/tests/security/test_number_changes_owner.py::test_prova_do_numero_vence_em_12_meses",
+        "shopman/storefront/tests/security/test_number_changes_owner.py::test_codigo_no_numero_renova_a_prova"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.auth:number_proof_expired"
+      ]
+    },
+    {
       "id": "shop.services-auth-login-session",
       "question": "Como um dispositivo confiável inicia a sessão autenticada do cliente?",
       "owner": "identity.auth.login.session",
@@ -7151,6 +7195,55 @@
       "out_of_extraction": false,
       "authoritative_symbols": [
         "shopman.shop.services.customer_contact:request_contact"
+      ]
+    },
+    {
+      "id": "identity.phone-confirmation",
+      "question": "O telefone que a equipe acabou de gravar já pediu ao titular que confirme que o número é dele?",
+      "owner": "identity.phone-confirmation",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.phone_confirmation:request_on_commit",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/phone_confirmation.py",
+          "symbols": [
+            "EVENT",
+            "METADATA_KEY",
+            "STATE_SENT",
+            "STATE_AWAITING_TEMPLATE",
+            "STATE_NOT_SENT",
+            "_PHONE_TYPES",
+            "template_ready",
+            "_unverified_contact",
+            "request_on_commit",
+            "_request_quietly",
+            "request",
+            "_record",
+            "logger"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "guestman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [
+        "SHOPMAN_MANYCHAT"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_telefone_do_balcao_confirmado.py::test_pdv_gravando_telefone_com_modelo_aprovado_pede_a_confirmacao_no_whatsapp"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.phone_confirmation:request_on_commit"
       ]
     },
     {
@@ -12595,7 +12688,11 @@
             "_eta_clock",
             "_qualify_template",
             "_CUSTOMER_NOTICE_TEMPLATES",
-            "_shop_name"
+            "_shop_name",
+            "_CONVERSATION_BACKENDS",
+            "ORDER_NOTICE_NOTE",
+            "_note_in_conversation",
+            "_sent_as_approved_template"
           ]
         }
       ],
@@ -12603,26 +12700,25 @@
         "service"
       ],
       "domains": [
-        "doorman",
         "guestman",
         "orderman",
         "payman"
       ],
-      "ports": [
-        "shopman.doorman.conf:get_adapter",
-        "shopman.doorman.protocols.identity"
-      ],
+      "ports": [],
       "events": [],
       "directives": [],
       "config_surface": [
         "DEBUG",
         "SHOPMAN_FOCUS_NFE",
-        "SHOPMAN_STOREFRONT_BASE_URL"
+        "SHOPMAN_MANYCHAT",
+        "SHOPMAN_STOREFRONT_BASE_URL",
+        "SHOPMAN_WHATSAPP"
       ],
       "tests": [
         "shopman/shop/tests/test_notification_relay_contact.py::test_ifood_relay_does_not_notify_and_consults_no_backend",
         "shopman/shop/tests/test_notification_relay_contact.py::test_order_without_any_phone_keeps_skipping",
-        "shopman/shop/tests/test_notification_relay_contact.py::test_own_channel_with_a_real_phone_still_notifies"
+        "shopman/shop/tests/test_notification_relay_contact.py::test_own_channel_with_a_real_phone_still_notifies",
+        "shopman/shop/tests/test_notification_na_conversa.py::test_x15_aviso_entregue_pelo_whatsapp_grava_a_nota_na_conversa"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -13811,8 +13907,10 @@
             "refund_route",
             "customer_note",
             "money_for_customer",
+            "product_lines",
             "SOURCE",
             "CONCIERGE_SOURCE",
+            "CONCIERGE_AMEND_SOURCE",
             "_ID_PREFIXES",
             "EVENT_TYPE",
             "CUSTOMER_NOTICE_TEMPLATE",
@@ -16753,8 +16851,12 @@
             "assign_phone_handle",
             "finalize_phone_handle",
             "assign_customer",
+            "release_customer",
+            "assign_experience",
             "assign_handle",
-            "abandon_session"
+            "abandon_session",
+            "OpenSessionElsewhere",
+            "open_sessions_for_customer"
           ]
         }
       ],
@@ -20358,6 +20460,110 @@
       "config_surface": [],
       "tests": [
         "shopman/shop/tests/test_cupom_que_nao_vence.py::test_a_troca_do_cupom_fixo_devolve_a_linha_ao_preco_de_lista_e_tira_o_registro_deslocado"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "shop.policies-experience-decision",
+      "question": "Quais parâmetros constituem um experimento de experiência válido (variantes, coortes, dono, hipótese e prazo)?",
+      "owner": "experience.rule-policy",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.policies.experience:ExperienceRule",
+      "authoritative_symbols": [
+        "shopman.shop.policies.experience:ExperienceRule"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/policies/experience.py",
+          "symbols": [
+            "COHORTS",
+            "EXPERIENCE_RULE_PATH",
+            "ExperienceRule",
+            "ExperienceRuleError",
+            "KNOWN",
+            "MAX_LIFETIME_DAYS",
+            "REQUIRED",
+            "_SLUG",
+            "_today",
+            "parse_remove_after"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "outro"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/shop/tests/test_experience.py::test_remove_after_is_at_most_90_days_ahead",
+        "shopman/shop/tests/test_experience.py::test_validate_params_refuses"
+      ],
+      "test_gap_reason": null,
+      "policy": true,
+      "out_of_extraction": false
+    },
+    {
+      "id": "shop.services-experience",
+      "question": "Qual versão de uma superfície esta requisição vê, e por quê (kill switch, prazo, ambiente, aderência, coorte, padrão)?",
+      "owner": "experience.assignment",
+      "responsibility": "decisão",
+      "public_entrypoint": "shopman.shop.services.experience:resolve",
+      "authoritative_symbols": [
+        "shopman.shop.services.experience:resolve"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/experience.py",
+          "symbols": [
+            "Assignment",
+            "REASON_DEFAULT",
+            "REASON_ENVIRONMENT",
+            "REASON_EXPIRED",
+            "REASON_INTERNAL",
+            "REASON_PILOT",
+            "REASON_SESSION",
+            "SESSION_KEY",
+            "_active_experiments",
+            "_cohort_lookup",
+            "_decide",
+            "_environment_allows",
+            "_expired",
+            "alert_expired_experiments",
+            "exposure",
+            "has_non_default",
+            "on_user_logged_in",
+            "operator_customer_refs",
+            "order_mark",
+            "remember",
+            "resolve"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [
+        "SHOPMAN_ENVIRONMENT"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_experience.py::test_cohorts_see_the_candidate_and_everyone_else_the_default",
+        "shopman/shop/tests/test_experience.py::test_environment_outside_the_list_resolves_default",
+        "shopman/shop/tests/test_experience.py::test_expired_rule_resolves_default_and_alerts_the_operator",
+        "shopman/shop/tests/test_experience.py::test_generation_bump_discards_stickiness_and_reassigns",
+        "shopman/shop/tests/test_experience.py::test_kill_switch_wins_over_cohort",
+        "shopman/shop/tests/test_experience.py::test_reload_never_alternates_even_if_the_cohort_changes_mid_session",
+        "shopman/shop/tests/test_experience.py::test_resolve_only_reads_the_session"
       ],
       "test_gap_reason": null,
       "policy": false,

@@ -6,32 +6,53 @@ import pytest
 from django.utils import timezone
 from shopman.doorman.models import AccessLink, VerificationCode
 from shopman.doorman.models.verification_code import generate_raw_code
-from shopman.guestman.models import Customer
+from shopman.guestman.models import ContactPoint, Customer
 
 TEST_API_KEY = "test-auth-api-key-2026"
+
+
+def proven(customer: Customer) -> Customer:
+    """O cliente que já provou o telefone e o e-mail (entrou por código antes).
+
+    Contato só gravado, sem prova, não abre a conta (D4, OC-08): os fixtures que
+    representam "o dono desta conta entrando" nascem com a prova, e o caso do
+    contato digitado no balcão é testado à parte, com nome próprio.
+    """
+    methods = {
+        ContactPoint.Type.PHONE: ContactPoint.VerificationMethod.OTP_SMS,
+        ContactPoint.Type.WHATSAPP: ContactPoint.VerificationMethod.OTP_WHATSAPP,
+        ContactPoint.Type.EMAIL: ContactPoint.VerificationMethod.OTP_EMAIL,
+    }
+    for contact in customer.contact_points.all():
+        contact.mark_verified(methods[contact.type])
+    return customer
 
 
 @pytest.fixture
 def customer(db):
     """Create a test customer."""
-    return Customer.objects.create(
-        ref="TEST-001",
-        first_name="Test",
-        last_name="Customer",
-        phone="5541999999999",
-        email="test@example.com",
+    return proven(
+        Customer.objects.create(
+            ref="TEST-001",
+            first_name="Test",
+            last_name="Customer",
+            phone="5541999999999",
+            email="test@example.com",
+        )
     )
 
 
 @pytest.fixture
 def other_customer(db):
     """Create another test customer."""
-    return Customer.objects.create(
-        ref="TEST-002",
-        first_name="Other",
-        last_name="Customer",
-        phone="5541888888888",
-        email="other@example.com",
+    return proven(
+        Customer.objects.create(
+            ref="TEST-002",
+            first_name="Other",
+            last_name="Customer",
+            phone="5541888888888",
+            email="other@example.com",
+        )
     )
 
 
