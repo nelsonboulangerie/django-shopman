@@ -2137,6 +2137,27 @@ def _sentence(text) -> str:
     return text if text[-1] in ".!?…:" else text + "."
 
 
+#: O código Pix sai SOZINHO na mensagem seguinte (``extra_replies``), para o cliente
+#: copiar no WhatsApp sem ruído; esta é a linha que avisa, no pedido e na consulta.
+PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
+
+
+def copy_texts(result: dict) -> list[str]:
+    """O que as ações de copiar da consulta copiam (o copia-e-cola do Pix), um por mensagem.
+
+    A conversa não tem botão de copiar: o texto da ação ``copy`` vai em mensagem própria,
+    e a linha de ``render_result`` só avisa. Nunca o ``href``: link com o rótulo
+    "Copiar código Pix" é rótulo que mente (X3).
+    """
+    texts: list[str] = []
+    for order in result.get("orders", []) if result.get("ok") else []:
+        for action in order.get("actions", []):
+            value = str(action.get("value") or "").strip()
+            if action.get("enabled") and action.get("kind") == "copy" and value and value not in texts:
+                texts.append(value)
+    return texts
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre nunca entra na resposta."""
     if not result.get("ok"):
@@ -2201,7 +2222,10 @@ def render_result(name: str, result: dict) -> str:
         if payment.get("pending_setup"):
             text += " O pagamento ainda não está disponível; consulte o mesmo pedido para acompanhar."
         elif payment.get("pix_code_prepared_separately"):
-            text += " O pagamento está pendente; o código Pix é apresentado em um bloco separado."
+            text += f" {PIX_CODE_FOLLOWS}"
+        elif payment.get("checkout_url"):
+            # Cartão: o link do gateway já no pedido, com o mesmo rótulo da consulta.
+            text += f"\nPagar com cartão: {payment['checkout_url']}"
         text += f"\nAcompanhar: {result['tracking_url']}"
         return text
     if name == "order_status":
@@ -2218,7 +2242,12 @@ def render_result(name: str, result: dict) -> str:
                 # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
                 rows.append(f"Já te mandei o código Pix por aqui {order['pix_sent_at']}.")
             for action in order.get("actions", []):
-                if action.get("enabled"):
+                if action.get("enabled") and action.get("kind") == "copy":
+                    # O que se copia vai sozinho na mensagem seguinte (``copy_texts``); sem
+                    # o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
+                    if str(action.get("value") or "").strip() and action.get("ref") == "copy_pix":
+                        rows.append(PIX_CODE_FOLLOWS)
+                elif action.get("enabled"):
                     href = action.get("href") or order["tracking_url"]
                     if href.startswith("/") and not href.startswith("//"):
                         href = _storefront_base_url() + href
