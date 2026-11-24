@@ -43,7 +43,7 @@ from django.utils import timezone
 from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
-from shopman.shop.models import Conversation
+from shopman.shop.models import Conversation, ConversationBinding
 
 logger = logging.getLogger(__name__)
 
@@ -2161,6 +2161,87 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
         ctx.conversation.refresh_from_db()
         logger.exception("concierge.send_web_link failed")
         return _error("access_unavailable", "Não consegui preparar o acesso. Sua sacola foi preservada; podemos continuar aqui.")
+
+
+def receive_site_cart(ctx: ToolContext, offer_data) -> dict:
+    """A sacola que a cliente mandou da loja chega a esta conversa (OC-16, C02).
+
+    Quem decide tudo é ``session_transfer.accept``: a sacola com dono só vem para o
+    dono; a anônima só para quem tem vínculo ``verified_customer``, e passa a ser
+    dele no aceite; a revisão da loja mudou ⇒ ``source_changed``; esta conversa já
+    tem sacola com itens ⇒ ``destination_conflict``, nunca mescla. O mesmo aceite
+    outra vez devolve o mesmo recibo (X4). Aqui só se prende a sacola que chegou à
+    conversa, como ``_ensure_session`` prende a que nasce nela.
+    """
+    from shopman.shop.services import session_transfer, sessions
+    from shopman.storefront.concierge import service
+
+    try:
+        carried = session_transfer.TransferOffer.from_metadata(offer_data)
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    if carried.dest_channel != ctx.channel_ref:
+        return _error("invalid_offer", session_transfer.REFUSAL_MESSAGES["invalid_offer"])
+    binding = getattr(ctx.conversation, "_binding", None)
+    verified = bool(
+        binding is not None
+        and binding.identity_assurance == ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+    )
+    if not (getattr(ctx.conversation, "_cart_authority", False) or getattr(ctx.conversation, "_commercial_authority", False)):
+        # Sem autoridade de sacola neste turno (número não verificado, conexão só leitura):
+        # a sacola fica onde está, e a conversa diz isso em vez de calar o turno.
+        return _error("not_authorized", session_transfer.REFUSAL_MESSAGES["not_authorized"])
+    try:
+        with transaction.atomic():
+            current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
+            _assert_authority(ctx, for_mutation=CART_LEVEL)
+            receipt = session_transfer.accept(
+                carried,
+                dest_context=session_transfer.TransferDestination(
+                    customer_ref=current.customer_ref,
+                    verified_customer=verified,
+                    session_key=current.session_key,
+                    origin_channel=_transport_origin(ctx),
+                ),
+                actor="concierge",
+            )
+            key = receipt.dest_session_key
+            if current.session_key != key:
+                customer = {
+                    k: v
+                    for k, v in {"name": current.customer_name, "phone": current.phone, "ref": current.customer_ref}.items()
+                    if v
+                }
+                session = _open_cart(ctx, key)
+                ops = [{"op": "set_data", "path": "concierge", "value": {"conversation_id": current.pk}}]
+                if session is not None and customer:
+                    merged = {**((session.data or {}).get("customer") or {}), **customer}
+                    ops.append({"op": "set_data", "path": "customer", "value": merged})
+                if session is not None:
+                    sessions.modify_session(session_key=key, channel_ref=ctx.channel_ref, ops=ops)
+                    if current.phone:
+                        sessions.assign_phone_handle(session_key=key, channel_ref=ctx.channel_ref, phone=current.phone)
+                current.session_key = key
+                current.save(update_fields=["session_key", "updated_at"])
+                ctx.conversation.session_key = key
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    except service.TurnRevoked:
+        raise
+    return {
+        "ok": True,
+        "replayed": receipt.replayed,
+        "differences": list(receipt.differences),
+        "source_total_q": receipt.source_total_q,
+        "dest_total_q": receipt.dest_total_q,
+        "resource_ref": receipt.offer_id,
+    }
+
+
+def _open_cart(ctx: ToolContext, session_key: str):
+    from shopman.shop.services import cart as cart_service
+
+    return cart_service.get_open_session(session_key=session_key, channel_ref=ctx.channel_ref)
 
 
 def _auth_customer_info(ctx: ToolContext):

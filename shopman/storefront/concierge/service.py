@@ -102,6 +102,18 @@ def is_enabled() -> bool:
     return not disabled_reason()
 
 
+def transfer_bridge_channel() -> str:
+    """O canal da Nice quando a ponte de sacola com ela está ligada; vazio quando não.
+
+    A ponte é a Concierge atendendo e a chave ``CONCIERGE_TRANSFER_ENABLED`` ligada
+    (OC-18 a liga). É a única pergunta que a loja faz antes de oferecer "Continuar
+    pelo WhatsApp" ou "Trazer para cá" (X1): desligada, a ação não aparece.
+    """
+    if not is_enabled() or config().get("transfer_enabled") is not True:
+        return ""
+    return str(config().get("channel_ref") or "")
+
+
 # ── Copy ──────────────────────────────────────────────────────────────
 
 
@@ -1020,6 +1032,13 @@ FRAMEWORK_HANDOFF_REASONS = {
 }
 
 
+def _cart_arrival(conversation, binding, turn_text: str):
+    """A resposta da casa quando a mensagem traz a sacola da loja (OC-16); ``None`` se não traz."""
+    from . import cart_arrival
+
+    return cart_arrival.receive(conversation, binding, turn_text)
+
+
 @_observed("turn")
 def _framework_turn(conversation, inbound):
     """O turno pelo motor do framework (N9b), ou ``None``: só com UMA entrada e a chave da classe.
@@ -1132,6 +1151,10 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                 reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
             )
             result.fallback = "turn_limit"
+        elif (arrival := _cart_arrival(conversation, binding, turn_text)) is not None:
+            # A sacola da loja pelo código NB de "Continuar pelo WhatsApp" (OC-16): o
+            # aceite é do serviço de transferência, e a frase é da casa, sem modelo.
+            outcome = arrival
         else:
             # N9b: o turno pelo motor do framework, só onde a loja ligou a classe e a casa tem a
             # frase de hoje (``turn_framework``). Com as chaves desligadas, nada muda. Feito pelo

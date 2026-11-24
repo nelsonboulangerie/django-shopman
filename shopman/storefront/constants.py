@@ -40,3 +40,9 @@ STOREFRONT_CHANNEL_REF: str = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 
 # Override via SHOPMAN_POS_CHANNEL_REF in your Django settings.
 POS_CHANNEL_REF: str = settings.SHOPMAN_POS_CHANNEL_REF
+
+
+#: A oferta de sacola de outro canal que esbarrou numa sacola com itens neste
+#: navegador (``destination_conflict``), guardada na sessão até a cliente escolher
+#: "substituir ou manter" (OC-16, #3517). É ``TransferOffer.as_metadata()``.
+PENDING_CART_TRANSFER_SESSION_KEY = "cart_transfer_pending"

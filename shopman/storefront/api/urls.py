@@ -52,6 +52,7 @@ from .availability import (
     StockAlertManagementView,
     StockAlertSubscribeView,
 )
+from .cart_transfer import CartBringView, CartContinueInConversationView, CartTransferChoiceView
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .continuum import CatalogStructureSnapshotView
 from .conversation import OrderConversationView
@@ -175,6 +176,14 @@ urlpatterns = [
     path("cart/lines/<str:line_id>/", CartLineQtyView.as_view(), name="api-cart-line-qty"),
     path("cart/lines/<str:line_id>/notes/", CartLineNotesView.as_view(), name="api-cart-line-notes"),
     path("cart/coupon/", CartCouponView.as_view(), name="api-cart-coupon"),
+    # A sacola entre a loja e a conversa com a Nice (OC-16)
+    path(
+        "cart/continue-in-conversation/",
+        CartContinueInConversationView.as_view(),
+        name="api-cart-continue-in-conversation",
+    ),
+    path("cart/bring/", CartBringView.as_view(), name="api-cart-bring"),
+    path("cart/transfer-choice/", CartTransferChoiceView.as_view(), name="api-cart-transfer-choice"),
     # Checkout
     path("checkout/", views.CheckoutView.as_view(), name="api-checkout"),
     path("checkout/recover/", views.CheckoutRecoverView.as_view(), name="api-checkout-recover"),

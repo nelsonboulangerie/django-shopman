@@ -112,6 +112,58 @@ def _access_deep_link(code: str, number: str) -> str:
     return f"https://wa.me/{number}?text={query}"
 
 
+#: Onde a oferta da sacola da loja para a conversa viaja no estado do código ``NB-``
+#: (OC-16). Chave própria, e não ``cart_transfer``: se a mensagem cair por engano no
+#: fluxo de login, o access link ganha a chave e a troca do link a ignora, porque a
+#: oferta é para a conversa, nunca para o navegador.
+CONVERSATION_TRANSFER_STATE_KEY = "conversation_cart_transfer"
+
+#: A mensagem pronta de "Continuar pelo WhatsApp". Não contém "quero entrar no site"
+#: nem ``#menu``: essas são as palavras do fluxo de login no ManyChat, e esta mensagem
+#: é para a Nice. O trecho ``CONVERSATION_TRANSFER_MARKER`` é como a Nice reconhece a
+#: mensagem mesmo depois de o código vencer.
+CONVERSATION_TRANSFER_MARKER = "sacola que montei no site"
+_CONVERSATION_MESSAGE = "Olá! Quero continuar por aqui a sacola que montei no site (ref. {code})"
+
+
+def has_store_number() -> bool:
+    """A loja tem para onde mandar a mensagem pronta. Só lê; não grita como ``_wa_number``."""
+    if re.sub(r"\D", "", str(_config().get("number") or "")):
+        return True
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.objects.first()
+    except Exception:  # silêncio-deliberado: sem Shop legível, a ação não se oferece (X1)
+        logger.debug("wa_access.has_store_number_degraded", exc_info=True)
+        return False
+    return bool(shop and re.sub(r"\D", "", str(getattr(shop, "phone", "") or "")))
+
+
+def start_conversation_transfer(offer_metadata: dict) -> dict:
+    """Guarda a oferta da sacola da loja para a conversa sob um código ``NB-`` (OC-16).
+
+    O mesmo mecanismo do login por WhatsApp: código de uso único, TTL curto, nenhum
+    dado pessoal, e o código não autentica ninguém. Quem aceita é a Nice, quando a
+    mensagem chega pelo número que ENVIA, com vínculo ``verified_customer``
+    (``session_transfer.accept``). Oferecer não toca a sacola da loja.
+    """
+    from shopman.doorman.services.link_state import store_state
+
+    number = _wa_number()
+    if not number:
+        raise WhatsAppVerifyUnavailable("WhatsApp da loja sem número configurado")
+    code = store_state({CONVERSATION_TRANSFER_STATE_KEY: dict(offer_metadata)})
+    message = _CONVERSATION_MESSAGE.format(code=code)
+    logger.info("wa_access.conversation_transfer_offered")
+    return {
+        "code": code,
+        "message": message,
+        "deep_link": f"https://wa.me/{number}?text={urllib.parse.quote(message)}",
+        "wa_number": number,
+    }
+
+
 def start_access_link(
     *, cart_session_key: str = "", next_path: str = "", origin: str = "", origin_label: str = "",
     from_phone: bool = True,

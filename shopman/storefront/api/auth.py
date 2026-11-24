@@ -410,6 +410,10 @@ def _adopt_carried_cart(request, metadata, customer) -> dict | None:
         return {"status": "refused", "code": refused.code}
     if carried is None:
         return None
+    if carried.dest_channel != STOREFRONT_CHANNEL_REF:
+        # Uma oferta para a conversa (ou outro canal) nunca vira sacola deste navegador.
+        logger.warning("access_link_cart_transfer_wrong_destination")
+        return {"status": "refused", "code": "invalid_offer"}
     destination = session_transfer.TransferDestination(
         customer_ref=str(getattr(customer, "ref", "") or ""),
         identity_strength=identity_strength(request),
@@ -420,7 +424,15 @@ def _adopt_carried_cart(request, metadata, customer) -> dict | None:
         receipt = session_transfer.accept(carried, dest_context=destination, actor="storefront")
     except session_transfer.TransferRefused as refused:
         logger.info("access_link_cart_transfer_refused code=%s same_channel=%s", refused.code, carried.same_channel)
-        return None if carried.same_channel else {"status": "refused", "code": refused.code}
+        if carried.same_channel:
+            return None
+        if refused.code == "destination_conflict":
+            # A pergunta "substituir ou manter" (#3517): a oferta fica na sessão do
+            # navegador até a escolha (``api/cart_transfer.CartTransferChoiceView``).
+            from shopman.storefront.constants import PENDING_CART_TRANSFER_SESSION_KEY
+
+            request.session[PENDING_CART_TRANSFER_SESSION_KEY] = carried.as_metadata()
+        return {"status": "refused", "code": refused.code}
     if destination.session_key and destination.session_key != receipt.dest_session_key:
         logger.info("access_link_cart_replaced_stale_local")
     request.session["cart_session_key"] = receipt.dest_session_key

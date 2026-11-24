@@ -201,6 +201,38 @@ class OpenElsewhereProjection:
 
 
 @dataclass(frozen=True)
+class CartTransferArrivalProjection:
+    """A sacola que chegou de outro canal com diferenças (OC-16, #3517).
+
+    Só existe quando o recibo da passagem tem diferenças: preço que mudou,
+    quantidade reduzida, item indisponível, recebimento, pagamento, cupom, endereço.
+    Cada uma numa frase, com a soma dos itens quando ela mudou. Sai enquanto a
+    sacola que chegou estiver aberta.
+    """
+
+    channel: str
+    title: str
+    lines: tuple[str, ...]
+    total_line: str
+
+
+@dataclass(frozen=True)
+class CartTransferConflictProjection:
+    """A pergunta "substituir ou manter" (OC-16, #3517).
+
+    A sacola de outro canal foi oferecida a este navegador, que já tem sacola com
+    itens. O serviço nunca mescla: ``replace`` traz a de lá e descarta a daqui;
+    ``keep`` fica com a daqui, e a de lá continua aberta no canal dela.
+    """
+
+    channel: str
+    title: str
+    message: str
+    replace: Action
+    keep: Action
+
+
+@dataclass(frozen=True)
 class CartProjection:
     """Full projection for the storefront cart."""
 
@@ -310,6 +342,14 @@ class CartProjection:
     # Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
     # sincronização. Vazio para visitante, para link encaminhado e sem outra sacola.
     open_elsewhere: tuple[OpenElsewhereProjection, ...] = ()
+    # "Continuar pelo WhatsApp" (OC-16, C02): a sacola passa para a conversa com a
+    # Nice pela mensagem pronta com código NB. Só existe quando a passagem é
+    # possível agora (X1): ponte ligada, número da loja e sacola com itens.
+    continue_in_conversation: Action | None = None
+    # A sacola chegou de outro canal com diferenças (OC-16, #3517).
+    transfer_arrival: CartTransferArrivalProjection | None = None
+    # A pergunta "substituir ou manter" depois de um ``destination_conflict``.
+    transfer_conflict: CartTransferConflictProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -375,6 +415,9 @@ def build_cart(
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         reservation_lapsed_display=_lapsed_display(lapsed_at),
         open_elsewhere=_open_elsewhere(request, channel_ref),
+        continue_in_conversation=_continue_in_conversation(request, channel_ref, is_empty=data.is_empty),
+        transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, channel_ref),
+        transfer_conflict=_transfer_conflict(request, data),
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -801,6 +844,7 @@ def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhe
     customer = get_authenticated_customer(request)
     if customer is None:
         return ()
+    bridge = _bridge_channel(channel_ref)
     return tuple(
         OpenElsewhereProjection(
             channel=entry.channel_ref,
@@ -809,16 +853,120 @@ def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhe
             items_phrase=cart_data.items_phrase(entry),
             subtotal_q=entry.subtotal_q,
             subtotal_display=_money(entry.subtotal_q),
-            bring=Action(
-                ref="bring_cart",
-                kind="mutation",
-                label="Trazer esta sacola para cá",
-                priority="secondary",
-                enabled=False,
-                reason="A passagem da sacola entre canais ainda não está ligada.",
-            ),
+            bring=_bring_action(entry.channel_ref, bridge=bridge),
         )
         for entry in cart_data.open_elsewhere(customer.ref, channel_ref)
+    )
+
+
+def _bridge_channel(channel_ref: str) -> str:
+    """O canal da Nice quando a ponte de sacola está ligada e não é este canal; vazio se não."""
+    from shopman.storefront.concierge.service import transfer_bridge_channel
+
+    bridge = transfer_bridge_channel()
+    return bridge if bridge and bridge != channel_ref else ""
+
+
+def _bring_action(source_channel: str, *, bridge: str) -> Action:
+    """"Trazer para cá": ligada só quando a passagem dessa sacola é possível agora (X1)."""
+    if source_channel and source_channel == bridge:
+        return Action(
+            ref="bring_cart",
+            kind="mutation",
+            label="Trazer para cá",
+            priority="secondary",
+            href="/api/v1/cart/bring/",
+            method="POST",
+            payload_schema={"channel": source_channel},
+            idempotency="none",
+        )
+    return Action(
+        ref="bring_cart",
+        kind="mutation",
+        label="Trazer para cá",
+        priority="secondary",
+        enabled=False,
+        reason="A passagem da sacola entre canais ainda não está ligada.",
+    )
+
+
+def _continue_in_conversation(request: HttpRequest, channel_ref: str, *, is_empty: bool) -> Action | None:
+    """"Continuar pelo WhatsApp", só quando a passagem é possível agora (X1, OC-16)."""
+    from shopman.storefront.identity import knows_only_the_number
+
+    if is_empty or knows_only_the_number(request):
+        return None
+    if not _bridge_channel(channel_ref) or not cart_data.conversation_number_available():
+        return None
+    return Action(
+        ref="continue_in_conversation",
+        kind="mutation",
+        label="Continuar pelo WhatsApp",
+        priority="secondary",
+        href="/api/v1/cart/continue-in-conversation/",
+        method="POST",
+        idempotency="none",
+    )
+
+
+def _transfer_arrival(session_key: str | None, channel_ref: str) -> CartTransferArrivalProjection | None:
+    arrival = cart_data.transfer_arrival(session_key, channel_ref)
+    if arrival is None or not arrival.differences:
+        return None
+    return CartTransferArrivalProjection(
+        channel=arrival.source_channel,
+        title=f"Sua sacola veio do {arrival.source_channel_name} com mudanças",
+        lines=tuple(cart_data.transfer_difference_lines(arrival.differences)),
+        total_line=cart_data.transfer_total_line(arrival.source_total_q, arrival.dest_total_q),
+    )
+
+
+def _transfer_conflict(request: HttpRequest, data) -> CartTransferConflictProjection | None:
+    """A oferta guardada depois do ``destination_conflict``, enquanto ainda vale.
+
+    A oferta mora na sessão do navegador (``PENDING_CART_TRANSFER_SESSION_KEY``);
+    se a sacola de lá fechou ou mudou, ou se a daqui esvaziou, não há o que
+    perguntar (a resposta da API limpa a chave na próxima escolha).
+    """
+    from shopman.storefront.constants import PENDING_CART_TRANSFER_SESSION_KEY
+
+    pending = getattr(request, "session", {}).get(PENDING_CART_TRANSFER_SESSION_KEY)
+    if not isinstance(pending, dict) or data.is_empty:
+        return None
+    offered = cart_data.offered_cart(str(pending.get("source_channel") or ""), str(pending.get("source_key") or ""))
+    if offered is None or (pending.get("rev") is not None and offered.revision != pending.get("rev")):
+        return None
+    here = f"{data.count} {'item' if data.count == 1 else 'itens'}"
+    there = cart_data.items_phrase(offered)
+    where = offered.channel_name
+    return CartTransferConflictProjection(
+        channel=offered.channel_ref,
+        title="Qual sacola você quer usar aqui?",
+        message=(
+            f"Aqui já existe uma sacola, com {here} ({_money(data.subtotal_q)}). "
+            f"A do {where} tem {there} ({_money(offered.subtotal_q)}). "
+            f"Se trouxer a do {where}, a daqui é descartada. Se ficar com a daqui, a do {where} continua lá."
+        ),
+        replace=Action(
+            ref="replace_cart",
+            kind="mutation",
+            label=f"Trazer a do {where}",
+            priority="primary",
+            href="/api/v1/cart/transfer-choice/",
+            method="POST",
+            payload_schema={"choice": "replace"},
+            idempotency="none",
+        ),
+        keep=Action(
+            ref="keep_cart",
+            kind="mutation",
+            label="Ficar com a daqui",
+            priority="secondary",
+            href="/api/v1/cart/transfer-choice/",
+            method="POST",
+            payload_schema={"choice": "keep"},
+            idempotency="none",
+        ),
     )
 
 
@@ -901,6 +1049,8 @@ __all__ = [
     "DiscountLineProjection",
     "FreeDeliveryProgressProjection",
     "MinimumOrderProgressProjection",
+    "CartTransferArrivalProjection",
+    "CartTransferConflictProjection",
     "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
