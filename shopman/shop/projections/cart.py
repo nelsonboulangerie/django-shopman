@@ -329,9 +329,9 @@ def offered_cart(channel_ref: str, session_key: str):
 
 def conversation_number_available() -> bool:
     """A loja tem WhatsApp para a mensagem pronta de "Continuar pelo WhatsApp" (X1)."""
-    from shopman.shop.services.whatsapp_verify import has_store_number
+    from shopman.shop.services.session_transfer import conversation_number
 
-    return has_store_number()
+    return bool(conversation_number())
 
 
 @dataclass(frozen=True)

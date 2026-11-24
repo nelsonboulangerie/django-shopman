@@ -16856,7 +16856,9 @@
             "assign_handle",
             "abandon_session",
             "OpenSessionElsewhere",
-            "open_sessions_for_customer"
+            "open_sessions_for_customer",
+            "_summaries",
+            "open_session_summary"
           ]
         }
       ],
@@ -16915,7 +16917,12 @@
             "_rebuild",
             "accept",
             "carried_offer",
-            "offer"
+            "offer",
+            "CONVERSATION_STATE_KEY",
+            "CONVERSATION_MESSAGE_MARKER",
+            "_CONVERSATION_MESSAGE",
+            "conversation_number",
+            "offer_to_conversation"
           ]
         }
       ],
@@ -16923,12 +16930,15 @@
         "service"
       ],
       "domains": [
+        "doorman",
         "orderman"
       ],
       "ports": [],
       "events": [],
       "directives": [],
-      "config_surface": [],
+      "config_surface": [
+        "SHOPMAN_WA_VERIFY"
+      ],
       "tests": [
         "shopman/shop/tests/test_session_transfer.py::test_c01_cart_arrives_on_the_site_and_only_one_stays_alive",
         "shopman/shop/tests/test_session_transfer.py::test_x4_the_same_acceptance_again_returns_the_same_receipt",

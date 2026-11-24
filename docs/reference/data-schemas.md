@@ -187,6 +187,19 @@ fica na origem (`Session.data["transfer_receipt"]`). `cart_session_key` no mesmo
 coisa: a sacola da loja que segue dentro da própria loja (login pelo código NB, travessia do navegador
 embutido), adotada no mesmo canal pelo mesmo `accept`, sem recriar linha.
 
+O caminho inverso, da loja para a conversa (OC-16, C02), é a mesma oferta guardada no estado do
+código `NB-` (`doorman.link_state`, uso único, TTL do código) sob a chave
+`conversation_cart_transfer` (`session_transfer.offer_to_conversation`, chamado por "Continuar pelo
+WhatsApp", `POST /api/v1/cart/continue-in-conversation/`). A chave é outra de propósito: se a
+mensagem cair no fluxo de login, o access link a carrega e a troca do link a ignora. Quem aceita é a
+Nice (`concierge/cart_arrival.py` → `tools.receive_site_cart` → `session_transfer.accept`), e a
+conversa guarda a última oferta aceita em `Conversation.flags["cart_arrival"]` = `{code, offer}`
+(`offer` = a mesma `as_metadata()`): o mesmo código outra vez pede o aceite de novo e recebe o recibo
+gravado (X4), nunca uma segunda sacola. No navegador, a oferta que esbarrou numa sacola com itens
+(`destination_conflict`, na troca do link ou em "Trazer para cá") fica na sessão Django em
+`cart_transfer_pending` (a mesma `as_metadata()`) até a resposta "substituir ou manter"
+(`POST /api/v1/cart/transfer-choice/`), que a consome.
+
 Triagem (D32, 02/10/2026; `shopman/storefront/concierge/triage.py`): cada entrada do turno
 ganha `ConversationMessage.envelope["triage"]` e a conversa guarda a última em
 `Conversation.flags["triage"]`, ambos `{intent, urgency, destination, summary, source,

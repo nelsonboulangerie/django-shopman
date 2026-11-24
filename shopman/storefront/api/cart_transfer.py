@@ -31,7 +31,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.services import session_transfer
-from shopman.shop.services import whatsapp_verify as wa
 from shopman.storefront.constants import PENDING_CART_TRANSFER_SESSION_KEY, STOREFRONT_CHANNEL_REF
 from shopman.storefront.identity import get_authenticated_customer, identity_strength, knows_only_the_number
 
@@ -120,7 +119,7 @@ class CartContinueInConversationView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
         bridge = _bridge_channel()
-        if not bridge or knows_only_the_number(request) or not wa.has_store_number():
+        if not bridge or knows_only_the_number(request):
             return _refused("transfer_unavailable", http_status=status.HTTP_409_CONFLICT)
         customer = get_authenticated_customer(request)
         try:
@@ -131,12 +130,12 @@ class CartContinueInConversationView(APIView):
                 customer_ref=str(getattr(customer, "ref", "") or ""),
                 actor="storefront",
             )
-            started = wa.start_conversation_transfer(offer.as_metadata())
+            started = session_transfer.offer_to_conversation(offer)
         except session_transfer.TransferRefused as refused:
+            if refused.code == "conversation_unavailable":
+                return _refused("whatsapp_unavailable", http_status=status.HTTP_503_SERVICE_UNAVAILABLE)
             http_status = status.HTTP_403_FORBIDDEN if refused.code == "not_authorized" else status.HTTP_409_CONFLICT
             return _refused(refused.code, http_status=http_status)
-        except wa.WhatsAppVerifyUnavailable:
-            return _refused("whatsapp_unavailable", http_status=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response(started)
 
 

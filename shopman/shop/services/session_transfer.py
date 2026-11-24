@@ -64,6 +64,7 @@ REFUSAL_MESSAGES = {
     "source_changed": "A sacola mudou depois do convite. Peça o convite de novo.",
     "destination_conflict": "Já existe uma sacola com itens deste lado. Escolha qual manter.",
     "nothing_available": "Nenhum item da sacola está disponível deste lado.",
+    "conversation_unavailable": "O WhatsApp da loja está indisponível agora.",
 }
 
 
@@ -200,6 +201,50 @@ def offer(source_channel: str, source_key: str, dest_channel: str, *, customer_r
         actor=actor,
         at=timezone.now().isoformat(),
     )
+
+
+#: Onde a oferta da sacola da loja para a conversa viaja no estado do código ``NB-``
+#: (OC-16). Chave própria, e não ``cart_transfer``: se a mensagem cair por engano no
+#: fluxo de login, o access link ganha a chave e a troca do link a ignora.
+CONVERSATION_STATE_KEY = "conversation_cart_transfer"
+#: O trecho da mensagem pronta de "Continuar pelo WhatsApp" pelo qual a Nice a
+#: reconhece mesmo com o código vencido. A mensagem não contém "quero entrar no site"
+#: nem ``#menu``: essas são as palavras do fluxo de login no ManyChat.
+CONVERSATION_MESSAGE_MARKER = "sacola que montei no site"
+_CONVERSATION_MESSAGE = "Olá! Quero continuar por aqui a sacola que montei no site (ref. {code})"
+
+
+def conversation_number() -> str:
+    """O WhatsApp da loja para a mensagem pronta (o mesmo do login por WhatsApp); vazio sem ele."""
+    from shopman.shop.services.whatsapp_verify import _wa_number
+
+    return _wa_number()
+
+
+def offer_to_conversation(offer: TransferOffer) -> dict:
+    """Guarda a oferta da sacola da loja para a conversa sob um código ``NB-`` (OC-16, C02).
+
+    O mesmo mecanismo da entrada pelo WhatsApp (``doorman.link_state``): código de uso
+    único, prazo curto, nenhum dado pessoal, e o código não autentica ninguém. Quem
+    aceita é a Nice, quando a mensagem chega pelo número que a ENVIA, com vínculo
+    ``verified_customer`` (``accept``). Oferecer não toca a sacola.
+    """
+    import urllib.parse
+
+    from shopman.doorman.services.link_state import store_state
+
+    number = conversation_number()
+    if not number:
+        raise TransferRefused("conversation_unavailable")
+    code = store_state({CONVERSATION_STATE_KEY: offer.as_metadata()})
+    message = _CONVERSATION_MESSAGE.format(code=code)
+    logger.info("session_transfer.offered_to_conversation offer=%s", offer.offer_id)
+    return {
+        "code": code,
+        "message": message,
+        "deep_link": f"https://wa.me/{number}?text={urllib.parse.quote(message)}",
+        "wa_number": number,
+    }
 
 
 def carried_offer(metadata, *, channel_ref: str) -> TransferOffer | None:

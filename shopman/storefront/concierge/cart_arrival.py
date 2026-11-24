@@ -1,7 +1,7 @@
 """A sacola da loja chega à conversa pelo código ``NB-`` (OC-16, C02, J7).
 
 A loja oferece "Continuar pelo WhatsApp": guarda a oferta da sacola sob um código
-``NB-`` (``whatsapp_verify.start_conversation_transfer``) e abre o WhatsApp com a
+``NB-`` (``session_transfer.offer_to_conversation``) e abre o WhatsApp com a
 mensagem pronta. Quando a mensagem chega aqui, este módulo lê o código, consome o
 estado e pede o aceite ao serviço (``tools.receive_site_cart`` →
 ``session_transfer.accept``). A Nice diz numa frase que a sacola chegou e, uma por
@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 
 from shopman.shop.models import Conversation
-from shopman.shop.services.whatsapp_verify import CONVERSATION_TRANSFER_MARKER, CONVERSATION_TRANSFER_STATE_KEY
+from shopman.shop.services.session_transfer import CONVERSATION_MESSAGE_MARKER, CONVERSATION_STATE_KEY
 
 from . import metrics
 from .turn_outcome import TurnOutcome
@@ -109,11 +109,11 @@ def receive(conversation: Conversation, binding, text: str) -> TurnOutcome | Non
     from shopman.doorman.services.link_state import pop_state
 
     state = pop_state(code) or {}
-    offer = state.get(CONVERSATION_TRANSFER_STATE_KEY)
+    offer = state.get(CONVERSATION_STATE_KEY)
     if not isinstance(offer, dict):
         offer = _remembered(conversation, code)
     if not isinstance(offer, dict):
-        if _fold(CONVERSATION_TRANSFER_MARKER) in folded:
+        if _fold(CONVERSATION_MESSAGE_MARKER) in folded:
             return TurnOutcome(reply_text=EXPIRED, layer=metrics.LAYER_CONTEXT)
         return None
 
