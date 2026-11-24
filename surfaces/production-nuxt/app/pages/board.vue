@@ -4,7 +4,7 @@
 //   aba "Painel" da UI normal); botão de tela cheia para a TV;
 // · tipografia Oswald (grotesca condensada de painel), DUAS escalas apenas:
 //   display (título · relógio) e linha (todas as palhetas). As duas crescem
-//   com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha tem 44px
+//   com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha tem 48px
 //   e se lê a dois metros (WP-F04). A largura só limita quando os nomes do dia
 //   não caberiam; a hora guarda o "h" minúsculo ("6h42");
 // · NOME do produto nas palhetas (SKU saiu), na largura do maior nome do dia;
@@ -384,17 +384,18 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   --board-cyan: #6fa0c0;
 
   /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). A linha
-     cresce com a altura da tela até 44px (2,75rem, uma TV de 1080 lida a 2 m;
-     a Oswald é condensada e aguenta, decisão do dono). A largura entra só como limite: o total
-     de palhetas da linha (`--row-chars`, medido no dia) × 0,87em (célula + vão)
-     mais a moldura fixa (margens, bordas e vãos entre colunas, ~11rem) cabe em
-     100vw. */
+     cresce com a altura da tela até 48px (3rem, uma TV de 1080 lida a 2 m; a
+     Oswald é condensada e aguenta, escolha do dono). A largura entra só como
+     limite: o total de palhetas da linha (`--row-chars`, medido no dia) × 0,87em
+     (célula + vão), menos o vão depois da última palheta de cada uma das quatro
+     colunas (0,36em), mais a moldura fixa (margens, bordas e vãos entre
+     colunas, ~8,5rem) cabe em 100vw. */
   --row-chars: 42;
   --row-chars-narrow: 24;
   --scale-display: clamp(1.9rem, 4.4vh, 3rem);
   --scale-row: max(
     1rem,
-    min(2.75rem, 4.1vh, calc((100vw - 11rem) / (var(--row-chars) * 0.87)))
+    min(3rem, 4.5vh, calc((100vw - 8.5rem) / (var(--row-chars) * 0.87 - 0.36)))
   );
   --scale-label: clamp(0.85rem, 1.9vh, 1.4rem);
 
@@ -545,7 +546,9 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
 .board-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
-  gap: 1.25rem;
+  /* As palhetas em branco já separam as colunas; o vão fica curto para a letra
+     crescer. */
+  gap: 0.75rem;
   align-items: center;
   border: 1px solid var(--board-line);
   border-radius: 0.75rem;
