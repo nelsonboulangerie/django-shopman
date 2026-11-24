@@ -33,6 +33,8 @@ from ._effects import FAILED, PENDING, SHARED, commitment_id
 
 MOVE = "set_fulfillment"
 ACT = "choose_fulfillment"
+#: As condições do fechamento que este movimento cumpre: a resposta a elas é o ato dele (ADR-051).
+FULFILLS_CONDITIONS: tuple[str, ...] = ("fulfillment_date", "fulfillment_type", "delivery_time_slot", "delivery_window")
 EFFECT = True
 # Do mais completo ao mais genérico: o primeiro cujos espaços o recibo preenche todos.
 REPLY_TEMPLATES: tuple[tuple[str, tuple[str, ...]], ...] = (

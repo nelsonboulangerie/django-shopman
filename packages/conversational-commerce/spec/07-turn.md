@@ -18,7 +18,7 @@ Os dez passos da v2 5.3:
 |---|---|---|
 | 1 | Receber | `workflow.receive`: grava e deduplica **antes** de qualquer trabalho (duplicata devolve `duplicate` e nada mais acontece). Liga ao episódio pela correlação (F4); sem episódio aberto, abre um |
 | 2 | Portão sem modelo | Cortesia pura (regra local) não chama modelo. A regra local de risco já soma os atos dela |
-| 3 | Entender | A porta de modelo, se há orçamento e ela responde; senão, a regra local. Ato fora da lista fechada (`ACTS`) vira `unknown`, e a queda é registrada (K05). O risco local **soma** atos, e o modelo nunca os tira |
+| 3 | Entender | A porta de modelo, se há orçamento e ela responde, com o contexto da conversa (`reading_context`: a pergunta do turno anterior, os atos que a respondem pelo `FULFILLS_CONDITIONS` dos movimentos, as condições abertas e as últimas falas até o teto `reading_context_turns` do perfil; ADR-051); senão, a regra local. Ato fora da lista fechada (`ACTS`) vira `unknown`, e a queda é registrada (K05). O risco local **soma** atos, e o modelo nunca os tira |
 | 4 | Montar o snapshot | Necessidades (uma por ato), leituras alternativas, a pergunta no ar do turno anterior, fatos lidos ao vivo com teto de passos. Nada é gravado aqui: nenhuma transação fica aberta enquanto se chama modelo ou porta |
 | 5 | Decidir | Cada movimento registrado propõe para cada necessidade; `policy.decide` (F5) escolhe |
 | 6 | Autorizar e executar | Concessão, comando gravado com a intenção de execução, guarda e recibo (`08-effect.md`); os compromissos dos movimentos que prometem, com a equipe chamada (`09-commitments.md`); recusa refaz a decisão, ligada à anterior |

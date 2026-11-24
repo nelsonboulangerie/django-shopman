@@ -93,8 +93,11 @@ from conversational_commerce.ports import (
     HandoffRequest,
     InterpretRequest,
     ModelRequest,
+    PendingQuestion,
     PortError,
     PreparedMessage,
+    ReadingContext,
+    RecentTurn,
     StaffQuestion,
     Transition,
     TrustedContext,
@@ -118,7 +121,7 @@ from conversational_commerce.workflow import (
 from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
-from .moves import registry, templates, yes_no_conditions
+from .moves import expected_acts, registry, templates, yes_no_conditions
 from .state import NeedSpec, Subject, TurnState
 
 PRODUCER = Producer(name="conversational-commerce", version="engine-1")
@@ -193,6 +196,57 @@ def condition_in(dialogue: dict, cart_ref: str | None, epoch: int) -> dict | Non
             or value.get("epoch") != epoch:
         return None
     return dict(value)
+
+
+#: As últimas falas da conversa, por referência (ADR-051): ``[{"role": "customer", "content_ref": …},
+#: {"role": "agent", "template_ids": [...]}, …]``, da mais antiga à mais nova. O teto é do perfil
+#: (``limits.reading_context_turns``, em turnos: cada turno são duas falas); sem teto, a chave não existe.
+RECENT_KEY = "recent_turns"
+#: Os atos que respondem à oferta dos termos ("Posso registrar?"): o sim e o não.
+TERMS_OFFER_ACTS = ("affirm", "deny")
+
+
+def reading_context(dialogue: Mapping[str, Any], cart_ref: str | None, epoch: int,
+                    offer: Offer | None) -> ReadingContext:
+    """A conversa em volta da fala, para o leitor (ADR-051, peça 1): a pergunta no ar, os atos que respondem a
+    ela, o que o fechamento ainda pede e as últimas falas. Só códigos e referências (P17)."""
+    pending, expected, open_conditions = None, (), ()
+    condition = condition_in(dict(dialogue), cart_ref, epoch)
+    closing = dialogue.get(CLOSING_KEY) if closing_in(dict(dialogue), cart_ref, epoch) else None
+    if condition is not None and condition.get("code"):
+        code = str(condition["code"])
+        pending = PendingQuestion(kind="condition_yes_no", code=code, options=(str(condition.get("ref", "")),))
+        expected = expected_acts(code)
+    elif closing is not None and closing.get("code"):
+        code = str(closing["code"])
+        pending = PendingQuestion(kind="condition", code=code,
+                                  options=tuple(str(option) for option in closing.get("options") or ()))
+        expected = expected_acts(code)
+    elif offer is not None:
+        pending, expected = PendingQuestion(kind="terms_offer", code="terms"), TERMS_OFFER_ACTS
+    if closing is not None:
+        open_conditions = tuple(str(code) for code in closing.get("open") or ())
+    recent = tuple(RecentTurn(role=turn["role"], content_ref=turn.get("content_ref"),
+                              template_ids=tuple(turn.get("template_ids") or ()))
+                   for turn in dialogue.get(RECENT_KEY) or () if isinstance(turn, Mapping))
+    return ReadingContext(pending=pending, expected_acts=tuple(expected), open_conditions=open_conditions,
+                          recent=recent)
+
+
+def with_recent(dialogue: Mapping[str, Any], content_ref: str | None, reply: Composed | None,
+                turns: int) -> dict[str, Any]:
+    """O estado de diálogo com a fala do cliente e a resposta deste turno no fim das recentes (teto em turnos).
+    A resposta segurada não foi dita: entra só a fala do cliente."""
+    state = dict(dialogue)
+    if turns <= 0:
+        state.pop(RECENT_KEY, None)
+        return state
+    recent = [dict(turn) for turn in state.get(RECENT_KEY) or () if isinstance(turn, Mapping)]
+    recent.append({"role": "customer", "content_ref": content_ref})
+    if reply is not None and reply.text is not None:
+        recent.append({"role": "agent", "template_ids": list(reply.template_ids)})
+    state[RECENT_KEY] = recent[-2 * turns:]
+    return state
 
 
 def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
@@ -364,7 +418,7 @@ class Engine:
 
     # ── passos 2 e 3 ────────────────────────────────────────────────────────
     def _understand(self, ctx: TrustedContext, event: InteractionEvent, episode: Episode, trace_id: str,
-                    budget: TurnBudget, fallbacks: list[str]) -> Understanding:
+                    budget: TurnBudget, fallbacks: list[str], context: ReadingContext | None = None) -> Understanding:
         text = self.resolve_content(event.content_ref)
         local = self.rules.read(text)
         risk = self.rules.risk_acts(text)
@@ -380,7 +434,7 @@ class Engine:
                 request=ModelRequest(purpose="interpret", data_class="redacted",
                                      budget=Budget(max_calls=budget.max_model_calls - budget.model_calls,
                                                    max_spend=self.profile.limits.max_spend)),
-                event_id=event.id, content_ref=event.content_ref, allowed_acts=ACTS)
+                event_id=event.id, content_ref=event.content_ref, allowed_acts=ACTS, context=context)
             try:
                 understanding, consumption = self.ports.model.interpret(ctx, request)
             except PortError as error:
@@ -905,7 +959,8 @@ class Engine:
         if offer is not None and answer_refers_to(previous_dialogue, epoch) != offer.question_id:
             offer = None  # a pergunta dos termos não está no ar nesta época: nenhum "sim" se liga a ela
 
-        understanding = self._understand(ctx, event, episode, trace_id, budget, fallbacks)
+        context = reading_context(previous_dialogue, subject.cart_ref, epoch, offer)
+        understanding = self._understand(ctx, event, episode, trace_id, budget, fallbacks, context)
         needs, answered_question = self._needs(understanding, previous_dialogue, epoch)
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,
@@ -996,9 +1051,13 @@ class Engine:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
         if presented is not None and not held and state.missing_conditions():
             # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
-            dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch}}
             code = state.missing_conditions()[0]
             options = state.offered(subject.cart_ref, code)
+            # O código perguntado, o que ainda falta e as opções vão junto: o próximo leitor lê a fala na
+            # pergunta (ADR-051), não sozinha.
+            dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch, "code": code,
+                                                  "open": list(state.missing_conditions()),
+                                                  "options": [str(option) for option in options or ()]}}
             # A lista das opções ("outro") não é pergunta de sim ou não: o "sim" a ela não escolhe a primeira.
             asked_code = any(str(t).startswith(f"present_terms.needs_{code}")
                              and not str(t).endswith(("_declined", "_options")) for t in reply.template_ids)
@@ -1022,6 +1081,8 @@ class Engine:
                 epoch=epoch).to_json()
             terms_wait = Wait(condition="the customer confirms the terms", owner="customer",
                               deadline=terms.valid_until)
+        if self.profile.limits.reading_context_turns or RECENT_KEY in dialogue:
+            dialogue = with_recent(dialogue, event.content_ref, reply, self.profile.limits.reading_context_turns)
         after = None
         if dialogue != dict(snapshot.dialogue_state):
             # O estado de diálogo DEPOIS do turno: é o que o próximo turno lê (a pergunta no ar).

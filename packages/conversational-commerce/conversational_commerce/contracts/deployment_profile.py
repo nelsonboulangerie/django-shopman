@@ -94,6 +94,8 @@ class TurnLimits(Value):
     max_queries: NonNegativeInt
     max_model_calls: NonNegativeInt
     max_spend: Money
+    # Quantos turnos recentes vão ao leitor como contexto (ADR-051); zero, nenhum.
+    reading_context_turns: NonNegativeInt = 0
 
     def check(self) -> None:
         if self.max_spend.amount_minor < 0:

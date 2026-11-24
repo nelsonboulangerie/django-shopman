@@ -54,6 +54,47 @@ class Consumption(Value):
     cost: KnownCost | Unavailable
 
 
+#: O tipo da pergunta no ar (ADR-051): a condição que o fechamento pediu, a condição de sim ou não, a oferta dos
+#: termos ("Posso registrar?") ou o pedido de esclarecimento.
+PendingKind = Literal["condition", "condition_yes_no", "terms_offer", "clarification"]
+
+
+@dataclass(**CONTRACT_DATACLASS)
+class PendingQuestion(Value):
+    """A pergunta que a conversa deixou no ar, por código: nunca o texto dela, nunca dado pessoal (P17)."""
+
+    kind: PendingKind
+    # A condição perguntada (``delivery_time_slot``), ``terms`` na oferta, ou o ato do esclarecimento.
+    code: Identifier
+    # As opções oferecidas, pelas referências do fato (a porta as resolve, se puder).
+    options: tuple[Text, ...] = ()
+
+
+@dataclass(**CONTRACT_DATACLASS)
+class RecentTurn(Value):
+    """Uma fala recente da conversa, por referência: a do cliente pelo conteúdo, a do agente pelos moldes."""
+
+    role: Literal["customer", "agent"]
+    content_ref: Text | None = None
+    template_ids: tuple[Identifier, ...] = ()
+
+
+@dataclass(**CONTRACT_DATACLASS)
+class ReadingContext(Value):
+    """O que o leitor precisa saber da conversa para ler a fala nela, não sozinha (ADR-051, peça 1).
+
+    É dado, nunca instrução: não muda os atos permitidos, e a fala que muda de assunto continua legível.
+    """
+
+    pending: PendingQuestion | None = None
+    # Os atos que respondem à pergunta no ar (``engine.moves.expected_acts``).
+    expected_acts: tuple[Identifier, ...] = ()
+    # O que o fechamento ainda pede, em ordem, quando perguntou.
+    open_conditions: tuple[Identifier, ...] = ()
+    # As últimas falas, da mais antiga à mais nova (o teto é do perfil: ``reading_context_turns``).
+    recent: tuple[RecentTurn, ...] = ()
+
+
 @dataclass(**CONTRACT_DATACLASS)
 class InterpretRequest(Value):
     request: ModelRequest
@@ -61,6 +102,8 @@ class InterpretRequest(Value):
     content_ref: Text
     # Os atos que o leitor pode devolver; ato fora da lista vira ``unknown`` no núcleo.
     allowed_acts: tuple[Identifier, ...]
+    # A conversa em volta da fala (ADR-051). Sem ela, o leitor lê a frase sozinha.
+    context: ReadingContext | None = None
 
 
 @dataclass(**CONTRACT_DATACLASS)
