@@ -75,7 +75,7 @@ const shortLot = {
   idempotency_key: "k",
   possibilities: [
     { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "" },
-    { kind: "confirm", label: "Fechar com 4 e avisar o Gestor", enabled: true, proof: "assinada" },
+    { kind: "confirm", label: "Fechar com 4", enabled: true, proof: "assinada" },
   ],
   required: "6.000",
   requested: "4.000",
@@ -99,14 +99,17 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
     expect(modal.props("description")).toBe("Rendeu 4. Faltam 2 para as encomendas.");
     const order = wrapper.get("[data-short-lot-order]");
     expect(order.findAll("span").map((span) => span.text())).toEqual(["NB-261123-B57", "6 un."]);
-    expect(wrapper.get("[data-short-lot-outcome]").text()).toContain("Promessa em risco");
+    // Só o que é sempre verdade: a lista e o aviso ao Gestor saem de réguas diferentes
+    // até o WP-F08 (#3457), então a tela não promete o aviso.
+    expect(wrapper.get("[data-short-lot-outcome]").text()).toBe("O lote fecha com 4 e o pão entra no estoque.");
+    expect(wrapper.html()).not.toContain("Promessa em risco");
     expect(wrapper.html()).not.toContain("pelo menos");
   });
 
   it("fecha com a prova da recusa, e revisar devolve à contagem", async () => {
     const wrapper = mountShortLot(true);
 
-    expect(wrapper.get("[data-short-lot-confirm]").text()).toBe("Fechar com 4 e avisar o Gestor");
+    expect(wrapper.get("[data-short-lot-confirm]").text()).toBe("Fechar com 4");
     await wrapper.get("[data-short-lot-confirm]").trigger("click");
     await wrapper.get("[data-short-lot-review]").trigger("click");
 
@@ -121,7 +124,17 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
     });
 
     expect(wrapper.findComponent({ name: "NuxtModal" }).props("description")).toBe("Rendeu 1. Falta 1 para as encomendas.");
-    expect(wrapper.get("[data-short-lot-outcome]").text()).toContain('este pedido aparece em "Promessa em risco"');
+    expect(wrapper.get("[data-short-lot-outcome]").text()).toBe("O lote fecha com 1 e o pão entra no estoque.");
+  });
+
+  it("rendeu zero: não diz que o pão entra no estoque", () => {
+    const wrapper = mount(ShortageDialog, {
+      props: { shortage: { ...shortLot, requested: "0" } as ProductionShortageError, allowShortLot: true },
+      global: { stubs: nuxtUiStubs },
+    });
+
+    expect(wrapper.findComponent({ name: "NuxtModal" }).props("description")).toBe("Rendeu 0. Faltam 6 para as encomendas.");
+    expect(wrapper.get("[data-short-lot-outcome]").text()).toBe("O lote fecha sem nada para o estoque.");
   });
 
   it("a tela que não sabe fechar o lote curto não oferece o botão", () => {

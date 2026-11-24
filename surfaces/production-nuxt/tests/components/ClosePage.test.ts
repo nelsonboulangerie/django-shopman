@@ -407,7 +407,7 @@ describe("Finalização — o lote curto fecha com a verdade", () => {
     idempotency_key: "k",
     possibilities: [
       { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "" },
-      { kind: "confirm", label: "Fechar com 4 e avisar o Gestor", enabled: true, proof: "assinada" },
+      { kind: "confirm", label: "Fechar com 4", enabled: true, proof: "assinada" },
     ],
     required: "6",
     requested: "4",

@@ -2338,7 +2338,7 @@ def test_non_overridable_order_shortage_never_offers_force(
 # ── O lote curto fecha com a verdade (P0-2, WP-F06) ──────────────────────────
 #
 # Decisão 1 do dono (23/11/2026): rendeu menos que o encomendado, o lote fecha com o
-# que rendeu. A recusa oferece "Fechar com N e avisar o Gestor" a quem fecha o lote
+# que rendeu. A recusa oferece "Fechar com N" a quem fecha o lote
 # (sem pedir autorização de gerente), assinada com o impacto exato que a pessoa leu.
 
 
@@ -2388,7 +2388,7 @@ def test_finish_below_orders_offers_the_signed_short_lot_close(
     error = refused.json()["error"]
     assert error["orders"] == [{"ref": "ORD-1", "qty": "5"}, {"ref": "ORD-2", "qty": "7"}]
     confirm = next(item for item in error["possibilities"] if item["kind"] == "confirm")
-    assert confirm["label"] == "Fechar com 8 e avisar o Gestor"
+    assert confirm["label"] == "Fechar com 8"
     assert [item["kind"] for item in error["possibilities"]] == ["retry", "confirm"]
 
     other_number = client.post(

@@ -18,7 +18,7 @@ import { operatorUnlocksWithPin } from "../../../production-nuxt/tests/operator/
 // encomendado. A cliente encomenda 2 Ciabattas para amanhã pela loja e paga; o Caixa
 // aceita; a Cozinha confirma o previsto do lote de amanhã e o finaliza rendendo 1, com o
 // resto de perda e o motivo. A tela diz quanto rendeu, quanto falta e quais pedidos ficam
-// descobertos, e "Fechar com 1 e avisar o Gestor" fecha o lote com a verdade (decisão 1 do
+// descobertos, e "Fechar com 1" fecha o lote com a verdade (decisão 1 do
 // dono, 23/11/2026): o pão entra no estoque e o Gestor mostra o pedido em "Promessa em
 // risco", com o Resolver.
 //
@@ -108,11 +108,11 @@ test("J-P4: rendeu menos que o encomendado, o lote fecha com a verdade", async (
   // A pergunta do lote curto: quanto rendeu, quanto falta e quem fica descoberto.
   const shortLot = production.getByRole("dialog", { name: "Rendeu menos que o encomendado" });
   await expect(shortLot).toBeVisible();
-  await expect(shortLot.getByText(/^Rendeu 1\. Faltam? \d+ para as encomendas\.$/)).toBeVisible();
+  await expect(shortLot.getByText(/^Rendeu 1\. (Falta 1|Faltam \d+) para as encomendas\.$/)).toBeVisible();
   await expect(shortLot.getByText(ref)).toBeVisible();
   await expect(shortLot.getByText("pelo menos")).toHaveCount(0);
   await capture(production, testInfo, "producao-rendeu-menos");
-  await shortLot.getByRole("button", { name: "Fechar com 1 e avisar o Gestor" }).click();
+  await shortLot.getByRole("button", { name: "Fechar com 1", exact: true }).click();
   await expect(shortLot).toBeHidden();
   await expect(production.getByRole("button", { name: `Finalizar o lote de ${PRODUCT}` })).toHaveCount(0);
   await capture(production, testInfo, "producao-lote-fechado");

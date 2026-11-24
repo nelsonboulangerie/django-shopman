@@ -494,7 +494,9 @@ def _production_error_response(
                 {
                     "kind": "confirm",
                     "label": (
-                        f"Fechar com {requested} e avisar o Gestor"
+                        # Sem prometer o aviso ao Gestor enquanto a lista daqui e o aviso de lá
+                        # saem de réguas diferentes (#3457); o WP-F08 devolve a promessa exata.
+                        f"Fechar com {requested}"
                         if short_lot_action == "finish"
                         else f"Abrir com {requested}"
                     ),

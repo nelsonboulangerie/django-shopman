@@ -59,10 +59,12 @@ const shortLot = computed(() => {
     yielded: formatQty(value.requested),
     missing: `${missing === 1 ? "Falta" : "Faltam"} ${formatQty(String(missing))}`,
     orders,
+    // Só o que é sempre verdade: a lista daqui e o aviso ao Gestor ainda saem de
+    // réguas diferentes (#3457), então a tela não promete o aviso.
     outcome:
-      orders.length === 1
-        ? "este pedido aparece em \"Promessa em risco\" no Gestor"
-        : "estes pedidos aparecem em \"Promessa em risco\" no Gestor",
+      Number(value.requested) > 0
+        ? `O lote fecha com ${formatQty(value.requested)} e o pão entra no estoque.`
+        : "O lote fecha sem nada para o estoque.",
   };
 });
 const overrideReason = ref("");
@@ -157,8 +159,7 @@ function confirmOverride() {
             </li>
           </ul>
           <p class="text-sm" data-short-lot-outcome>
-            O lote fecha com {{ shortLot.yielded }}, o pão entra no estoque, e
-            {{ shortLot.outcome }}, para quem cuida das encomendas resolver.
+            {{ shortLot.outcome }}
           </p>
         </template>
         <template v-else-if="last && last.code === 'order_shortage'">
