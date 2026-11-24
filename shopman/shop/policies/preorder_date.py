@@ -128,7 +128,7 @@ def _lead_time_refusal(
 
         name = getattr(line, "name", None) or sku
         return (
-            f"{name} precisa de {hours}h de antecedência — "
-            f"primeira data possível: {earliest.strftime('%d/%m')}."
+            f"{name} precisa de {hours}h de antecedência. "
+            f"A primeira data possível é {earliest.strftime('%d/%m')}."
         )
     return None
