@@ -487,6 +487,12 @@ def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "
         slot = str(data.get("delivery_time_slot") or "")
         if slot:
             found.append({"code": "fulfillment_window", "value": slot})
+            said = data.get("delivery_time_said")
+            # A hora que o cliente disse, enquanto o dia e a janela forem os mesmos de quando ele a disse: o
+            # resumo a ecoa ("às 16h"). Janela trocada depois (pelo site, pelo PDV) deixa a hora para trás.
+            if isinstance(said, dict) and said.get("time") and said.get("slot") == slot \
+                    and said.get("date") == day.isoformat():
+                found.append({"code": "fulfillment_time", "value": str(said["time"])})
     if data.get("fulfillment_type") == "delivery":
         if cart_ref and data.get("delivery_address"):
             found.append({"code": "delivery_address", "value": address_ref(cart_ref, data)})

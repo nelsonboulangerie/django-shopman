@@ -1,0 +1,42 @@
+[depois] 375     home-anonima             h1=1 "Nelson Boulangerie, Padaria Artesanal" (sr-only)
+                                          alvos=43 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:1
+[depois] 375     home-anonima-carrossel   pontinhos=[{"w":40,"h":44},{"w":24,"h":44},{"w":24,"h":44},{"w":24,"h":44}] hero=["Boa noite.","Peça. Acompanhe. Aproveite.","Boa noite.","Feito à mão, todo dia"]
+[depois] 375     menu                     h1=1 "Cardápio" (sr-only)
+                                          alvos=143 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[depois] 375     produto                  h1=1 "Água Mineral Prata 310ml"
+                                          alvos=25 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[depois] 375     sacola                   h1=1 "Sua sacola"
+                                          alvos=20 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[depois] 375     entrar                   h1=1 "Entre pelo WhatsApp"
+                                          alvos=21 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:1
+[depois] 375     entrar-trocar-telefone   {"scrollY":18,"h1":"Entre pelo WhatsApp","h1Top":106,"headerBottom":106,"covered":false,"visibleBelowHeader":true}
+[depois] 375     home-logada              h1=1 "Nelson Boulangerie, Padaria Artesanal" (sr-only)
+                                          alvos=45 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+                                          cartao_recompra=1 slides_recompra_no_hero=0 hero=["Boa noite, João.","Peça. Acompanhe. Aproveite.","Boa noite, João.","Feito à mão, todo dia"]
+[depois] 375     conta                    h1=1 "Sua conta" (sr-only)
+                                          alvos=28 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+[depois] 375     pedido                   h1=1 "PedidoDLV-NARUA"
+                                          alvos=27 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+[depois] 375     finalizar                h1=1 "Finalize seu pedido"
+                                          alvos=14 abaixo_de_24=0 rolagem_lateral=0px axe=aria-hidden-focus:1,color-contrast:3,label-content-name-mismatch:2
+[depois] desktop home-anonima             h1=1 "Nelson Boulangerie, Padaria Artesanal" (sr-only)
+                                          alvos=43 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:1
+[depois] desktop home-anonima-carrossel   pontinhos=[{"w":40,"h":44},{"w":24,"h":44},{"w":24,"h":44},{"w":24,"h":44}] hero=["Boa noite.","Peça. Acompanhe. Aproveite.","Boa noite.","Feito à mão, todo dia"]
+[depois] desktop menu                     h1=1 "Cardápio" (sr-only)
+                                          alvos=141 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:11
+[depois] desktop produto                  h1=1 "Água Mineral Prata 310ml"
+                                          alvos=32 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:4
+[depois] desktop sacola                   h1=1 "Sua sacola"
+                                          alvos=18 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:2
+[depois] desktop entrar                   h1=1 "Entre pelo WhatsApp"
+                                          alvos=19 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:1
+[depois] desktop entrar-trocar-telefone   {"scrollY":34,"h1":"Entre pelo WhatsApp","h1Top":106,"headerBottom":106,"covered":false,"visibleBelowHeader":true}
+[depois] desktop home-logada              h1=1 "Nelson Boulangerie, Padaria Artesanal" (sr-only)
+                                          alvos=45 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+                                          cartao_recompra=1 slides_recompra_no_hero=0 hero=["Boa noite, João.","Peça. Acompanhe. Aproveite.","Boa noite, João.","Feito à mão, todo dia"]
+[depois] desktop conta                    h1=1 "Sua conta" (sr-only)
+                                          alvos=26 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+[depois] desktop pedido                   h1=1 "PedidoDLV-NARUA"
+                                          alvos=25 abaixo_de_24=0 rolagem_lateral=0px axe=color-contrast:3
+[depois] desktop finalizar                h1=1 "Finalize seu pedido"
+                                          alvos=13 abaixo_de_24=2 rolagem_lateral=0px axe=aria-required-children:1,color-contrast:3
