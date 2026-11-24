@@ -43,7 +43,7 @@ from django.utils import timezone
 from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
-from shopman.shop.models import Conversation
+from shopman.shop.models import Conversation, ConversationBinding
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,11 @@ MAX_MENU_ITEMS = 12
 MAX_PUBLIC_SEARCH_ITEMS = 3
 MAX_PUBLIC_SEARCH_ANSWERS = 2
 FULFILLMENT_TYPES = ("pickup", "delivery")
+#: O link que leva a sacola (OC-18, §4.4): ela vai junto quando a cliente abre o link; quem
+#: diz depois onde ela está é ``cart_moved_away``. Só o fato, sem a consequência (régua KISS
+#: do dono, a mesma do OC-16).
+CART_GOES_ALONG = "Sua sacola vai junto."
+
 WEB_DESTINATIONS = {
     "menu": "/menu",
     "checkout": "/finalizar",
@@ -2192,10 +2197,41 @@ def last_order(ctx: ToolContext) -> dict:
     }
 
 
+def _full_authority(ctx: ToolContext) -> bool:
+    """O turno tem a autoridade comercial completa? Pela mesma régua do guarda, nunca um atalho.
+
+    Só a falta da autoridade comercial vira ``False``; qualquer outra revogação do turno
+    (cerca, vínculo, prazo) sobe e o guarda recusa a ferramenta inteira.
+    """
+    from shopman.storefront.concierge import service
+
+    try:
+        _assert_authority(ctx, for_mutation=True)
+    except service.TurnRevoked as revoked:
+        if str(revoked) != "commercial_authority_missing":
+            raise
+        return False
+    return True
+
+
 def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = "") -> dict:
-    """Acesso ao alvo exato; navegar não implica transferir uma sacola."""
+    """Acesso ao alvo exato; navegar não implica transferir uma sacola.
+
+    Com a autoridade comercial completa, o link é um acesso à conta (como sempre). Só com a
+    autoridade de sacola (a entrada sem identificador de mensagem do ManyChat, ADR-050), a
+    Coordenação decidiu na #3529 que o convite com a sacola vale, em três condições:
+    (1) o link leva só itens e quantidades e a troca não abre sessão (``items_only`` e
+    ``cart_only``: nada de nome, endereço, telefone ou pagamento chega ao site antes da prova
+    lá); (2) é o mesmo ``AccessLink`` de uso único e prazo curto do convite de hoje; (3) sai
+    só como resposta deste turno, nesta conversa: o guarda (``_assert_authority``) prende a
+    cunhagem à cerca do turno e ao vínculo, e a ferramenta não aceita destinatário.
+    """
     if destination not in WEB_DESTINATIONS:
         return _error("invalid_input", "Escolha cardápio, conta, sacola ou pedido.")
+    full = _full_authority(ctx)
+    if not full and destination != "checkout":
+        # Só a sacola viaja com a autoridade de sacola; um acesso à conta, nunca.
+        return _error("authority_unavailable", "O atendimento automático está pausado. Suas escolhas foram preservadas.")
     path = WEB_DESTINATIONS[destination]
     if destination == "order":
         if not order_ref:
@@ -2214,7 +2250,7 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
     if info is None:
         return {"ok": True, "url": public_url, "logged_in": False, "cart_carried": False,
             "message": "Continue pelo site; confirme seu acesso para abrir dados pessoais."}
-    if destination == "checkout" and not (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False):
+    if destination == "checkout" and not _transfer_enabled():
         return _error("transfer_disabled", "Sua sacola está preservada aqui. A continuação desta sacola no site ainda não está disponível.")
     from shopman.shop.services import session_transfer
 
@@ -2226,7 +2262,7 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
         # do link (``session_transfer.accept``); até lá ela segue aberta aqui.
         with transaction.atomic():
             current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
-            _assert_authority(ctx)
+            _assert_authority(ctx, for_mutation=True if full else CART_LEVEL)
             metadata = {
                 "next": path,
                 "conversation_id": ctx.conversation.pk,
@@ -2236,14 +2272,16 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
             if destination == "checkout":
                 carried = session_transfer.offer(
                     ctx.channel_ref, current.session_key, _storefront_ref(),
-                    customer_ref=current.customer_ref, actor="concierge",
+                    customer_ref=current.customer_ref, actor="concierge", items_only=not full,
                 )
                 metadata[session_transfer.TRANSFER_METADATA_KEY] = carried.as_metadata()
+                if not full:
+                    metadata[session_transfer.CART_ONLY_METADATA_KEY] = True
             result = AccessLinkService.create_token(info, audience=AccessLink.Audience.WEB_GENERAL,
                 source=AccessLink.Source.API, metadata=metadata)
             if result is None or not result.success or not result.url:
                 raise ValueError("access_link_unavailable")
-        return {"ok": True, "url": result.url, "logged_in": True, "cart_carried": carried is not None,
+        return {"ok": True, "url": result.url, "logged_in": full, "cart_carried": carried is not None,
             "order_ref": order_ref, "resource_ref": carried.offer_id if carried else order_ref,
             "expires_at": str(getattr(result, "expires_at", "") or "")}
     except session_transfer.TransferRefused as refused:
@@ -2254,6 +2292,192 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
         ctx.conversation.refresh_from_db()
         logger.exception("concierge.send_web_link failed")
         return _error("access_unavailable", "Não consegui preparar o acesso. Sua sacola foi preservada; podemos continuar aqui.")
+
+
+def receive_site_cart(ctx: ToolContext, offer_data) -> dict:
+    """A sacola que a cliente mandou da loja chega a esta conversa (OC-16, C02).
+
+    Quem decide tudo é ``session_transfer.accept``: a sacola com dono só vem para o
+    dono; a anônima só para quem tem vínculo ``verified_customer``, e passa a ser
+    dele no aceite; a revisão da loja mudou ⇒ ``source_changed``; com sacola na
+    conversa, os itens entram nela (o mesmo item soma). O mesmo aceite outra vez
+    devolve o mesmo recibo (X4). Aqui só se prende à conversa a sacola nova, como
+    ``_ensure_session`` prende a que nasce nela.
+    """
+    from shopman.shop.services import session_transfer, sessions
+    from shopman.storefront.concierge import service
+
+    try:
+        carried = session_transfer.TransferOffer.from_metadata(offer_data)
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    if carried.dest_channel != ctx.channel_ref:
+        return _error("invalid_offer", session_transfer.REFUSAL_MESSAGES["invalid_offer"])
+    binding = getattr(ctx.conversation, "_binding", None)
+    verified = bool(
+        binding is not None
+        and binding.identity_assurance == ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+    )
+    if not (getattr(ctx.conversation, "_cart_authority", False) or getattr(ctx.conversation, "_commercial_authority", False)):
+        # Sem autoridade de sacola neste turno (número não verificado, conexão só leitura):
+        # a sacola fica onde está, e a conversa diz isso em vez de calar o turno.
+        return _error("not_authorized", session_transfer.REFUSAL_MESSAGES["not_authorized"])
+    try:
+        with transaction.atomic():
+            current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
+            _assert_authority(ctx, for_mutation=CART_LEVEL)
+            receipt = session_transfer.accept(
+                carried,
+                dest_context=session_transfer.TransferDestination(
+                    customer_ref=current.customer_ref,
+                    verified_customer=verified,
+                    session_key=current.session_key,
+                    origin_channel=_transport_origin(ctx),
+                ),
+                actor="concierge",
+            )
+            key = receipt.dest_session_key
+            if current.session_key != key:
+                customer = {
+                    k: v
+                    for k, v in {"name": current.customer_name, "phone": current.phone, "ref": current.customer_ref}.items()
+                    if v
+                }
+                session = _open_cart(ctx, key)
+                ops = [{"op": "set_data", "path": "concierge", "value": {"conversation_id": current.pk}}]
+                if session is not None and customer:
+                    merged = {**((session.data or {}).get("customer") or {}), **customer}
+                    ops.append({"op": "set_data", "path": "customer", "value": merged})
+                if session is not None:
+                    sessions.modify_session(session_key=key, channel_ref=ctx.channel_ref, ops=ops)
+                    if current.phone:
+                        sessions.assign_phone_handle(session_key=key, channel_ref=ctx.channel_ref, phone=current.phone)
+                current.session_key = key
+                current.save(update_fields=["session_key", "updated_at"])
+                ctx.conversation.session_key = key
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    except service.TurnRevoked:
+        raise
+    return {
+        "ok": True,
+        "replayed": receipt.replayed,
+        "differences": list(receipt.differences),
+        "source_total_q": receipt.source_total_q,
+        "dest_total_q": receipt.dest_total_q,
+        "resource_ref": receipt.offer_id,
+    }
+
+
+def _open_cart(ctx: ToolContext, session_key: str):
+    from shopman.shop.services import cart as cart_service
+
+    return cart_service.get_open_session(session_key=session_key, channel_ref=ctx.channel_ref)
+
+
+def public_site_url(destination: str = "menu") -> str:
+    """O endereço público do site, sem acesso nem sacola: o que se manda sem autoridade comercial."""
+    return f"{_storefront_base_url()}{WEB_DESTINATIONS[destination]}"
+
+
+def _transfer_enabled() -> bool:
+    return bool((getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False))
+
+
+def cart_moved_away(ctx: ToolContext) -> dict | None:
+    """A sacola desta conversa que foi para outro canal (OC-18, §4.4), ou ``None``.
+
+    Lê a sacola que a conversa ainda aponta: abandonada pelo aceite da passagem, com
+    ``Session.data["transferred_to"]``. Esquece a chave (como ``_open_session`` faria),
+    então a conversa diz onde a sacola está UMA vez. ``open`` diz se a sacola do outro
+    lado ainda está aberta; fechada (virou pedido, venceu), não há o que dizer dela.
+    """
+    from shopman.orderman.models import Session
+
+    from shopman.shop.projections.cart import offered_cart
+
+    key = ctx.conversation.session_key
+    if not key:
+        return None
+    source = Session.objects.filter(session_key=key, channel_ref=ctx.channel_ref).exclude(state="open").first()
+    moved = (source.data or {}).get("transferred_to") if source is not None else None
+    if not isinstance(moved, dict) or not moved.get("channel_ref"):
+        return None
+    Conversation.objects.filter(pk=ctx.conversation.pk, session_key=key).update(session_key="")
+    ctx.conversation.session_key = ""
+    channel = str(moved["channel_ref"])
+    there = offered_cart(channel, str(moved.get("session_key") or ""))
+    site = channel == _storefront_ref()
+    found = {"channel": channel, "site": site, "where": "no site" if site else f"no canal {channel}", "open": False}
+    if there is not None:
+        found.update(open=True, **cart_elsewhere_summary(there))
+    return found
+
+
+def cart_elsewhere_summary(entry) -> dict:
+    """Quanto há numa sacola de outro canal, como a Nice diz: ``{"items": "2 itens", "subtotal": "R$ 1,80"}``."""
+    from shopman.shop.projections.cart import items_phrase
+
+    return {"items": items_phrase(entry), "subtotal": _money(entry.subtotal_q)}
+
+
+def site_cart(ctx: ToolContext):
+    """A sacola aberta, com itens, que o cliente desta conversa tem no site; ``None`` se não tem.
+
+    Leitura pura (``open_elsewhere``, OC-17): o dono é o ``customer_ref`` da conversa,
+    nunca o telefone (X7).
+    """
+    from shopman.orderman.models import Session
+
+    from shopman.shop.projections.cart import offered_cart, open_elsewhere
+
+    ref = ctx.conversation.customer_ref
+    if not ref:
+        return None
+    site = _storefront_ref()
+    found = next((entry for entry in open_elsewhere(ref, ctx.channel_ref) if entry.channel_ref == site), None)
+    if found is not None:
+        return found
+    # A sacola que ESTA conversa mandou ao site só com itens (#3529) chega sem dono, então
+    # não aparece pelo cliente: a conversa a acha pelo ``transferred_to`` da sacola dela.
+    sent = (
+        Session.objects.filter(
+            channel_ref=ctx.channel_ref, data__concierge__conversation_id=ctx.conversation.pk,
+            data__transferred_to__channel_ref=site,
+        )
+        .exclude(state="open")
+        .order_by("-pk")
+        .values_list("data", flat=True)
+        .first()
+    )
+    moved = (sent or {}).get("transferred_to") if isinstance(sent, dict) else None
+    return offered_cart(site, str(moved.get("session_key") or "")) if isinstance(moved, dict) else None
+
+
+def bring_site_cart(ctx: ToolContext) -> dict:
+    """A oferta inversa (OC-18, §4.4): a sacola que a cliente tem aberta no site vem para a conversa.
+
+    O mesmo gesto do "Trazer para cá" da loja, do lado da Nice: oferta e aceite no
+    mesmo turno, pelo serviço de transferência (``receive_site_cart`` →
+    ``session_transfer.accept``), que decide dono, revisão, conflito e reserva. Só a
+    sacola com o MESMO dono da conversa (``open_elsewhere`` lê pelo ``customer_ref``,
+    nunca pelo telefone, X7).
+    """
+    from shopman.shop.services import session_transfer
+
+    if not _transfer_enabled():
+        return _error("transfer_disabled", "A passagem da sacola entre o site e a conversa não está disponível agora.")
+    entry = site_cart(ctx)
+    if entry is None:
+        return _error("no_cart", session_transfer.REFUSAL_MESSAGES["no_cart"])
+    try:
+        carried = session_transfer.offer(
+            entry.channel_ref, entry.session_key, ctx.channel_ref, customer_ref=ctx.conversation.customer_ref,
+            actor="concierge",
+        )
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    return receive_site_cart(ctx, carried.as_metadata())
 
 
 def _auth_customer_info(ctx: ToolContext):
@@ -2332,12 +2556,17 @@ PAYMENT_TOOLS = frozenset({"repay_order", "repeat_order"})
 #: Alterar o próprio pedido (OC-11): a autoridade de sacola, com a confirmação pelo código da
 #: prévia (ADR-050), como o pedido fechado na conversa.
 AMEND_TOOLS = frozenset({"amend_order"})
+#: O convite com a sacola (OC-18, decisão da Coordenação na #3529): vale com a autoridade de
+#: sacola, mas aí o link só leva itens e quantidades e não abre sessão no site; o resto do
+#: ``send_web_link`` (cardápio, conta, pedido: um acesso à conta) pede a autoridade completa,
+#: conferida dentro dele.
+INVITE_TOOLS = frozenset({"send_web_link"})
 
 
 def _authority_level(name: str):
     if name in READ_TOOLS:
         return False
-    return CART_LEVEL if name in CART_TOOLS | PAYMENT_TOOLS | AMEND_TOOLS else True
+    return CART_LEVEL if name in CART_TOOLS | PAYMENT_TOOLS | AMEND_TOOLS | INVITE_TOOLS else True
 
 
 def _guard(handler):
@@ -2741,6 +2970,9 @@ def _render_facts(name: str, result: dict) -> str:
         # O "pode fechar" vem de quem compõe o turno (``CONCIERGE_CART_NEXT``), como na sacola.
         return "\n".join(part for part in (result["lead"], render_result("view_cart", result["cart"])) if part)
     if name == "send_web_link":
+        if result.get("cart_carried"):
+            # A sacola só passa na troca do link (o aceite); até lá ela segue aqui (OC-18, §4.4).
+            return f"Continue no site: {result['url']}\n{CART_GOES_ALONG}"
         return f"Continue no site: {result['url']}"
     if name == "last_order":
         return "\n".join(f"{i['qty']} × {_display_name(i['name'])}" for i in result.get("items", [])) or "Sem pedido anterior."

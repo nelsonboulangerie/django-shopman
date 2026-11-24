@@ -247,6 +247,11 @@ export interface ProductDetailProjection {
   preorder_prep_minutes?: number | null;
   /** O preparo padrão da loja, para a tela dizer quanto vale o "em branco". */
   readonly preorder_prep_default_minutes?: number;
+  /** Quando o item está acabando (DEV-2026-077): a porcentagem PRÓPRIA do SKU
+   *  (`Product.metadata.running_low_percent`, 0 a 100); `null` = o padrão da loja. */
+  running_low_percent?: number | null;
+  /** O padrão da loja (`Shop.defaults.running_low.percent`), para a tela dizer quanto vale o "em branco". */
+  readonly running_low_default_percent?: number;
   /** Cadastro operacional: muda só pelo gesto Arquivar/Desarquivar. */
   readonly is_active: boolean;
   is_published: boolean;
@@ -374,6 +379,7 @@ export type ProductDetailPatch = Partial<
     | "fiscal_warnings"
     | "roles"
     | "preorder_prep_default_minutes"
+    | "running_low_default_percent"
     | "production"
     | "vocation_choices"
     | "gtin_rejected"

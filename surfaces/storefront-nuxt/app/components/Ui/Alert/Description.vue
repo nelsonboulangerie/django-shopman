@@ -1,6 +1,7 @@
 <template>
   <Primitive
     data-slot="alert-description"
+    data-decisive="alert"
     v-bind="forwarded"
     :class="styles({ class: normalizeClass(props.class) || undefined })"
   >

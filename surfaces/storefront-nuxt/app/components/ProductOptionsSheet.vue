@@ -131,7 +131,7 @@ async function submit () {
         </div>
       </fieldset>
 
-      <p v-if="optionError" role="alert" class="text-sm text-destructive" data-product-options-error>{{ optionError }}</p>
+      <p v-if="optionError" role="alert" class="text-sm text-destructive" data-product-options-error data-decisive="error">{{ optionError }}</p>
     </div>
 
     <template #footer>

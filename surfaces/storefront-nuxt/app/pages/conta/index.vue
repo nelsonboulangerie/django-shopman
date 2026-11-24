@@ -149,7 +149,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             :class="orderStatusAccentClass(order.status_tone)"
           >
             <div class="min-w-0">
-              <p class="flex items-center gap-2 font-semibold">
+              <p class="flex items-center gap-2 font-semibold" data-decisive="state">
                 <span class="size-2 shrink-0 rounded-full" :class="orderStatusDotClass(order.status_tone)" aria-hidden="true" />
                 {{ order.status_label }}
                 <span v-if="order.total_display" class="text-muted-foreground">· {{ order.total_display }}</span>

@@ -142,3 +142,46 @@ def test_accept_that_holds_the_source_first_wins_and_the_late_edit_finds_it_gone
     assert [line["sku"] for line in target.items] == [BREAD]
     assert _held(source.session_key) == 0
     assert _held(target.session_key) == _all_held() == Decimal(2)
+
+
+def test_merge_waits_for_an_edit_in_the_destination_and_loses_nothing(store, ana):  # noqa: F811
+    """A sacola que recebe os itens está sendo editada: a mescla espera a trava e soma por cima."""
+    source = _chat_cart(ana, (BREAD, 2))
+    _, browser_key = cart.add_item(session_key=None, channel_ref=WEB, origin_channel="web", sku=BREAD, qty=1,
+                                   unit_price_q=100, name="Pão")
+    browser = Session.objects.get(session_key=browser_key)
+    offer = transfer.offer(CHAT, source.session_key, WEB, customer_ref=ana.ref, actor="concierge")
+    editing, release = Event(), Event()
+
+    def edit():
+        with transaction.atomic():
+            Session.objects.select_for_update().get(pk=browser.pk)
+            cart.add_item(session_key=browser_key, channel_ref=WEB, origin_channel="web", sku=CAKE, qty=1,
+                          unit_price_q=500, name="Bolo")
+            editing.set()
+            assert release.wait(10)
+        return "edited"
+
+    editor = Worker(edit)
+    acceptor = Worker(lambda: transfer.accept(
+        offer, dest_context=TransferDestination(customer_ref=ana.ref, session_key=browser_key), actor="storefront",
+    ))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        edited = pool.submit(editor)
+        try:
+            assert editing.wait(10)
+            accepted = pool.submit(acceptor)
+            _assert_waiting(acceptor)
+        finally:
+            release.set()
+        assert edited.result(20) == "edited"
+        receipt = accepted.result(20)
+
+    assert isinstance(receipt, TransferReceipt), receipt
+    assert receipt.dest_session_key == browser_key and receipt.merged
+    target = Session.objects.get(session_key=browser_key)
+    assert sorted((line["sku"], Decimal(str(line["qty"]))) for line in target.items) == sorted([
+        (BREAD, Decimal(3)), (CAKE, Decimal(1)),
+    ])
+    assert _held(source.session_key) == 0
+    assert _held(browser_key) == _all_held() == Decimal(4)

@@ -42,21 +42,24 @@ const badge = computed(() => {
 </script>
 
 <template>
-  <article class="group/product-list relative flex min-w-0 items-stretch gap-3 py-3" data-product-list-item>
+  <!-- O texto tem piso de 10rem (ou a largura toda, se menor), que cresce com a fonte:
+       com a fonte do sistema a 200 % a foto ocupava a linha e espremia nome, preço e selos
+       até sumirem (X11, OC-30). Aí a foto desce para baixo do texto. -->
+  <article class="group/product-list relative flex min-w-0 flex-wrap items-stretch gap-3 py-3" data-product-list-item>
     <NuxtLink
       :to="`/produto/${encodeURIComponent(item.sku)}`"
       class="absolute inset-0 z-0 rounded-md"
       :aria-label="`Ver detalhes de ${item.name}`"
     />
 
-    <div class="min-w-0 flex-1 self-center">
+    <div class="min-w-[min(10rem,100%)] flex-1 basis-0 self-center">
       <h3 class="shop-item-title line-clamp-2">{{ item.name }}</h3>
       <p v-if="item.short_description" class="mt-2 line-clamp-2 shop-meta">
         {{ item.short_description }}
       </p>
       <div v-if="!pending && item.availability !== 'unavailable' && (badge || fomo.length)" class="mt-2 flex flex-wrap gap-2" data-product-badges>
-        <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type">{{ selo.label }}</UiBadge>
-        <UiBadge v-if="badge" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
+        <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
+        <UiBadge v-if="badge" :variant="badge.variant" class="font-normal" data-decisive="availability">{{ badge.label }}</UiBadge>
       </div>
       <DietaryWarningBadges v-if="!pending" :warnings="item.dietary_warnings" class="mt-2" />
       <p v-if="!pending && item.is_notifiable" class="mt-2 shop-meta text-muted-foreground" data-stock-notify-recurrence>
@@ -66,9 +69,9 @@ const badge = computed(() => {
         <UiSkeleton class="h-5 w-24" />
       </div>
       <p v-else class="mt-2 flex flex-wrap items-baseline gap-x-2">
-        <span v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta">antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span></span>
-        <span class="shop-price">{{ quotePriceDisplay(item.quote) }}</span>
-        <span v-for="adjustment in item.quote.adjustments" :key="adjustment.code" class="min-w-0 max-w-full truncate text-xs font-semibold text-primary" :title="adjustmentLabel(adjustment)" data-product-promotion>{{ adjustmentLabel(adjustment) }}</span>
+        <span v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta" data-decisive="price">antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span></span>
+        <span class="shop-price" data-decisive="price">{{ quotePriceDisplay(item.quote) }}</span>
+        <span v-for="adjustment in item.quote.adjustments" :key="adjustment.code" class="min-w-0 max-w-full text-sm font-semibold text-promotion" :title="adjustmentLabel(adjustment)" data-product-promotion data-decisive="price">{{ adjustmentLabel(adjustment) }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
         <span v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>{{ formatCount(currentQty, 'na sacola', 'na sacola') }}</span>
       </p>
@@ -112,7 +115,7 @@ const badge = computed(() => {
         class="absolute z-10 flex justify-center"
         :class="framed ? 'shop-photo-control-top-sm' : 'inset-x-0 top-3'"
       >
-        <UiBadge class="max-w-full border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
+        <UiBadge class="max-w-full border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm" data-decisive="availability">Indisponível</UiBadge>
       </div>
       <!-- Notificável: pill "Me avise"/"Anotado" ocupa TODA a largura da foto (centrado),
            no rodapé — sem extravasar. -->

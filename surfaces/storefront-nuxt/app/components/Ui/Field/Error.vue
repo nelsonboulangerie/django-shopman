@@ -4,6 +4,7 @@
     :as-child
     role="alert"
     data-slot="field-error"
+    data-decisive="error"
     :class="fieldErrorStyles({ class: normalizeClass(props.class) || undefined })"
   >
     <slot>

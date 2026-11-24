@@ -236,7 +236,7 @@ const managementHref = computed(() => managementUrl.value || (
 
   <!-- Logado: retorno do login retoma a prova; uso comum pede a declaração. -->
   <template v-else-if="isAuthenticated">
-    <p v-if="terminalError && !compact && !pill" class="shop-meta text-destructive" role="alert">
+    <p v-if="terminalError && !compact && !pill" class="shop-meta text-destructive" role="alert" data-decisive="error">
       {{ terminalError }}
     </p>
     <p v-else-if="hasMatchingIntent && submitting && !compact && !pill" class="shop-meta text-muted-foreground" role="status">
@@ -314,7 +314,7 @@ const managementHref = computed(() => managementUrl.value || (
         <UiCheckbox v-model="adultDeclared" aria-label="Confirmar maioridade" class="mt-0.5" />
         <span>Declaro ter 18 anos ou mais e quero receber estes avisos.</span>
       </label>
-      <p v-if="declarationError" class="shop-meta text-destructive" role="alert">{{ declarationError }}</p>
+      <p v-if="declarationError" class="shop-meta text-destructive" role="alert" data-decisive="error">{{ declarationError }}</p>
       <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
         {{ isAuthenticated ? 'Ativar aviso' : 'Continuar para entrar' }}
       </UiButton>
