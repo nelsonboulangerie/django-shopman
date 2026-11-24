@@ -74,6 +74,10 @@ NICE_TEMPLATE_COPY = {
     # "Combinado: entrega na Rua das Flores, 120." aprovado pelo dono em 23/11.
     "set_delivery_address.done": "CONCIERGE_ENGINE_ADDRESS_SET",
     "present_terms.needs_delivery_address": "CONCIERGE_CLOSE_ASK_ADDRESS",
+    # O quando (#3482), com as perguntas de hoje do fechamento e na mesma ordem: o dia e retirar ou entregar.
+    # O horário, com as opções do dia, está em ``PAYMENT_TEMPLATES`` (o espaço da casa troca de nome).
+    "present_terms.needs_fulfillment_date": "CONCIERGE_CLOSE_ASK_DATE",
+    "present_terms.needs_fulfillment_type": "CONCIERGE_CLOSE_ASK_FULFILLMENT",
     "present_terms.needs_delivery_address_details": "CONCIERGE_ENGINE_ADDRESS_DETAILS",
     "present_terms.needs_delivery_complement": "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT",
     # As recusas do endereço com as frases de hoje: fora da área (a frase do ``set_fulfillment`` e a
@@ -97,6 +101,9 @@ NICE_TEMPLATE_COPY = {
     # Aprovadas pelo dono em 23/11 ("Pronto, a sacola foi atualizada." e "Pedido {order} registrado.
     # Acompanhar: {track}"); a do recebimento derivada das aprovadas, acatada por ele.
     "change_cart.done_receipt": "CONCIERGE_ENGINE_CART_UPDATED_SHORT",
+    # A mudança com uma pergunta do fechamento no ar (#3488): decidida pela coordenação em 24/11 (a aprovada
+    # acima, com o total novo).
+    "change_cart.done_total": "CONCIERGE_ENGINE_CART_UPDATED_TOTAL",
     "set_fulfillment.updated": "CONCIERGE_ENGINE_FULFILLMENT_UPDATED",
     "commit_order.done_order": "CONCIERGE_ENGINE_ORDER_PLACED_SHORT",
     # As esperas (#3328), aprovadas em 23/11 ("decidido, pode reverter"): o efeito ainda em andamento (o pedido
@@ -115,6 +122,8 @@ NICE_TEMPLATE_COPY = {
 PAYMENT_TEMPLATES = (
     ("present_terms.needs_payment_method", "CONCIERGE_CLOSE_ASK_PAYMENT", "{options}", "{payment_method}"),
     ("set_payment.not_offered", "CONCIERGE_CLOSE_NO_CASH", "{options}", "{payment_method}"),
+    # O horário da retirada (#3482): a pergunta de hoje, com os horários do dia no lugar de ``{options}``.
+    ("present_terms.needs_delivery_time_slot", "CONCIERGE_CLOSE_ASK_SLOT", "{options}", "{delivery_time_slot}"),
 )
 
 #: Os moldes do pedido com a frase de hoje (prévia de 22/11, "Igual"; passo 4 do pedido pelo motor).
@@ -354,7 +363,41 @@ def nice_formatters(conversation=None) -> dict:
             "date": date_text,
             "mode": mode_text, "window": window_text, "time": time_text,
             "method": method_text, "payment_method": payment_options_text,
-            "delivery_address_details": address_words_text, **_address_formatters(conversation, partial)}
+            "delivery_address_details": address_words_text, "delivery_time_slot": pickup_slots_text(conversation),
+            **_address_formatters(conversation, partial)}
+
+
+def pickup_slots_text(conversation):
+    """Os horários de retirada do dia, como a pergunta de hoje os oferece: os da grade anotada do checkout que
+    a sacola ainda alcança, sem números ("9h às 12h ou 15h às 18h"; o "1" não se lê como a primeira opção).
+
+    Sem horário que sirva, levanta ``UnresolvedReference``: a mensagem segura e o caminho de hoje diz que não há
+    horário no dia. A lista já pronta (o fato do ensaio, de memória) se diz como veio.
+    """
+    def text(value) -> str:
+        from collections.abc import Mapping
+
+        from conversational_commerce.reply import UnresolvedReference
+        from shopman.orderman.models import Session
+
+        from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
+
+        if isinstance(value, (list, tuple)):
+            labels = [str(label) for label in value if label]
+        else:
+            day = str(value.get("date") or "") if isinstance(value, Mapping) else ""
+            if not day or conversation is None:
+                raise UnresolvedReference("horário sem dia")
+            session = Session.objects.filter(session_key=getattr(conversation, "session_key", "") or "").first()
+            skus = [str(item.get("sku")) for item in ((session.items if session is not None else None) or [])]
+            annotated = annotate_slots_for_checkout(skus, delivery_date=day, channel_ref=conversation.channel_ref)
+            labels = [str(slot.get("label")) for slot in annotated.get("pickup_slots", [])
+                      if slot.get("enabled") and slot.get("label")]
+        if not labels:
+            raise UnresolvedReference("nenhum horário no dia")
+        return labels[0] if len(labels) == 1 else f"{', '.join(labels[:-1])} ou {labels[-1]}"
+
+    return text
 
 
 def address_words_text(value) -> str:

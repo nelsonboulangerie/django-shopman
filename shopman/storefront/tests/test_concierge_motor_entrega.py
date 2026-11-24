@@ -59,7 +59,12 @@ def _ctx():
     return TrustedContext(tenant="t", environment="test", subject="conversation:1")
 
 
+#: O quando já dito: estes testes são do endereço (#3482 pôs o dia e o horário antes dele).
+WHEN = {"delivery_date": "2026-11-25"}
+
+
 def _missing(**data):
+    data = {**WHEN, **({"delivery_time_slot": "slot-15"} if data.get("fulfillment_type") == "pickup" else {}), **data}
     _session(**data)
     fact = ShopmanCommerceRead(channel_ref=CHANNEL, ownership=ConversationOwnership()).requirements(_ctx(), "sess-1")
     return list(fact.value["missing"]), fact.value

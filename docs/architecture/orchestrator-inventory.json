@@ -2113,7 +2113,8 @@
           "responsibility": "configuração",
           "symbols": [
             "FAQEntryAdmin",
-            "OriginFilter"
+            "OriginFilter",
+            "REPEATS_CONFIGURATION"
           ]
         }
       ]
@@ -3097,6 +3098,7 @@
             "DenyAll",
             "FACT_VALIDITY_SECONDS",
             "FORMAT",
+            "FULFILLMENT_CODES",
             "Ownership",
             "PORT",
             "PRODUCER_NAME",
@@ -3108,6 +3110,7 @@
             "_date_or_none",
             "_fulfillment",
             "_fulfillment_conditions",
+            "_fulfillment_requirements",
             "_text",
             "address_ref",
             "instant",
@@ -6732,7 +6735,10 @@
         {
           "responsibility": "configuração",
           "symbols": [
-            "FAQEntry"
+            "FAQEntry",
+            "OPERATIONAL_QUESTIONS",
+            "_OPERATIONAL_BY_NORMALIZED",
+            "normalized_question"
           ]
         }
       ]

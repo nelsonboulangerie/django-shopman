@@ -208,6 +208,17 @@ class FakeCommerceRead(FakeBase):
             raise PortError("object_forbidden", "carrinho inexistente ou de outro sujeito")
         methods = list(self.state.payment_methods)
         value: dict = {"missing": []}
+        if self.state.pickup_slots:
+            # O quando, na ordem do fechamento: o dia, retirar ou entregar, e o horário da retirada.
+            chosen = self.state.fulfillment.get(cart_ref, {})
+            if not chosen.get("date"):
+                value["missing"].append("fulfillment_date")
+            if chosen.get("mode") not in self.state.fulfillment_modes:
+                value["missing"].append("fulfillment_type")
+                value["fulfillment_type"] = list(self.state.fulfillment_modes)
+            if chosen.get("mode") == "pickup" and chosen.get("date") and not chosen.get("time"):
+                value["missing"].append("delivery_time_slot")
+                value["delivery_time_slot"] = list(self.state.pickup_slots)
         if self.state.fulfillment.get(cart_ref, {}).get("mode") == "delivery":
             # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
             address = self.state.address.get(cart_ref)

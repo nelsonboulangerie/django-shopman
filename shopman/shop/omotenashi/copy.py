@@ -413,6 +413,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # A mesma chamada quando a Concierge atende o WhatsApp da casa (OC-06): quem responde
+    # primeiro é a assistente virtual (R8), e a home não promete pessoa para pessoa.
+    "HOME_WHATSAPP_CTA_CONCIERGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Dúvidas? Ou algum pedido especial?",
+                message="Nossa assistente virtual responde e chama a equipe quando precisa. Se preferir falar com uma pessoa, é só pedir.",
+            ),
+        },
+    },
 
     # ── Tracking tail ─────────────────────────────────────────────
     "TRACKING_PAGE_META_DESCRIPTION": {
@@ -1563,6 +1573,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_ENGINE_CART_UPDATED_SHORT": {
         WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada.")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada. Total: {total}.")},
     },
     "CONCIERGE_ENGINE_FULFILLMENT_UPDATED": {
         WILDCARD: {WILDCARD: CopyEntry(message="{noted}, atualizei o recebimento.")},

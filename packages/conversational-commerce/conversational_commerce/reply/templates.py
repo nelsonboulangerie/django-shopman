@@ -70,6 +70,10 @@ GENERIC_TEMPLATES: tuple[Template, ...] = (
     # ficou vazio). Diz-se o efeito pelo recibo, e nada da sacola que não se leu.
     Template("change_cart.done_receipt", "1", "change_cart", "{done} Your cart is updated.",
              {"done": SlotSpec(("receipt:success",))}),
+    # A mudança com uma pergunta do fechamento no ar (#3488): a pergunta segue, e a sacola inteira não se repete;
+    # o efeito pelo recibo e o total novo pelos termos cotados de novo.
+    Template("change_cart.done_total", "1", "change_cart", "{done} Your cart is updated. Total: {total}.",
+             {"done": SlotSpec(("receipt:success",)), "total": SlotSpec(("fact",), "total")}),
     # Recebimento: o molde mais completo que o recibo sustenta (``engine/moves/set_fulfillment.py``).
     # Os valores saem do recibo (o estado do alvo depois do efeito); a casa formata data, modo e janela.
     Template("set_fulfillment.done", "1", "set_fulfillment", "Done: {mode} on {date}, {window}.",

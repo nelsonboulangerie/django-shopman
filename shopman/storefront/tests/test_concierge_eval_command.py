@@ -45,9 +45,13 @@ class FakeAI:
 
 @pytest.fixture
 def house(monkeypatch):
+    from shopman.offerman.models import Product
+
     from shopman.shop.ai import FittedClient
     from shopman.storefront.concierge import tools, triage
 
+    # O cardápio do teste: a bateria pula o caso cujo produto não está no cardápio (#3484).
+    Product.objects.create(sku="CROISSANT", name="Croissant", base_price_q=1200, is_published=True, is_sellable=True)
     ai = FakeAI()
     # O cliente medido da casa, como no ar: cada chamada paga passa pelo freio e grava uma AiInvocation.
     metered = FittedClient(ai, frozenset(), purpose="intents", connection_ref="eval-test", default_model="deepseek-flash")
@@ -121,3 +125,13 @@ def test_without_a_connection_nothing_is_called(monkeypatch):
     monkeypatch.setattr(model_reader, "build_client", lambda: (None, ""))
     with pytest.raises(CommandError, match="intents"):
         _run()
+
+
+
+def test_a_case_whose_product_left_the_menu_is_skipped_without_calling_the_ai(house):
+    """#3484: o caso que espera um produto fora do cardápio reprovaria pelo dado, não pela leitura. Ele sai
+    pulado, com o nome do que falta, e nenhuma chamada à IA é feita."""
+    out = _run("--case", "sem-hoje-tem-amanha")
+    assert "[pulado] sem-hoje-tem-amanha" in out and "sem produto no cardápio: sonho" in out
+    assert "bateria: 0 / 0 passaram (1 pulados: produto fora do cardápio)" in out
+    assert house.calls == 0

@@ -350,7 +350,9 @@ def test_the_order_through_the_engine_sends_the_pix_apart_like_today(order_on_ai
 
     # A sacola já com o pão (como depois do "quero 1 pão francês"): o teste é do fechamento e do Pix.
     Session.objects.create(session_key="sess-pix", channel_ref="whatsapp",
-                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}])
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
+                           data={"fulfillment_type": "pickup", "delivery_date": "2026-11-25",
+                                 "delivery_time_slot": "slot-15"})
     order_on_air.session_key = "sess-pix"
     order_on_air.save(update_fields=["session_key"])
     seen, run = [], turn_framework.run
@@ -408,7 +410,8 @@ def _saved_flow(conversation, monkeypatch, script, saved, *, said_in_order=None,
     monkeypatch.setattr(tools, "set_fulfillment", house_writes)
     Session.objects.create(session_key="sess-salvo", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "payment": {"method": "pix"}})
+                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25",
+                                 "payment": {"method": "pix"}})
     conversation.session_key = "sess-salvo"
     conversation.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -430,7 +433,8 @@ def test_the_saved_address_is_offered_with_today_phrase_and_yes_takes_it(order_o
     assert outbox.sent[0] == saved_offer(saved) == "Entregamos no endereço do seu cadastro, Rua do Cadastro, 10 - Centro?"
     assert written and written[0].get("saved_address_pk") == 7  # o "sim" grava O endereço oferecido, pelo id
     # O "sim" volta ao resumo, com o endereço do cadastro na linha da entrega, pronto para o "sim" do pedido.
-    assert "Entrega\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1] and outbox.sent[1].endswith("Posso registrar?")
+    assert "Entrega: quarta-feira, 25/11\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
+    assert outbox.sent[1].endswith("Posso registrar?")
 
 
 @pytest.mark.django_db(transaction=True)
@@ -675,3 +679,126 @@ def test_the_team_took_over_and_the_tick_stays_quiet(order_on_air, outbox, monke
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
         counts = turn_framework.tick()
     assert counts["notices"] == 0 and len(outbox.sent) == 1
+
+
+# ── #3482: o quando antes do "Posso registrar?" ──────────────────────────────────────────────────
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_close_asks_the_when_with_today_questions_before_the_summary(order_on_air, outbox, monkeypatch):
+    """O cartão 5 pelo serviço real, sacola sem dia. Antes, "pode fechar" ia ao resumo ("Retirada", sem dia nem
+    horário) e o "sim" ouvia "não entendi": a casa não grava retirada sem horário. Agora o motor pergunta o dia,
+    o modo e o horário com as perguntas de hoje, na ordem do fechamento, e só então o resumo."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader, tools
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {"pode fechar": [{"act": "place_order"}], "amanhã": [{"act": "choose_fulfillment", "day": "tomorrow"}],
+              "vou retirar": [{"act": "choose_fulfillment", "mode": "pickup"}],
+              "às 16h": [{"act": "choose_fulfillment", "time": "16:00"}],
+              "pix": [{"act": "choose_payment", "payment": "pix"}], "sim": [{"act": "affirm"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    placed = []
+    execute = tools.execute
+
+    def house(name, args, ctx):
+        if name == "review_order":
+            return {"ok": True, "ready": True, "quote_token": "tok-when", "payment_method": "pix"}
+        return execute(name, args, ctx)
+
+    monkeypatch.setattr(tools, "execute", house)
+    monkeypatch.setattr(tools, "place_order", lambda ctx, token, method, notes="": placed.append(token) or {
+        "ok": True, "order_ref": "ORD-WHEN-1", "payment": {"method": method}})
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # a config do teste do dono: "informar" e "pedido"
+    shop.save()
+    Session.objects.create(session_key="sess-when", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}])
+    order_on_air.session_key = "sess-when"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"when-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    ask = {key: service.copy_message(key).strip() for key in (
+        "CONCIERGE_CLOSE_ASK_DATE", "CONCIERGE_CLOSE_ASK_FULFILLMENT")}
+    close, day, mode, time, pix, yes = outbox.sent[:6]
+    assert close == ask["CONCIERGE_CLOSE_ASK_DATE"]  # "Para quando é o pedido? …"
+    assert day == ask["CONCIERGE_CLOSE_ASK_FULFILLMENT"]  # "retirar ou entrega?"
+    assert mode.startswith("Qual horário de retirada fica melhor?") and "15h" in mode  # a grade do dia
+    assert time.startswith("Como você prefere pagar?")
+    tomorrow = (timezone.localdate() + timedelta(days=1)).strftime("%d/%m")
+    assert "Retirada: " in pix and tomorrow in pix and pix.endswith("Posso registrar?")  # o resumo com o quando
+    assert yes.startswith("Pedido ORD-WHEN-1 registrado.") and placed == ["tok-when"]
+    data = Session.objects.get(session_key="sess-when").data
+    assert data["fulfillment_type"] == "pickup" and data["delivery_time_slot"]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_day_said_with_the_order_is_not_asked_again(order_on_air, outbox, monkeypatch):
+    """Controle negativo do #3482: "pra amanhã, pode fechar" já diz o dia; o fechamento segue para retirar ou
+    entregar e o horário, e nunca pergunta o dia de novo."""
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {"pra amanhã, pode fechar": [{"act": "choose_fulfillment", "day": "tomorrow"}, {"act": "place_order"}],
+              "vou retirar": [{"act": "choose_fulfillment", "mode": "pickup"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # a config do teste do dono: "informar" e "pedido"
+    shop.save()
+    Session.objects.create(session_key="sess-day", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}])
+    order_on_air.session_key = "sess-day"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"day-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    ask_date = service.copy_message("CONCIERGE_CLOSE_ASK_DATE").strip()
+    assert not any(ask_date in text for text in outbox.sent)
+    assert outbox.sent[0].endswith(service.copy_message("CONCIERGE_CLOSE_ASK_FULFILLMENT").strip())
+    assert outbox.sent[1].startswith("Qual horário de retirada fica melhor?")
+    assert Session.objects.get(session_key="sess-day").data["delivery_date"]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_cart_change_in_the_middle_of_the_close_says_it_changed_and_keeps_the_question(order_on_air, outbox,
+                                                                                        monkeypatch):
+    """#3488: "na verdade 3" com o fechamento perguntando o dia muda a sacola, diz o total novo e repete a pergunta
+    aberta. Antes, só a pergunta voltava, como se nada tivesse acontecido."""
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {"pode fechar": [{"act": "place_order"}],
+              "na verdade 3": [{"act": "change_quantity", "product": "pão francês", "qty": 3, "change": "set"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # a config do teste do dono: "informar" e "pedido"
+    shop.save()
+    Session.objects.create(session_key="sess-adj", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 2, "unit_price_q": 90, "line_total_q": 180}])
+    order_on_air.session_key = "sess-adj"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"adj-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    ask_date = service.copy_message("CONCIERGE_CLOSE_ASK_DATE").strip()
+    assert outbox.sent[0] == ask_date
+    assert outbox.sent[1] == f"Pronto, a sacola foi atualizada. Total: R$ 2,70.\n\n{ask_date}"
+    assert Session.objects.get(session_key="sess-adj").items[0]["qty"] == 3
