@@ -78,6 +78,8 @@ NICE_TEMPLATE_COPY = {
     # O horário, com as opções do dia, está em ``PAYMENT_TEMPLATES`` (o espaço da casa troca de nome).
     "present_terms.needs_fulfillment_date": "CONCIERGE_CLOSE_ASK_DATE",
     "present_terms.needs_fulfillment_type": "CONCIERGE_CLOSE_ASK_FULFILLMENT",
+    # A janela da entrega, depois do endereço: derivada da pergunta do horário (coordenação, 24/11).
+    "present_terms.needs_delivery_window": "CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW",
     "present_terms.needs_delivery_address_details": "CONCIERGE_ENGINE_ADDRESS_DETAILS",
     "present_terms.needs_delivery_complement": "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT",
     # As recusas do endereço com as frases de hoje: fora da área (a frase do ``set_fulfillment`` e a
@@ -364,7 +366,63 @@ def nice_formatters(conversation=None) -> dict:
             "mode": mode_text, "window": window_text, "time": time_text,
             "method": method_text, "payment_method": payment_options_text,
             "delivery_address_details": address_words_text, "delivery_time_slot": pickup_slots_text(conversation),
+            "delivery_window": delivery_windows_text(conversation),
             **_address_formatters(conversation, partial)}
+
+
+def labels_in_sentence(labels: list[str], *, before: str = "", closes: bool = False) -> str:
+    """Os rótulos da grade encaixados numa frase, pela posição do espaço (regra do dono, coordenação 24/11).
+
+    Em início de frase (no começo do texto, ou depois de ".", "?" ou "!"), o primeiro rótulo vai com maiúscula;
+    no meio, minúsculo; os demais, sempre minúsculos. ``closes``: a lista termina a frase sem pontuação, e ganha
+    o ponto final. O rótulo da grade e o site não mudam.
+    """
+    opens = not before.strip() or before.rstrip()[-1] in ".?!"
+    lowered = [label[:1].lower() + label[1:] for label in labels]
+    if opens and lowered:
+        lowered[0] = lowered[0][:1].upper() + lowered[0][1:]
+    text = lowered[0] if len(lowered) == 1 else f"{', '.join(lowered[:-1])} ou {lowered[-1]}"
+    return f"{text}." if closes and not text.endswith((".", "?", "!")) else text
+
+
+def _slot_position(key: str, slot: str) -> dict:
+    """Onde o espaço está na frase da Nice: o texto antes dele e se ele a termina (para ``labels_in_sentence``)."""
+    from .service import copy_message
+
+    text = (copy_message(key) or "").strip()
+    index = text.find(slot)
+    if index < 0:
+        return {}
+    return {"before": text[:index], "closes": not text[index + len(slot):].strip()}
+
+
+def delivery_windows_text(conversation):
+    """As janelas de entrega do dia, as mesmas da loja on-line (``annotate_delivery_windows_for_checkout``), sem
+    números. Sem janela que sirva, segura (``UnresolvedReference``) e o caminho de hoje responde."""
+    def text(value) -> str:
+        from collections.abc import Mapping
+
+        from conversational_commerce.reply import UnresolvedReference
+        from shopman.orderman.models import Session
+
+        from shopman.storefront.services.pickup_slots import annotate_delivery_windows_for_checkout
+
+        if isinstance(value, (list, tuple)):
+            labels = [str(label) for label in value if label]
+        else:
+            day = str(value.get("date") or "") if isinstance(value, Mapping) else ""
+            if not day or conversation is None:
+                raise UnresolvedReference("janela sem dia")
+            session = Session.objects.filter(session_key=getattr(conversation, "session_key", "") or "").first()
+            skus = [str(item.get("sku")) for item in ((session.items if session is not None else None) or [])]
+            windows = annotate_delivery_windows_for_checkout(skus, delivery_date=day,
+                                                             channel_ref=conversation.channel_ref).get("windows") or []
+            labels = [str(w.get("label")) for w in windows if w.get("enabled") and w.get("label")]
+        if not labels:
+            raise UnresolvedReference("nenhuma janela no dia")
+        return labels_in_sentence(labels, **_slot_position("CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW", "{delivery_window}"))
+
+    return text
 
 
 def pickup_slots_text(conversation):
@@ -395,7 +453,7 @@ def pickup_slots_text(conversation):
                       if slot.get("enabled") and slot.get("label")]
         if not labels:
             raise UnresolvedReference("nenhum horário no dia")
-        return labels[0] if len(labels) == 1 else f"{', '.join(labels[:-1])} ou {labels[-1]}"
+        return labels_in_sentence(labels, **_slot_position("CONCIERGE_CLOSE_ASK_SLOT", "{options}"))
 
     return text
 
