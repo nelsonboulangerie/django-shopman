@@ -1866,6 +1866,16 @@ def run(conversation, *, binding, decision, client=None):
             return TurnOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
         return TurnOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
 
+    # Alterar o pedido já feito (OC-11): o código que confirma a prévia, a resposta à pergunta
+    # do que mudar, ou o pedido de alteração ("troca o horário do pedido", "tira o croissant
+    # do pedido", "troca o endereço"), pelo mesmo serviço do balcão (``order_amendment``).
+    from . import order_amendment
+
+    amend_turn = order_amendment.handle(conversation, customer_text, binding=binding, channel_ref=channel_ref,
+                                        memory=memory, decision=decision)
+    if amend_turn is not None:
+        return amend_turn
+
     # "E aí?" com uma pergunta à equipe em espera ("vou verificar", WP-05): a resposta é
     # o estado da espera, sem cartão novo e sem buscar de novo.
     verifying = memory.state.get("verifying")

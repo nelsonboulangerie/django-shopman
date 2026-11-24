@@ -1910,7 +1910,7 @@ def return_to_concierge(conversation: Conversation, *, answer_waiting: bool = Fa
                 handoff_sync_state="routing_mismatch"
             )
         if synced:
-            from . import cancellation, dialogue
+            from . import cancellation, dialogue, order_amendment
 
             team_since = current.handoff_at
             current.state = Conversation.State.ACTIVE
@@ -1919,10 +1919,12 @@ def return_to_concierge(conversation: Conversation, *, answer_waiting: bool = Fa
             current.handoff_at = None
             # A equipe falou coisas que o sistema não vê (D6): a memória do diálogo cai e
             # recomeça do domínio, relido agora. A pergunta de cancelamento no ar cai junto:
-            # um "sim" depois da volta nunca cancela pedido (C08).
+            # um "sim" depois da volta nunca cancela pedido (C08). A alteração de pedido no ar
+            # também (OC-11): um "confirmo" depois da volta nunca altera pedido.
             facts = dialogue.load_facts(current)
             flags = dict(current.flags or {})
             flags.pop(cancellation.PENDING_FLAG, None)
+            flags.pop(order_amendment.PENDING_FLAG, None)
             memory = dialogue.after_team(facts, fence=current.turn_fence)
             if memory:
                 flags[dialogue.FLAG_KEY] = memory
