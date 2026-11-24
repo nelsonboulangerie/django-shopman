@@ -208,12 +208,9 @@ def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMar
     batch_owners = _stock_batch_owners(work_orders)
     lots = _lot_state(batch_owners)
     today = timezone.localdate()
-    # A receita é acumulada até o lote encerrar, então a leitura de vendas vai
-    # além da janela: até a última validade em jogo, nunca depois de hoje.
-    expiries = [expiry for _, expiry in lots.values()]
-    last_day = today if None in expiries else max(expiries, default=date_to)
-    sales_to = max(date_to, min(today, last_day))
-    revenue, traced = _batch_revenue(batch_owners, date_from, sales_to) if batch_owners else ({}, {})
+    # A receita é a das baixas dos lotes da fornada, venda criada quando for: a
+    # margem da mesma fornada não muda com o filtro de datas (#3427).
+    revenue, traced = _batch_revenue(batch_owners) if batch_owners else ({}, {})
 
     rows = []
     for wo in work_orders:
@@ -298,10 +295,14 @@ def _stock_batch_owners(work_orders) -> dict[str, str]:
     }
 
 
-def _batch_revenue(
-    batch_owners: dict[str, str], date_from: date, date_to: date
-) -> tuple[dict[str, int], dict[str, Decimal]]:
+def _batch_revenue(batch_owners: dict[str, str]) -> tuple[dict[str, int], dict[str, Decimal]]:
     """Rateia a linha conciliada pela quantidade baixada de cada lote.
+
+    Parte das baixas dos lotes (o hold cumprido no lote de estoque da fornada) e
+    só delas acha os pedidos e as linhas de venda. Antes partia dos pedidos
+    CRIADOS na janela, e a margem da mesma fornada mudava com o filtro: a
+    encomenda de quinta atendida pela fornada de sábado sumia filtrando sábado
+    (#3427).
 
     Devolve a receita e as unidades rastreadas por fornada; uma linha que não
     fecha (baixa maior que o vendido) não entra em nenhuma das duas.
@@ -309,24 +310,21 @@ def _batch_revenue(
     from shopman.orderman.models import Order
     from shopman.stockman import Hold, HoldStatus
 
-    from shopman.backstage.bi import canonical
+    from shopman.backstage.bi.sources import orderman
 
-    sales = canonical.read_sales(date_from, date_to)
-    order_by_reference = {
-        f"order:{sale.ref.removeprefix('shopman:')}": sale.key
-        for sale in sales.sales if sale.source == "shopman"
-    }
     holds = list(Hold.objects.filter(
-        metadata__reference__in=order_by_reference,
+        metadata__reference__startswith="order:",
         status=HoldStatus.FULFILLED,
         quant__batch__in=batch_owners,
     ).values_list("pk", "sku", "quant__batch", "metadata__reference"))
     if not holds:
         return {}, {}
 
-    order_ids = {order_by_reference[reference] for _, _, _, reference in holds}
+    refs = {str(reference).removeprefix("order:") for _, _, _, reference in holds}
+    order_by_reference: dict[str, int] = {}
     holds_by_order = {}
-    for order_id, entries in Order.objects.filter(pk__in=order_ids).values_list("pk", "data__hold_ids"):
+    for order_id, ref, entries in Order.objects.filter(ref__in=refs).values_list("pk", "ref", "data__hold_ids"):
+        order_by_reference[f"order:{ref}"] = order_id
         holds_by_order[order_id] = {
             entry["hold_id"]: Decimal(str(entry["qty"]))
             for entry in entries or ()
@@ -335,15 +333,17 @@ def _batch_revenue(
 
     quantities: dict[tuple[int, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
     for hold_id, sku, batch, reference in holds:
-        order_id = order_by_reference[reference]
+        order_id = order_by_reference.get(reference)
+        if order_id is None:
+            continue
         quantity = holds_by_order.get(order_id, {}).get(f"hold:{hold_id}", Decimal(0))
         if quantity > 0:
             quantities[order_id, sku][batch_owners[batch]] += quantity
 
     totals: dict[tuple[int, str], tuple[Decimal, int]] = defaultdict(lambda: (Decimal(0), 0))
-    for line in sales.lines():
+    for line in orderman.read_lines_for_refs(refs):
         key = (line.sale_key, line.product_ref)
-        if line.source == "shopman" and key in quantities:
+        if key in quantities:
             qty, total_q = totals[key]
             totals[key] = qty + line.qty, total_q + line.line_total_q
 

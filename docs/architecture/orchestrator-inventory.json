@@ -13412,6 +13412,7 @@
           "symbols": [
             "COURIER_TICKET_ANONYMOUS",
             "COURIER_TICKET_IDENTIFIED",
+            "agreed_day",
             "card_machine_alert_minutes",
             "courier_ticket_variant",
             "customer_holds_the_goods",
@@ -13422,6 +13423,7 @@
             "get_commitment_date",
             "get_fulfillment_type",
             "house_owns_the_delivery",
+            "in_agreed_days",
             "is_counter_takeaway",
             "is_for_a_later_day",
             "is_preorder",
