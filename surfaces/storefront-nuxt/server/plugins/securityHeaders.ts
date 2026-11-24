@@ -1,6 +1,6 @@
 import { getRequestHeader, getRequestURL } from 'h3'
 import { defineNitroPlugin } from 'nitropack/runtime'
-import { storefrontResponseHeaders } from '../utils/storefrontSecurity'
+import { applySessionDocumentHeaders, storefrontResponseHeaders } from '../utils/storefrontSecurity'
 
 // A TELA DE ERRO E TELA DA LOJA, e sai com a politica da loja.
 //
@@ -15,11 +15,16 @@ import { storefrontResponseHeaders } from '../utils/storefrontSecurity'
 // `render:response` e o ultimo lugar onde a politica da casa ainda vence: ele
 // carrega a resposta HTML ja montada (a da pagina e a do erro), e os cabecalhos
 // dela sao os que vao para a rede.
+//
+// E aqui tambem que TODO documento renderizado com sessao vira `private,
+// no-store` (#3474): o HTML embute o shell da cliente (nome, sacola, versao de
+// experimento), em qualquer rota. Um ponto so, para que rota nova nasca coberta.
 export default defineNitroPlugin((nitro) => {
   nitro.hooks.hook('render:response', (response, { event }) => {
     const forwarded = getRequestHeader(event, 'x-forwarded-proto')?.split(',', 1)[0]?.trim().toLowerCase()
     const secure = forwarded ? forwarded === 'https' : getRequestURL(event).protocol === 'https:'
     response.headers ||= {}
     Object.assign(response.headers, storefrontResponseHeaders(secure, getRequestURL(event).pathname))
+    applySessionDocumentHeaders(response.headers, event)
   })
 })
