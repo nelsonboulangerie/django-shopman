@@ -96,6 +96,9 @@ class TurnLimits(Value):
     max_spend: Money
     # Quantos turnos recentes vão ao leitor como contexto (ADR-051); zero, nenhum.
     reading_context_turns: NonNegativeInt = 0
+    # Quantas verificações de leitura (``adjudicate``) um turno pode fazer; zero desliga a conferência de
+    # coerência (ADR-051, peça 2): a leitura segue como o leitor a deu.
+    max_adjudications_per_turn: NonNegativeInt = 0
 
     def check(self) -> None:
         if self.max_spend.amount_minor < 0:

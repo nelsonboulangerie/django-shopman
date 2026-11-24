@@ -12,6 +12,8 @@ from .commerce_read import CommerceReadPort, ItemSummary, PromiseReading
 from .common import PORT_NAMES, Capabilities, PortError, TrustedContext
 from .guard import EffectGuard, EffectState
 from .model import (
+    AdjudicateRequest,
+    Adjudication,
     Budget,
     Consumption,
     Draft,
@@ -44,6 +46,8 @@ PORTS = {
 __all__ = [
     "PORTS",
     "PORT_NAMES",
+    "AdjudicateRequest",
+    "Adjudication",
     "Budget",
     "Capabilities",
     "ChannelPort",

@@ -30,6 +30,9 @@ class NeedSpec:
     readings: tuple[Mapping[str, Any], ...] = ({},)
     # A pergunta no ar a que esta necessidade responde, se for resposta.
     answers_question: str | None = None
+    # A leitura que o verificador deixou em dúvida (ADR-051): ``{"acts": [{"act", "fields"}]}``. A necessidade só
+    # pergunta "é isso?", e o "sim" do turno seguinte aplica a leitura.
+    confirm: Mapping[str, Any] | None = None
 
     @property
     def request_kind(self) -> str:
