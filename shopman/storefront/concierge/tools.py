@@ -2142,6 +2142,33 @@ def _sentence(text) -> str:
 PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
 
 
+#: O que a Nice faz pela conversa quando a ação da projeção é um comando (POST/API), não
+#: uma página: a instrução no lugar do endereço. Ação de comando fora desta lista some da
+#: resposta, porque endereço de API não abre como link (X3). Cancelar é a J4 da Nice
+#: (``concierge/cancellation.py``, pela mesma régua do site).
+CONVERSATION_EQUIVALENTS = {
+    "cancel_order": "Se quiser cancelar, é só me dizer.",
+}
+
+
+def _opens_as_page(action: dict) -> bool:
+    """A ação leva a uma página que o cliente abre (GET), e não a um comando da API.
+
+    Decide pela natureza do destino, não pelo nome: tem endereço, o método é GET (ou
+    nenhum), não é comando (``mutation``) e o endereço fica fora de ``/api/``.
+    """
+    from urllib.parse import urlsplit
+
+    href = str(action.get("href") or "")
+    method = str(action.get("method") or "GET").upper()
+    return (
+        bool(href)
+        and method == "GET"
+        and action.get("kind") != "mutation"
+        and not urlsplit(href).path.startswith("/api/")
+    )
+
+
 def copy_texts(result: dict) -> list[str]:
     """O que as ações de copiar da consulta copiam (o copia-e-cola do Pix), um por mensagem.
 
@@ -2247,11 +2274,14 @@ def render_result(name: str, result: dict) -> str:
                     # o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
                     if str(action.get("value") or "").strip() and action.get("ref") == "copy_pix":
                         rows.append(PIX_CODE_FOLLOWS)
-                elif action.get("enabled"):
-                    href = action.get("href") or order["tracking_url"]
+                elif action.get("enabled") and _opens_as_page(action):
+                    href = action["href"]
                     if href.startswith("/") and not href.startswith("//"):
                         href = _storefront_base_url() + href
                     rows.append(f"{action['label']}: {href}")
+                elif action.get("enabled") and CONVERSATION_EQUIVALENTS.get(action.get("ref")):
+                    # Comando que a Nice faz pela conversa: a instrução, nunca o endereço.
+                    rows.append(CONVERSATION_EQUIVALENTS[action["ref"]])
             rows.append(f"Acompanhar: {order['tracking_url']}")
         return "\n".join(rows) or "Não encontrei pedidos para este acesso."
     if name == "send_web_link":
