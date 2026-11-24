@@ -494,34 +494,7 @@ useHead({
       </div>
     </section>
 
-    <section v-if="home && faq.length && sectionsCopy" id="duvidas-frequentes" class="shop-section border-t bg-background scroll-mt-20">
-      <div class="shop-container">
-        <div class="mx-auto max-w-4xl">
-          <div class="text-center">
-            <h2 class="shop-heading font-display">{{ sectionsCopy.faq_heading.title }}</h2>
-            <p v-if="sectionsCopy.faq_heading.message" class="mt-2 shop-muted">
-              {{ sectionsCopy.faq_heading.message }}
-            </p>
-          </div>
-          <UiAccordion
-            :items="faq.map(item => ({ value: item.ref, title: item.question, content: item.answer }))"
-            type="single"
-            collapsible
-            class="mt-6 border-y"
-          >
-            <template #content="{ item }">
-              <!-- A resposta é corpo de LEITURA: 16 px, não os 14 do acordeão (X9, OC-30). -->
-              <UiAccordionContent><p class="shop-reading whitespace-pre-line">{{ item.content }}</p></UiAccordionContent>
-            </template>
-          </UiAccordion>
-          <div class="mt-4 text-center">
-            <UiButton to="/faq" variant="ghost" icon="lucide:arrow-right" icon-placement="right" class="shop-gold-hover">
-              Ver todas as perguntas
-            </UiButton>
-          </div>
-        </div>
-      </div>
-    </section>
+    <HomeFaqSection v-if="home && faq.length && sectionsCopy" :faq="faq" :heading="sectionsCopy.faq_heading" />
 
     <section v-if="home && whatsappUrl && sectionsCopy" class="border-y bg-background py-0 sm:py-8 lg:py-10">
       <div class="shop-container">
