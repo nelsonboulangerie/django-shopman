@@ -254,6 +254,7 @@ def _item_payload(item) -> dict:
         "promotion": (str(adjustment.badge_label or adjustment.label) if adjustment else ""),
         "unit": item.unit_weight_label or "",
         "collection": item.category or "",
+        "keywords": list(item.tags or ()),
     }
 
 
@@ -622,13 +623,17 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
             score = sum(1 for term in terms if word_stem(term) in haystack_terms)
             name = _fold(item.name)
             score += 4 if name and name in needle else 0
+            # No empate, o nome vence a palavra-chave: "croissant" é o Croissant antes do Pain
+            # au Chocolat, que leva "croissant" só nas palavras-chave.
+            name_terms = {word_stem(word) for word in re.findall(r"[a-z0-9]+", name)}
+            named = sum(1 for term in terms if word_stem(term) in name_terms)
             if score:
-                ranked_items.append((-score, index, item))
-        ranked_items.sort(key=lambda row: (row[0], 0 if row[2].can_add_to_cart else 1, row[1]))
+                ranked_items.append((-score, -named, index, item))
+        ranked_items.sort(key=lambda row: (row[0], row[1], 0 if row[3].can_add_to_cart else 1, row[2]))
         if ranked_items:
             best_score = -ranked_items[0][0]
             threshold = max(1, best_score - 1)
-            items = [item for score, _, item in ranked_items if -score >= threshold]
+            items = [item for score, _named, _, item in ranked_items if -score >= threshold]
         else:
             items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))

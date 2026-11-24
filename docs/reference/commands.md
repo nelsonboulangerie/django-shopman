@@ -1712,6 +1712,19 @@ leituras seguidas falhando no provedor abrem UM aviso `concierge_no_model` por c
 do Gestor, `AlertSpec.on_screen`); a causa que passou é resolvida. Nunca chama modelo. A mesma leitura é a sonda
 `concierge_reading` do Watchman (`storefront/watchman_checks.py`). Saída: `{"opened": n, "resolved": n}`.
 
+### concierge_keywords
+
+**Propósito:** As palavras-chave dos produtos, que a Concierge usa para achar o produto chamado por outro
+nome ("folhado de maçã" é o Chausson aux Pommes; dono, 24/11/2026). Sem `--write` só lê: quantos
+produtos publicados têm palavras-chave, quais não têm e o que a proposta
+(`shopman/storefront/concierge/keywords_proposal.json`) acrescentaria ou tiraria em cada um. Com
+`--write` grava a proposta. No ar, `--write` só com a aprovação do dono.
+
+```bash
+python manage.py concierge_keywords           # levantamento e o que mudaria
+python manage.py concierge_keywords --write   # grava (no ar, só com a aprovação do dono)
+```
+
 ### concierge_verification_sweep
 
 **Propósito:** O relógio do "vou verificar" da Concierge (WP-05/WP-06 do
