@@ -9,7 +9,8 @@
             "receipt",
             "policy",
             "commitment",
-            "courtesy"
+            "courtesy",
+            "reading"
           ],
           "type": "string"
         },

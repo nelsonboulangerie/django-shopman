@@ -21,6 +21,7 @@ que aponta uma chave da `Evidence`:
 | `commitment` | um compromisso registrado | existe (promessa com dono e prazo) |
 | `policy` | uma linha do perfil ou regra da casa | existe |
 | `courtesy` | nada | saudação, agradecimento |
+| `reading` | a leitura que o agente repete (`Evidence.readings`) | "é isso?" do verificador em dúvida (`ask_clarification.confirm_reading`, ADR-051): o que o CLIENTE disse, nunca afirmação da casa |
 
 A `Evidence` também diz o **tipo** de cada lastro: `fact:<faceta>` (por exemplo
 `fact:factual` e `fact:promisable`, as leituras da promessa do F3), `receipt:<status>` e

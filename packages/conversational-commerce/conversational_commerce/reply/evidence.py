@@ -1,4 +1,4 @@
-"""A evidência que lastreia uma resposta: fatos, recibos, compromissos e linhas de política.
+"""A evidência que lastreia uma resposta: fatos, recibos, compromissos, linhas de política e leituras.
 
 Toda afirmação aponta uma chave daqui. O que não está aqui não pode ser dito,
 e o que está aqui mas não vale (fato ``Unknown`` ou vencido, recibo que não é
@@ -24,6 +24,8 @@ class Evidence:
     receipts: Mapping[str, ActionReceipt] = field(default_factory=dict)
     commitments: Mapping[str, Commitment] = field(default_factory=dict)
     policies: Mapping[str, Any] = field(default_factory=dict)
+    # As leituras que o agente repete para confirmar (ADR-051): o que o CLIENTE disse, nunca afirmação da casa.
+    readings: Mapping[str, Any] = field(default_factory=dict)
 
     def kinds_of(self, backing: str, ref: str) -> tuple[str, ...]:
         """Os tipos de lastro que ``ref`` oferece, para casar com o que o espaço do molde aceita."""
@@ -36,6 +38,8 @@ class Evidence:
             return ("commitment", f"commitment:{self.commitments[ref].type}")
         if backing == "policy" and ref in self.policies:
             return ("policy",)
+        if backing == "reading" and ref in self.readings:
+            return ("reading",)
         return ()
 
     def problem(self, backing: str, ref: str | None) -> str | None:
@@ -59,6 +63,8 @@ class Evidence:
             return None if ref in self.commitments else "commitment_not_in_evidence"
         if backing == "policy":
             return None if ref in self.policies else "policy_not_in_evidence"
+        if backing == "reading":
+            return None if ref in self.readings else "reading_not_in_evidence"
         return "unknown_backing"
 
     def value(self, backing: str, ref: str, field_name: str | None) -> Any:
@@ -72,6 +78,8 @@ class Evidence:
             commitment = self.commitments[ref]
             deadline = commitment.deadline
             value = {"at": getattr(deadline, "at", None), "owner": commitment.owner, "state": commitment.state}
+        elif backing == "reading":
+            value = self.readings[ref]
         else:
             value = self.policies[ref]
         if field_name is not None:

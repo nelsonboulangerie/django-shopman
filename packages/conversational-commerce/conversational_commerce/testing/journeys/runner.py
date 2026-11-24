@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from conversational_commerce.contracts import Producer, Understanding
-from conversational_commerce.ports import Capabilities, Consumption, PortError, TrustedContext
+from conversational_commerce.ports import Adjudication, Capabilities, Consumption, PortError, TrustedContext
 from conversational_commerce.ports.model import OPERATIONS
 
 READER = Producer(name="scripted-reader", version="1")
@@ -27,6 +27,7 @@ class ScriptedModel:
         self.clock = clock
         self.script = script
         self.requests: list[Any] = []
+        self.adjudications: list[Any] = []
 
     def capabilities(self) -> Capabilities:
         return Capabilities(port="model", operations=OPERATIONS, guarantees={"priced": False})
@@ -56,6 +57,14 @@ class ScriptedModel:
 
     def score(self, ctx, request):
         raise PortError("capability_missing", "o leitor roteirizado não pontua")
+
+    def adjudicate(self, ctx: TrustedContext, request):
+        """O verificador do roteiro: ``"adjudication"`` na entrada da fala (o índice da candidata); sem ela,
+        dúvida. Guarda o pedido, para o teste ver o que o verificador recebeu."""
+        self.adjudications.append(request)
+        choice = (self.script.get(request.content_ref) or {}).get("adjudication")
+        return Adjudication(choice=choice, consumption=Consumption(model=READER, calls=1, cost={
+            "status": "unavailable", "reason": "no_price"}))
 
 
 @dataclass(frozen=True, slots=True)

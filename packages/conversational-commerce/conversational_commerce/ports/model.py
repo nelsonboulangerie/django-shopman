@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
-from conversational_commerce.contracts import Money, Producer, ReplyPlan, Unavailable, Understanding
+from conversational_commerce.contracts import Alternative, Money, Producer, ReplyPlan, Unavailable, Understanding
 from conversational_commerce.contracts.common import (
     CONTRACT_DATACLASS,
     DecimalText,
@@ -20,10 +20,11 @@ from conversational_commerce.contracts.common import (
     Text,
     Value,
 )
+from conversational_commerce.contracts.errors import invalid
 
 from .common import Capabilities, TrustedContext
 
-OPERATIONS = ("interpret", "draft", "score")
+OPERATIONS = ("interpret", "draft", "score", "adjudicate")
 
 DataClass = Literal["public", "redacted", "personal"]
 
@@ -107,6 +108,31 @@ class InterpretRequest(Value):
 
 
 @dataclass(**CONTRACT_DATACLASS)
+class AdjudicateRequest(Value):
+    """O conflito de leitura para o verificador (ADR-051, peça 3): a fala, a conversa em volta e as leituras
+    candidatas. Só roda quando a leitura não responde à pergunta no ar nem muda de assunto, ou quando os
+    leitores discordam."""
+
+    request: ModelRequest
+    event_id: Identifier
+    content_ref: Text
+    context: ReadingContext
+    candidates: tuple[Alternative, ...]
+
+    def check(self) -> None:
+        if not self.candidates:
+            raise invalid("verificação sem candidata", "candidates")
+
+
+@dataclass(**CONTRACT_DATACLASS)
+class Adjudication(Value):
+    """A candidata escolhida (pelo índice), ou dúvida (``choice`` vazio): na dúvida, o agente pergunta."""
+
+    choice: NonNegativeInt | None = None
+    consumption: Consumption
+
+
+@dataclass(**CONTRACT_DATACLASS)
 class Draft(Value):
     text: Text
     consumption: Consumption
@@ -133,3 +159,5 @@ class ModelPort(Protocol):
     def draft(self, ctx: TrustedContext, request: ModelRequest, plan: ReplyPlan) -> Draft: ...
 
     def score(self, ctx: TrustedContext, request: ScoreRequest) -> Scores: ...
+
+    def adjudicate(self, ctx: TrustedContext, request: AdjudicateRequest) -> Adjudication: ...

@@ -12,7 +12,8 @@ from typing import Literal
 from .common import CONTRACT_DATACLASS, Identifier, NonNegativeInt, ObservationRecord, Value
 from .errors import invalid
 
-Backing = Literal["fact", "receipt", "policy", "commitment", "courtesy"]
+# ``reading``: o que o cliente disse, repetido para ele confirmar (ADR-051); nunca afirmação da casa.
+Backing = Literal["fact", "receipt", "policy", "commitment", "courtesy", "reading"]
 
 
 @dataclass(**CONTRACT_DATACLASS)

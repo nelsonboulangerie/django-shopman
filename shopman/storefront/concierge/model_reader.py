@@ -498,7 +498,7 @@ class NiceReader:
         self.last_error = ""
 
     def capabilities(self) -> Capabilities:
-        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score"),
+        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score", "adjudicate"),
                             guarantees={"priced": False, "calls_model": True, "falls_back_to": "local_rules"})
 
     def interpret(self, ctx: TrustedContext, request) -> tuple[Understanding, Consumption]:
@@ -601,6 +601,9 @@ class NiceReader:
 
     def score(self, ctx, request):
         raise PortError("capability_missing", "o leitor da Nice não pontua")
+
+    def adjudicate(self, ctx, request):
+        raise PortError("capability_missing", "o verificador da Nice ainda não está ligado (ADR-051)")
 
 
 def _store_today() -> date:
