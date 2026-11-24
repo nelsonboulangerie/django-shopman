@@ -184,9 +184,9 @@ class ConciergeEffectSite:
         canônica da sessão. O recibo diz o recebimento DEPOIS do efeito: ``date``, ``mode``,
         ``time`` e a ``window`` (a janela da grade, quando há).
         """
+        from shopman.shop.policies.preorder_date import preorder_date_errors
         from shopman.shop.services import cart as cart_service
         from shopman.shop.services import sessions as session_service
-        from shopman.storefront.intents.checkout import _validate_preorder
 
         from . import tools
         from .order_closing import _fulfillment_types, _match_slot
@@ -234,8 +234,8 @@ class ConciergeEffectSite:
                                                 ErrorCode.FULFILLMENT_UNAVAILABLE)
                 return Done(False, refusal=code.value)
         else:
-            if day and _validate_preorder(day, cart_lines=list(session.items or []), channel_ref=ctx.channel_ref,
-                                          session_key=session.session_key):
+            if day and preorder_date_errors(day, cart_lines=list(session.items or []), channel_ref=ctx.channel_ref,
+                                            session_key=session.session_key):
                 return unavailable
             if kind == "delivery":
                 cart_service.set_delivery_draft(session_key=session.session_key, channel_ref=ctx.channel_ref,

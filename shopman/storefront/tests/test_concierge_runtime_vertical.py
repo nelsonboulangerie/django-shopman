@@ -112,17 +112,29 @@ def test_d12_second_item_failure_preserves_source_fulfillment_and_all_holds(conv
             raise RuntimeError("synthetic second transfer item failure")
         return original(**kwargs)
     monkeypatch.setattr(cart, "add_item", add)
-    result = tools.send_web_link(context, "checkout")
+    from types import SimpleNamespace
+
+    from shopman.shop.services import session_transfer
+    minted = []
+    def mint(*a, **k):
+        minted.append(k["metadata"][session_transfer.TRANSFER_METADATA_KEY])
+        return SimpleNamespace(success=True, url="https://example.invalid/transfer", expires_at="")
+    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", mint)
+    assert tools.send_web_link(context, "checkout")["ok"]
+    # O aceite (na troca do link) recria linha a linha; a falha no meio desfaz tudo.
+    with pytest.raises(RuntimeError):
+        session_transfer.accept(
+            session_transfer.TransferOffer.from_metadata(minted[0]), actor="storefront",
+            dest_context=session_transfer.TransferDestination(customer_ref=conversation.customer_ref),
+        )
     source.refresh_from_db()
     conversation.refresh_from_db()
     assert attempted == [SKU, second.sku]
-    assert result["error"] == "access_unavailable"
     assert source.state == "open" and conversation.session_key == source.session_key
     assert source.items == before_items and source.data == before_data
     assert source.data["delivery_time_slot"] == "slot-12"
     assert list(Hold.objects.order_by("pk").values("pk", "sku", "quantity", "status", "quant_id")) == before_holds
     assert not Session.objects.filter(channel_ref="web").exists()
-    assert not IdempotencyKey.objects.filter(scope=f"concierge.transfer:{conversation.pk}").exists()
     assert not Order.objects.exists()
 
 

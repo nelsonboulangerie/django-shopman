@@ -139,9 +139,9 @@ class HistoryFilters:
     #: produto no dia, e o link "Abrir os N pedidos" tem de abrir os mesmos N.
     sku: str = ""
     #: O eixo do período. ``closed`` (padrão do Histórico) conta pelo dia em que o
-    #: pedido fechou; ``ordered`` pelo dia em que foi feito, o mesmo eixo do B.I.,
-    #: que conta a venda pela hora do pedido. Sem ele, a encomenda feita num dia e
-    #: retirada no outro some do "Abrir os N pedidos".
+    #: pedido fechou; ``ordered`` pelo dia do pedido (o combinado, senão o da
+    #: venda: ``order_helpers.agreed_day``), o mesmo eixo do B.I. Sem ele, a
+    #: encomenda feita num dia e retirada no outro some do "Abrir os N pedidos".
     date_basis: str = "closed"
     page: int = 1
 
@@ -181,13 +181,13 @@ def _base_queryset(filters: HistoryFilters):
             fulfillment=Coalesce(KT("data__fulfillment_type"), KT("data__delivery_method"), Value(""), output_field=TextField()),
         )
     )
-    axis = "created_at" if filters.date_basis == "ordered" else "closed_at"
-    qs = qs.filter(
-        **{
-            f"{axis}__gte": _day_start(filters.date_from),
-            f"{axis}__lt": _day_start(filters.date_to + timedelta(days=1)),
-        }
-    )
+    window = (_day_start(filters.date_from), _day_start(filters.date_to + timedelta(days=1)))
+    if filters.date_basis == "ordered":
+        from shopman.shop.services.order_helpers import in_agreed_days
+
+        qs = in_agreed_days(qs, window)
+    else:
+        qs = qs.filter(closed_at__gte=window[0], closed_at__lt=window[1])
     if filters.sku:
         # Subconsulta, não join: as contagens dos recortes não podem dobrar o
         # pedido que tem o produto em duas linhas.

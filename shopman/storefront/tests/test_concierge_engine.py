@@ -640,6 +640,27 @@ def test_place_order_refuses_a_payment_method_the_channel_does_not_offer(ctx):
     assert refused["error"] == "invalid_payment_method"
 
 
+def test_cash_in_the_channel_config_never_reaches_the_conversation(ctx):
+    """D-003: dinheiro não entra no fluxo remoto, nem com o canal mal configurado (OC-14).
+
+    Uma régua só (``policies.order_payment.conversation_payment_methods``): o orçamento
+    da Concierge e a porta de leitura da conversa oferecem as mesmas formas, e com
+    "pix + dinheiro" no canal as duas assumem o Pix, a única que a conversa oferece.
+    """
+    from shopman.shop.conversational.commerce_read import _fulfillment_conditions
+
+    channel = Channel.objects.get(ref=CHANNEL)
+    channel.config["payment"]["method"] = ["pix", "cash"]
+    channel.save()
+    tools.set_item(ctx, SKU, 1)
+
+    review = tools.review_order(ctx)
+    assert [method["ref"] for method in review["payment_methods"]] == ["pix"]
+    assert review["payment_method"] == "pix"
+    assert tools.review_order(ctx, "cash")["error"] == "invalid_payment_method"
+    assert {"code": "payment_method", "value": "pix"} in _fulfillment_conditions({}, CHANNEL)
+
+
 def test_set_fulfillment_validates_the_slot_like_the_site(ctx):
     tools.set_item(ctx, SKU, 1)
     bad = tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-99", "")
@@ -1133,12 +1154,24 @@ def test_send_web_link_carries_the_cart_to_the_store_channel(ctx, conversation, 
 
     result = tools.send_web_link(ctx, "checkout")
     assert result["ok"] and result["logged_in"] and result["cart_carried"]
-    web_key = captured["metadata"]["cart_session_key"]
-    web_session = Session.objects.get(session_key=web_key)
+    assert captured["metadata"]["next"] == "/finalizar"
+    # O link leva a OFERTA; a sacola segue aberta aqui até o aceite (OC-15).
+    from shopman.shop.services import session_transfer
+    carried = captured["metadata"][session_transfer.TRANSFER_METADATA_KEY]
+    assert (carried["source_channel"], carried["source_key"], carried["dest_channel"]) == (CHANNEL, chat_key, "web")
+    assert Session.objects.get(session_key=chat_key).state == "open"
+    assert not Session.objects.filter(channel_ref="web").exists()
+
+    receipt = session_transfer.accept(
+        session_transfer.TransferOffer.from_metadata(carried),
+        dest_context=session_transfer.TransferDestination(customer_ref=conversation.customer_ref),
+        actor="storefront",
+    )
+    web_session = Session.objects.get(session_key=receipt.dest_session_key)
     assert web_session.channel_ref == "web"
     assert web_session.items[0]["sku"] == SKU and int(Decimal(str(web_session.items[0]["qty"]))) == 2
     assert Session.objects.get(session_key=chat_key).state == "abandoned"
-    assert captured["metadata"]["next"] == "/finalizar"
+    assert Session.objects.get(session_key=chat_key).data["transferred_to"]["session_key"] == web_session.session_key
 
 
 def test_notify_when_available_subscribes_the_same_alert_as_the_site(ctx, conversation):

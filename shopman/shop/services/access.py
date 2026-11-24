@@ -13,10 +13,73 @@ SOURCE_TO_ORIGIN = {
 }
 
 
+#: As audiências que a porta da loja (``/a`` → ``api/v1/auth/access/``) troca por sessão
+#: (OC-09). Cada uma nomeia um lugar da loja: a entrada geral (WhatsApp, ``#menu``,
+#: código NB, aviso, travessia de navegador, Concierge), o Finalizar (link pessoal de
+#: campanha, ``campaign_identity``) e a Conta. ``web_support`` não tem porta na loja:
+#: um link cunhado para suporte não abre sessão de cliente aqui.
+STORE_ENTRY_AUDIENCES = ("web_general", "web_checkout", "web_account")
+
+#: Teto do prazo de um link pedido pela API servidor a servidor (``api/auth/access/create/``).
+#: O mesmo teto do link de campanha (``campaign_identity.MAX_HOURS``): a mensagem fica no
+#: dispositivo para sempre, o crachá dentro dela não.
+S2S_LINK_MAX_TTL_MINUTES = 24 * 60
+
+
+def token_audience(token_str: str) -> str:
+    """A audiência do token, lida antes do resgate (``""`` quando o token não existe)."""
+    if not token_str:
+        return ""
+    try:
+        from shopman.doorman.models import AccessLink
+
+        token = AccessLink.get_by_token(token_str)
+        return getattr(token, "audience", "") or "" if token else ""
+    except Exception:
+        logger.exception("access_link_token_audience_failed")
+        return ""
+
+
+def s2s_link_request_error(*, ttl_minutes, audience) -> str:
+    """Por que a API servidor a servidor não cunha este link, ou ``""`` quando cunha.
+
+    Prazo acima do teto é RECUSADO, não truncado: quem chama é uma máquina configurada
+    uma vez (o External Request do ManyChat), e truncar em silêncio deixaria a
+    configuração errada viva para sempre, prometendo um prazo que o link não tem. O
+    contrato documentado não manda ``ttl_minutes`` (vale o padrão de 5 minutos), então
+    a entrada pelo WhatsApp não muda. Audiência sem porta na loja também é recusada
+    aqui, na hora de cunhar: um link que nenhuma porta aceita chegaria ao cliente como
+    "este link expirou".
+    """
+    if ttl_minutes is not None:
+        if isinstance(ttl_minutes, bool) or not isinstance(ttl_minutes, int | float):
+            return "ttl_minutes deve ser um número de minutos."
+        if ttl_minutes > S2S_LINK_MAX_TTL_MINUTES:
+            return f"ttl_minutes passa do teto de {S2S_LINK_MAX_TTL_MINUTES} minutos (24 horas)."
+    if audience is not None and audience not in STORE_ENTRY_AUDIENCES:
+        return "audience sem porta na loja: use " + ", ".join(STORE_ENTRY_AUDIENCES) + "."
+    return ""
+
+
 def exchange_token(token_str: str, request):
     from shopman.doorman import get_access_link_service
+    from shopman.doorman.error_codes import ErrorCode
+    from shopman.doorman.services.access_link import AuthResult
 
     from shopman.shop.services.customer_sign_in import mark_method
+
+    # A audiência é aplicada na troca (OC-09). O ``required_audience`` do doorman
+    # compara UMA audiência; a porta da loja aceita as suas (``STORE_ENTRY_AUDIENCES``),
+    # então a régua é lida aqui, antes do resgate. A audiência não muda depois de
+    # cunhada, então ler antes do lock não abre corrida.
+    audience = token_audience(token_str)
+    if audience and audience not in STORE_ENTRY_AUDIENCES:
+        logger.warning("access_link_exchange_wrong_audience audience=%s", audience)
+        return AuthResult(
+            success=False,
+            error="Wrong audience for the store entry.",
+            error_code=ErrorCode.TOKEN_INVALID,
+        )
 
     AccessLinkService = get_access_link_service()
     mark_method(request, "access_link")

@@ -322,6 +322,8 @@ class ActionSerializer(serializers.Serializer):
     payload_schema = serializers.DictField(required=False)
     idempotency = serializers.CharField(required=False)
     confirmation = serializers.DictField(required=False)
+    # O que a ação `copy` copia (o copia-e-cola do Pix); vazio nas demais.
+    value = serializers.CharField(allow_blank=True, required=False)
 
 
 class OrderTrackingPromiseSerializer(serializers.Serializer):

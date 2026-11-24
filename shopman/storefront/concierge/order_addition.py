@@ -186,12 +186,12 @@ def items_text(additions: list[dict]) -> str:
 def _lines(order, additions: list[dict]) -> list[dict]:
     """A lista FINAL para o ``order_edit``: o que já estava, pelo ``line_id``, mais o que entra."""
     from shopman.shop.services import order_composition
-    from shopman.shop.services.order_edit import _is_fixed_line
+    from shopman.shop.services.order_edit import is_fixed_line
 
     kept = [
         {"line_id": item.line_id, "sku": item.sku, "qty": str(item.qty)}
         for item in order_composition.effective_items(order)
-        if not _is_fixed_line(item)
+        if not is_fixed_line(item)
     ]
     return kept + [{"sku": entry["sku"], "qty": entry["qty"]} for entry in additions]
 

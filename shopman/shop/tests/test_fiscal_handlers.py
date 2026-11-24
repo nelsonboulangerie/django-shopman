@@ -18,6 +18,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.handlers.fiscal import NFCeCancelHandler, NFCeEmitHandler
 from shopman.shop.models import Channel
+from shopman.shop.tests.fiscal_document_support import authorized_note
 
 pytestmark = pytest.mark.django_db
 
@@ -88,10 +89,13 @@ def test_5xx_is_transient_and_4xx_is_terminal(order):
         NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_503"))).handle(
             message=_emit_directive(order), ctx={}
         )
+    # O 503 deixou a linha ``pending`` (o POST pode ter chegado): o envio
+    # seguinte consulta antes de reenviar, e só reenvia porque a consulta diz
+    # que não há nota.
     with pytest.raises(DirectiveTerminalError):
-        NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_400"))).handle(
-            message=_emit_directive(order), ctx={}
-        )
+        NFCeEmitHandler(
+            FakeBackend(emit_result=_error("focus_nfe_http_400"), query_result=_error("focus_nfe_http_404"))
+        ).handle(message=_emit_directive(order), ctx={})
 
 
 def test_recusa_grava_a_resposta_do_emissor_num_campo(order):
@@ -327,8 +331,7 @@ def test_cancel_leaves_emission_that_never_tried_alone(order, fiscal_backend_con
 
 
 def test_existing_access_key_is_noop(order):
-    order.data["nfce_access_key"] = "existing"
-    order.save(update_fields=["data"])
+    authorized_note(order, access_key="4" * 44)
     backend = FakeBackend(emit_result=AUTHORIZED)
 
     NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
@@ -393,8 +396,7 @@ def test_note_emitted_by_another_path_still_gets_its_promised_email(order):
     ninguém enviando: a directive nunca mais chega ao ``_send_receipt_email``.
     """
     _wants_email(order)
-    order.data["nfce_access_key"] = "ja-existia"
-    order.save(update_fields=["data"])
+    authorized_note(order, access_key="5" * 44)
     backend = EmailingBackend(emit_result=AUTHORIZED)
 
     NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
@@ -447,6 +449,7 @@ def test_processing_status_is_transient(order):
 
 
 def _cancel_directive(order):
+    authorized_note(order, access_key=AUTHORIZED.access_key)
     return Directive.objects.create(
         topic="fiscal.cancel_nfce",
         payload={"order_ref": order.ref, "reason": "cancelamento de teste com justificativa"},

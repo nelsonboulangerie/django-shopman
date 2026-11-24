@@ -29,6 +29,8 @@ from conversational_commerce.contracts.common import Unavailable
 from conversational_commerce.ports import Capabilities, ItemSummary, PortError, PromiseReading, TrustedContext
 from conversational_commerce.ports.commerce_read import OPERATIONS
 
+from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
+
 logger = logging.getLogger(__name__)
 
 PORT = "commerce_read"
@@ -295,14 +297,14 @@ class ShopmanCommerceRead:
     def _hold_minutes(self) -> int:
         """Os termos valem enquanto valem as reservas da sacola (``stock.hold_ttl_minutes`` do canal).
 
-        É a mesma conta que as reservas fazem (``availability._channel_hold_ttl_minutes``,
+        É a mesma conta que as reservas fazem (``availability.channel_hold_ttl_minutes``,
         com o padrão seguro que o ``ChannelConfig`` declara para ``None``). Sem substituto
         aqui: configuração do canal que não se lê levanta, e a cotação falha fechada
         (trava ``test_instance_runtime_config``).
         """
-        from shopman.shop.services.availability import _channel_hold_ttl_minutes
+        from shopman.shop.services.availability import channel_hold_ttl_minutes
 
-        return max(1, _channel_hold_ttl_minutes(self.channel_ref))
+        return max(1, channel_hold_ttl_minutes(self.channel_ref))
 
     # ── pedido, cliente, política ────────────────────────────────────────────
     def read_order(self, ctx: TrustedContext, ref: str):
@@ -451,31 +453,20 @@ def _fulfillment(data: dict, cart_ref: str = "") -> dict:
     """
     from django.utils import timezone
 
-    from shopman.shop.services.fulfillment_window import _hour_pair, _window_start
+    from shopman.shop.services.fulfillment_window import hour_pair, slot_start
 
     found: dict = {"mode": str(data.get("fulfillment_type") or "pickup")}
     if found["mode"] == "delivery" and cart_ref and data.get("delivery_address"):
         found["address_ref"] = address_ref(cart_ref, data)
     day, slot = _date_or_none(data.get("delivery_date")), str(data.get("delivery_time_slot") or "")
-    start = _window_start({"ref": slot}) if day and slot else None
+    start = slot_start({"ref": slot}) if day and slot else None
     if start is not None:
         zone = timezone.get_current_timezone()
         found["window_start"] = instant(datetime.combine(day, start, tzinfo=zone))
-        pair = _hour_pair(slot)
+        pair = hour_pair(slot)
         if pair is not None and pair[1] > start:
             found["window_end"] = instant(datetime.combine(day, pair[1], tzinfo=zone))
     return found
-
-
-def conversation_payment_methods(channel_ref: str) -> list[str]:
-    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
-
-    Régua ÚNICA: o ``requirements`` conta por ela o que falta, as condições dos termos mostram por
-    ela a forma única, e o fechamento de hoje (``order_closing._methods``) lista por ela as opções.
-    """
-    from shopman.shop.config import ChannelConfig
-
-    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
 
 
 def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "") -> list[dict]:
@@ -500,8 +491,7 @@ def _fulfillment_conditions(data: dict, channel_ref: str = "", cart_ref: str = "
     if not method and channel_ref:
         # Sem escolha, vale a única forma que a conversa oferece: a MESMA régua do ``requirements``
         # (``conversation_payment_methods``), para que "não falta" e "esta é a forma" nunca discordem.
-        methods = conversation_payment_methods(channel_ref)
-        method = methods[0] if len(methods) == 1 else ""
+        method = sole_payment_method(conversation_payment_methods(channel_ref))
     if method:
         # A forma de pagamento escolhida é condição dos termos: o cliente vê como paga antes do "sim".
         found.append({"code": "payment_method", "value": method})

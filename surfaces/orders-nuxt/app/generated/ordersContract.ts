@@ -58,6 +58,7 @@ export interface Action {
   payload_schema: Record<string, unknown>;
   idempotency: string;
   confirmation: Record<string, unknown>;
+  value: string;
 }
 
 /** IFoodNegotiationChoice(value: str, label: str) */

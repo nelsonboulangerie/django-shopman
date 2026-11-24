@@ -741,19 +741,19 @@ class TestDeliveryDate:
     """16. Data de entrega no passado é rejeitada."""
 
     def test_past_delivery_date_rejected(self):
-        from shopman.storefront.intents.checkout import _validate_preorder
+        from shopman.shop.policies.preorder_date import preorder_date_errors
 
         yesterday = (timezone.localdate() - timedelta(days=1)).isoformat()
-        errors = _validate_preorder(yesterday)
+        errors = preorder_date_errors(yesterday)
         assert "delivery_date" in errors
         assert "passada" in errors["delivery_date"].lower()
 
     def test_today_delivery_date_ok(self):
-        from shopman.storefront.intents.checkout import _validate_preorder
+        from shopman.shop.policies.preorder_date import preorder_date_errors
 
         _shop()
         today = timezone.localdate().isoformat()
-        errors = _validate_preorder(today)
+        errors = preorder_date_errors(today)
         assert errors.get("delivery_date") is None
 
 

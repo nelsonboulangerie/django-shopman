@@ -278,28 +278,24 @@ def _fallback_whatsapp_url(order, directive) -> str:
     Todo aviso que falhou em todos os canais traz o botão que resolve: o WhatsApp de
     quem está no balcão, com o MESMO texto que o cliente leria. Só no que falhou: o
     "Não enviado" pode ser o cliente que não aceita mensagem, e aí não se oferece.
-    O texto é montado sem cunhar link pessoal (ler a tela não grava nada): os links
-    saem na forma comum, que pede a entrada do cliente.
+    Os links do texto são os mesmos do aviso: os comuns do pedido, que pedem a entrada
+    do cliente.
     """
-    import copy
     from urllib.parse import quote
 
     from shopman.backstage.projections import order_queue
     from shopman.shop.adapters import notification_manychat
     from shopman.shop.adapters._notification_templates import render_message
 
-    data = copy.deepcopy(order.data or {})
+    data = order.data or {}
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     wa_url = order_queue._customer_contact(order, customer).get("customer_whatsapp_url", "")
     if not wa_url:
         return ""
-    customer.pop("uuid", None)
-    plain = copy.copy(order)
-    plain.data = data
     payload = dict(directive.payload or {})
     template = str(payload.get("template") or "")
     try:
-        context = notification_svc._build_context(plain, payload, template)
+        context = notification_svc._build_context(order, payload, template)
         event = notification_svc._qualify_template(template, context)
         message = render_message(event, context, notification_manychat.MESSAGE_TEMPLATES)
     except Exception:  # noqa: BLE001 — a tela do pedido não cai por causa do plano B

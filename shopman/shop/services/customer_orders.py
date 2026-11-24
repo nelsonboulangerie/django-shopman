@@ -105,25 +105,19 @@ def order_matches_customer_identity(
     customer_ref: str | None = None,
     phone: str | None = None,
 ) -> bool:
-    """Compare order identity without exposing whether the ref exists."""
-    data = order.data if isinstance(order.data, dict) else {}
-    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    """Compare order identity without exposing whether the ref exists.
 
-    if customer_ref:
-        if str(data.get("customer_ref") or "") == customer_ref:
-            return True
-        if str(customer.get("ref") or "") == customer_ref:
-            return True
-
-    if phone:
-        candidates = [
-            order.handle_ref if order.handle_type in {"phone", "whatsapp"} else "",
-            str(customer.get("phone") or ""),
-            str(data.get("customer_phone") or ""),
-        ]
-        return any(_same_phone(phone, candidate) for candidate in candidates if candidate)
-
-    return False
+    Avalia a MESMA regra do histórico e da projeção do cliente
+    (``customer_identity_filter``) sobre este pedido, no banco: pedido com dono
+    declarado só abre pelo ref; telefone só abre pedido sem dono (OC-02, X7).
+    """
+    pk = getattr(order, "pk", None)
+    if pk is None:
+        return False
+    identity = customer_identity_filter(customer_ref=customer_ref, phone=phone)
+    if identity is None:
+        return False
+    return type(order)._default_manager.filter(pk=pk).filter(identity).exists()
 
 
 def active_order_count_for_customer(
@@ -761,14 +755,35 @@ def _customer_identity_from_user(user) -> tuple[str | None, str | None]:
         return None, None
 
 
-def _same_phone(left: str, right: str) -> bool:
+#: Handles de pedido que SÃO o telefone de quem pediu.
+PHONE_HANDLE_TYPES: tuple[str, ...] = ("phone", "whatsapp")
+
+
+def _blank_json_key(path: str) -> Q:
+    """A chave ``path`` de ``Order.data`` está ausente, nula ou vazia."""
+    return Q(**{f"data__{path}__isnull": True}) | Q(**{f"data__{path}": None}) | Q(**{f"data__{path}": ""})
+
+
+def _without_declared_owner() -> Q:
+    """Pedido sem dono declarado: nem ``customer_ref`` nem ``customer.ref``."""
+    return _blank_json_key("customer_ref") & _blank_json_key("customer__ref")
+
+
+def _phone_variants(phone: str) -> list[str]:
+    """As grafias com que o mesmo telefone pode estar gravado no pedido.
+
+    E.164 (``+5543...``), a mesma sem o ``+`` e a forma recebida.
+    """
+    raw = str(phone).strip()
     try:
         from shopman.utils.phone import normalize_phone
 
-        return normalize_phone(left) == normalize_phone(right)
+        normalized = normalize_phone(raw)
     except Exception:
-        logger.debug("customer_orders._same_phone degraded; using fallback", exc_info=True)
-        return str(left).strip() == str(right).strip()
+        logger.debug("customer_orders._phone_variants degraded; using raw phone", exc_info=True)
+        normalized = ""
+    variants = (normalized, normalized.lstrip("+"), raw)
+    return [value for value in dict.fromkeys(variants) if value]
 
 
 def customer_identity_filter(
@@ -776,11 +791,29 @@ def customer_identity_filter(
     customer_ref: str | None = None,
     phone: str | None = None,
 ):
+    """A regra única de titularidade de pedido do cliente (OC-02, X7).
+
+    - Pedido com dono declarado (``data["customer_ref"]`` ou
+      ``data["customer"]["ref"]``) só casa pelo ``customer_ref``.
+    - Telefone só casa pedido SEM dono declarado (convidado), pelo handle de
+      telefone ou pelo telefone gravado no pedido. Operadora recicla número:
+      quem herda o número não herda os pedidos de quem tinha dono.
+
+    Casamento individual (``order_matches_customer_identity``), histórico,
+    contagens e projeção do cliente usam esta função; não reescreva a regra.
+    Devolve ``None`` quando não há identidade nenhuma para casar.
+    """
     query = Q()
     if customer_ref:
-        query |= Q(data__customer_ref=customer_ref)
-    if phone:
-        query |= Q(handle_type="phone", handle_ref=phone)
+        query |= Q(data__customer_ref=customer_ref) | Q(data__customer__ref=customer_ref)
+    phones = _phone_variants(phone) if phone else []
+    if phones:
+        by_phone = (
+            Q(handle_type__in=PHONE_HANDLE_TYPES, handle_ref__in=phones)
+            | Q(data__customer__phone__in=phones)
+            | Q(data__customer_phone__in=phones)
+        )
+        query |= by_phone & _without_declared_owner()
     return query if query.children else None
 
 

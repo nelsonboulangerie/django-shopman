@@ -146,6 +146,11 @@ def test_trocar_o_telefone_no_admin_tira_o_numero_antigo_da_porta():
     assert estranho["customer_ref"] != customer.ref
     cliente.logout()
 
+    # O número novo foi digitado pela equipe: abre a conta depois que a dona o
+    # confirma pelo WhatsApp (o vínculo do ManyChat grava a prova; D4, OC-08).
+    from shopman.guestman.contrib.manychat.service import ManychatService
+
+    ManychatService.sync_subscriber({"id": "mc-admin-1", "whatsapp_id": NUMERO_NOVO})
     dona = _entrar_por_otp(cliente, NUMERO_NOVO)
     assert dona["customer_ref"] == customer.ref
 
@@ -175,6 +180,11 @@ def test_trocar_o_email_no_admin_tira_o_antigo_e_mantem_o_secundario():
     ) == {(EMAIL_NOVO, True), (EMAIL_SECUNDARIO, False)}
     assert not CustomerIdentifier.objects.filter(identifier_value=EMAIL_ANTIGO).exists()
     assert get_adapter().resolve_identity("email", EMAIL_ANTIGO, purpose="login") is None
+    # O e-mail novo foi digitado pela equipe: sem prova, ainda não abre a conta (OC-08).
+    assert get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login") is None
+    ContactPoint.objects.get(type=ContactPoint.Type.EMAIL, value_normalized=EMAIL_NOVO).mark_verified(
+        ContactPoint.VerificationMethod.OTP_EMAIL,
+    )
     assert str(get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login").subject_id) == str(customer.uuid)
 
 
