@@ -113,6 +113,10 @@ export function auditTypographyInPage (opts = {}) {
   }
 
   const findings = []
+  // Contraste abaixo do AA que o dono decidiu manter por ora, com issue aberta para sair
+  // (`data-contrast-exception="<nome>-<issue>"`): vai para cá, à vista, e não reprova.
+  // Só contraste: o tamanho de 14 px vale sempre.
+  const exceptions = []
   const measured = []
 
   for (const el of document.querySelectorAll('[data-decisive]')) {
@@ -140,7 +144,11 @@ export function auditTypographyInPage (opts = {}) {
       if (size < 14 - 0.01) findings.push({ ...row, rule: 'decisivo abaixo de 14 px' })
       // Controle desativado é isento de contraste pela WCAG (1.4.3); o decisivo que o
       // explica precisa estar ao lado, legível, e é medido nele.
-      if (!disabled && contrast < (large ? 3 : 4.5)) findings.push({ ...row, rule: 'decisivo sem contraste AA' })
+      if (!disabled && contrast < (large ? 3 : 4.5)) {
+        const exception = host.closest('[data-contrast-exception]')?.getAttribute('data-contrast-exception')
+        if (exception) exceptions.push({ ...row, rule: 'decisivo sem contraste AA', exception })
+        else findings.push({ ...row, rule: 'decisivo sem contraste AA' })
+      }
     }
   }
 
@@ -219,5 +227,5 @@ export function auditTypographyInPage (opts = {}) {
   const horizontalScroll =document.documentElement.scrollWidth > document.documentElement.clientWidth + 1
   if (horizontalScroll) findings.push({ kind: 'page', text: '', rule: 'rolagem lateral', scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth })
 
-  return { findings, measured, inventory }
+  return { findings, measured, inventory, exceptions }
 }

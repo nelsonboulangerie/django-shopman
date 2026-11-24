@@ -5,6 +5,7 @@
       badgeVariants({ disabled, size, variant, class: normalizeClass(props.class) || undefined })
     "
     v-bind="forwarded"
+    :data-contrast-exception="variant === 'warning' ? 'ambar-da-marca-3523' : undefined"
     @click="onClick"
   >
     <slot />
@@ -33,12 +34,8 @@
         outline: "text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         success:
           "bg-success text-success-foreground focus-visible:ring-success/30 [a&]:hover:bg-success/90 border-transparent",
-        // Âmbar CLARO com texto do corpo, como o aviso (UiAlert warning) já faz: o âmbar
-        // cheio da marca com letra branca dá 3,7:1 e reprova o AA a 14 px; nenhuma cor de
-        // letra passa sobre aquele tom médio (X9, OC-30). O fundo é opaco porque o selo
-        // senta sobre a foto do produto.
         warning:
-          "bg-[color-mix(in_srgb,var(--warning)_22%,var(--background))] text-foreground border-warning/60 focus-visible:ring-warning/30",
+          "bg-warning text-warning-foreground focus-visible:ring-warning/30 [a&]:hover:bg-warning/90 border-transparent",
         info: "bg-info text-info-foreground focus-visible:ring-info/30 [a&]:hover:bg-info/90 border-transparent",
         ghost: "text-foreground [a&]:hover:bg-accent/50 border-transparent bg-transparent",
         error:
@@ -56,6 +53,10 @@
     // O rótulo quebra linha em vez de vazar (`max-w-full`, sem `whitespace-nowrap`, e
     // `wrap-anywhere` para a palavra que sozinha passa da foto a 320 px): com a
     // fonte do sistema a 200 %, "Fica pronto amanhã" saía do cartão do produto (X11).
+    // O âmbar cheio da marca com letra branca dá 3,73:1, abaixo do AA a 14 px. O dono
+    // decidiu (24/11/2026) manter o selo assim e escurecer o âmbar da PALETA (#3523);
+    // até lá, o selo âmbar é exceção de contraste NOMEADA (`data-contrast-exception`),
+    // que a varredura X9 lista à parte e não esconde. O tamanho continua cobrado.
     // `md` (14 px) por padrão: na loja o selo carrega estado e disponibilidade
     // ("Indisponível", "Fica pronto amanhã", "Últimas unidades"), que não descem de
     // 14 px (X9, OC-30). O `sm` (12) fica para o contador em pílula, pedido pelo nome.

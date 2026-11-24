@@ -47,15 +47,19 @@ describe('tipografia decisiva (X9, OC-30)', () => {
     expect(rule(css, '.shop-reading')).toContain('text-base')
   })
 
-  it('o selo nasce com 14 px, quebra linha em vez de vazar, e o âmbar passa o AA', () => {
+  it('o selo nasce com 14 px e quebra linha em vez de vazar; o âmbar é exceção nomeada (#3523)', () => {
     const badge = read('app/components/Ui/Badge.vue')
     expect(badge).toMatch(/defaultVariants:\s*\{[^}]*size:\s*"md"/)
     expect(badge).toMatch(/md:\s*"[^"]*text-sm/)
     const base = badge.match(/base:\s*"([^"]+)"/)?.[1] || ''
     expect(base).not.toContain('whitespace-nowrap')
     expect(base).toContain('max-w-full')
-    // Letra branca sobre o âmbar cheio da marca dá 3,7:1.
-    expect(badge).not.toMatch(/warning:\s*\n?\s*"bg-warning text-warning-foreground/)
+    // O dono manteve o âmbar cheio com letra branca (3,73:1) até a paleta escurecer
+    // (#3523): a exceção é só do âmbar, nomeada com a issue, e sai junto com ela.
+    expect(badge).toMatch(/warning:\s*\n?\s*"bg-warning text-warning-foreground/)
+    expect(badge).toContain(`:data-contrast-exception="variant === 'warning' ? 'ambar-da-marca-3523' : undefined"`)
+    const exceptions = [...vueFiles('app/pages'), ...vueFiles('app/components')].filter(file => read(file).includes('data-contrast-exception'))
+    expect(exceptions).toEqual(['app/components/Ui/Badge.vue'])
   })
 
   it('o botão quebra o rótulo e cresce, nunca vaza com a fonte grande (X11)', () => {

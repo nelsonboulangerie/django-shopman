@@ -51,6 +51,10 @@ async function expectReadable (page: Page, testInfo: TestInfo, route: string, op
       const normal = await page.evaluate(auditTypographyInPage, {})
       expect(normal.findings, `${route} a ${width} px no tema ${colorScheme}: decisivo abaixo de 14 px ou sem AA, corpo de leitura abaixo de 16 px, rolagem lateral`).toEqual([])
       if (opts.decisive) expect(normal.measured.length, `${route} a ${width} px: nenhum [data-decisive] à vista`).toBeGreaterThan(0)
+      // Exceção de contraste só a declarada, com a issue que a tira: o selo âmbar da marca
+      // (3,73:1 com letra branca), mantido por decisão do dono até o âmbar escurecer (#3523).
+      expect(normal.exceptions.map(e => e.exception).filter(e => e !== 'ambar-da-marca-3523'), `${route} a ${width} px: exceção de contraste não declarada`).toEqual([])
+      if (normal.exceptions.length) testInfo.annotations.push({ type: 'exceção de contraste (#3523)', description: `${route} ${width} px ${colorScheme}: ${[...new Set(normal.exceptions.map(e => `${e.text} ${e.contrast}:1`))].join(', ')}` })
     }
     await page.emulateMedia({ colorScheme: 'light' })
 
