@@ -467,6 +467,7 @@ useHead({
         <div
           class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
           data-focus-obstruction
+          data-x11-exception="cartao-do-produto-3590"
         >
           <!-- Com a fonte do sistema a 200 %, o botão (largo e sem encolher) espremia o nome
                e o PREÇO até sumirem (X11, OC-30). A coluna tem piso de 4rem, que cresce com a
