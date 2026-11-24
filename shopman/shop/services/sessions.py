@@ -515,6 +515,10 @@ def open_sessions_for_customer(
         .exclude(channel_ref=exclude_channel)
         .order_by("-updated_at", "-pk")
     )
+    return _summaries(candidates)
+
+
+def _summaries(candidates) -> tuple[OpenSessionElsewhere, ...]:
     found = []
     for session in candidates:
         if session.is_anonymized:

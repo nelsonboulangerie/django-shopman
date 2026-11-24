@@ -240,6 +240,28 @@ O prefixo do código (`NB-`) e o TTL (10 min) são do doorman
 > recebido no WhatsApp fica como reserva. Não há SSE; a aba consulta o `claim` com
 > backoff e também permite a conferência manual.
 
+## Continuar pelo WhatsApp: a sacola vai para a conversa (OC-16)
+
+O mesmo código `NB-` leva a sacola da loja para a conversa com a Nice, e não para outro
+navegador. A sacola oferece "Continuar pelo WhatsApp" só quando a ponte está ligada
+(`SHOPMAN_CONCIERGE_ENABLED` e `CONCIERGE_TRANSFER_ENABLED`) e a loja tem número (X1).
+
+```
+1. Sacola → POST /api/v1/cart/continue-in-conversation/
+   → session_transfer.offer(web → whatsapp) + estado NB {conversation_cart_transfer: oferta}
+   → { code, message, deep_link, wa_number }   (a sacola da loja não muda)
+2. wa.me abre "Olá! Quero continuar por aqui a sacola que montei no site (ref. NB-XxXx)"
+3. A mensagem chega à Nice (resposta padrão do ManyChat, NÃO o fluxo de login)
+4. A Nice lê o código, consome o estado e chama session_transfer.accept com o vínculo
+   verified_customer da conversa: a sacola anônima passa a ser do cliente verificado;
+   a sacola com dono só vai para o dono. A Nice diz que a sacola chegou e o que mudou.
+```
+
+⚠️ A mensagem NÃO contém "quero entrar no site" nem `#menu`, para não disparar o Flow de
+login no ManyChat. Ela precisa cair na automação que entrega a mensagem à Nice (a resposta
+padrão). Se cair no Flow de login por engano, o access link sai sem sacola: a troca do link
+ignora a chave `conversation_cart_transfer`, e a sacola continua na loja.
+
 ## Degradação da sacola (handoff_expired)
 
 Omotenashi: nunca sumir com a sacola em silêncio. Se o código veio mas **não resolveu**

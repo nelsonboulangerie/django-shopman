@@ -1801,6 +1801,10 @@ useSeoMeta({
           </p>
         </div>
 
+        <!-- A sacola entre a loja e a conversa (OC-16, #3515, #3517): mesmos avisos da
+             sacola. Depois de trazer ou trocar, o Finalizar relê o rascunho. -->
+        <CartPassageNotices :cart="liveCart" @changed="refresh" />
+
         <!-- Skeleton só no carregamento INICIAL. Em refresh de fundo (ex.: rascunho
              de entrega) manter o conteúdo montado — apagar a página remontava o
              AddressPicker, que re-selecionava o salvo e re-disparava o rascunho →
