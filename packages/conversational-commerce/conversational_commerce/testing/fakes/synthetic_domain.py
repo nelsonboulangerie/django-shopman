@@ -88,3 +88,5 @@ class SyntheticState:
     # Os horários de retirada do canal. Com eles, o canal exige o quando (dia, modo, horário) antes dos
     # termos, como o fechamento da casa; sem eles (o padrão), o falso não exige.
     pickup_slots: tuple[str, ...] = ()
+    # As janelas de entrega do canal. Com elas, a entrega exige a janela depois do endereço.
+    delivery_windows: tuple[str, ...] = ()
