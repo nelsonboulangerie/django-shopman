@@ -10760,6 +10760,27 @@
       ]
     },
     {
+      "path": "shopman/shop/services/fiscal_mirror.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "MIRROR_KEYS",
+            "mirror_values",
+            "write"
+          ]
+        }
+      ]
+    },
+    {
       "path": "shopman/shop/services/fixed_discount.py",
       "touchpoints": [
         "service"

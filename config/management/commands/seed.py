@@ -7261,18 +7261,34 @@ class Command(BaseCommand):
         data.setdefault("fiscal", {})["issue_document"] = True
         data.setdefault("customer", {}).setdefault("name", "Consumidor Final")
         data.setdefault("payment", {})["method"] = data.get("payment", {}).get("method") or "pix"
-        data.update({
-            "nfce_access_key": chave,
-            "nfce_number": 1234,
-            "nfce_series": "1",
-            "nfce_protocol": f"141{now:%y}0000012345",
-            "nfce_status": "autorizado",
-            "nfce_danfe_url": f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
-            "nfce_qrcode_url": "",
-            "nfce_xml_url": f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
-        })
         order.data = data
         order.save(update_fields=["data", "updated_at"])
+
+        # A nota mora no FiscalDocument (D-037, #3428), gravada pelo mesmo serviço
+        # da emissão; as chaves ``nfce_*`` do pedido são o espelho dela, e só o
+        # ``fiscal_mirror`` as escreve.
+        from django.db import transaction
+        from shopman.fiscalman import services as fiscal_documents
+        from shopman.fiscalman.contracts import FiscalDocumentResult
+
+        from shopman.shop.services import fiscal_mirror
+
+        with transaction.atomic():
+            # Seed rodado de novo sobre o mesmo pedido: a nota que ele já tem fica.
+            document = fiscal_documents.document_for(order.ref) or fiscal_documents.record_authorized(
+                order.ref,
+                FiscalDocumentResult(
+                    success=True,
+                    access_key=chave,
+                    document_number=1234,
+                    document_series=1,
+                    protocol_number=f"141{now:%y}0000012345",
+                    danfe_url=f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
+                    xml_url=f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
+                    status="authorized",
+                ),
+            )
+            fiscal_mirror.write(order, document)
         self.stdout.write(f"  🧾 NFC-e exemplo (homologação) no pedido {order.ref} — /fiscal/danfe/{order.ref}/")
 
     def _seed_security_reliability_edges(self, products, customers, channels):
