@@ -619,6 +619,27 @@ def send_voiced_parts(conversation, result, voice: frozenset[str]) -> bool:
     return sent is not None
 
 
+def send_house_extras(conversation, result, engine) -> None:
+    """As mensagens que a casa monta ao lado do efeito, como no caminho de hoje (``ToolContext.extra_replies``).
+
+    O pedido com Pix: o ``place_order`` põe o copia-e-cola numa mensagem SEPARADA, para o cliente copiar sem
+    ruído (``tools._placed_result``). Pelo motor, quem chama o ``place_order`` é o sítio, com o contexto dele, e
+    a resposta do motor é só o texto do molde; sem isto, o Pix ficava no contexto e o cliente nunca o recebia.
+    Saem depois da resposta, pelo envio de hoje, uma chave por mensagem (o reenvio nunca duplica).
+    """
+    from . import house_rules, service
+
+    site = getattr(getattr(engine.ports, "commerce_execute", None), "site", None)
+    extras = [str(text) for text in getattr(getattr(site, "tool_context", None), "extra_replies", None) or []
+              if str(text or "").strip()]
+    decision = getattr(result.decision, "decision_id", "") or ""
+    for index, text in enumerate(extras):
+        sent = service.send_out_of_turn(conversation, text, receipts=frozenset({house_rules.ORDER}),
+                                        send_key=f"extra:{decision}:{index}")
+        if sent is None:
+            logger.warning("concierge.turn_framework.extra_unsent conversation=%s index=%s", conversation.pk, index)
+
+
 def answer_after_effect(conversation, result) -> None:
     """Efeito feito e resposta segurada: o cliente ouve o recuo, e a equipe recebe o cartão com prazo."""
     from datetime import timedelta
@@ -694,10 +715,12 @@ def run(conversation, message, *, channel=None, interrupted=None):
                                conversation.pk, result.outcome, _findings(result))
                 if not send_voiced_parts(conversation, result, frozenset(live.house_templates)):
                     answer_after_effect(conversation, result)
+                send_house_extras(conversation, result, live)
                 return result
             logger.info("concierge.turn_framework.not_sent conversation=%s outcome=%s fallbacks=%s",
                         conversation.pk, result.outcome, list(result.fallbacks))
             return None
+        send_house_extras(conversation, result, live)
         return result
     except Exception:  # noqa: BLE001 — o motor que cai nunca derruba o turno: segue o caminho de hoje
         logger.warning("concierge.turn_framework.failed conversation=%s", getattr(conversation, "pk", None),
