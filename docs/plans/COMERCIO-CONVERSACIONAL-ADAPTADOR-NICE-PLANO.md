@@ -82,7 +82,7 @@ framework.
 | P01 | Inquilino e ambiente | Nelson; `shadow` no N5, `live` só no N9 | Engenharia | aprovado |
 | P02 | Canal e capacidades | WhatsApp pelo ManyChat; janela de 24 h com prova; identidade do evento não verificada (`CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED=false`) | Engenharia | aprovado |
 | P03 | Identidade por canal | Telefone do WhatsApp = `transported`; vínculo verificado de cliente = `weak_verified`, desligado no alpha (`CONCIERGE_IDENTITY_LINK_ENABLED=false`) | Engenharia | aprovado |
-| P04 | Leitor e modelo | Regra local primeiro; Jev no porteiro e DeepSeek na extração, só texto redigido, só conexão `customer_text_approved` | Dono (16/11, D-040) | aprovado |
+| P04 | Leitor e modelo | Regra local primeiro; Jev no porteiro e DeepSeek na extração, só texto redigido, só conexão `customer_text_approved`. Uma leitura pela IA por turno; uma segunda chamada só para verificar conflito (ADR-051) | Dono (16/11, D-040; adendo de 24/11) | aprovado |
 | P05 | Gasto com modelo | Freio e teto diário do `ai_governor` | Dono (D-039, item 5) | aprovado |
 | P06 | Regras da casa | `house_rules.RULES`, R1 a R14 | Dono (OBS0310-M, #1442) | aprovado |
 | P07 | Movimentos ligados | `acknowledge`, `inform`, `cover_readings`, `inform_limitation`, `ask_clarification`, `handoff`; `verify_with_staff` quando o WP-05 da Concierge entrar | Dono (comportamento atual) | aprovado |

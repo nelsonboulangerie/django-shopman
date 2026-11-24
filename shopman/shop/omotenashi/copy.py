@@ -1577,6 +1577,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual janela de entrega fica melhor? {delivery_window}")},
     },
+    "CONCIERGE_ENGINE_CONFIRM_READING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Só para confirmar: {reading}?")},
+    },
     "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": {
         WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada. Total: {total}.")},
     },
