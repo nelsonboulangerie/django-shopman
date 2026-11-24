@@ -99,7 +99,9 @@ def test_k25_instruction_in_the_customer_message_is_data():
     [request] = model.requests
     assert isinstance(request, InterpretRequest)
     # O modelo recebe a referência protegida e a lista fechada de atos, nada de autoridade nem de perfil.
-    assert {f.name for f in dataclasses.fields(request)} == {"request", "event_id", "content_ref", "allowed_acts"}
+    # O contexto da conversa (ADR-051) vai por código e referência: nenhum texto do cliente além da referência.
+    assert {f.name for f in dataclasses.fields(request)} == {"request", "event_id", "content_ref", "allowed_acts",
+                                                             "context"}
     assert request.request.data_class == "redacted"
 
 

@@ -67,6 +67,22 @@ def templates() -> dict:
 
 
 @functools.cache
+def expected_acts(code: str) -> tuple[str, ...]:
+    """Os atos que respondem à pergunta da condição ``code`` (ADR-051, conferência de coerência).
+
+    O ato de cada movimento que a cumpre (``FULFILLS_CONDITIONS``) ou que a responde (``ANSWERS_CONDITIONS``),
+    e, na condição de sim ou não, o sim, o não e o pedido das opções. Condição que nenhum movimento declara
+    não espera ato nenhum: a conferência não a julga.
+    """
+    from ..acts import ANSWER_ACTS
+
+    acts = [module.ACT for module in registry().values()
+            if code in (*getattr(module, "FULFILLS_CONDITIONS", ()), *getattr(module, "ANSWERS_CONDITIONS", ()))]
+    if code in yes_no_conditions():
+        acts.extend(sorted(ANSWER_ACTS))
+    return tuple(dict.fromkeys(acts))
+
+
 def yes_no_conditions() -> frozenset[str]:
     """As condições que se respondem com sim ou não, declaradas pelos movimentos que as cumprem
     (``ANSWERS_CONDITIONS``). Lidas uma vez: o registro não muda em execução."""

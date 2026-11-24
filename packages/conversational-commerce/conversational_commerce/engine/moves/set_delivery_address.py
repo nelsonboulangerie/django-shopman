@@ -25,6 +25,8 @@ from ._effects import SHARED, receipt_part
 
 MOVE = "set_delivery_address"
 ACT = "give_address"
+#: As condições do fechamento que este movimento cumpre: a resposta a elas é o ato dele (ADR-051).
+FULFILLS_CONDITIONS: tuple[str, ...] = ("delivery_address", "delivery_address_details", "delivery_complement")
 EFFECT = True
 #: A recusa do endereço tem frase própria: o cliente precisa saber o que fazer (outro endereço, a localização).
 #: É limitação (nada mudou), por isso do movimento ``inform_limitation``.

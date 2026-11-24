@@ -17,6 +17,8 @@ from ._effects import SHARED, receipt_part
 
 MOVE = "set_payment"
 ACT = "choose_payment"
+#: As condições do fechamento que este movimento cumpre: a resposta a elas é o ato dele (ADR-051).
+FULFILLS_CONDITIONS: tuple[str, ...] = ("payment_method",)
 EFFECT = True
 #: A forma que o canal não oferece tem frase própria: diz que não e pergunta de novo, com as opções do canal.
 #: É limitação (nada mudou), por isso do movimento ``inform_limitation``, que responde ao bloqueio.
