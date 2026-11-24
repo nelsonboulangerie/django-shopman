@@ -195,7 +195,7 @@ mensagem cair no fluxo de login, o access link a carrega e a troca do link a ign
 Nice (`concierge/cart_arrival.py` → `tools.receive_site_cart` → `session_transfer.accept`), e a
 conversa guarda a última oferta aceita em `Conversation.flags["cart_arrival"]` = `{code, offer}`
 (`offer` = a mesma `as_metadata()`): o mesmo código outra vez pede o aceite de novo e recebe o recibo
-gravado (X4), nunca uma segunda sacola. No navegador, a oferta que esbarrou numa sacola com itens
+gravado (X4), nunca uma segunda sacola. Com sacola com itens dos dois lados (`destination_conflict`), a Nice pergunta qual usar e guarda a oferta em `Conversation.flags["pending_cart_arrival"]` = `{code, offer, at}` até a resposta (vale 30 min): "a do site" aceita com `replace_existing=True` (a sacola da conversa é abandonada inteira, nunca mesclada), "a daqui" apaga a chave e a do site continua aberta. No navegador, a oferta que esbarrou numa sacola com itens
 (`destination_conflict`, na troca do link ou em "Trazer para cá") fica na sessão Django em
 `cart_transfer_pending` (a mesma `as_metadata()`) até a resposta "substituir ou manter"
 (`POST /api/v1/cart/transfer-choice/`), que a consome.

@@ -264,19 +264,95 @@ def test_x5_a_store_cart_that_changed_after_the_offer_is_offered_again(conversat
     assert _turn(conversation, fresh["message"]).startswith("Sua sacola do site chegou aqui na conversa.")
 
 
-def test_a_conversation_with_its_own_cart_keeps_both_and_never_merges(ctx, outbox, bridge):
+ASK = (
+    "Você já tem uma sacola aqui, com 1 item (R$ 0,90). A do site tem 2 itens (R$ 1,80). Qual quer usar?\n"
+    "Responda “a do site” para trazer a do site (a daqui é descartada) ou “a daqui” para ficar com "
+    "esta (a do site continua lá)."
+)
+
+
+def _both_sides(ctx):
+    """A conversa com 1 pão; a loja com 2, oferecidos pela mensagem pronta."""
     tools.set_item(ctx, SKU, 1)
     conversation = ctx.conversation
     own = _conversation_cart(conversation)
     web = _web_cart(qty=2)
     started = _continue(_browser(cart=web)).data
+    return conversation, own, web, started
+
+
+def test_3520_with_a_cart_on_both_sides_the_nice_asks_the_same_as_the_site(ctx, outbox, bridge):
+    conversation, own, web, started = _both_sides(ctx)
 
     reply = _turn(conversation, started["message"])
 
-    assert reply.startswith("Você já tem uma sacola aqui na conversa, então a do site continua lá")
+    assert reply == ASK
+    web.refresh_from_db()
+    assert web.state == "open"  # perguntar não muda nada, nunca mescla
+    assert [(item["sku"], int(item["qty"])) for item in _conversation_cart(conversation).items] == [(SKU, 1)]
+    assert _conversation_cart(conversation).session_key == own.session_key
+    # A mesma mensagem outra vez, com a pergunta no ar: a mesma pergunta.
+    assert _turn(conversation, started["message"]) == ASK
+
+
+def test_3520_answer_from_the_site_replaces_and_never_merges(ctx, outbox, bridge):
+    conversation, own, web, started = _both_sides(ctx)
+    _turn(conversation, started["message"])
+
+    reply = _turn(conversation, "a do site")
+
+    assert reply.startswith("Sua sacola do site chegou aqui na conversa.")
+    arrived = _conversation_cart(conversation)
+    assert arrived.session_key != own.session_key
+    assert [(item["sku"], int(item["qty"])) for item in arrived.items] == [(SKU, 2)]
+    own.refresh_from_db()
+    web.refresh_from_db()
+    assert own.state == "abandoned" and web.state == "abandoned"
+    assert _holds(own.session_key) == [] and _holds(web.session_key) == []
+    conversation.refresh_from_db()
+    assert "pending_cart_arrival" not in (conversation.flags or {})
+    # X4: a resposta outra vez não abre outra sacola nem pergunta de novo.
+    _turn(conversation, "a do site")
+    assert Session.objects.filter(channel_ref=CHANNEL, state="open").count() == 1
+
+
+def test_3520_answer_from_here_keeps_both_where_they_are(ctx, outbox, bridge):
+    conversation, own, web, started = _both_sides(ctx)
+    _turn(conversation, started["message"])
+
+    reply = _turn(conversation, "a daqui")
+
+    assert reply == "Combinado: fica a sacola daqui. A do site continua lá, como estava."
     web.refresh_from_db()
     assert web.state == "open"
-    assert [(item["sku"], int(item["qty"])) for item in _conversation_cart(conversation).items] == [(SKU, 1)]
+    assert _conversation_cart(conversation).session_key == own.session_key
+    conversation.refresh_from_db()
+    assert "pending_cart_arrival" not in (conversation.flags or {})
+
+
+def test_3520_a_long_message_is_not_an_answer(ctx, outbox, bridge):
+    conversation, own, web, started = _both_sides(ctx)
+    _turn(conversation, started["message"])
+
+    _turn(conversation, "pode trazer mais um pão francês para mim amanhã cedo")
+
+    web.refresh_from_db()
+    assert web.state == "open"
+    conversation.refresh_from_db()
+    assert "pending_cart_arrival" in (conversation.flags or {})
+
+
+def test_x5_the_answer_after_the_site_changed_is_refused(ctx, outbox, bridge):
+    conversation, own, web, started = _both_sides(ctx)
+    _turn(conversation, started["message"])
+    cart_service.add_item(session_key=web.session_key, channel_ref=WEB, origin_channel=WEB, sku=SKU, qty=1,
+                          unit_price_q=90, name="Pão Francês")
+
+    reply = _turn(conversation, "a do site")
+
+    assert reply.startswith("A sacola do site mudou depois que você tocou em Continuar pelo WhatsApp.")
+    web.refresh_from_db()
+    assert web.state == "open"
     assert _conversation_cart(conversation).session_key == own.session_key
 
 

@@ -26,9 +26,9 @@ async function run (action: Action) {
   if (pending.value) return
   pending.value = action.ref
   try {
-    const response = await runCartPassage(action.href, action.payload_schema || {})
-    const status = response.cart_transfer?.status
-    if (status === 'accepted' && import.meta.client) useSonner.success('Sacola trazida para cá.')
+    // Sem aviso flutuante: a confirmação é a própria tela (a sacola que chegou e, com
+    // diferenças, o aviso âmbar no alto). Um toast cobria o item logo abaixo.
+    await runCartPassage(action.href, action.payload_schema || {})
     emit('changed')
   } catch (error) {
     if (import.meta.client) useSonner.error(passageErrorMessage(error))
