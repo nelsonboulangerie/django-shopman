@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 from django.db import IntegrityError, transaction
 from shopman.guestman.models import ContactPoint, Customer, ExternalIdentity
 
@@ -228,3 +230,143 @@ def replace_primary_contact(customer: Customer, *, field: str, new_value: str) -
         value_normalized__in=old_values,
     ).delete()
     Customer.objects.filter(pk=customer.pk).update(**{field: new_value})
+
+
+# ── Número que muda de dono (D3, OC-07) ──────────────────────────────
+#
+# O telefone é autenticador restrito, nunca identidade permanente: a operadora
+# recicla o número, e quem o recebe passa no código e manda mensagem do mesmo
+# WhatsApp. O Guestman, dono da posse do contato, diz em UM lugar quando o número
+# deixou de ser de alguém (``contact_reassigned``), e cada dono de chave que ainda
+# trata o número como desta pessoa corta a sua: o contrib de identificadores tira o
+# identificador do provedor de mensagens; o orquestrador desliga a conversa.
+
+#: Telefone e WhatsApp dividem o número; a família inteira é a posse.
+PHONE_FAMILY: tuple[str, ...] = (ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP)
+
+#: Quem percebeu que o número saiu. Os provedores entram com o próprio nome.
+SOURCE_CONTACT_REMOVED = "contact_removed"
+SOURCE_PROVIDER_SUBSCRIBER_MOVED = "provider_subscriber_moved"
+SOURCE_CUSTOMER_NOT_ME = "customer_not_me"
+
+#: Quem pediu a retirada em curso, para o aviso do ``post_delete`` dizer a causa
+#: verdadeira em vez de "contato apagado".
+_release_source: ContextVar[str] = ContextVar("guestman_contact_release_source", default="")
+
+
+def announce_contact_left(
+    customer_id,
+    contact_type: str,
+    value: str,
+    *,
+    source: str,
+    verification_ref: str = "",
+) -> bool:
+    """Avisa que ``value`` deixou de ser número do cliente ``customer_id``.
+
+    Só avisa quando o cadastro já não guarda o número em contato nenhum da
+    família: apagar só o contato de voz de um número que segue como WhatsApp não
+    é perda do número. Devolve se avisou.
+    """
+    from shopman.guestman.signals import contact_reassigned
+
+    if contact_type not in PHONE_FAMILY or not value or customer_id is None:
+        return False
+    if ContactPoint.objects.filter(
+        customer_id=customer_id,
+        type__in=PHONE_FAMILY,
+        value_normalized=value,
+    ).exists():
+        return False
+    customer_ref = (
+        Customer.objects.filter(pk=customer_id).values_list("ref", flat=True).first() or ""
+    )
+    contact_reassigned.send(
+        sender=ContactPoint,
+        customer_id=customer_id,
+        customer_ref=customer_ref,
+        contact_type=contact_type,
+        value=value,
+        verification_ref=verification_ref or "",
+        source=source,
+    )
+    return True
+
+
+def _announce_deleted_contact(sender, instance, **kwargs) -> None:
+    """``post_delete`` do contato: qualquer caminho que apaga avisa, sem lembrar.
+
+    Troca de número na conta, liberação no balcão, exclusão no Admin, unificação:
+    todos apagam a linha, e todos passam por aqui, na mesma transação.
+    """
+    announce_contact_left(
+        instance.customer_id,
+        instance.type,
+        instance.value_normalized,
+        source=_release_source.get() or SOURCE_CONTACT_REMOVED,
+        verification_ref=instance.verification_ref,
+    )
+
+
+def connect_signals() -> None:
+    from django.db.models.signals import post_delete
+
+    post_delete.connect(
+        _announce_deleted_contact,
+        sender=ContactPoint,
+        dispatch_uid="guestman_identity_announce_contact_left",
+    )
+
+
+@transaction.atomic
+def release_reassigned_contact(value: str, *, source: str) -> list[str]:
+    """O número ``value`` agora é de OUTRA pessoa: ele sai do cadastro de quem o tinha.
+
+    É a porta de entrada do sinal de troca de dono (D3c), venha ele de um provedor
+    (aviso de troca de identidade do WhatsApp, API de reciclagem da operadora) ou
+    da própria pessoa que recebeu o número ("não sou eu", D3d). Apaga os contatos
+    da família telefone com esse valor e zera o cache ``Customer.phone`` que ainda
+    o guardar; o ``post_delete`` leva junto as chaves de login e emite
+    ``contact_reassigned``. Devolve os refs de quem perdeu o número.
+
+    ⚠️ Não cria nem move nada: o novo titular entra pela porta de sempre (código no
+    número, mensagem no WhatsApp) e nasce como cadastro próprio, sem herdar o
+    endereço, os pedidos e a conversa de quem tinha o número.
+    """
+    from shopman.guestman.utils import normalize_phone
+
+    normalized = normalize_phone(value)
+    if not normalized:
+        return []
+    contacts = list(
+        ContactPoint.objects.select_for_update()
+        .filter(type__in=PHONE_FAMILY, value_normalized=normalized)
+        .select_related("customer")
+    )
+    owners = {contact.customer_id: contact.customer.ref for contact in contacts}
+    cached_only = Customer.objects.filter(phone=normalized).exclude(pk__in=owners)
+    for customer_id, ref in cached_only.values_list("pk", "ref"):
+        owners[customer_id] = ref
+    if not owners:
+        return []
+    # A família inteira sai: o último contato a sair é o que dispara o aviso.
+    token = _release_source.set(source)
+    try:
+        for contact in contacts:
+            contact.delete()
+    finally:
+        _release_source.reset(token)
+    # ``.update()`` e não ``.save()``: o save do Customer re-materializa o contato
+    # a partir do cache, e o número voltaria na hora.
+    Customer.objects.filter(pk__in=owners, phone=normalized).update(phone="")
+    for customer_id in owners:
+        if not any(contact.customer_id == customer_id for contact in contacts):
+            # Número só no cache (sem contato): ninguém apagou linha, então ninguém
+            # avisou. Avisa aqui.
+            announce_contact_left(
+                customer_id,
+                ContactPoint.Type.PHONE,
+                normalized,
+                source=source,
+            )
+    return sorted(owners.values())

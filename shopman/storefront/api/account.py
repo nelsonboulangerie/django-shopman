@@ -131,6 +131,54 @@ def _contact_change_refused(request, customer, *, purpose: str) -> Response | No
     return None
 
 
+#: Endereços que ESTA sessão criou. Quem só conhece o número digitou esses agora
+#: (o checkout cria e logo dá o apelido); mexer neles não é mexer no cadastro de antes.
+ADDRESSES_CREATED_HERE_KEY = "addresses_created_here"
+
+
+def _remember_address_created_here(request, address_id) -> None:
+    session = getattr(request, "session", None)
+    if session is None or not knows_only_the_number(request):
+        return
+    created = [int(pk) for pk in session.get(ADDRESSES_CREATED_HERE_KEY, []) if str(pk).isdigit()]
+    session[ADDRESSES_CREATED_HERE_KEY] = [*created, int(address_id)][-20:]
+
+
+def _number_access_refused(request, *, address_id=None) -> Response | None:
+    """Troca de dados pede acesso de DISPOSITIVO (D3a); o número sozinho não troca.
+
+    Sessão que só conhece o número (link encaminhado, número sem prova recente) pede,
+    vê os pedidos recentes e paga. Mexer no cadastro (nome, endereço salvo) passa
+    pela mesma confirmação por código que a tela de perfil já oferece: ela devolve a
+    sessão forte e o pedido segue. O endereço que a própria sessão acabou de criar
+    fica livre: foi ela que o digitou.
+    """
+    if not knows_only_the_number(request):
+        return None
+    if address_id is not None:
+        created = getattr(request, "session", {}).get(ADDRESSES_CREATED_HERE_KEY, [])
+        if int(address_id) in {int(pk) for pk in created if str(pk).isdigit()}:
+            return None
+    return _step_up_required_response()
+
+
+#: O que a sessão que só conhece o número enxerga do histórico (D3a): os pedidos
+#: em andamento e os dos últimos dias. O histórico completo pede dispositivo.
+NUMBER_ACCESS_HISTORY_DAYS = 30
+
+
+def _recent_for_number_access(orders: list[dict]) -> list[dict]:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    cutoff = timezone.now() - timedelta(days=NUMBER_ACCESS_HISTORY_DAYS)
+    return [
+        order for order in orders
+        if order.get("is_active") or (order.get("created_at") and order["created_at"] >= cutoff)
+    ]
+
+
 def _privacy_receipt_unavailable_response(*, operation: str) -> Response:
     action = "exportar seus dados" if operation == "export" else "excluir sua conta"
     return Response(
@@ -501,6 +549,10 @@ class ProfileView(ServerTimingMixin, APIView):
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
 
+        refused = _number_access_refused(request)
+        if refused is not None:
+            return refused
+
         payload = request.data if hasattr(request, "data") else {}
         # Nomes vao para o ticket do KDS/pedido: sanitiza controle/bidi e limita
         # o comprimento antes de persistir (clean_name), nao so ``.strip()``.
@@ -781,6 +833,7 @@ class AddressListView(ServerTimingMixin, APIView):
                 status=400,
             )
 
+        _remember_address_created_here(request, created.pk)
         return Response(_serialize_address(created), status=status.HTTP_201_CREATED)
 
 
@@ -820,6 +873,9 @@ class AddressDetailView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _number_access_refused(request, address_id=pk)
+        if refused is not None:
+            return refused
         # get_address é escopado ao cliente (None para PK inexistente OU de outro
         # cliente) → 404 uniforme, sem oráculo de enumeração 403 vs 404.
         addr = account_service.get_address(customer.ref, pk)
@@ -847,6 +903,9 @@ class AddressDetailView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _number_access_refused(request, address_id=pk)
+        if refused is not None:
+            return refused
         # 404 uniforme (get_address escopado ao cliente) fecha o oráculo de enumeração.
         if not account_service.get_address(customer.ref, pk):
             return Response({"detail": "Endereço não encontrado."}, status=404)
@@ -861,6 +920,9 @@ class AddressDetailView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _number_access_refused(request, address_id=pk)
+        if refused is not None:
+            return refused
         # 404 uniforme (get_address escopado ao cliente) fecha o oráculo de enumeração.
         if not account_service.get_address(customer.ref, pk):
             return Response({"detail": "Endereço não encontrado."}, status=404)
@@ -903,12 +965,20 @@ class OrderHistoryView(ServerTimingMixin, APIView):
             filter_param=filter_param,
             limit=50,
         )
+        number_only = knows_only_the_number(request)
+        if number_only:
+            # O número sozinho vê os pedidos recentes, não o histórico (D3a).
+            data = _recent_for_number_access(data)
         serializer = OrderHistoryItemSerializer([_with_order_actions(order) for order in data], many=True)
-        return Response({
-            "orders": serializer.data,
-            # Contagens independem do filtro aplicado: a tela mostra
-            # "X em andamento (Y no total)" seja qual for o recorte.
-            "counts": {
+        if number_only:
+            recent = _recent_for_number_access(
+                order_service.order_history_for_customer(
+                    customer_ref=customer.ref, phone=customer.phone, filter_param="todos", limit=50,
+                )
+            )
+            counts = {"total": len(recent), "active": sum(1 for order in recent if order.get("is_active"))}
+        else:
+            counts = {
                 "total": order_service.order_count_for_customer(
                     customer_ref=customer.ref,
                     phone=customer.phone,
@@ -917,7 +987,12 @@ class OrderHistoryView(ServerTimingMixin, APIView):
                     customer_ref=customer.ref,
                     phone=customer.phone,
                 ),
-            },
+            }
+        return Response({
+            "orders": serializer.data,
+            # Contagens independem do filtro aplicado: a tela mostra
+            # "X em andamento (Y no total)" seja qual for o recorte.
+            "counts": counts,
             "copy": {"empty": _history_empty_copy(filter_param)},
         })
 
@@ -1359,6 +1434,61 @@ class AccountStepUpView(APIView):
             response.data["device_trusted"] = False
         _mark_step_up(request, customer_uuid=customer.uuid, purpose=purpose)
         request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
+        return response
+
+
+@method_decorator(
+    ratelimit(key="user_or_ip", rate="5/m", method="POST", block=False),
+    name="dispatch",
+)
+class AccountNotMeView(APIView):
+    """POST /api/v1/account/not-me/ — "não sou eu / troquei de número" (D3d).
+
+    Quem recebeu da operadora um número que já era de alguém entra (código no número,
+    mensagem no WhatsApp) e cai na conta da pessoa anterior. Este é o gesto que
+    desliga: o número sai daquela conta (chaves de login, assinante do WhatsApp,
+    conversa da Concierge), a sessão termina, e a próxima entrada por esse número
+    nasce como conta própria, sem herdar endereço, pedido nem conversa.
+
+    ⚠️ O gesto não tem desfazer pela loja: pede ``confirm: true``. Sem ele, a resposta
+    explica a consequência e nada muda. Só o número principal desta conta sai.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response({"detail": "Muitas tentativas. Aguarde alguns minutos."}, status=429)
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        phone = getattr(customer, "phone", "") or ""
+        if not phone:
+            return Response({"detail": "Esta conta não tem número para desligar."}, status=400)
+        confirm = (request.data or {}).get("confirm")
+        if confirm is not True and str(confirm).strip().lower() not in {"1", "true"}:
+            return Response(
+                {
+                    "detail": "Este número deixa de abrir esta conta e você sai dela. Confirme para continuar.",
+                    "field": "confirm",
+                    "errors": {},
+                    "code": "confirmation_required",
+                },
+                status=400,
+            )
+
+        released = auth_service.release_number_not_me(customer_uuid=customer.uuid, phone=phone)
+        logger.warning("account.not_me customer=%s released=%s", customer.ref, bool(released))
+
+        from django.contrib.auth import logout as django_logout
+
+        preserved = auth_service.preserved_session_values(request.session) if hasattr(request, "session") else {}
+        django_logout(request)
+        for key, value in preserved.items():
+            request.session[key] = value
+        response = Response({"ok": True, "released": bool(released)})
+        auth_service.revoke_current_device(request=request, response=response)
         return response
 
 

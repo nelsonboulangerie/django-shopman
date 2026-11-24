@@ -42,6 +42,12 @@ class StorefrontConfig(AppConfig):
         from shopman.storefront.concierge.observation_privacy import redact_observation_text
 
         concierge_reading.register(redact=lambda text: redact_observation_text(text).text)
+        # Número que muda de dono (D3): a conversa daquele número se desliga do
+        # cadastro que o perdeu, na mesma transação que o tirou.
+        from shopman.shop.services import auth as auth_service
+        from shopman.storefront.concierge.service import detach_reassigned_number
+
+        auth_service.on_number_left(detach_reassigned_number)
         # Loja viva (#2784): o canal da loja tem vitrine pública. O shop só calcula o
         # estado público do SKU (e publica ``shelf-<canal>``) para canal registrado aqui.
         from shopman.shop.services import public_shelf

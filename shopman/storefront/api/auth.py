@@ -344,7 +344,23 @@ def exchange_access_token(request, token: str) -> Response:
     # também confia: é o que faz a confirmação valer para sempre naquele celular, em vez
     # de virar pedágio semanal. Link que NÓS empurramos (`internal`, campanha) não
     # confia: mensagem se encaminha.
-    if source == "manychat" and result.customer is not None:
+    #
+    # ⚠️ Mas só enquanto o número tem prova recente NESTA conta (D3b): número sem uso
+    # verificado há mais de 12 meses pode ter mudado de dono, e a mensagem prova o chip,
+    # não a pessoa. Aí a sessão nasce sabendo só o número (dado pessoal reduzido) e o
+    # aparelho não é confiado; a confirmação por código, que a tela já oferece, renova.
+    number_lapsed = (
+        source == "manychat"
+        and result.customer is not None
+        and auth_service.number_proof_expired(
+            customer_uuid=result.customer.subject_id,
+            phone=getattr(customer, "phone", "") or "",
+        )
+    )
+    if number_lapsed:
+        request.session[IDENTITY_SESSION_KEY] = IDENTITY_NUMBER
+        payload["identity_strength"] = IDENTITY_NUMBER
+    elif source == "manychat" and result.customer is not None:
         request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
         try:
             auth_service.trust_device(
