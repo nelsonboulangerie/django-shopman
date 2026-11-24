@@ -2364,7 +2364,7 @@ def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
                 title=row.title or "",
                 message=row.message or "",
             )
-    except Exception:
+    except Exception:  # silêncio-deliberado: sem tabela (antes do migrate) ou sem banco, vale o padrão do código e o teto relê
         # Model not migrated yet, or DB not reachable — fall back to defaults.
         logger.debug("omotenashi.copy: DB cache load failed, using defaults", exc_info=True)
 
