@@ -868,6 +868,28 @@ O vocabulário de cada `type` pertence a quem emite (`Session.emit_event`). Uma 
 
 ---
 
+## guestman.Customer.metadata["phone_confirmation"] — o pedido de confirmação do telefone
+
+Decisão do dono D4 (23/11/2026, OC-08): o telefone que a equipe grava (PDV, ficha do
+Gestor, pedido anotado por telefone) só abre a conta depois que o titular confirma. Quem
+grava chama `shop/services/phone_confirmation.request_on_commit`; depois do commit, se o
+contato continua sem prova, sai o aviso `phone_confirmation_requested` pelo WhatsApp, e o
+pedido fica registrado aqui. A CONFIRMAÇÃO não mora nesta chave: é o `ContactPoint`
+verificado (`is_verified`, `verification_method = channel_asserted`, gravado pelo vínculo
+do ManyChat quando o próprio número escreve para a loja).
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `contact_id` | `str` (UUID) | O `ContactPoint.pk` do número pedido. O número em si não é copiado para cá |
+| `state` | `str` | `sent` (o provedor aceitou), `awaiting_template` (o modelo `confirmar_numero` da Meta não está ligado: nada saiu, de propósito) ou `not_sent` (modelo ligado, envio falhou) |
+| `requested_at` | `str` (ISO 8601) | Quando o pedido foi feito |
+| `error` | `str` | Só em `not_sent`: o erro do registro de notificações, até 120 caracteres, sem contato |
+
+Gravado por `queryset.update`, sem mexer no `updated_at`: ele é a revisão que o Gestor
+confere antes de salvar a ficha. Um pedido novo substitui o anterior.
+
+---
+
 ## craftsman.WorkOrderEvent.payload["context"] — evento FINISHED
 
 Escrito por `shopman/backstage/services/production.py::apply_finish`.

@@ -7198,6 +7198,55 @@
       ]
     },
     {
+      "id": "identity.phone-confirmation",
+      "question": "O telefone que a equipe acabou de gravar já pediu ao titular que confirme que o número é dele?",
+      "owner": "identity.phone-confirmation",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.phone_confirmation:request_on_commit",
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/phone_confirmation.py",
+          "symbols": [
+            "EVENT",
+            "METADATA_KEY",
+            "STATE_SENT",
+            "STATE_AWAITING_TEMPLATE",
+            "STATE_NOT_SENT",
+            "_PHONE_TYPES",
+            "template_ready",
+            "_unverified_contact",
+            "request_on_commit",
+            "_request_quietly",
+            "request",
+            "_record",
+            "logger"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "guestman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [
+        "SHOPMAN_MANYCHAT"
+      ],
+      "tests": [
+        "shopman/shop/tests/test_telefone_do_balcao_confirmado.py::test_pdv_gravando_telefone_com_modelo_aprovado_pede_a_confirmacao_no_whatsapp"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false,
+      "authoritative_symbols": [
+        "shopman.shop.services.phone_confirmation:request_on_commit"
+      ]
+    },
+    {
       "id": "marketing.public-link",
       "question": "Este conteúdo público de Marketing pode sair com os links que tem?",
       "owner": "marketing.public-link",

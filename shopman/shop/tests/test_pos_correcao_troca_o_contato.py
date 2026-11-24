@@ -112,6 +112,22 @@ def test_corrigir_o_telefone_no_balcao_tira_o_numero_antigo_da_porta():
     assert estranho["customer_ref"] != customer.ref
     cliente.logout()
 
+    # O número novo foi DIGITADO no balcão: até a dona confirmar no WhatsApp, ele
+    # não abre a conta (D4, OC-08). A confirmação é a mensagem do próprio número,
+    # que o vínculo do ManyChat grava como verificada pelo canal.
+    assert _pedir_codigo(cliente, NUMERO_NOVO).status_code == 200
+    recusa = cliente.post(
+        "/api/v1/auth/verify-code/",
+        data={"phone": NUMERO_NOVO, "code": _last_code()},
+        content_type="application/json",
+        **_csrf(cliente),
+    )
+    assert recusa.status_code == 400
+    assert recusa.json()["error_code"] == "identity_conflict"
+
+    from shopman.guestman.contrib.manychat.service import ManychatService
+
+    ManychatService.sync_subscriber({"id": "mc-a4-1", "whatsapp_id": NUMERO_NOVO})
     dona = _entrar_por_otp(cliente, NUMERO_NOVO)
     assert dona["customer_ref"] == customer.ref
 
@@ -137,4 +153,9 @@ def test_corrigir_o_email_no_balcao_tira_o_antigo_da_porta():
     assert not ContactPoint.objects.filter(value_normalized=EMAIL_ANTIGO).exists()
     assert not CustomerIdentifier.objects.filter(identifier_value=EMAIL_ANTIGO).exists()
     assert get_adapter().resolve_identity("email", EMAIL_ANTIGO, purpose="login") is None
+    # O e-mail novo foi digitado no balcão: sem prova, ainda não abre a conta (OC-08).
+    assert get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login") is None
+    ContactPoint.objects.get(type=ContactPoint.Type.EMAIL, value_normalized=EMAIL_NOVO).mark_verified(
+        ContactPoint.VerificationMethod.OTP_EMAIL,
+    )
     assert str(get_adapter().resolve_identity("email", EMAIL_NOVO, purpose="login").subject_id) == str(customer.uuid)

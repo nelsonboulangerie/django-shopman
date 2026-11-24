@@ -6759,6 +6759,10 @@ class Command(BaseCommand):
             )
             if price_tier is not None:
                 c.price_tiers.set([price_tier])
+            # Clientes da casa que já falaram com a loja pelo WhatsApp: o número
+            # está provado pelo canal. Sem a prova, o número não abre a conta
+            # (D4, OC-08), e quem entra como estes clientes (o harness E2E, o
+            # teste no ambiente de testes) ficaria trancado fora do código.
             ContactPoint.objects.update_or_create(
                 customer=c,
                 type="whatsapp",
@@ -6766,6 +6770,9 @@ class Command(BaseCommand):
                 defaults={
                     "is_primary": True,
                     "value_display": phone,
+                    "is_verified": True,
+                    "verification_method": ContactPoint.VerificationMethod.CHANNEL_ASSERTED,
+                    "verified_at": timezone.now(),
                 },
             )
             customers[ref] = c

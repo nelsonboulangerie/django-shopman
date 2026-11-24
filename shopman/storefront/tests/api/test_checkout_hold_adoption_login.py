@@ -94,11 +94,16 @@ def _seed_planned_bakery(*, planned_qty: int = 2) -> Product:
 
 
 def _customer() -> Customer:
-    return Customer.objects.create(
-        ref="CUST-QA",
-        first_name="Pablo",
-        last_name="QA",
-        phone="5543999990001",
+    from shopman.storefront.tests.identity_fakes import proven
+
+    # Cliente que já provou o número: contato sem prova não abre a conta (OC-08).
+    return proven(
+        Customer.objects.create(
+            ref="CUST-QA",
+            first_name="Pablo",
+            last_name="QA",
+            phone="5543999990001",
+        )
     )
 
 

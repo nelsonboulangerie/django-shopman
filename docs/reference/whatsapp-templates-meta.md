@@ -616,6 +616,34 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
   `NotificationTemplate` do Admin), e `manage.py manychat_flows --check` confere. Sem o flow, a Concierge
   não promete resposta fora da janela (falha fechada, WP-05).
 
+### `confirmar_numero` — evento `phone_confirmation_requested` 🆕 · ⏳ texto proposto (OC-08, 23/11/2026), não submetido
+
+Decisão do dono D4 (23/11/2026): quando a equipe grava um telefone (PDV, ficha do Gestor,
+pedido anotado por telefone), o cliente recebe no WhatsApp "Confirme que este número é seu"
+e confirma com um toque. Até confirmar, o número não abre a conta pela loja
+(`guestman.adapters.auth.IdentityResolver.resolve`). Quem pede é
+`shop/services/phone_confirmation.py`; o registro do pedido mora em
+`Customer.metadata["phone_confirmation"]` (`data-schemas.md`).
+
+- Corpo proposto: `Oi! Este número acabou de ser cadastrado na Nelson Boulangerie. Se ele é seu, confirme no botão abaixo. Se não foi você, é só ignorar esta mensagem.`
+- Vars: nenhuma. **Sem nome de propósito**: se a equipe errou um dígito, quem recebe não
+  lê o nome de outra pessoa (e a regra da variável vazia não se aplica).
+- Botão de **resposta rápida** (não de URL): `Sim, é meu`.
+- Categoria: Utility (confirmação de cadastro, sem oferta).
+- Como o toque confirma: a resposta rápida é uma mensagem do próprio número para a loja.
+  Ela chega pelo ManyChat, e a Concierge, ao identificar quem escreveu
+  (`ManychatIdentityBridge.upsert_subscriber` → `ManychatService.sync_subscriber`), grava o
+  contato como verificado pelo canal (`channel_asserted`). É o caminho que já existe; não
+  há link nem token. No flow do modelo, o botão `Sim, é meu` deve entregar a mensagem ao
+  mesmo webhook da Concierge (ou responder "Obrigada! Número confirmado 💛" e acionar o
+  mesmo webhook). ⚠️ Toda mensagem do número confirma, por isso o corpo pede que quem não
+  fez o cadastro **não** responda, e o modelo não tem botão "Não sou eu".
+- Ligar só depois de aprovado: o flow vai no `NotificationTemplate` do evento (Admin) ou em
+  `MANYCHAT_FLOW_MAP["phone_confirmation_requested"]`. Até lá o pedido fica registrado como
+  `awaiting_template` e nada sai (falha fechada, como a `concierge_resposta_pronta`).
+- Dentro da janela de 24h, sem modelo, o texto livre é o de `notification_copy.CUSTOMER_COPY`
+  (sem botão: pede que a pessoa responda `Sim, é meu`).
+
 ### `pontos_fidelidade` — evento `loyalty_earned` 🆕
 - Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
   ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (o de 25/09 terminava em variável). O de 25/09 fica só como histórico.
@@ -808,6 +836,7 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `waitlist_available` | `fila_vaga_disponivel_v2` | Utility ✅ (aprovado; o `fila_vaga_disponivel` antigo também, mas diz "saiu") |
 | `waitlist_released` | `fila_vaga_liberada` | Utility ✅ (aprovado) |
 | `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |
+| `phone_confirmation_requested` | `confirmar_numero` | Utility 🆕 (OC-08; texto proposto, a submeter) |
 | `stock_arrived` | `produto_chegou` | Utility |
 | `purchase_request` | `pedido_compra` | Utility (fornecedor) |
 | `production_ready` | `ficou_pronto` | Marketing |
