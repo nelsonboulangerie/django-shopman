@@ -89,12 +89,15 @@ pergunta de confirmação tiram o fechamento pendente do ar.
 
 **A condição que se responde com sim ou não.** O movimento que cumpre uma condição pode declará-la
 respondível por sim ou não (`ANSWERS_CONDITIONS`; hoje `set_delivery_address` declara
-`delivery_address_saved`, "entregamos no endereço do cadastro?"). Com o fechamento pedindo essa
-condição e o fato oferecendo opções, o "sim" (`answers_condition`) aceita a primeira (o comando leva a
-referência opaca dela, nunca o texto) e volta aos termos como a mudança material; o "não"
-(`declines_condition`) não desiste do pedido: o `present_terms` pergunta pelo que falta sem a opção
-(`present_terms.needs_<código>_declined`), e a próxima fala responde. A forma de pagamento não é
-condição de sim ou não: o "sim" à pergunta da forma não escolhe nada.
+`delivery_address_saved`, "entregamos no endereço do cadastro?"). Quando o `present_terms` faz essa
+pergunta, o estado de diálogo guarda a pergunta no ar, o código e a opção OFERECIDA
+(`terms_condition_question`). O "sim" (`answers_condition`) só vale se responder a essa pergunta, e só
+para o movimento que declara o código: o comando leva a referência oferecida (a que o cliente viu, com o
+resumo do endereço), nunca a que o fato diria depois, e volta aos termos como a mudança material. O
+"não" (`declines_condition`) não desiste do pedido: o `present_terms` pergunta pelo que falta sem a
+opção (`present_terms.needs_<código>_declined`). O "não" com outra mudança na mesma fala ("não, o do
+trabalho") é correção: ganha a mudança, e nem a recusa nem a desistência valem. A forma de pagamento
+não é condição de sim ou não: o "sim" à pergunta da forma não escolhe nada.
 
 Movimentos do F7: `acknowledge`, `inform`, `cover_readings`, `inform_limitation` e
 `ask_clarification`. O F8 acrescentou os de efeito (`08-effect.md`, seção 6), e o F9 os de

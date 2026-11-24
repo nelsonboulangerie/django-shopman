@@ -3101,6 +3101,7 @@
             "PRODUCER_NAME",
             "UNSUPPORTED",
             "_ADDRESS_KEYS",
+            "_SAVED_ADDRESS_FIELDS",
             "_address_requirements",
             "_date_of",
             "_date_or_none",
@@ -3111,6 +3112,8 @@
             "conversation_payment_methods",
             "instant",
             "logger",
+            "parse_saved_address_ref",
+            "saved_address_digest",
             "saved_address_ref"
           ]
         }
