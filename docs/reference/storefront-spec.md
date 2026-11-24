@@ -284,9 +284,11 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   (`1 ponto/R$1` em `shop/handlers/loyalty.py`); os **tier thresholds** são via `settings.GUESTMAN_LOYALTY`
   (env/código, **não** admin); `stamps_target` é campo por-conta. Caminho limpo: mover earn rate +
   thresholds + stamps p/ `Shop.defaults` dataclass-driven (como `pickup_slots`), editável no admin.
-- **AccessLink `audience` não enforçado na troca** — validado na criação, não no exchange. **Decisão de
-  design:** o `/a` é uma ponte genérica (destino vem da metadata, não da audience); enforçar exigiria
-  definir qual audience o exchange genérico requer. Débito de defense-in-depth, baixo risco.
+- **AccessLink `audience` aplicada na troca (OC-09):** o `/a` troca só as audiências da loja
+  (`web_general`, `web_checkout`, `web_account`; `shop/services/access.STORE_ENTRY_AUDIENCES`) e recusa
+  as outras sem gastar o token. A API S2S (`api/auth/access/create/`, `shop/views/access_link.py`)
+  recusa audiência fora da loja e prazo acima de 24 h (`S2S_LINK_MAX_TTL_MINUTES`). O destino continua
+  vindo da metadata; a audiência diz só qual porta o link abre.
 - **Agendamento de cleanups** — o comando `auth_cleanup` (purga device-trust + access links + códigos)
   existe; falta rodá-lo periodicamente. É **infra compartilhada** (nenhum cleanup —`cleanup_stale_planning`,
   `cleanup_stale_sessions`, etc.— está agendado; DO App Platform não tem cron no spec). Resolver junto.

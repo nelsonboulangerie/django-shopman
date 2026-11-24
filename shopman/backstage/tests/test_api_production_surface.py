@@ -2335,6 +2335,114 @@ def test_non_overridable_order_shortage_never_offers_force(
     assert [possibility["kind"] for possibility in response.json()["error"]["possibilities"]] == ["retry"]
 
 
+# ── O lote curto fecha com a verdade (P0-2, WP-F06) ──────────────────────────
+#
+# Decisão 1 do dono (23/11/2026): rendeu menos que o encomendado, o lote fecha com o
+# que rendeu. A recusa oferece "Fechar com N" a quem fecha o lote
+# (sem pedir autorização de gerente), assinada com o impacto exato que a pessoa leu.
+
+
+@pytest.mark.django_db
+def test_finish_below_orders_offers_the_signed_short_lot_close(
+    client,
+    recipe,
+    production_operator,
+    monkeypatch,
+):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.start(work_order, quantity=10, position_ref="forno", expected_rev=work_order.rev)
+    shortage = ProductionOrderShortError(
+        work_order_ref=work_order.ref,
+        required=Decimal("12"),
+        requested=Decimal("8"),
+        order_refs=("ORD-1", "ORD-2"),
+        allow_override=False,
+        confirmable=True,
+        orders=(("ORD-1", Decimal("5")), ("ORD-2", Decimal("7"))),
+    )
+    approvals = []
+
+    def finish(**kwargs):
+        if kwargs["approved_short_lot"] is None:
+            raise shortage
+        approvals.append(kwargs["approved_short_lot"])
+        return work_order.ref, Decimal("8")
+
+    monkeypatch.setattr("shopman.backstage.api.operations.production_service.apply_finish", finish)
+    client.force_login(production_operator)
+    qc = client.get(reverse("api-backstage-production-qc")).json()["qc"]
+    action = next(item for item in qc["actions"] if item["ref"] == f"finish:{work_order.pk}")
+    body = _projected_body(
+        qc,
+        action,
+        quantity="8",
+        expected_rev=action["expected_rev"],
+        idempotency_key="short-lot-close",
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Massa fraca",
+    )
+    url = reverse("api-backstage-wo-finish", args=[work_order.pk])
+
+    refused = client.post(url, body, content_type="application/json")
+    assert refused.status_code == 409
+    error = refused.json()["error"]
+    assert error["orders"] == [{"ref": "ORD-1", "qty": "5"}, {"ref": "ORD-2", "qty": "7"}]
+    confirm = next(item for item in error["possibilities"] if item["kind"] == "confirm")
+    assert confirm["label"] == "Fechar com 8"
+    assert [item["kind"] for item in error["possibilities"]] == ["retry", "confirm"]
+
+    other_number = client.post(
+        url,
+        {**body, "quantity": "7", "short_lot_proof": confirm["proof"]},
+        content_type="application/json",
+    )
+    assert other_number.status_code == 400
+    assert other_number.json()["error"]["issues"][0]["field"] == "short_lot_proof"
+
+    closed = client.post(url, {**body, "short_lot_proof": confirm["proof"]}, content_type="application/json")
+    assert closed.status_code == 200
+    assert approvals == [production_service.production_shortage_snapshot(shortage)]
+
+
+@pytest.mark.django_db
+def test_plan_order_shortage_never_offers_the_short_lot_close(client, recipe, production_operator, monkeypatch):
+    """Planejar abaixo do encomendado não é lote curto: lá a saída segue sendo outra."""
+
+    def shortage(**kwargs):
+        raise ProductionOrderShortError(
+            work_order_ref="WO-PLAN",
+            required=Decimal("12"),
+            requested=Decimal("8"),
+            order_refs=("ORD-1",),
+            confirmable=True,
+        )
+
+    monkeypatch.setattr("shopman.backstage.api.operations.production_service.apply_planned", shortage)
+    client.force_login(production_operator)
+    board = client.get(reverse("api-backstage-production")).json()["board"]
+    action = next(
+        item for item in board["actions"] if item["ref"] == f"plan:{recipe.pk}:{board['selected_date']}:forno"
+    )
+    response = client.post(
+        reverse("api-backstage-wo-plan"),
+        _projected_body(
+            board,
+            action,
+            recipe_id=recipe.pk,
+            quantity="8",
+            target_date=board["selected_date"],
+            position_ref="forno",
+            source="manual",
+            expected_rev=None,
+            idempotency_key="plan-not-short-lot",
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409
+    assert "confirm" not in [item["kind"] for item in response.json()["error"]["possibilities"]]
+
+
 # ── Zerar não cancela (P0-1, WP-F01) ─────────────────────────────────────────
 #
 # Medido pela tela em 23/11/2026: a Cozinha, sem a permissão de cancelar lote,

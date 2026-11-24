@@ -3,7 +3,8 @@
 **Estado:** em execução. R0 e R1 entregues em 02/11/2026 (contrato vivo em
 `docs/reference/release-contract.md`, ADR-043); R2 entregue em 09/11/2026 no código
 (`promote-release.yml`, runbook `docs/runbooks/promover-release.md`), esperando os passos
-do dono para ter um ambiente de produção onde chegar; R3 em diante aberto. **Sem alpha
+do dono para ter um ambiente de produção onde chegar; R3 aberto; R4 em andamento (OC-20,
+Storefront primeiro consumidor, 23/11/2026). **Sem alpha
 depois do go-live** (decisão do dono, 10/11/2026): o app vivo vira a produção e a promoção
 sai direto do `main`, com dry-run antes e verificação depois (invariante 2, D1, D2 e ADR-043
 emendados).  
@@ -337,6 +338,14 @@ versão e piloto funcional num PR gigante.
   rollback de componente, sem contar restore de banco.
 
 ### Fase R4 — framework comum de convivência V1/V2
+
+**Estado: em andamento (OC-20, Storefront primeiro consumidor).** O resolvedor server-side
+é `shopman/shop/services/experience.py` (`resolve`), configurado por `RuleConfig` com
+`rule_path = "shopman.shop.rules.experience.ExperienceRule"` (política em
+`shopman/shop/policies/experience.py`); aderência em `request.session["shopman_experience"]`;
+a loja recebe `experience: [{ref, variant}]` no shell; `scripts/check_experiments.py`
+reprova experimento vencido na CI. Falta: consumo no Nuxt e borda (OC-21), marcação no
+pedido (OC-22), telemetria e os demais apps.
 
 **Entregas**
 

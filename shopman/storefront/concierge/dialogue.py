@@ -25,12 +25,13 @@ Regra do dono (03/10/2026): **a memória vence pelo que acontece, não pelo rel�
 - Pedido entregue ou cancelado deixa de ser "pedido aberto" (não recebe mais item),
   mas segue como "pedido recente" por ``recent_order_days`` (7 por padrão) ou até o
   próximo pedido, o que vier primeiro.
-- Quando a equipe devolve a conversa, a memória zera (``forget``).
+- Quando a equipe devolve a conversa, a memória do diálogo cai e recomeça do domínio
+  (``after_team``): só o pedido aberto do cliente, relido do Orderman, fica em foco.
 - Estado vencido nunca vira suposição: "sim" ou "mais 2" sem referente viram pergunta.
 
 O módulo tem duas metades. A pura (``effective``, ``resolve``, ``next_state``,
 ``memo_of``) recebe tudo por argumento e é o que o placar (``dialogue_eval``) mede. A
-de banco (``for_turn``, ``save_turn``, ``forget``) lê o sistema ao vivo e grava na
+de banco (``for_turn``, ``save_turn``) lê o sistema ao vivo e grava na
 mesma transação da resposta, conferindo o ``turn_fence``: turno revogado não grava.
 """
 
@@ -1116,13 +1117,22 @@ def save_turn(conversation, memos: list[dict], *, previous: dict, open_order_ref
     return bool(Conversation.objects.filter(pk=conversation.pk, turn_fence=fence).update(flags=flags))
 
 
-def forget(conversation_id: int) -> None:
-    """A equipe devolveu a conversa: ela falou coisas que o sistema não viu. Zera."""
-    from shopman.shop.models import Conversation
+def after_team(facts: Facts, *, fence: int) -> dict:
+    """A memória com que a Concierge retoma a conversa que a equipe devolveu (OC-13).
 
-    current = Conversation.objects.select_for_update().filter(pk=conversation_id).first()
-    if current is None or FLAG_KEY not in (current.flags or {}):
-        return
-    flags = dict(current.flags or {})
-    flags.pop(FLAG_KEY, None)
-    Conversation.objects.filter(pk=conversation_id).update(flags=flags)
+    A equipe falou coisas que o sistema não vê (o ManyChat não entrega ao Shopman o que
+    ela escreve no Live Chat, D6): nada do diálogo de antes vale. Pergunta no ar, lista,
+    produto em foco, a última mudança, as partes e o fechamento em curso caem, para um
+    "sim" ou um "o segundo" nunca responderem a uma pergunta que a equipe já superou. Fica
+    só o que o domínio confirma agora: o pedido aberto do cliente, relido do Orderman,
+    vira o pedido em foco. Sacola, pedidos e avisos continuam lidos ao vivo a cada turno.
+    """
+    if facts.open_order is None:
+        return {}
+    return {
+        "v": VERSION,
+        "fence": fence,
+        "at": facts.now.isoformat(),
+        "valid_until": horizon(facts.now).isoformat(),
+        "order": {"ref": facts.open_order.ref, "open": True},
+    }

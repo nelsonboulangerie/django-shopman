@@ -193,8 +193,10 @@ def build_bi_sales(
         day_revenue[sale.day] += sale.total_q
         channel_orders[sale.channel_key] += 1
         channel_revenue[sale.channel_key] += sale.total_q
+        # A hora é a em que o pedido foi feito; o dia da semana é o do dia
+        # combinado, o mesmo que soma o faturamento do dia (#3427).
         by_hour[sale.occurred_at.hour] += 1
-        by_weekday[sale.occurred_at.weekday()] += 1
+        by_weekday[sale.day.weekday()] += 1
         kind_total += sale.discount_kind_total_q
         for kind, amount_q in sale.discount_by_kind:
             kind_totals[kind] += amount_q

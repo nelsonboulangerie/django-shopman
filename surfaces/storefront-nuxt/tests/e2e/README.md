@@ -29,12 +29,18 @@ precisa do Django real semeado, e por isso não vive aqui. Ele está em
   (`/pedido/<ref>`) já com o pagamento autorizado. O cartão passa pelo adapter
   `payment_stripe` de produção contra um Stripe falso local
   (`shopman/shop/tests/e2e/fake_stripe.py`): sem rede e sem credencial.
+- `test_experience_e2e.py` (OC-21, X14): a versão de experimento que o servidor
+  decidiu. A coorte nasce pelo servidor (`seed_experience.py`, uma `RuleConfig` com
+  `CLI-003` na coorte `internal`, gravada antes de o Django subir), nunca por query:
+  fora da coorte e anônimo veem `a`; na coorte, `b`, sem alternar na recarga, com o
+  documento e o shell saindo `private, no-store`.
 
 Para rodar localmente, da raiz do repositório:
 
 ```bash
 make storefront-e2e                       # seed + Django + loja + Stripe falso
 make storefront-e2e args="-k test_12"     # só o Dia 1
+make storefront-e2e args="-k Experience"  # só a versão de experimento (OC-21)
 ```
 
 O antigo `criticalFlow.spec.ts` (sempre `skip`) foi apagado: o fluxo que ele

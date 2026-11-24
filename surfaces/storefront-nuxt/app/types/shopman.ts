@@ -768,6 +768,16 @@ export interface HomeProjection {
   public_config: PublicConfigProjection
 }
 
+/**
+ * Uma versão que esta sessão vê de um experimento (R4 do release, OC-20).
+ * Quem decide é o servidor, pela coorte configurada no Admin; nada no cliente
+ * escolhe a versão. Experimento ausente da lista = versão padrão.
+ */
+export interface ExperienceProjection {
+  ref: string
+  variant: string
+}
+
 export interface StorefrontShellProjection {
   omotenashi: OmotenashiProjection
   auth_copy: AuthCopyProjection
@@ -779,6 +789,12 @@ export interface StorefrontShellProjection {
   faq: FAQItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
+  /**
+   * Opcional durante a convivência (campo aditivo). A tela lê por `useExperience`;
+   * `useStorefrontShell` torna privado o documento que traz versão fora da padrão.
+   * Ausente ou vazio = todos os experimentos na versão padrão.
+   */
+  experience?: ExperienceProjection[]
 }
 
 export interface ShellResponse {
