@@ -43,6 +43,10 @@ TEMPLATES = (
              "address, tell me which.",
              {"delivery_address_saved": SlotSpec(("fact",), "delivery_address_saved")}),
     Template("present_terms.needs_delivery_address_saved_declined", "1", MOVE, "What is the delivery address?"),
+    # O "outro" à oferta: todas as opções do fato, por referência opaca (P17), e a pergunta de qual.
+    Template("present_terms.needs_delivery_address_saved_options", "1", MOVE,
+             "Your saved addresses: {delivery_address_saved_options}. Which one should we deliver to?",
+             {"delivery_address_saved_options": SlotSpec(("fact",), "delivery_address_saved")}),
     Template("present_terms.needs", "1", MOVE, "Before I can place the order I still need: {missing}.",
              {"missing": SlotSpec(("fact",), "missing")}),
     Template("present_terms.changed", "1", MOVE,
@@ -66,7 +70,13 @@ def reply(state, need):
     if missing:
         code, known = missing[0], {t.template_id for t in TEMPLATES}
         needs = ("fact", state.requirements_key(state.subject.cart_ref))
-        if state.declines_condition(need, (code,)) and f"present_terms.needs_{code}_declined" in known:
+        asks_options = state.asks_condition_options(need, (code,))
+        listed = f"present_terms.needs_{code}_options"
+        if asks_options and len(state.offered(state.subject.cart_ref, code)) > 1 and listed in known:
+            return PartSpec(MOVE, listed, {f"{code}_options": needs})  # pediu as opções: todas, e a pergunta de qual
+        # "Outro" com uma opção só é "essa não": o que falta, sem ela, como o "não".
+        if (state.declines_condition(need, (code,)) or asks_options) \
+                and f"present_terms.needs_{code}_declined" in known:
             return PartSpec(MOVE, f"present_terms.needs_{code}_declined")  # recusou a opção: o que falta, sem ela
         if len(state.offered(state.subject.cart_ref, code)) > 1 and f"present_terms.needs_{code}_many" in known:
             return PartSpec(MOVE, f"present_terms.needs_{code}_many", {code: needs})  # mais de uma opção

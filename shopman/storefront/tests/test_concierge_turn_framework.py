@@ -171,6 +171,9 @@ APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
     "present_terms.needs_delivery_address_saved_many": ("Entregamos no endereço do seu cadastro, "
                                                         "{delivery_address_saved}? Se preferir outro endereço "
                                                         "cadastrado, é só dizer qual."),
+    # O "outro" à oferta (#3454): a MESMA lista de hoje (``address.saved_listing``).
+    "present_terms.needs_delivery_address_saved_options": ("Seus endereços cadastrados: "
+                                                           "{delivery_address_saved_options}. Em qual entregamos?"),
     "present_terms.needs_delivery_address_saved_declined": ("Qual é o endereço da entrega? Pode enviar a "
                                                             "localização pelo WhatsApp ou escrever rua, número, "
                                                             "bairro e CEP."),
