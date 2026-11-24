@@ -1574,6 +1574,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_ENGINE_CART_UPDATED_SHORT": {
         WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada.")},
     },
+    "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada. Total: {total}.")},
+    },
     "CONCIERGE_ENGINE_FULFILLMENT_UPDATED": {
         WILDCARD: {WILDCARD: CopyEntry(message="{noted}, atualizei o recebimento.")},
     },

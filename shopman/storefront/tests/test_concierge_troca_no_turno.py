@@ -770,3 +770,35 @@ def test_the_day_said_with_the_order_is_not_asked_again(order_on_air, outbox, mo
     assert outbox.sent[0].endswith(service.copy_message("CONCIERGE_CLOSE_ASK_FULFILLMENT").strip())
     assert outbox.sent[1].startswith("Qual horário de retirada fica melhor?")
     assert Session.objects.get(session_key="sess-day").data["delivery_date"]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_cart_change_in_the_middle_of_the_close_says_it_changed_and_keeps_the_question(order_on_air, outbox,
+                                                                                        monkeypatch):
+    """#3488: "na verdade 3" com o fechamento perguntando o dia muda a sacola, diz o total novo e repete a pergunta
+    aberta. Antes, só a pergunta voltava, como se nada tivesse acontecido."""
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {"pode fechar": [{"act": "place_order"}],
+              "na verdade 3": [{"act": "change_quantity", "product": "pão francês", "qty": 3, "change": "set"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # a config do teste do dono: "informar" e "pedido"
+    shop.save()
+    Session.objects.create(session_key="sess-adj", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 2, "unit_price_q": 90, "line_total_q": 180}])
+    order_on_air.session_key = "sess-adj"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"adj-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    ask_date = service.copy_message("CONCIERGE_CLOSE_ASK_DATE").strip()
+    assert outbox.sent[0] == ask_date
+    assert outbox.sent[1] == f"Pronto, a sacola foi atualizada. Total: R$ 2,70.\n\n{ask_date}"
+    assert Session.objects.get(session_key="sess-adj").items[0]["qty"] == 3

@@ -20,7 +20,8 @@ from ._effects import SHARED, known_with, receipt_part
 
 MOVE = "change_cart"
 EFFECT = True
-TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], TEMPLATES_BY_ID["change_cart.done_receipt"], *SHARED)
+TEMPLATES = (TEMPLATES_BY_ID["change_cart.done"], TEMPLATES_BY_ID["change_cart.done_receipt"],
+             TEMPLATES_BY_ID["change_cart.done_total"], *SHARED)
 
 
 def _line(need):

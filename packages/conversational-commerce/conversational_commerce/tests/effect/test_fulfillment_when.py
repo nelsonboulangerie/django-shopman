@@ -59,3 +59,25 @@ def test_without_pickup_slots_the_fake_channel_does_not_ask_the_when():
     world.state.payment_methods = ("card",)
     turn_engine, world = engine(steps=(CLOSE,), world=world)
     assert turn_engine.turn(CTX, CLOSE.message).reply.template_ids == ("present_terms.confirm",)
+
+
+def test_a_cart_change_while_the_close_asks_says_it_changed_and_keeps_the_question():
+    """#3488: "na verdade 3" com o fechamento perguntando o dia muda a sacola, diz que mudou e repete a pergunta
+    aberta. Antes, só a pergunta voltava, como se nada tivesse acontecido."""
+    three = _step("three", {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "3"}})
+    steps = (CLOSE, three)
+    turn_engine, world = engine(steps=steps, world=_world())
+    _close, changed = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert changed.reply.template_ids == ("change_cart.done_total", "present_terms.needs_fulfillment_date")
+    assert "Total:" in changed.text
+    assert changed.reply.verification.result != "hold"
+
+
+def test_the_summary_already_shows_the_cart_so_no_extra_part():
+    said = _step("all", {"act": "choose_fulfillment", "fields": {"date": "2026-01-06", "mode": "pickup",
+                                                                 "time": "16:00"}})
+    three = _step("three", {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "3"}})
+    steps = (said, CLOSE, three)
+    turn_engine, world = engine(steps=steps, world=_world())
+    *_, changed = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    assert changed.reply.template_ids == ("present_terms.confirm",)

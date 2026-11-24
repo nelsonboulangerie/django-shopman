@@ -101,6 +101,9 @@ NICE_TEMPLATE_COPY = {
     # Aprovadas pelo dono em 23/11 ("Pronto, a sacola foi atualizada." e "Pedido {order} registrado.
     # Acompanhar: {track}"); a do recebimento derivada das aprovadas, acatada por ele.
     "change_cart.done_receipt": "CONCIERGE_ENGINE_CART_UPDATED_SHORT",
+    # A mudança com uma pergunta do fechamento no ar (#3488): decidida pela coordenação em 24/11 (a aprovada
+    # acima, com o total novo).
+    "change_cart.done_total": "CONCIERGE_ENGINE_CART_UPDATED_TOTAL",
     "set_fulfillment.updated": "CONCIERGE_ENGINE_FULFILLMENT_UPDATED",
     "commit_order.done_order": "CONCIERGE_ENGINE_ORDER_PLACED_SHORT",
     # As esperas (#3328), aprovadas em 23/11 ("decidido, pode reverter"): o efeito ainda em andamento (o pedido
