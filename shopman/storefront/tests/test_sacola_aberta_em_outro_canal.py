@@ -134,7 +134,7 @@ def test_items_phrase_counts_units_and_products_for_weight():
 
 # ── A Nice avisa e não sincroniza ────────────────────────────────────
 
-LINE = "No site, você tem outra sacola aberta, com 2 itens (R$ 1,80); ela fica lá, separada desta conversa."
+LINE = "No site, você tem outra sacola aberta, com 2 itens (R$ 1,80)."
 
 
 def test_c06_nice_says_the_site_cart_exists_and_leaves_it_alone(ctx, customer):
