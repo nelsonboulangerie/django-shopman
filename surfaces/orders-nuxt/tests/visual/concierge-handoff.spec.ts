@@ -50,7 +50,7 @@ async function audit(page: Page, scope: string, name: string) {
     const out: Array<Record<string, unknown>> = [];
     const box = document.querySelector(root);
     if (!box) return out;
-    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *")) {
+    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *, button, button *, [data-operator-inbox-panel] p")) {
       const text = (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim()))
         ? el.textContent!.trim().slice(0, 50) : "";
       if (!text && el.tagName !== "TEXTAREA") continue;
@@ -131,7 +131,10 @@ for (const viewport of VIEWPORTS) {
       await expect(panel).toContainText("conversa para a equipe");
       await expect(panel.getByRole("link", { name: /Responder no Live Chat/ }).first()).toBeVisible();
       await expect(panel.getByRole("link", { name: /Abrir conversa/ }).first()).toBeVisible();
+      // #3578: a conversa parada com a equipe volta à Concierge ali mesmo.
+      await expect(panel.getByRole("button", { name: "Devolver à Concierge" })).toBeVisible();
       await shot(page, `${id}-3-cartao-no-sino`);
+      await audit(page, "[data-operator-inbox-panel]", `${id}-3-cartao-no-sino`);
     });
   }
 }

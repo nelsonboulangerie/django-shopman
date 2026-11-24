@@ -287,6 +287,9 @@ function handoffAlert() {
     origin_label: "WhatsApp", origin_icon: "i-lucide-message-circle", subject: "Ana pediu para falar com alguém da equipe",
     on_screen: true, respond_by_iso: "", deadline_kind: "",
     actions: [
+      // #3578: o gesto direto do cartão devolve a conversa à Concierge (o mesmo lugar do "Aceitar").
+      { ...contextAction(970, "give-back", "Devolver à Concierge", "/api/v1/backstage/alerts/970/concierge-handoff/give-back/", 5),
+        kind: "give_back_to_concierge", method: "POST", source_alert_effect: "resolves" },
       contextAction(970, "live-chat", "Responder no Live Chat", "https://app.manychat.com/fb486126/chat/1234567890", 9),
       contextAction(970, "open-context", "Abrir conversa", "https://admin.boulangerie.com.br/admin/shop/conversation/2/change/", 10),
       { ...contextAction(970, "acknowledge", "Visto", "/api/v1/backstage/alerts/970/ack/", 20),

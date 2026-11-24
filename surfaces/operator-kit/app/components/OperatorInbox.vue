@@ -302,7 +302,7 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                 />
                 <NuxtButton
                   v-if="alert.href"
-                  class="min-w-0 basis-0 flex-[2]"
+                  :class="alert.secondaryHref ? 'min-w-0 basis-full justify-center' : 'min-w-0 basis-0 flex-[2]'"
                   :to="alert.href"
                   :color="alertColor(alert.tone)"
                   variant="outline"
@@ -311,6 +311,21 @@ const alertColor = (tone: OperatorInboxAlert["tone"]) =>
                   :target="attrsFor(alert.href).target"
                   :rel="attrsFor(alert.href).rel"
                   data-alert-open
+                  @click="open = false"
+                />
+                <!-- O gesto direto não tira o segundo lugar que resolve: "Devolver à Concierge" no cartão do
+                     handoff ainda tem "Abrir conversa" (#3578), junto do "Visto". -->
+                <NuxtButton
+                  v-if="alert.secondaryHref"
+                  class="min-w-0 basis-0 flex-[2]"
+                  :to="alert.secondaryHref"
+                  :color="alertColor(alert.tone)"
+                  variant="outline"
+                  trailing-icon="i-lucide-arrow-right"
+                  :label="alert.secondaryHrefLabel || 'Abrir'"
+                  :target="attrsFor(alert.secondaryHref).target"
+                  :rel="attrsFor(alert.secondaryHref).rel"
+                  data-alert-open-secondary
                   @click="open = false"
                 />
               </template>
