@@ -679,18 +679,46 @@ def _home_sections_copy(
 
 
 def _concierge_answers_whatsapp() -> bool:
-    """A Concierge atende o WhatsApp da casa neste deployment?
+    """A Concierge responde TODO visitante no WhatsApp da casa?
 
-    Os mesmos portões que o atendimento confere em runtime: ``service.is_enabled``
-    (contrato, modo ``assist``, chave ligada) e uma conexão ativa no canal WhatsApp
-    (``transport.configured_connections``). É estado do deployment, igual para todo
-    visitante: a home pública pode ficar em cache sem vazar nada.
+    A frase da home só promete o que é verdade para quem lê (X1 do plano da Etapa
+    II). Por isso não basta a Concierge estar ligada: com coorte fechada
+    (``allowed_subjects`` da conexão), quem está fora dela continua atendido como
+    antes, e para esse visitante "de pessoa para pessoa" é a verdade.
+
+    A pergunta vai à mesma admissão do runtime: ``service.is_enabled`` (contrato,
+    modo ``assist``, chave ligada) e ``service.is_allowed`` para um visitante que
+    não está em lista nenhuma, numa conexão ativa do canal WhatsApp. Hoje nenhuma
+    configuração admite esse visitante (lista vazia fecha a conexão), então a home
+    mantém o texto de sempre; quando abrir a coorte ganhar mecanismo na admissão
+    (#3430), esta função passa a valer sem mudar. É estado do deployment, igual
+    para todo visitante: a home pública pode ficar em cache sem vazar nada.
     """
+    from types import SimpleNamespace
+
+    from shopman.shop.models import ConversationBinding
     from shopman.storefront.concierge import service, transport
 
     if not service.is_enabled():
         return False
-    return any(connection.channel == "whatsapp" for connection in transport.configured_connections())
+    for connection in transport.configured_connections():
+        if connection.channel != "whatsapp":
+            continue
+        unknown_visitor = SimpleNamespace(
+            provider=connection.provider,
+            account=connection.account,
+            transport_channel=connection.channel,
+            subject=_UNLISTED_VISITOR,
+            connection_key=connection.key,
+            status=ConversationBinding.Status.ACTIVE,
+        )
+        if service.is_allowed(unknown_visitor):
+            return True
+    return False
+
+
+#: Assinante que nenhuma lista contém: quem a home tem diante de si.
+_UNLISTED_VISITOR = "home:visitante-fora-de-qualquer-lista"
 
 
 def _home_facets(

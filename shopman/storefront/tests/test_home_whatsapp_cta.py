@@ -1,8 +1,9 @@
 """OC-06: a chamada do WhatsApp na home diz quem responde.
 
-Com a Concierge atendendo o WhatsApp da casa, a home não promete "de pessoa para
-pessoa": quem responde primeiro é a assistente virtual. Desligada (ou sem conexão
-de WhatsApp ativa, ou só observando), o texto de sempre fica.
+A frase só promete o que é verdade para quem lê (X1). "A assistente virtual
+responde" exige que a Concierge responda TODO visitante: ligada, com conexão de
+WhatsApp ativa e admitindo quem não está em lista nenhuma. Com coorte fechada,
+quem está fora dela é atendido como antes, e a home mantém "de pessoa para pessoa".
 """
 
 from __future__ import annotations
@@ -23,12 +24,13 @@ WHATSAPP_CONNECTION = {
 }
 
 
-def _concierge(**overrides) -> dict:
+def _concierge(*, allowed_subjects=("sub-1",), **overrides) -> dict:
+    connection = {**WHATSAPP_CONNECTION, "options": {"allowed_subjects": list(allowed_subjects)}}
     config = {
         "contract_version": 3,
         "operation_mode": "assist",
         "enabled": True,
-        "connections": {"manychat-whatsapp-primary": dict(WHATSAPP_CONNECTION)},
+        "connections": {"manychat-whatsapp-primary": connection},
     }
     config.update(overrides)
     return config
@@ -44,8 +46,30 @@ def _whatsapp_cta(rf) -> dict:
     return payload["sections_copy"]["whatsapp_cta"]
 
 
-def test_concierge_on_home_does_not_promise_person_to_person(rf, settings):
-    settings.SHOPMAN_CONCIERGE = _concierge()
+def test_concierge_on_with_closed_cohort_keeps_person_to_person(rf, settings):
+    """Ligada + conexão + coorte de 1 contato: o visitante da home está fora dela."""
+    settings.SHOPMAN_CONCIERGE = _concierge(allowed_subjects=("sub-1",))
+
+    assert HUMAN_PROMISE in _whatsapp_cta(rf)["message"]
+
+
+def test_no_configuration_today_answers_every_visitor(rf, settings):
+    """Sem restrição de coorte não existe hoje: lista vazia FECHA a conexão
+    (``service.is_allowed``), ninguém é atendido. Então a home sempre cai no texto
+    antigo até abrir a coorte ganhar mecanismo na admissão (#3430)."""
+    settings.SHOPMAN_CONCIERGE = _concierge(allowed_subjects=())
+
+    assert HUMAN_PROMISE in _whatsapp_cta(rf)["message"]
+
+
+def test_concierge_answering_every_visitor_says_who_answers(rf, settings, monkeypatch):
+    """Quando a admissão aceitar quem não está em lista nenhuma (o mecanismo de
+    #3430, simulado aqui no próprio ``service.is_allowed``), a home diz que a
+    assistente responde, sem mudar o predicado."""
+    from shopman.storefront.concierge import service
+
+    settings.SHOPMAN_CONCIERGE = _concierge(allowed_subjects=())
+    monkeypatch.setattr(service, "is_allowed", lambda binding: binding.subject != "")
 
     cta = _whatsapp_cta(rf)
 
@@ -54,8 +78,11 @@ def test_concierge_on_home_does_not_promise_person_to_person(rf, settings):
     assert cta["title"]
 
 
-def test_concierge_off_home_keeps_person_to_person(rf, settings):
+def test_concierge_off_home_keeps_person_to_person(rf, settings, monkeypatch):
+    from shopman.storefront.concierge import service
+
     settings.SHOPMAN_CONCIERGE = _concierge(enabled=False)
+    monkeypatch.setattr(service, "is_allowed", lambda binding: True)
 
     assert HUMAN_PROMISE in _whatsapp_cta(rf)["message"]
 
@@ -76,8 +103,11 @@ def test_concierge_off_home_keeps_person_to_person(rf, settings):
         ),
     ],
 )
-def test_concierge_that_does_not_answer_whatsapp_keeps_person_to_person(rf, settings, overrides):
+def test_concierge_that_does_not_answer_whatsapp_keeps_person_to_person(rf, settings, monkeypatch, overrides):
+    """Mesmo com a admissão aberta a todos, sem os outros portões a casa não promete."""
+    from shopman.storefront.concierge import service
+
     settings.SHOPMAN_CONCIERGE = _concierge(**overrides)
+    monkeypatch.setattr(service, "is_allowed", lambda binding: True)
 
     assert HUMAN_PROMISE in _whatsapp_cta(rf)["message"]
-
