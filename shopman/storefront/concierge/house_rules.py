@@ -273,11 +273,65 @@ _UNAVAILABLE_PATTERNS = _compile(
 )
 
 
+#: As frases: o ponto, a interrogação e a exclamação fecham; o espaço depois delas é guardado na divisão.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])(\s+)")
+
+
+def _house_phrases() -> tuple[re.Pattern, ...]:
+    """As frases prontas da casa que têm uma palavra da R2 (#3503): a copy da Omotenashi (o padrão e a do Admin) e
+    o texto do motivo de cancelamento ao cliente. Elas dizem o ESTADO ("O prazo para pagar acabou e cancelamos o
+    pedido."), e a R2 não as reescreve: "o prazo está indisponível" adulterava o estado do pedido. Um espaço da
+    copy (``{item}``) casa com qualquer trecho."""
+    from shopman.shop.omotenashi.copy import OMOTENASHI_DEFAULTS
+    from shopman.shop.services.cancel_reasons import AUTOMATIC_CANCEL_REASONS, OPERATOR_CANCEL_REASONS
+
+    texts = {entry.message for moments in OMOTENASHI_DEFAULTS.values() for audiences in moments.values()
+             for entry in audiences.values() if entry.message}
+    texts |= {reason.customer_text for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)
+              if reason.customer_text}
+    try:
+        from shopman.shop.models import OmotenashiCopy
+
+        texts |= set(OmotenashiCopy.objects.filter(active=True).exclude(message="")
+                     .values_list("message", flat=True))
+    except Exception:  # noqa: BLE001 - banco indisponível: valem as frases do código, e a copy do Admin fica sem proteção
+        logger.warning("concierge.house_rules.house_phrases_failed", exc_info=True)
+    found = []
+    for text in texts:
+        for sentence in _SENTENCE_BREAK.split(text)[::2]:
+            folded = fold(sentence).strip()
+            if folded and _hits(_UNAVAILABLE_PATTERNS, folded):
+                found.append(re.compile(re.sub(r"\\\{\w+\\\}", ".+?", re.escape(folded))))
+    return tuple(found)
+
+
+def _house_sentence(sentence: str, phrases: tuple[re.Pattern, ...]) -> bool:
+    folded = fold(sentence).strip()
+    return any(phrase.fullmatch(folded) for phrase in phrases)
+
+
 def _check_unavailable(text: str, ctx: ReplyContext) -> list[str]:
-    return _hits(_UNAVAILABLE_PATTERNS, fold(text))
+    phrases = None
+    found = []
+    for sentence in _SENTENCE_BREAK.split(text)[::2]:
+        hits = _hits(_UNAVAILABLE_PATTERNS, fold(sentence))
+        if not hits:
+            continue
+        phrases = _house_phrases() if phrases is None else phrases
+        if not _house_sentence(sentence, phrases):
+            found.extend(hits)
+    return found
 
 
 def _repair_unavailable(text: str, ctx: ReplyContext) -> str:
+    """Conserta frase a frase; a frase pronta da casa passa intacta (``_house_phrases``)."""
+    phrases = _house_phrases()
+    parts = _SENTENCE_BREAK.split(text)
+    return "".join(part if index % 2 or _house_sentence(part, phrases) else _repair_sentence(part)
+                   for index, part in enumerate(parts))
+
+
+def _repair_sentence(text: str) -> str:
     def word(match: re.Match) -> str:
         plural = match.group(0).casefold().endswith("s")
         return _keep_case(match.group(0), "indisponíveis" if plural else "indisponível")
