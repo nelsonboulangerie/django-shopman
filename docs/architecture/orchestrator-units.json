@@ -20221,7 +20221,10 @@
             "customer_text",
             "_account_text",
             "_mixed_text",
-            "_amount"
+            "_amount",
+            "RECEIPT_HINT",
+            "_money_text",
+            "kept_money_q"
           ]
         }
       ],
@@ -20307,7 +20310,14 @@
             "revision",
             "preview",
             "mark_not_picked_up",
-            "stock_plan"
+            "stock_plan",
+            "RECEIPT_TITLE",
+            "RECEIPT_NATURE",
+            "RetainedLine",
+            "RetentionReceipt",
+            "_format_tax_id",
+            "_moment",
+            "retention_receipt"
           ]
         }
       ],
