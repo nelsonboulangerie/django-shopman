@@ -88,7 +88,9 @@ def _pedido(customer, *, ref, days_ago=0, status="completed"):
         channel_ref="web",
         status=status,
         total_q=1500,
-        data={"customer_ref": customer.ref},
+        handle_type="phone",
+        handle_ref=NUMERO,
+        data={"customer_ref": customer.ref, "customer": {"phone": NUMERO}},
     )
     if days_ago:
         Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
@@ -160,7 +162,11 @@ def test_numero_reciclado_o_novo_titular_nao_herda_endereco_pedido_nem_conversa(
     assert not bruno.addresses.exists()
     from shopman.storefront.services import orders as order_service
 
-    assert order_service.order_history_for_customer(customer_ref=bruno.ref, filter_param="todos") == []
+    # Mesmo pelo número (o pedido da Ana foi feito nele): o OC-02 só casa telefone em
+    # pedido sem dono declarado.
+    assert order_service.order_history_for_customer(
+        customer_ref=bruno.ref, phone=NUMERO, filter_param="todos",
+    ) == []
 
     # E a mensagem dele abre uma conversa nova, sem a transcrição da Ana.
     novo_vinculo = concierge._get_or_create_binding(_evento())
