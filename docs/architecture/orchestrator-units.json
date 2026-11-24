@@ -16863,7 +16863,9 @@
             "assign_handle",
             "abandon_session",
             "OpenSessionElsewhere",
-            "open_sessions_for_customer"
+            "open_sessions_for_customer",
+            "_summaries",
+            "open_session_summary"
           ]
         }
       ],
@@ -16922,7 +16924,15 @@
             "_rebuild",
             "accept",
             "carried_offer",
-            "offer"
+            "offer",
+            "CONVERSATION_STATE_KEY",
+            "CONVERSATION_MESSAGE_MARKER",
+            "_CONVERSATION_MESSAGE",
+            "conversation_number",
+            "offer_to_conversation",
+            "CART_ONLY_METADATA_KEY",
+            "_ITEMS_ONLY_KEYS",
+            "_items_only_data"
           ]
         }
       ],
@@ -16930,17 +16940,20 @@
         "service"
       ],
       "domains": [
+        "doorman",
         "orderman"
       ],
       "ports": [],
       "events": [],
       "directives": [],
-      "config_surface": [],
+      "config_surface": [
+        "SHOPMAN_WA_VERIFY"
+      ],
       "tests": [
         "shopman/shop/tests/test_session_transfer.py::test_c01_cart_arrives_on_the_site_and_only_one_stays_alive",
         "shopman/shop/tests/test_session_transfer.py::test_x4_the_same_acceptance_again_returns_the_same_receipt",
         "shopman/shop/tests/test_session_transfer.py::test_x5_revision_changed_after_the_offer_is_refused_as_source_changed",
-        "shopman/shop/tests/test_session_transfer.py::test_destination_with_items_is_a_conflict_and_never_merges"
+        "shopman/shop/tests/test_session_transfer.py::test_destination_with_items_receives_the_arriving_items_and_the_same_item_sums"
       ],
       "test_gap_reason": null,
       "policy": false,
@@ -20670,6 +20683,53 @@
         "shopman/shop/tests/test_experience.py::test_kill_switch_wins_over_cohort",
         "shopman/shop/tests/test_experience.py::test_reload_never_alternates_even_if_the_cohort_changes_mid_session",
         "shopman/shop/tests/test_experience.py::test_resolve_only_reads_the_session"
+      ],
+      "test_gap_reason": null,
+      "policy": false,
+      "out_of_extraction": false
+    },
+    {
+      "id": "shop.services-running-low",
+      "question": "O item está acabando, pela % do SKU sobre o que o dia teve (a régua única do PDV, da Cozinha e do Catálogo)?",
+      "owner": "pos.running-low",
+      "responsibility": "composição",
+      "public_entrypoint": "shopman.shop.services.running_low:running_low_skus",
+      "authoritative_symbols": [
+        "shopman.shop.services.running_low:running_low_skus"
+      ],
+      "entrypoint_kind": "symbol",
+      "sources": [
+        {
+          "path": "shopman/shop/services/running_low.py",
+          "symbols": [
+            "coerce_percent",
+            "shop_default_percent",
+            "product_percent",
+            "threshold_units",
+            "is_running_low",
+            "percents_for",
+            "left_today",
+            "running_low_skus",
+            "BLOCK",
+            "METADATA_KEY",
+            "DEFAULT_PERCENT",
+            "logger"
+          ]
+        }
+      ],
+      "touchpoints": [
+        "service"
+      ],
+      "domains": [
+        "offerman",
+        "stockman"
+      ],
+      "ports": [],
+      "events": [],
+      "directives": [],
+      "config_surface": [],
+      "tests": [
+        "shopman/backstage/tests/test_pos_saldo_acabando.py::test_a_fornada_de_hoje_ainda_nao_finalizada_conta_dos_dois_lados"
       ],
       "test_gap_reason": null,
       "policy": false,

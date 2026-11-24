@@ -8,11 +8,16 @@ O contrato é o §4.5 do plano da Etapa II omnicanal. Duas funções, nenhum mod
   ``AccessLink`` quando o destino é a loja, o estado do código ``NB-`` quando o
   destino é a conversa), em ``offer.as_metadata()``.
 - ``accept`` faz a passagem no momento do efeito: confere quem aceita, trava a
-  origem, recusa se ela mudou desde a oferta (``source_changed``) ou se o destino já
-  tem sacola com itens (``destination_conflict``, nunca mescla), recria cada linha
+  origem, recusa se ela mudou desde a oferta (``source_changed``), põe cada linha
   pelo serviço de sacola do canal de destino (preço, reserva e listagem de LÁ),
   coleta o que não chegou igual, abandona a origem devolvendo as reservas e grava o
   recibo na origem. O mesmo aceite outra vez devolve o mesmo recibo (X4).
+
+Destino que já tem sacola com itens: os itens que chegam ENTRAM nela (decisão do
+dono, 24/11/2026, que muda o §4.5 do plano: "ou traz a de fora (mesclando) ou não").
+A mescla é explícita, porque quem aceita tocou em trazer; o mesmo item SOMA a
+quantidade pelo ``cart_service`` (estoque e limites de lá), e o que não coube vira
+diferença. Não há mais pergunta "qual fica".
 
 O que nunca viaja: pagamento (não existe antes do pedido; a forma escolhida que o
 destino não aceita vira diferença), o orçamento da Nice (a sacola nova tem revisão
@@ -46,6 +51,10 @@ logger = logging.getLogger(__name__)
 TRANSFER_METADATA_KEY = "cart_transfer"
 #: A sacola da loja que segue dentro da própria loja (código NB, travessia do navegador).
 CARRIED_CART_METADATA_KEY = "cart_session_key"
+#: O link que leva SÓ a sacola (OC-18, #3529): a troca gasta o link e não abre sessão.
+CART_ONLY_METADATA_KEY = "cart_only"
+#: O que uma oferta só de itens (``items_only``) leva da ``Session.data``: o quando, nunca o quem.
+_ITEMS_ONLY_KEYS = ("origin_channel", "delivery_date", "delivery_time_slot")
 
 #: Força de identidade de quem entrou por um dispositivo que já provou ser da pessoa.
 STRENGTH_DEVICE = "device"
@@ -62,8 +71,8 @@ REFUSAL_MESSAGES = {
     "invalid_offer": "Esta passagem de sacola não é válida.",
     "not_authorized": "Esta sacola é de outra pessoa ou pede uma identificação mais forte.",
     "source_changed": "A sacola mudou depois do convite. Peça o convite de novo.",
-    "destination_conflict": "Já existe uma sacola com itens deste lado. Escolha qual manter.",
     "nothing_available": "Nenhum item da sacola está disponível deste lado.",
+    "conversation_unavailable": "O WhatsApp da loja está indisponível agora.",
 }
 
 
@@ -93,11 +102,18 @@ class TransferOffer:
     customer_ref: str | None
     actor: str = ""
     at: str = ""
+    #: Só itens e quantidades (OC-18, #3529): o convite que sai pela autoridade de sacola.
+    #: Nenhum dado de pessoa viaja (cliente, endereço, presente, observação, pagamento,
+    #: cupom), e quem aceita não precisa ser o dono: a sacola chega SEM dono, e o
+    #: portador do link de uso único é quem a recebe.
+    items_only: bool = False
 
     @property
     def offer_id(self) -> str:
         rev = "carried" if self.rev is None else str(self.rev)
         raw = f"{self.source_channel}:{self.source_key}:{rev}:{self.dest_channel}"
+        if self.items_only:
+            raw += ":items"
         return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
     @property
@@ -121,6 +137,7 @@ class TransferOffer:
                 customer_ref=str(value.get("customer_ref") or ""),
                 actor=str(value.get("actor") or ""),
                 at=str(value.get("at") or ""),
+                items_only=value.get("items_only") is True,
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise TransferRefused("invalid_offer") from exc
@@ -136,15 +153,13 @@ class TransferDestination:
     """Quem aceita e o que o destino já mostra.
 
     ``session_key`` é a sacola que o destino já tem na mão (a do navegador, a da
-    conversa). ``replace_existing`` é a resposta "substituir" da superfície depois de
-    um ``destination_conflict``: a sacola do destino é abandonada, nunca mesclada.
+    conversa): com itens, é nela que os itens que chegam entram.
     """
 
     customer_ref: str = ""
     identity_strength: str = ""
     verified_customer: bool = False
     session_key: str = ""
-    replace_existing: bool = False
     origin_channel: str = ""
 
 
@@ -164,6 +179,11 @@ class TransferReceipt:
     source_total_q: int
     dest_total_q: int
     differences: list[dict] = field(default_factory=list)
+    #: O que entrou no destino: linhas e unidades ("3", ou "1.5" com item de peso).
+    carried_lines: int = 0
+    carried_units: str = ""
+    #: Os itens entraram numa sacola que o destino já tinha (mescla explícita).
+    merged: bool = False
     replayed: bool = False
 
     def as_dict(self) -> dict:
@@ -177,10 +197,14 @@ class TransferReceipt:
         return cls(**{key: value.get(key) for key in known})
 
 
-def offer(source_channel: str, source_key: str, dest_channel: str, *, customer_ref: str, actor: str) -> TransferOffer:
+def offer(
+    source_channel: str, source_key: str, dest_channel: str, *, customer_ref: str, actor: str,
+    items_only: bool = False,
+) -> TransferOffer:
     """O convite para levar a sacola aberta de ``source_channel`` a ``dest_channel``.
 
     Só lê. ``customer_ref`` é quem oferece: numa sacola com dono, tem de ser o dono.
+    ``items_only`` é o convite que leva só itens e quantidades (OC-18, #3529).
     """
     session = None
     if source_key:
@@ -199,7 +223,52 @@ def offer(source_channel: str, source_key: str, dest_channel: str, *, customer_r
         customer_ref=owner,
         actor=actor,
         at=timezone.now().isoformat(),
+        items_only=items_only,
     )
+
+
+#: Onde a oferta da sacola da loja para a conversa viaja no estado do código ``NB-``
+#: (OC-16). Chave própria, e não ``cart_transfer``: se a mensagem cair por engano no
+#: fluxo de login, o access link ganha a chave e a troca do link a ignora.
+CONVERSATION_STATE_KEY = "conversation_cart_transfer"
+#: O trecho da mensagem pronta de "Continuar pelo WhatsApp" pelo qual a Nice a
+#: reconhece mesmo com o código vencido. A mensagem não contém "quero entrar no site"
+#: nem ``#menu``: essas são as palavras do fluxo de login no ManyChat.
+CONVERSATION_MESSAGE_MARKER = "sacola que montei no site"
+_CONVERSATION_MESSAGE = "Olá! Quero continuar por aqui a sacola que montei no site (ref. {code})"
+
+
+def conversation_number() -> str:
+    """O WhatsApp da loja para a mensagem pronta (o mesmo do login por WhatsApp); vazio sem ele."""
+    from shopman.shop.services.whatsapp_verify import _wa_number
+
+    return _wa_number()
+
+
+def offer_to_conversation(offer: TransferOffer) -> dict:
+    """Guarda a oferta da sacola da loja para a conversa sob um código ``NB-`` (OC-16, C02).
+
+    O mesmo mecanismo da entrada pelo WhatsApp (``doorman.link_state``): código de uso
+    único, prazo curto, nenhum dado pessoal, e o código não autentica ninguém. Quem
+    aceita é a Nice, quando a mensagem chega pelo número que a ENVIA, com vínculo
+    ``verified_customer`` (``accept``). Oferecer não toca a sacola.
+    """
+    import urllib.parse
+
+    from shopman.doorman.services.link_state import store_state
+
+    number = conversation_number()
+    if not number:
+        raise TransferRefused("conversation_unavailable")
+    code = store_state({CONVERSATION_STATE_KEY: offer.as_metadata()})
+    message = _CONVERSATION_MESSAGE.format(code=code)
+    logger.info("session_transfer.offered_to_conversation offer=%s", offer.offer_id)
+    return {
+        "code": code,
+        "message": message,
+        "deep_link": f"https://wa.me/{number}?text={urllib.parse.quote(message)}",
+        "wa_number": number,
+    }
 
 
 def carried_offer(metadata, *, channel_ref: str) -> TransferOffer | None:
@@ -252,16 +321,21 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
         if offer.customer_ref is not None and _owner_ref(source) != offer.customer_ref:
             # O dono mudou sem mexer na revisão (identificar não incrementa ``rev``).
             raise TransferRefused("source_changed")
-        _authorize(source, dest_context)
+        if not offer.items_only:
+            # Só itens: o portador do link de uso único recebe a sacola sem dono, e nada
+            # de pessoa viaja (``_items_only_data``); não há dono a conferir do lado de lá.
+            _authorize(source, dest_context)
 
-        conflicts = _destination_carts(offer.dest_channel, dest_context, principal=principal)
-        if conflicts and not dest_context.replace_existing:
-            raise TransferRefused("destination_conflict")
+        # A sacola com itens que o destino já tem recebe os que chegam: a do
+        # navegador ou a da conversa, se for uma delas; senão, a mais antiga.
+        existing = _destination_carts(offer.dest_channel, dest_context, principal=principal)
+        into = next(
+            (cart for cart in existing if cart.session_key == dest_context.session_key),
+            existing[0] if existing else None,
+        )
 
         from shopman.shop.services import sessions
 
-        for existing in conflicts:
-            sessions.abandon_session(session_key=existing.session_key, channel_ref=offer.dest_channel)
         source_data = dict(source.data or {})
         source_lines = [dict(line) for line in source.items if line.get("sku") != _DELIVERY_FEE_SKU]
         source_total_q = _total_q(source)
@@ -271,11 +345,12 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
         sessions.abandon_session(session_key=source.session_key, channel_ref=offer.source_channel)
 
         now = timezone.now().isoformat()
-        target, differences = _rebuild(
+        target, differences, carried = _rebuild(
             offer,
+            into=into,
             source_lines=source_lines,
-            source_data=source_data,
-            same_owner=bool(_owner_ref(source)),
+            source_data=_items_only_data(source_data) if offer.items_only else source_data,
+            same_owner=bool(_owner_ref(source)) and not offer.items_only,
             principal=principal,
             dest_context=dest_context,
             transferred_from={
@@ -286,6 +361,12 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
                 "by": actor,
             },
         )
+        if offer.items_only:
+            # O que ficou para trás de propósito vira diferença, pelo NOME do campo, nunca o valor:
+            # o site diz que o endereço e o presente não vieram, e pede ao fechar.
+            left = [key for key in (*_DELIVERY_KEYS, *_GIFT_KEYS) if key in source_data]
+            if left:
+                differences.append({"kind": "details_not_carried", "fields": left})
         receipt = TransferReceipt(
             offer_id=offer.offer_id,
             source_channel=offer.source_channel,
@@ -299,6 +380,9 @@ def accept(offer: TransferOffer, *, dest_context: TransferDestination, actor: st
             source_total_q=source_total_q,
             dest_total_q=_total_q(target),
             differences=differences,
+            carried_lines=len(carried),
+            carried_units=_qty_text(sum((_qty(line) for line in carried), Decimal(0))),
+            merged=into is not None,
         )
         source_data["transferred_to"] = {
             "channel_ref": offer.dest_channel,
@@ -359,6 +443,16 @@ def _lock_principal(customer_ref: str):
         return account_service.lock_active_customer(customer_ref=customer_ref)
     except account_service.AccountUnavailable as exc:
         raise TransferRefused("not_authorized") from exc
+
+
+def _items_only_data(source_data: dict) -> dict:
+    """A ``Session.data`` que um convite só de itens leva: a data e o horário da fornada.
+
+    Nem cliente, nem endereço, nem presente, nem observação, nem pagamento, nem cupom
+    (OC-18, #3529, condição 1). A data e o horário ficam porque a reserva do destino cai
+    na fornada que a sacola prometia, e não dizem quem é a pessoa.
+    """
+    return {key: source_data[key] for key in _ITEMS_ONLY_KEYS if source_data.get(key) not in (None, "")}
 
 
 def _authorize(source: Session, dest_context: TransferDestination) -> None:
@@ -436,14 +530,21 @@ def _carried_data(
 def _rebuild(
     offer: TransferOffer,
     *,
+    into: Session | None,
     source_lines: list[dict],
     source_data: dict,
     same_owner: bool,
     principal,
     dest_context: TransferDestination,
     transferred_from: dict,
-) -> tuple[Session, list[dict]]:
-    """A sacola nova no destino, linha a linha pelo serviço de sacola de lá."""
+) -> tuple[Session, list[dict], list[dict]]:
+    """Os itens no destino, linha a linha pelo serviço de sacola de lá.
+
+    ``into`` é a sacola com itens que o destino já tinha: os itens entram nela (o
+    mesmo item soma) e o que ela já escolheu (data, recebimento, endereço, cupom)
+    fica como está; só se completa o que faltava. Sem ``into``, uma sacola nova.
+    Devolve a sacola, as diferenças e as linhas que entraram.
+    """
     from shopman.shop import product_options
     from shopman.shop.services import cart as cart_service
     from shopman.shop.services import sessions
@@ -456,7 +557,17 @@ def _rebuild(
     # mesma data que a sacola prometia (``cart._cart_date`` lê ``delivery_date``).
     data.update(_carried_data(source_data, dest_channel=dest, same_owner=same_owner, differences=differences))
     data["transferred_from"] = transferred_from
-    target = sessions.create_session(dest, data=data)
+    if into is None:
+        target = sessions.create_session(dest, data=data)
+    else:
+        target = into
+        kept = dict(into.data or {})
+        ops = [
+            {"op": "set_data", "path": path, "value": value}
+            for path, value in data.items()
+            if path == "transferred_from" or kept.get(path) in (None, "")
+        ]
+        sessions.modify_session(session_key=into.session_key, channel_ref=dest, ops=ops)
     key = target.session_key
     if principal is not None:
         # O preço do destino é o desta pessoa (grupo, aniversário) desde a primeira linha.
@@ -511,7 +622,10 @@ def _rebuild(
         raise TransferRefused("nothing_available")
 
     coupon = str(source_data.get("coupon_code") or "")
-    if coupon:
+    if coupon and into is not None and (into.data or {}).get("coupon_code"):
+        # O destino já tem cupom: vale o dele (descontos não se somam).
+        differences.append({"kind": "coupon_not_applied", "code": coupon, "reason": "destination_has_coupon"})
+    elif coupon:
         try:
             cart_service.validate_and_apply_coupon(session_key=key, channel_ref=dest, code=coupon, customer=principal)
         except cart_service.CouponRejected as exc:
@@ -533,7 +647,7 @@ def _rebuild(
                 {"kind": "price_changed", "sku": line.get("sku"), "name": str(landed.get("name") or ""),
                  "from_q": before, "to_q": after}
             )
-    return target, differences
+    return target, differences, carried_lines
 
 
 def _adopt_in_place(offer: TransferOffer, *, dest_context: TransferDestination, actor: str) -> TransferReceipt:
@@ -544,8 +658,8 @@ def _adopt_in_place(offer: TransferOffer, *, dest_context: TransferDestination, 
     uma ref que não aponta para sacola aberta com itens não vale a troca
     (``no_cart``), e a sacola de outra pessoa não se adota (``not_authorized``).
 
-    ⚠️ **A sacola que viajou GANHA da sacola que o navegador já tinha**, e isto não é
-    a mescla que o ``destination_conflict`` proíbe. O webview do WhatsApp tem pote de
+    ⚠️ **A sacola que viajou GANHA da sacola que o navegador já tinha**: aqui não
+    há mescla, porque é a mesma loja. O webview do WhatsApp tem pote de
     cookie próprio e persistente e chega carregando a sacola de uma visita anterior;
     quando a adoção só acontecia com o navegador "vazio", a pessoa que acabara de
     montar a sacola aterrissava numa de dias atrás, a dela descartada em silêncio. A

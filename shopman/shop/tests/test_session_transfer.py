@@ -202,36 +202,60 @@ def test_x5_the_old_cart_cannot_be_edited_or_closed_after_the_transfer(store, an
     assert refused.value.code == "already_abandoned"
 
 
-def test_destination_with_items_is_a_conflict_and_never_merges(store, ana):
+def test_destination_with_items_receives_the_arriving_items_and_the_same_item_sums(store, ana):
+    """Decisão do dono (24/11/2026): trazer MESCLA, de forma explícita; o mesmo item soma."""
     source = _chat_cart(ana, (BREAD, 2))
     _, browser_key = cart.add_item(session_key=None, channel_ref=WEB, origin_channel="web", sku=CAKE, qty=1,
                                    unit_price_q=500)
+    cart.add_item(session_key=browser_key, channel_ref=WEB, origin_channel="web", sku=BREAD, qty=1,
+                  unit_price_q=100)
     offer = _offer(source, ana)
 
-    with pytest.raises(TransferRefused) as refused:
-        transfer.accept(offer, dest_context=_as(ana, session_key=browser_key), actor="storefront")
-    assert refused.value.code == "destination_conflict"
+    receipt = transfer.accept(offer, dest_context=_as(ana, session_key=browser_key), actor="storefront")
+
+    assert receipt.dest_session_key == browser_key and receipt.merged
+    assert (receipt.carried_lines, receipt.carried_units) == (1, "2")
+    target = Session.objects.get(session_key=browser_key)
+    assert sorted((line["sku"], Decimal(str(line["qty"]))) for line in target.items) == sorted([
+        (BREAD, Decimal(3)), (CAKE, Decimal(1)),
+    ])
+    assert target.data["transferred_from"]["session_key"] == source.session_key
     source.refresh_from_db()
-    assert source.state == "open" and _held(source.session_key) == Decimal(2)
-    assert [line["sku"] for line in Session.objects.get(session_key=browser_key).items] == [CAKE]
+    assert source.state == "abandoned" and _held(source.session_key) == 0
+    # Nenhuma reserva em dobro: o destino segura o que tem, e só ele.
+    assert _held(browser_key) == _all_held(BREAD) + _all_held(CAKE) == Decimal(4)
 
-    # "Substituir": a do destino é abandonada inteira, nunca mesclada.
-    receipt = transfer.accept(offer, dest_context=_as(ana, session_key=browser_key, replace_existing=True),
-                              actor="storefront")
-    target = Session.objects.get(session_key=receipt.dest_session_key)
-    assert Session.objects.get(session_key=browser_key).state == "abandoned" and _held(browser_key) == 0
-    assert [line["sku"] for line in target.items] == [BREAD]
+    # X4: o mesmo aceite outra vez devolve o recibo e não soma de novo.
+    again = transfer.accept(offer, dest_context=_as(ana, session_key=browser_key), actor="storefront")
+    assert again.replayed and again.dest_session_key == browser_key
+    target.refresh_from_db()
+    assert {line["sku"]: Decimal(str(line["qty"])) for line in target.items}[BREAD] == Decimal(3)
+    assert _held(browser_key) == Decimal(4)
 
 
-def test_the_persons_own_site_cart_elsewhere_is_also_a_conflict(store, ana):
+def test_merge_keeps_what_the_destination_already_chose(store, ana):
+    source = _chat_cart(ana, (BREAD, 1), data={"order_notes": "da conversa"})
+    _, browser_key = cart.add_item(session_key=None, channel_ref=WEB, origin_channel="web", sku=CAKE, qty=1,
+                                   unit_price_q=500)
+    sessions.modify_session(session_key=browser_key, channel_ref=WEB,
+                            ops=[{"op": "set_data", "path": "order_notes", "value": "do site"}])
+
+    transfer.accept(_offer(source, ana), dest_context=_as(ana, session_key=browser_key), actor="storefront")
+
+    assert Session.objects.get(session_key=browser_key).data["order_notes"] == "do site"
+
+
+def test_the_persons_own_site_cart_elsewhere_also_receives_the_items(store, ana):
     source = _chat_cart(ana, (BREAD, 1))
     _, other_device = cart.add_item(session_key=None, channel_ref=WEB, origin_channel="web", sku=CAKE, qty=1,
                                     unit_price_q=500)
     sessions.assign_customer(session_key=other_device, channel_ref=WEB, customer_uuid=ana.uuid)
 
-    with pytest.raises(TransferRefused) as refused:
-        transfer.accept(_offer(source, ana), dest_context=_as(ana), actor="storefront")
-    assert refused.value.code == "destination_conflict"
+    receipt = transfer.accept(_offer(source, ana), dest_context=_as(ana), actor="storefront")
+
+    assert receipt.dest_session_key == other_device and receipt.merged
+    assert sorted(line["sku"] for line in Session.objects.get(session_key=other_device).items) == sorted([BREAD, CAKE])
+    assert Session.objects.filter(channel_ref=WEB, state="open").count() == 1
 
 
 def test_item_not_sold_on_the_site_becomes_an_explicit_difference(store, ana):

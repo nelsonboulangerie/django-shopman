@@ -68,7 +68,7 @@ test("J-P1: a madrugada, do previsto à loja", async ({
     .getByRole("button", { name: `Finalizar o lote de ${PRODUCT}` })
     .first()
     .click();
-  await expect(tablet.getByText(`${expected} previstos`)).toBeVisible();
+  await expect(tablet.getByText(`Previsto: ${expected} un.`)).toBeVisible();
   await tablet.getByRole("button", { name: /^Perda: \d+ unidades$/ }).click();
   await tablet
     .getByRole("button", { name: `Dígito ${LOSS}`, exact: true })

@@ -269,7 +269,7 @@ useHead({
                     <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream +
                          marrom), harmonizando com a sépia, consistente com os cards. -->
                     <div v-if="product.availability === 'unavailable'" class="absolute bottom-3 left-3 z-10">
-                      <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
+                      <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm" data-decisive="availability">Indisponível</UiBadge>
                     </div>
                   </UiAspectRatio>
                   <template v-if="carouselImages.length">
@@ -316,9 +316,9 @@ useHead({
           <div class="min-w-0 p-4 sm:p-6">
 
             <div v-if="(badge && product.availability !== 'unavailable') || fomo.length || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2" data-product-badges>
-              <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type">{{ selo.label }}</UiBadge>
-              <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
-              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="max-w-full truncate font-normal" :title="adjustmentLabel(adjustment)">{{ adjustmentLabel(adjustment) }}</UiBadge>
+              <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
+              <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal" data-decisive="availability">{{ badge.label }}</UiBadge>
+              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
             </div>
 
             <div class="flex items-start justify-between gap-3">
@@ -329,7 +329,7 @@ useHead({
               <FavoriteHeart :sku="product.sku" :name="product.name" :initial="product.is_favorite" class="-mr-1 shrink-0" />
             </div>
             <p class="mt-2 line-clamp-3 shop-muted" :title="product.short_description">{{ product.short_description }}</p>
-            <p v-if="longDescription" class="mt-2 shop-muted">{{ longDescription }}</p>
+            <p v-if="longDescription" class="mt-2 shop-reading text-muted-foreground">{{ longDescription }}</p>
             <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
 
             <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
@@ -347,23 +347,23 @@ useHead({
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
-                <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta">
+                <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
                   antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
                 </p>
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <p class="shop-price-strong">{{ quotePriceDisplay(product.quote) }}</p>
+                  <p class="shop-price-strong" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
                   <p v-if="product.unit_weight_label" class="shop-meta">
                     {{ product.unit_weight_label }}
                   </p>
                 </div>
-                <p v-if="promise" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise>
+                <p v-if="promise" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise data-decisive="availability">
                   <Icon name="lucide:clock" class="size-3.5 shrink-0" />
                   {{ promise.text }}
                 </p>
                 <div v-if="storeLines" class="mt-1 flex items-start gap-1 shop-meta" data-pdp-in-store-pickup>
                   <Icon name="lucide:store" class="mt-0.5 size-3.5 shrink-0" />
                   <p>
-                    <span class="block" :data-pdp-available-today="storeLines.availableToday">{{ storeLines.availability }}</span>
+                    <span class="block" :data-pdp-available-today="storeLines.availableToday" data-decisive="availability">{{ storeLines.availability }}</span>
                     <span class="block">{{ storeLines.address }}</span>
                   </p>
                 </div>
@@ -384,7 +384,7 @@ useHead({
                   :option-groups="product.option_groups"
                   :add-label="addLabel"
                 />
-                <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
+                <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta" data-decisive="availability">{{ unavailableReason }}</p>
               </div>
             </div>
 
@@ -453,14 +453,17 @@ useHead({
           class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
           data-focus-obstruction
         >
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
+          <!-- Com a fonte do sistema a 200 %, o botão (largo e sem encolher) espremia o nome
+               e o PREÇO até sumirem (X11, OC-30). A coluna tem piso de 4rem, que cresce com a
+               fonte, e o botão desce para a linha de baixo quando os dois não cabem. -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-16 flex-1 basis-0">
               <p class="line-clamp-2 shop-body">{{ product.name }}</p>
-              <p class="shop-price-strong text-ink-foreground">{{ quotePriceDisplay(product.quote) }}</p>
-              <p v-if="product.unit_weight_label" class="text-xs text-ink-foreground/70">
+              <p class="shop-price-strong text-ink-foreground" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+              <p v-if="product.unit_weight_label" class="text-sm text-ink-foreground/80">
                 {{ compactUnitWeightLabel(product.unit_weight_label) }}
               </p>
-              <p v-if="unavailableReason" class="mt-1 text-xs text-ink-foreground/70">{{ unavailableReason }}</p>
+              <p v-if="unavailableReason" class="mt-1 text-sm text-ink-foreground/80" data-decisive="availability">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />
             <UiButton v-else-if="deadEnd" variant="outline" size="sm" :to="similarItemsTo">Ver itens parecidos</UiButton>

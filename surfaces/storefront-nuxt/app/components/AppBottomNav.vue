@@ -43,7 +43,7 @@ function active (to: string) {
         v-for="item in items"
         :key="item.to"
         :to="item.to"
-        class="relative flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-2 text-xs"
+        class="relative flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-2 text-sm"
         :class="[active(item.to) ? 'font-semibold text-primary dark:text-foreground' : 'text-muted-foreground', item.showsCartBadge && cartPulse ? 'scale-105 text-primary dark:text-foreground' : '']"
         :aria-current="active(item.to) ? 'page' : undefined"
         :aria-label="accessibleName(item)"

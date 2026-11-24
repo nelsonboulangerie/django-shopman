@@ -1676,9 +1676,9 @@ def test_finish_overshoot_requires_confirmation_and_reason_under_lock(recipe, mo
 
 
 @pytest.mark.django_db
-def test_finish_shortfall_requires_reason_and_stays_out_of_loss(recipe, monkeypatch):
-    """Beta 05/11: rendeu 42 de um previsto maior. A diferença é "rendeu menos",
-    com motivo e nome, e nunca vira perda de qualidade nem estoque."""
+def test_finish_shortfall_requires_reason_and_records_cause(recipe, monkeypatch):
+    """Rendeu 7 de 10: sem o motivo e a confirmação, recusa; com eles, o evento
+    de fechamento guarda a diferença, a causa e quem fechou."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     work_order = craft.plan(recipe, 10, date=date.today())
     craft.start(work_order, quantity=10, expected_rev=work_order.rev)
@@ -1699,11 +1699,10 @@ def test_finish_shortfall_requires_reason_and_stays_out_of_loss(recipe, monkeypa
     result = _apply_finish(
         **request,
         yield_deviation_confirmed=True,
-        yield_deviation_reason="A massa rendeu menos peças",
+        yield_deviation_reason="Peças maiores que o padrão",
     )
 
     assert result == (work_order.ref, Decimal("7"))
-    assert not WorkOrderItem.objects.filter(work_order=work_order, kind=WorkOrderItem.Kind.WASTE).exists()
     event = WorkOrderEvent.objects.get(work_order=work_order, kind=WorkOrderEvent.Kind.FINISHED)
     assert event.payload["context"]["yield_deviation"] == {
         "kind": "yield_shortfall",
@@ -1712,9 +1711,107 @@ def test_finish_shortfall_requires_reason_and_stays_out_of_loss(recipe, monkeypa
         "saleable_qty": "7",
         "deviation_qty": "3",
         "confirmed": True,
-        "reason": "A massa rendeu menos peças",
+        "reason": "Peças maiores que o padrão",
         "actor": "production:op",
     }
+
+
+@pytest.mark.django_db
+def test_no_yield_difference_goes_unrecorded(recipe, monkeypatch):
+    """Dono, 24/11: "Sua proposta não vai ocultar silenciosamente perdas?".
+
+    Toda diferença entre o previsto e o que se vende fica registrada, com
+    quantidade, causa, quem fechou e hora, e aparece onde a perda aparece: no
+    ledger de estoque (WASTE), no relatório do lote e na soma do dia por receita.
+    Dois lotes do mesmo dia: um rendeu menos (causa no evento), outro teve perda
+    declarada e ainda rendeu menos. Nenhuma unidade fica sem registro.
+    """
+    from shopman.backstage.projections.production import build_production_reports
+
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    today = date.today()
+
+    def lot(quantity: str):
+        _, wo_ref, _, _ = _apply_planned(
+            recipe_id=recipe.pk,
+            quantity=quantity,
+            target_date_value=today.isoformat(),
+            actor="production:op",
+        )
+        work_order = WorkOrder.objects.get(ref=wo_ref)
+        _apply_start(work_order_id=work_order.pk, quantity=quantity, actor="production:op")
+        return work_order
+
+    short = lot("10")
+    _apply_finish(
+        work_order_id=short.pk,
+        quantity="7",
+        actor="production:ana",
+        partition=[{"quantity": "7", "quality_grade_ref": "standard"}],
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Peças maiores que o padrão",
+    )
+    mixed = lot("10")
+    _apply_finish(
+        work_order_id=mixed.pk,
+        quantity="8",
+        actor="production:bia",
+        partition=[
+            {"quantity": "7", "quality_grade_ref": "standard"},
+            {"quantity": "1", "quality_defect_ref": "overbaked", "loss": True},
+        ],
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Massa perdida antes do forno",
+    )
+
+    expected = {short.ref: Decimal("3"), mixed.ref: Decimal("3")}
+    for work_order in (short, mixed):
+        work_order.refresh_from_db()
+        difference = work_order.started_qty - work_order.finished
+        assert difference == expected[work_order.ref]
+
+        # 1. Toda unidade da diferença tem causa: perda declarada (linha WASTE
+        #    com defeito) + rendeu menos (evento, com motivo).
+        declared = sum(
+            (
+                item.quantity
+                for item in WorkOrderItem.objects.filter(
+                    work_order=work_order, kind=WorkOrderItem.Kind.WASTE
+                )
+            ),
+            Decimal("0"),
+        )
+        event = WorkOrderEvent.objects.get(
+            work_order=work_order, kind=WorkOrderEvent.Kind.FINISHED
+        )
+        deviation = event.payload["context"]["yield_deviation"]
+        assert declared + Decimal(deviation["deviation_qty"]) == difference
+        assert deviation["reason"]
+        assert deviation["actor"] == event.actor != ""
+        assert event.created_at is not None
+
+        # 2. O ledger de estoque baixa a diferença inteira como perda.
+        written_off = sum(
+            (
+                -move.delta
+                for move in Move.objects.filter(
+                    quant__sku=recipe.output_sku,
+                    kind=Move.Kind.WASTE,
+                    reason__contains=work_order.ref,
+                )
+            ),
+            Decimal("0"),
+        )
+        assert written_off == difference
+
+    # 3. O relatório mostra a perda de cada lote e a soma do dia por receita.
+    reports = build_production_reports(
+        {"date_from": today.isoformat(), "date_to": today.isoformat()}
+    )
+    by_ref = {row.ref: row for row in reports.history_rows}
+    assert {ref: Decimal(by_ref[ref].qty_loss) for ref in expected} == expected
+    waste = {row.recipe_ref: row for row in reports.waste_rows}
+    assert Decimal(waste[recipe.ref].loss_total) == sum(expected.values())
 
 
 @pytest.mark.django_db

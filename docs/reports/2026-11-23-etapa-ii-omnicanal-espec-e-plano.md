@@ -115,7 +115,7 @@ sequenceDiagram
 - `accept(offer, *, dest_context, actor) -> TransferReceipt`
   - autoriza no momento do efeito: o principal do destino é o dono da sacola (mesmo `customer_ref`), ou a sacola de origem é anônima e o principal tem força `device` ou vínculo `verified_customer`;
   - trava a origem (`select_for_update`); se `rev` mudou desde a oferta, recusa com `source_changed` e o canal oferece de novo;
-  - se o destino já tem sacola aberta com itens: recusa com `destination_conflict` (comportamento atual) e a superfície pergunta "substituir ou manter"; nunca mescla em silêncio;
+  - se o destino já tem sacola aberta com itens: os itens que chegam entram nela, de forma explícita (quem aceita tocou em trazer), e o mesmo item soma a quantidade pelo `cart_service` do destino; o que não coube vira diferença. **Decisão do dono (24/11/2026, OC-16 #3522)**, que substitui o "recusa com `destination_conflict` e pergunta substituir ou manter": "ou traz a de fora (mesclando) ou não";
   - recria cada linha no destino por `cart_service` (reprecifica e re-reserva pelas regras do canal de destino); coleta diferenças: preço, quantidade reduzida, item indisponível, recebimento e pagamento que não valem no destino;
   - abandona a origem liberando holds; grava `transferred_to` na origem e `transferred_from` no destino (`transferred_from` já é copiado para o pedido pelo commit);
   - idempotente pela oferta: o mesmo `AccessLink` é de uso único; um reenvio do aceite devolve o recibo gravado em `Session.data["transfer_receipt"]` da origem.

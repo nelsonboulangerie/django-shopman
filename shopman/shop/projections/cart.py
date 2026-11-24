@@ -220,6 +220,10 @@ class CartProjection:
     # Mensagem de economia do grupo (texto por grupo, editável no Admin). Vazia
     # quando não houve desconto de grupo.
     group_savings_message: str = ""
+    # De onde a sacola veio quando outro canal a passou para cá (OC-15/OC-16):
+    # ``Session.data["transferred_from"]``, lido na mesma consulta da sacola, para
+    # o recibo da passagem só custar consulta quando existe.
+    transferred_from: dict | None = None
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -318,6 +322,72 @@ def open_elsewhere(customer_ref: str, channel_ref: str):
     from shopman.shop.services.sessions import open_sessions_for_customer
 
     return open_sessions_for_customer(customer_ref, exclude_channel=channel_ref)
+
+
+def offered_cart(channel_ref: str, session_key: str):
+    """A sacola de outro canal que uma passagem aponta (``transferred_to``), contada; ``None`` se fechou."""
+    from shopman.shop.services.sessions import open_session_summary
+
+    return open_session_summary(channel_ref, session_key)
+
+
+def conversation_number_available() -> bool:
+    """A loja tem WhatsApp para a mensagem pronta de "Continuar pelo WhatsApp" (X1)."""
+    from shopman.shop.services.session_transfer import conversation_number
+
+    return bool(conversation_number())
+
+
+@dataclass(frozen=True)
+class TransferArrival:
+    """A sacola deste canal que chegou de outro, com o recibo da passagem (OC-15/OC-16).
+
+    Só existe na sacola em que ``session_transfer.accept`` pôs os itens (nova, ou a
+    que o destino já tinha): a adoção no mesmo canal não grava recibo. As diferenças são as do recibo gravado na origem.
+    """
+
+    source_channel: str
+    source_channel_name: str
+    differences: tuple[dict, ...]
+    source_total_q: int
+    dest_total_q: int
+    #: O que entrou: linhas e unidades ("3"; "1.5" com item de peso).
+    carried_lines: int = 0
+    carried_units: str = ""
+
+
+def transfer_arrival(session_key: str | None, came_from: dict | None) -> TransferArrival | None:
+    """O recibo da passagem que trouxe esta sacola, ou ``None``. Leitura pura.
+
+    ``came_from`` é o ``transferred_from`` que ``build_cart`` já leu da sacola: sem
+    ele, nenhuma consulta.
+    """
+    if not session_key:
+        return None
+    from shopman.orderman.models import Session
+
+    from shopman.shop.models import Channel
+
+    if not isinstance(came_from, dict) or not came_from.get("channel_ref") or "tab_ref" in came_from:
+        return None
+    source_data = (
+        Session.objects.filter(channel_ref=came_from["channel_ref"], session_key=came_from.get("session_key") or "")
+        .values_list("data", flat=True)
+        .first()
+    )
+    receipt = (source_data or {}).get("transfer_receipt") if isinstance(source_data, dict) else None
+    if not isinstance(receipt, dict) or receipt.get("dest_session_key") != session_key:
+        return None
+    name = Channel.objects.filter(ref=came_from["channel_ref"]).values_list("name", flat=True).first()
+    return TransferArrival(
+        source_channel=str(came_from["channel_ref"]),
+        source_channel_name=str(name or came_from["channel_ref"]),
+        differences=tuple(diff for diff in receipt.get("differences") or () if isinstance(diff, dict)),
+        source_total_q=int(receipt.get("source_total_q") or 0),
+        dest_total_q=int(receipt.get("dest_total_q") or 0),
+        carried_lines=int(receipt.get("carried_lines") or 0),
+        carried_units=str(receipt.get("carried_units") or ""),
+    )
 
 
 def items_phrase(entry) -> str:
@@ -446,8 +516,10 @@ def build_cart(
         minimum_order=minimum_order,
     )
 
+    came_from = (session.data or {}).get("transferred_from")
     return CartProjection(
         session_key=session_key,
+        transferred_from=came_from if isinstance(came_from, dict) else None,
         revision=session.rev,
         lines=lines,
         count=count,

@@ -1947,6 +1947,57 @@ class TestPosLateFiscalEmissionPolicy:
         assert "defaults_pos_late_fiscal_emission_days" in fields
 
 
+class TestRunningLowDefault:
+    """Quando o item está acabando (DEV-2026-077): o padrão da loja, no Admin."""
+
+    def test_form_saves_the_percent(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import running_low
+
+        data = _shop_form_data(shop)
+        data["defaults_running_low_percent"] = "30"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.defaults["running_low"] == {"percent": 30}
+        from django.core.cache import cache
+
+        cache.clear()
+        assert running_low.shop_default_percent() == 30
+
+    def test_blank_falls_back_to_twenty(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import running_low
+
+        shop.defaults = {"running_low": {"percent": 50}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        assert str(data["defaults_running_low_percent"]) == "50"
+        data["defaults_running_low_percent"] = ""
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert "running_low" not in saved.defaults
+        from django.core.cache import cache
+
+        cache.clear()
+        assert running_low.shop_default_percent() == 20
+
+    def test_out_of_range_is_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        for raw in ("101", "-1"):
+            data = _shop_form_data(shop)
+            data["defaults_running_low_percent"] = raw
+            assert not ShopForm(data=data, instance=shop).is_valid()
+
+    def test_field_lives_on_the_pos_page(self):
+        from shopman.shop.admin.shop import _POS_FIELDSETS
+
+        fields = [f for _, opts in _POS_FIELDSETS for f in opts["fields"]]
+        assert "defaults_running_low_percent" in fields
+
+
 class TestCashTolerancePolicy:
     """Tolerância do caixa (decisão do dono, 04/10/2026): % do dinheiro do dia, piso e teto."""
 

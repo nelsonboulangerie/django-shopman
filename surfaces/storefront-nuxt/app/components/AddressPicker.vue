@@ -1178,8 +1178,8 @@ function onLabelResolved () {
             </UiButton>
           </li>
         </ul>
-        <p v-if="searchIssue" class="text-sm text-destructive" data-address-search-issue>{{ searchIssue }}</p>
-        <p v-if="geoIssue" class="text-sm text-destructive">{{ geoIssue }}</p>
+        <p v-if="searchIssue" class="text-sm text-destructive" data-address-search-issue data-decisive="error">{{ searchIssue }}</p>
+        <p v-if="geoIssue" class="text-sm text-destructive" data-decisive="error">{{ geoIssue }}</p>
 
         <UiButton
           variant="outline"
