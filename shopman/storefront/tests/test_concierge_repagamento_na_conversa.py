@@ -269,3 +269,65 @@ def test_cancelled_order_refuses_with_the_reason(shop):
     assert refused[0].splitlines()[0] == tools.REPAY_REFUSED["order_cancelled"].format(ref=order.ref), refused
     assert len(refused) == 1
     assert not _live_intents(order)
+    assert tools.REPEAT_OFFER not in refused[0], "só o pedido vencido sem pagamento é oferecido de novo"
+
+
+# ── Variante "oferecer" (OC-12): o pedido vencido pode ser remontado ─────
+
+
+def _expired(conversation) -> Order:
+    order = _pix_order(conversation)
+    payment = {**order.data["payment"], "expires_at": (timezone.now() - timedelta(minutes=1)).isoformat()}
+    Order.objects.filter(pk=order.pk).update(data={**order.data, "payment": payment})
+    return order
+
+
+@pytest.mark.parametrize(
+    ("text", "offered", "expected"),
+    [
+        ("monta de novo", False, True),
+        ("pode repetir o pedido", False, True),
+        ("sim", True, True),
+        ("sim", False, False),
+        ("manda o pix de novo", False, False),
+    ],
+)
+def test_asks_to_repeat_reads_the_phrase_or_the_yes_to_the_offer(text, offered, expected):
+    assert tools.asks_to_repeat(text, offered=offered) is expected
+
+
+def test_expired_order_is_offered_and_rebuilt_in_the_bag_at_todays_price_with_a_new_confirmation(shop):
+    from shopman.offerman.models import ListingItem
+
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    order = _expired(shop)
+    refused = _status(shop, "o pix venceu, manda outro")
+    order.refresh_from_db()
+    assert order.status == Order.Status.CANCELLED
+    assert tools.REPEAT_OFFER in refused[0].splitlines(), refused
+    # O preço de agora, não o do pedido vencido.
+    ListingItem.objects.filter(product__sku=SKU, listing__ref=CHANNEL).update(price_q=120)
+
+    rebuilt = closing._say(shop, "sim")
+
+    assert rebuilt.startswith(tools.REPEAT_DONE.format(ref=order.ref)), rebuilt
+    assert "2,40" in rebuilt and "1,80" not in rebuilt, rebuilt
+    assert rebuilt.splitlines()[-1].endswith("“pode fechar”."), rebuilt
+    assert Order.objects.count() == 1, "remontar não faz pedido: o pedido novo pede o fechamento e o código"
+    assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1
+    # A confirmação nova: o fechamento de sempre, desde o dia.
+    assert closing._say(shop, "pode fechar") == "Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?"
+
+
+def test_yes_without_the_offer_rebuilds_nothing(shop):
+    from shopman.orderman.models import Session
+
+    _expired(shop)
+    _status(shop, "como está meu pedido?")
+
+    closing._say(shop, "sim")
+
+    shop.refresh_from_db()
+    sessions = Session.objects.filter(session_key=shop.session_key) if shop.session_key else []
+    assert all(not session.items for session in sessions)
