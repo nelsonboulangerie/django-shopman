@@ -73,8 +73,12 @@ def test_pickup_tomorrow_at_four_takes_the_window_that_covers_the_hour(house):
     done = house.site.apply(CTX, command(date=DAY, mode="pickup", time="16:00"))
     assert done.applied and dict(done.domain_refs) == {"effect": "sess-1", "cart": "sess-1", "date": DAY, "mode": "pickup",
                                                        "window": "slot-15", "time": "16:00"}
-    assert house.calls[-1] == ("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": DAY,
-                                                   "slot_ref": "slot-15"})
+    # A janela grava pelo set_fulfillment (OC-14); depois, só a nota da hora que o cliente disse, com o dia e a
+    # janela que ela escolheu, para o combinado e o resumo a ecoarem ("às 16h").
+    assert house.calls[-2:] == [
+        ("set_fulfillment", {"fulfillment_type": "pickup", "delivery_date": DAY, "slot_ref": "slot-15"}),
+        ("modify_session", [{"op": "set_data", "path": "delivery_time_said",
+                             "value": {"time": "16:00", "date": DAY, "slot": "slot-15"}}])]
 
 
 def test_an_hour_before_any_window_is_unavailable_and_nothing_is_set(house):
