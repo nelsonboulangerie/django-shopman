@@ -70,3 +70,4 @@ altera o status da sucessora nem cria uma relação circular.
 | [046](adr-046-suporte-helpdesk-interno.md) | Suporte: helpdesk interno com gate de dev | Aceito | Backstage e Hub | 2026-11-12 | Operação |
 | [049](adr-049-comercio-conversacional-pacote-puro.md) | Comércio conversacional: pacote puro no monorepo, contratos em dataclass, conformidade como segunda implementação | Aceito | conversational-commerce | 2026-11-17 | Conversação |
 | [050](adr-050-autoridade-de-compra-sem-id-de-mensagem.md) | Autoridade de compra sem identificador de mensagem: sacola em valor absoluto, fechamento pelo código do orçamento | Aceito | Concierge | 2026-11-20 | Conversação |
+| [051](adr-051-leitura-com-contexto.md) | Leitura com contexto: o leitor vê a pergunta no ar, o motor confere a coerência, e um verificador decide o conflito | Aceito | conversational-commerce | 2026-11-24 | Conversação |
