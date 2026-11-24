@@ -29,18 +29,17 @@ from rest_framework.exceptions import ParseError
 # TTL curto: a home e o catálogo mostram disponibilidade, preço de horário e se a
 # loja está aberta. 30 s na borda, mais 30 s servindo o velho enquanto revalida,
 # é o atraso máximo que o anônimo vê; sacola e checkout recalculam no servidor.
+# É também o teto do X8: nenhuma resposta pública que carrega copy resolvida passa
+# de 60 s somados na borda (``test_public_edge_cache.py`` reprova quem passar).
 # O navegador não guarda nada (max-age=0): quem cacheia é a borda.
 PUBLIC_EDGE_CACHE_CONTROL = (
     "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=120"
 )
-# As sugestões da PDP são a lista de "quem se parece com este produto", resolvida
-# por palavras-chave: muda quando o catálogo muda, não a cada venda. 60 s na borda
-# (mais 60 s servindo o velho enquanto revalida) é o mesmo trade-off da home, com
-# o dobro da janela porque o rail não é o que decide a compra: preço e estoque de
-# verdade são recalculados em ``cart/`` e ``checkout/`` a cada gesto.
-RECOMMENDATIONS_EDGE_CACHE_CONTROL = (
-    "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=120"
-)
+# As sugestões da PDP são a lista de "quem se parece com este produto", e os cards
+# trazem copy resolvida no servidor (o selo de disponibilidade). Ficam na mesma
+# régua do resto: o X8 da Etapa III promete copy editada no Admin na loja em até
+# 60 s, e a borda é parte desse prazo (s-maxage + stale-while-revalidate ≤ 60 s).
+RECOMMENDATIONS_EDGE_CACHE_CONTROL = PUBLIC_EDGE_CACHE_CONTROL
 PRIVATE_NO_STORE = "private, no-store"
 
 _CREDENTIAL_HEADERS = (

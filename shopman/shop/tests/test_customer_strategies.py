@@ -25,7 +25,16 @@ def adapter():
     a.get_customer_by_phone.return_value = None
     a.get_customer_by_identifier.return_value = None
     a.create_customer.return_value = {"ref": "CLI-NEW", "first_name": "", "last_name": ""}
-    with patch("shopman.shop.services.customer.get_adapter", return_value=a):
+    # O pedido de confirmação do número (D4, OC-08) é composição do orquestrador:
+    # a estratégia só o chama, e a gravação dele tem teste próprio
+    # (test_telefone_do_balcao_confirmado.py). Aqui ele é a costura observada.
+    a.request_phone_confirmation = MagicMock()
+    with (
+        patch("shopman.shop.services.customer.get_adapter", return_value=a),
+        patch.object(
+            customer_service.phone_confirmation, "request_on_commit", a.request_phone_confirmation,
+        ),
+    ):
         yield a
 
 
@@ -39,6 +48,7 @@ class TestCounterStrategy:
         result = _handle_counter(_order({"phone": "43999990000", "name": "Ana"}))
         assert result["ref"] == "CLI-1"
         adapter.create_customer.assert_not_called()
+        adapter.request_phone_confirmation.assert_not_called()
 
     def test_phone_creates_when_absent(self, adapter):
         result = _handle_counter(_order({"phone": "43999990000", "name": "Ana Maria"}))
@@ -47,6 +57,8 @@ class TestCounterStrategy:
         assert kwargs["first_name"] == "Ana"
         assert kwargs["last_name"] == "Maria"
         assert kwargs["source_system"] == "pdv"
+        # Número digitado no balcão: o titular é chamado a confirmar (D4, OC-08).
+        adapter.request_phone_confirmation.assert_called_once_with("CLI-NEW", "+5543999990000")
 
     def test_tax_id_creates_with_identifier(self, adapter):
         result = _handle_counter(_order({"tax_id": "111.444.777-35", "name": "João"}))
@@ -54,6 +66,8 @@ class TestCounterStrategy:
         # Document normalized to digits and stored as a cpf identifier.
         adapter.get_customer_by_identifier.assert_called_once_with("cpf", "11144477735")
         adapter.create_identifier.assert_called_once_with("CLI-NEW", "cpf", "11144477735", is_primary=True)
+        # Sem telefone, nada a confirmar.
+        adapter.request_phone_confirmation.assert_not_called()
 
     def test_tax_id_existing_customer_returned(self, adapter):
         adapter.get_customer_by_identifier.return_value = {"ref": "CLI-9", "first_name": "João"}

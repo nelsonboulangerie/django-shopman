@@ -16,11 +16,13 @@ from decimal import Decimal
 import pytest
 from django.conf import settings
 from django.test import Client
+from django.urls import URLPattern, URLResolver, get_resolver
 from shopman.guestman.models import Customer, PriceTier
 
 from shopman.storefront.api.public_cache import (
     PUBLIC_EDGE_CACHE_CONTROL,
     RECOMMENDATIONS_EDGE_CACHE_CONTROL,
+    PublicReadMixin,
 )
 from shopman.storefront.services import favorites
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
@@ -43,12 +45,15 @@ PUBLIC_TWINS = {
     PRODUCT_TWIN: PRODUCT_PRIVATE,
 }
 PUBLIC_IN_PLACE = ("/api/v1/storefront/site/", "/api/v1/storefront/legal/")
-# A gêmea do rail tem TTL próprio: a lista muda com o catálogo, não com a venda.
+# A gêmea do rail tem constante própria (o TTL é da rota), hoje na mesma régua.
 RECOMMENDATIONS_TWINS = (RECOMMENDATIONS_TWIN,)
+
+#: X8 da Etapa III: copy editada no Admin chega à loja em até 60 s. A borda conta.
+X8_EDGE_CEILING_S = 60
 
 
 def _cache_control(path: str) -> str:
-    """O TTL é da ROTA: estrutura em 30 s, sugestões da PDP em 60 s."""
+    """O TTL é da ROTA: cada rota pública declara o seu, todos sob o teto do X8."""
     return (
         RECOMMENDATIONS_EDGE_CACHE_CONTROL
         if path in RECOMMENDATIONS_TWINS
@@ -123,8 +128,8 @@ def test_public_twin_refuses_anything_that_could_personalize(client, path, crede
     assert set(response.json()) <= {"detail", "field", "errors"}
 
 
-def test_recommendations_twin_serves_the_rail_for_one_minute(client):
-    """s-maxage=60 + stale-while-revalidate=60: um minuto de borda, zero de navegador."""
+def test_recommendations_twin_serves_the_rail_within_the_x8_ceiling(client):
+    """s-maxage=30 + stale-while-revalidate=30: o selo dos cards é copy do Admin."""
     _seed_surface()
 
     response = client.get(RECOMMENDATIONS_TWIN)
@@ -132,8 +137,55 @@ def test_recommendations_twin_serves_the_rail_for_one_minute(client):
     assert response.status_code == 200
     assert response["Cache-Control"] == RECOMMENDATIONS_EDGE_CACHE_CONTROL
     assert "max-age=0" in response["Cache-Control"], "quem cacheia é a borda, não o navegador"
-    assert "s-maxage=60" in response["Cache-Control"]
-    assert "stale-while-revalidate=60" in response["Cache-Control"]
+    assert "s-maxage=30" in response["Cache-Control"]
+    assert "stale-while-revalidate=30" in response["Cache-Control"]
+
+
+def _edge_window_s(cache_control: str) -> int:
+    """Quanto a borda pode servir o mesmo corpo: ``s-maxage`` + ``stale-while-revalidate``.
+
+    ``stale-if-error`` fica de fora: só vale quando a origem responde erro.
+    """
+    directives = {}
+    for part in cache_control.split(","):
+        name, _, value = part.strip().partition("=")
+        directives[name] = value
+    assert "s-maxage" in directives, f"resposta pública sem s-maxage: {cache_control!r}"
+    return int(directives["s-maxage"]) + int(directives.get("stale-while-revalidate") or 0)
+
+
+def _public_routes(patterns=None, prefix=""):
+    """Toda rota montada cuja view é pública na borda (``PublicReadMixin``)."""
+    for pattern in get_resolver().url_patterns if patterns is None else patterns:
+        if isinstance(pattern, URLResolver):
+            yield from _public_routes(pattern.url_patterns, prefix + str(pattern.pattern))
+        elif isinstance(pattern, URLPattern):
+            view_class = getattr(pattern.callback, "view_class", None)
+            if view_class is not None and issubclass(view_class, PublicReadMixin):
+                yield prefix + str(pattern.pattern), view_class
+
+
+def test_x8_no_public_route_declares_more_than_sixty_seconds_at_the_edge():
+    """Rota pública nova nasce sob o teto: a varredura é do URLConf, não de uma lista."""
+    routes = list(_public_routes())
+
+    assert len(routes) >= len(PUBLIC_TWINS) + len(PUBLIC_IN_PLACE), routes
+    over = {
+        route: view_class.edge_cache_control
+        for route, view_class in routes
+        if _edge_window_s(view_class.edge_cache_control) > X8_EDGE_CEILING_S
+    }
+    assert over == {}
+
+
+@pytest.mark.parametrize("path", [*PUBLIC_TWINS, *PUBLIC_IN_PLACE])
+def test_x8_public_response_fits_in_sixty_seconds_at_the_edge(client, path):
+    _seed_surface()
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert _edge_window_s(response["Cache-Control"]) <= X8_EDGE_CEILING_S
 
 
 def test_recommendations_twin_does_not_cache_a_missing_product(client):

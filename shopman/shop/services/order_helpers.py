@@ -246,6 +246,44 @@ def get_commitment_date(source) -> date | None:
     return parse_commitment_date(data.get("delivery_date"))
 
 
+def agreed_day(data: dict | None, created_at) -> date:
+    """O dia do pedido: o combinado (``data.delivery_date``), ou o da venda.
+
+    É a régua única do "dia" de um pedido para quem soma vendas por dia (B.I.).
+    A encomenda criada na quinta para sábado é venda de sábado, o dia em que a
+    fornada a atende; sem data combinada é venda imediata, do dia local da
+    criação. O reagendamento regrava ``delivery_date``, e o dia acompanha. Caixa
+    e pagamento perguntam outra coisa (quando o dinheiro entrou) e não usam esta
+    régua.
+    """
+    return get_commitment_date(data or {}) or timezone.localdate(created_at)
+
+
+def in_agreed_days(orders, window):
+    """Os pedidos cujo :func:`agreed_day` cai na janela ``[início, fim)``.
+
+    A forma de consulta da mesma régua: a data combinada (``data.delivery_date``)
+    quando há, senão o dia da criação. Quem soma pelo dia do pedido (o B.I.) e
+    quem abre os pedidos que ele contou (o Histórico, ``date_basis=ordered``)
+    perguntam aqui, e por isso contam os mesmos (#3427).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Q, TextField
+    from django.db.models.fields.json import KeyTextTransform
+    from django.db.models.functions import Cast
+
+    start, end = window
+    first = timezone.localdate(start).isoformat()
+    last = timezone.localdate(end - timedelta(microseconds=1)).isoformat()
+    # Texto puro: sem o Cast, o valor volta pelo decodificador de JSON do campo.
+    orders = orders.annotate(_agreed_day=Cast(KeyTextTransform("delivery_date", "data"), TextField()))
+    return orders.filter(
+        Q(_agreed_day__gte=first, _agreed_day__lte=last)
+        | ((Q(_agreed_day__isnull=True) | Q(_agreed_day="")) & Q(created_at__gte=start, created_at__lt=end))
+    )
+
+
 # ── "É encomenda?": uma régua só, duas perguntas (#3163, F-8 e F-9) ─────────
 #
 # Antes havia quatro réguas: o carimbo do commit (``data.is_preorder``, a data

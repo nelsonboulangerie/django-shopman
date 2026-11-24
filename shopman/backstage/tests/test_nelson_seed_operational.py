@@ -872,6 +872,16 @@ def test_o_seed_padrao_da_a_ana_um_pedido_concluido_ontem(monkeypatch, instant):
     assert dela, f"o seed não deu à Ana pedido concluído em {yesterday:%d/%m}"
     assert dela[0].data["customer"]["name"] == "Ana Ferreira"
 
+    # Os clientes da casa no seed já provaram o número: o código abre a conta
+    # deles (D4, OC-08). É por eles que o harness E2E entra (CLI-003, CLI-005).
+    from shopman.guestman.adapters.auth import IdentityResolver
+    from shopman.guestman.models import Customer
+
+    for ref in ("CLI-003", "CLI-005"):
+        cliente = Customer.objects.get(ref=ref)
+        resolvido = IdentityResolver().resolve("phone", cliente.phone)
+        assert resolvido is not None and resolvido.subject_id == cliente.uuid, ref
+
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(

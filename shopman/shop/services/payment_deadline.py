@@ -82,10 +82,10 @@ def _window_start_for(slot_ref: str) -> time | None:
     """
     if not slot_ref:
         return None
-    from shopman.shop.services.fulfillment_window import _window_start, canonical_slots
+    from shopman.shop.services.fulfillment_window import canonical_slots, slot_start
 
     known = next((slot for slot in canonical_slots() if slot.get("ref") == slot_ref), None)
-    return _window_start(known or {"ref": slot_ref})
+    return slot_start(known or {"ref": slot_ref})
 
 
 def _at(day: date, clock: time, tz) -> datetime:

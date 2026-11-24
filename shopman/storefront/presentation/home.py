@@ -29,6 +29,9 @@ from shopman.storefront.presentation.shop_status import _format_opening_hours, _
 
 logger = logging.getLogger(__name__)
 
+#: A superfície nos experimentos de experiência (``ExperienceRule.params["surface"]``).
+STOREFRONT_SURFACE = "storefront"
+
 
 @dataclass(frozen=True)
 class OmotenashiProjection:
@@ -247,6 +250,18 @@ def _environment_notice() -> str:
 
 
 @dataclass(frozen=True)
+class ExperienceProjection:
+    """Uma versão que esta sessão vê de um experimento (R4 do release, OC-20).
+
+    Quem decide é o servidor (``shopman.shop.services.experience.resolve``). Só
+    ``ref`` e ``variant`` saem: coorte, motivo e dono nunca chegam à loja.
+    """
+
+    ref: str
+    variant: str
+
+
+@dataclass(frozen=True)
 class StorefrontShellProjection:
     """Projeção global leve, sem catálogo nem histórico de pedidos.
 
@@ -264,6 +279,10 @@ class StorefrontShellProjection:
     faq: tuple[FAQItemProjection, ...]
     origin_channel: str | None
     public_config: PublicConfigProjection
+    # Lista, não mapa: cada item tem a forma {ref, variant} que o contrato do
+    # release fixou, a ordem é estável (por ref) e o item pode ganhar campo sem
+    # mudar o tipo do valor. Experimento desligado não aparece: ausente = padrão.
+    experience: tuple[ExperienceProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -290,12 +309,17 @@ def build_shell(
     request: HttpRequest,
     *,
     cart_has_items: bool | None = None,
+    experience=None,
 ) -> StorefrontShellProjection:
     """Build only the state shared by every storefront route.
 
     Deliberately excludes ``build_featured_items`` and ``_reorder_context``. Those are
     home-page concerns and are orders of magnitude more expensive than the
     identity, brand, operational status and copy needed by the global shell.
+
+    ``experience`` são as versões já resolvidas pela view
+    (``shopman.shop.services.experience.resolve``): a apresentação só lê e não
+    conversa com serviço. Sem elas, o shell sai sem experimento (todos no padrão).
     """
     from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
@@ -397,6 +421,9 @@ def build_shell(
         ),
         origin_channel=origin_channel,
         public_config=public_config,
+        experience=tuple(
+            ExperienceProjection(ref=a.ref, variant=a.variant) for a in (experience or ())
+        ),
     )
 
 

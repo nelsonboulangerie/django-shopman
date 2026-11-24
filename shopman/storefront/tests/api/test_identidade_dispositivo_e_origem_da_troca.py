@@ -19,6 +19,7 @@ from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
 from shopman.guestman.models import ContactPoint, Customer
 
 from shopman.shop.services.auth import IDENTITY_CONFLICT_DETAIL
+from shopman.storefront.tests.identity_fakes import proven
 
 pytestmark = pytest.mark.django_db
 
@@ -119,7 +120,7 @@ def test_o_recado_fala_a_lingua_da_casa():
 
 def test_dispositivo_confiavel_com_dono_unico_continua_entrando(client: Client):
     """O porto não muda o caminho feliz: o dono do número entra sem código."""
-    customer = Customer.objects.create(ref="CUS-A42-UNICO", first_name="Clara", phone=NUMERO)
+    customer = proven(Customer.objects.create(ref="CUS-A42-UNICO", first_name="Clara", phone=NUMERO))
     _confiar_no_dispositivo(client, customer)
 
     response = _device_check(client, NUMERO)
@@ -149,7 +150,7 @@ def test_dispositivo_confiavel_nao_le_o_telefone_fora_do_porto(client: Client, m
         raise AssertionError("trusted_device_login resolveu identidade fora do porto")
 
     monkeypatch.setattr(customer_service, "get_by_phone", _proibido)
-    customer = Customer.objects.create(ref="CUS-A42-PORTO", first_name="Fabi", phone=NUMERO)
+    customer = proven(Customer.objects.create(ref="CUS-A42-PORTO", first_name="Fabi", phone=NUMERO))
     _confiar_no_dispositivo(client, customer)
 
     response = _device_check(client, NUMERO)
