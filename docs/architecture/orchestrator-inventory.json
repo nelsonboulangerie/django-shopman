@@ -8939,7 +8939,9 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "S2S_LINK_MAX_TTL_MINUTES",
             "SOURCE_TO_ORIGIN",
+            "STORE_ENTRY_AUDIENCES",
             "_KNOWN_BROWSERS",
             "_PHONE_USER_AGENT_MARKERS",
             "_RELEASE_CONFIRM_KEY",
@@ -8955,9 +8957,11 @@
             "release_target",
             "resolve_origin",
             "revoke_site_release",
+            "s2s_link_request_error",
             "site_origin",
             "site_origin_is_phone",
             "site_origin_label",
+            "token_audience",
             "token_metadata",
             "token_source"
           ]
@@ -15337,6 +15341,27 @@
         {
           "responsibility": "infraestrutura",
           "symbols": []
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/views/access_link.py",
+      "touchpoints": [
+        "API"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "StoreAccessLinkCreateView",
+            "StoreAccessLinkExchangeView",
+            "_passes_the_key"
+          ]
         }
       ]
     },
