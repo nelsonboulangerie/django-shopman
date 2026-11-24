@@ -122,6 +122,10 @@ def test_n11_pix_again_later_returns_the_code_not_a_link(shop):
     sent_before = [i for i, line in enumerate(lines) if line.startswith("Já te mandei o código Pix")]
     assert all(i < lines.index(tools.PIX_CODE_FOLLOWS) for i in sent_before), lines
     assert again[1] == pix, "o código, sozinho, para copiar no WhatsApp"
+    # X3 também para os comandos: cancelar é instrução de conversa, nunca endereço de API.
+    assert not any("/api/" in text for text in again), again
+    assert tools.CONVERSATION_EQUIVALENTS["cancel_order"] in again[0].splitlines(), again
+    assert f"Acompanhar: /pedido/{order.ref}/" in again[0].splitlines()[-1], again
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1, "consultar não cria outra cobrança"
 
 
@@ -146,3 +150,33 @@ def test_n12_card_order_prints_the_gateway_link_at_placement(shop, settings, mon
     assert placed[0].startswith(f"Pedido {order.ref} registrado."), placed
     assert f"Pagar com cartão: {CHECKOUT_URL}" in placed[0].splitlines(), placed
     assert len(placed) == 1, "no cartão não há código para copiar"
+
+
+def test_x3_command_actions_become_conversation_or_vanish_and_pages_stay_links():
+    """Pela natureza do destino: página abre como link; comando (POST/API) vira a frase da
+    conversa quando a Nice sabe fazer, e some quando não sabe. Nunca ``/api/`` na resposta."""
+    def action(ref, kind, href="", method="", label="Rótulo"):
+        return {"ref": ref, "kind": kind, "label": label, "href": href, "method": method, "enabled": True}
+
+    result = {"ok": True, "orders": [{
+        "order_ref": "ORD-1", "title": "Recebemos seu pedido", "message": "", "total": "R$ 10,00",
+        "tracking_url": "https://loja.example/pedido/ORD-1/",
+        "actions": [
+            action("cancel_order", "mutation", "/api/v1/orders/ORD-1/cancel/", "POST", "Cancelar pedido"),
+            action("rate_order", "mutation", "/api/v1/orders/ORD-1/rating/", "POST", "Avaliar pedido"),
+            action("api_get", "link", "https://loja.example/api/v1/orders/ORD-1/", "GET", "Ver dados"),
+            action("pay_card", "external", CHECKOUT_URL, "", "Pagar com cartão"),
+            action("track_courier", "external", "https://entregas.example/r/abc", "", "Ver o entregador"),
+            action("no_href", "link", "", "", "Sem destino"),
+        ],
+    }]}
+
+    rendered = tools.render_result("order_status", result)
+    lines = rendered.splitlines()
+
+    assert "/api/" not in rendered, rendered
+    assert tools.CONVERSATION_EQUIVALENTS["cancel_order"] in lines
+    assert "Avaliar pedido" not in rendered and "Ver dados" not in rendered and "Sem destino" not in rendered
+    assert f"Pagar com cartão: {CHECKOUT_URL}" in lines
+    assert "Ver o entregador: https://entregas.example/r/abc" in lines
+    assert lines[-1] == "Acompanhar: https://loja.example/pedido/ORD-1/"
