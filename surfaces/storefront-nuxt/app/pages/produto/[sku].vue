@@ -357,13 +357,6 @@ useHead({
                   <Icon name="lucide:clock" class="size-3.5 shrink-0" />
                   {{ promiseLine }}
                 </p>
-                <!-- A loja e o estado de hoje, numa linha: é o que o Google exige para a
-                     disponibilidade na loja (#2652). Sem endereço: com uma loja só, ele era
-                     ruído (dono, 24/11/2026). -->
-                <p v-if="storeLines" class="mt-1 flex items-center gap-1 shop-meta" data-pdp-in-store-pickup>
-                  <Icon name="lucide:store" class="size-3.5 shrink-0" />
-                  <span :data-pdp-available-today="storeLines.availableToday" data-decisive="availability">{{ storeLines.availability }}</span>
-                </p>
                 <p v-if="inCartWhen" class="shop-meta" data-pdp-in-cart-when>{{ inCartWhen }}</p>
                 <p v-else-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
                   {{ formatCount(currentQty, 'na sacola', 'na sacola') }}
@@ -400,6 +393,15 @@ useHead({
                 {{ product.made_to_order_label }}
               </UiBadge>
             </div>
+
+            <!-- A loja e o estado de hoje: só para cumprir o Google (#2652), sem destaque
+                 (dono, 24/11/2026: "Quero apenas cumpri-la, não dar destaque"). A ajuda do
+                 Google para páginas com disponibilidade na loja não pede posição nem tamanho:
+                 basta a página dizer a disponibilidade e a loja. Por isso fica no fim das
+                 informações, em texto de rodapé, sem ícone e sem endereço. -->
+            <p v-if="storeLines" class="mt-3 shop-meta" data-pdp-in-store-pickup>
+              <span :data-pdp-available-today="storeLines.availableToday" data-decisive="availability">{{ storeLines.availability }}</span>
+            </p>
 
             <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4">
               <UiAccordionItem v-if="product.components.length" value="components">
@@ -485,7 +487,9 @@ useHead({
               <p v-if="unavailableReason" class="mt-1 text-sm text-ink-foreground/80" data-decisive="availability">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />
-            <UiButton v-else-if="deadEnd" variant="outline" size="sm" :to="similarItemsTo">Ver itens parecidos</UiButton>
+            <!-- Sobre o card escuro, o tom invertido, como as outras ações do card: o
+                 "outline" herdava letra e fundo claros e o botão sumia (#3558). -->
+            <UiButton v-else-if="deadEnd" variant="outline" size="sm" class="shop-action-inverted" :to="similarItemsTo">Ver itens parecidos</UiButton>
             <CartQuantityAction
               v-else
               :meta="meta"
