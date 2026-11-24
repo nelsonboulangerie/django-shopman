@@ -424,6 +424,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
     ),
+    "CONCIERGE_MEMORY_ASK_WHICH_EACH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
     "CONCIERGE_MEMORY_DECLINED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),

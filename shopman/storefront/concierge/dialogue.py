@@ -77,11 +77,15 @@ ASK_ADDRESS = "ask_address"  # set_fulfillment devolveu o que falta do endereço
 ASK_SLOT = "ask_slot"  # horários mostrados
 CHOOSE_ORDER = "choose_order"  # "acrescentar ao pedido X (1) ou pedido novo (2)?"
 CONFIRM_NEW = "confirm_new"  # "o pedido X já foi entregue; quer um pedido novo?"
+#: Duas ou mais coisas pedidas, cada uma com mais de um item ("Para “brioche”: A ou B? Para
+#: “campagne oval”: C ou D?"). ``groups``: ``[{asked, qty, options}]``, na ordem do pedido (#3597).
+CHOOSE_EACH = "choose_each"
 CONFIRM_ADD = "confirm_add"  # "Acrescento 4 croissant ao pedido X? Total novo R$ Y. sim/não" (``order_addition``)
 
 # Copy da casa (registro ``OmotenashiCopy``, editável no Admin).
 ASK_WHAT_KEY = "CONCIERGE_MEMORY_ASK_WHAT"
 ASK_WHICH_KEY = "CONCIERGE_MEMORY_ASK_WHICH"
+ASK_WHICH_EACH_KEY = "CONCIERGE_MEMORY_ASK_WHICH_EACH"
 ASK_PRODUCT_KEY = "CONCIERGE_MEMORY_ASK_PRODUCT"
 ASK_QTY_PRODUCT_KEY = "CONCIERGE_MEMORY_ASK_QTY_PRODUCT"
 ASK_ORDER_OR_NEW_KEY = "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW"
@@ -94,6 +98,7 @@ ORDER_THANKS_KEY = "CONCIERGE_MEMORY_ORDER_THANKS"
 COPY_KEYS = (
     ASK_WHAT_KEY,
     ASK_WHICH_KEY,
+    ASK_WHICH_EACH_KEY,
     ASK_PRODUCT_KEY,
     ASK_QTY_PRODUCT_KEY,
     ASK_ORDER_OR_NEW_KEY,
@@ -501,6 +506,8 @@ class Resolution:
     #: ``add_preview`` (o cliente pediu: a casa pergunta com os dados do sistema) e
     #: ``add_apply`` (o "sim" à pergunta) são executados pelo agente, sem modelo.
     request: dict = field(default_factory=dict)
+    #: A pergunta que continua no ar depois da fala, e volta no fim da resposta (#3597).
+    still_asks: str = ""
 
     @property
     def answers_without_model(self) -> bool:
@@ -564,6 +571,55 @@ def _options_text(options: list[dict]) -> str:
     return "; ".join(f"{item['n']}) {item.get('name') or item.get('ref')}" for item in options[:MAX_LISTED])
 
 
+def _either(options: list[dict]) -> str:
+    """“A” ou “B”; “A”, “B” ou “C”."""
+    names = [f"“{option.get('name') or option.get('ref')}”" for option in options[:MAX_LISTED]]
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} ou {names[-1]}"
+
+
+def each_question(groups: list[dict], *, copy=None) -> str:
+    """Uma pergunta por coisa pedida, na ordem do pedido (#3597)."""
+    if copy is None:
+        from .service import copy_message as copy
+
+    template = copy(ASK_WHICH_EACH_KEY) or ""
+    return "\n".join(
+        _fill(template, asked=str(group.get("asked") or ""), options=_either(list(group.get("options") or [])))
+        for group in groups
+    )
+
+
+def _choose_each(tokens: list[str], pending: dict, *, copy) -> Resolution | None:
+    """A resposta às escolhas no ar, todas ou só algumas ("o burger bun e o redondo").
+
+    Cada grupo vale pela opção que a fala cita pelo nome, uma só por grupo. O que foi escolhido
+    segue para a sacola; o que falta continua no ar e volta a ser perguntado (``still_asks``).
+    ``None``: a fala não escolhe nada, e segue como veio.
+    """
+    groups = list(pending.get("groups") or [])
+    chosen, remaining = [], []
+    for group in groups:
+        named = named_options(tokens, list(group.get("options") or []))
+        if len(named) == 1:
+            chosen.append((group, named[0]))
+        else:
+            remaining.append(group)
+    if not chosen:
+        return None
+    text = " e ".join(
+        f"{int(group['qty'])} {option.get('name', '')}" if group.get("qty") else str(option.get("name", ""))
+        for group, option in chosen
+    )
+    still = {**pending, "groups": remaining} if remaining else None
+    return Resolution(
+        outcome="resolved", reason="named_options", refs=tuple(option.get("ref", "") for _group, option in chosen),
+        text=text,
+        note=f"A fala escolhe {text} das perguntas no ar.",
+        memo={"pending": still},
+        still_asks=each_question(remaining, copy=copy) if remaining else "",
+    )
+
+
 def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
     """A fala contra o estado que vale agora. Determinístico, sem rede."""
     if copy is None:
@@ -600,8 +656,16 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
             # A pergunta continua no ar: regravada, senão o turno de "ainda está aí?" a apagava.
             return Resolution(outcome="ask", reply=" ".join(p for p in (here, question) if p), reason="still_here",
                               memo={"pending": pending})
+        if kind == CHOOSE_EACH and pending.get("groups"):
+            question = each_question(list(pending["groups"]), copy=copy)
+            return Resolution(outcome="ask", reply="\n".join(p for p in (here, question) if p), reason="still_here",
+                              memo={"pending": pending})
         if not kind:
             return Resolution(outcome="ask", reply=copy(STILL_HERE_HELP_KEY), reason="still_here")
+    if kind == CHOOSE_EACH:
+        answered = _choose_each(tokens, pending, copy=copy)
+        if answered is not None:
+            return answered
     choices = options if kind == CHOOSE else (listed if not kind else [])
     if choices:
         named = named_options(tokens, choices)

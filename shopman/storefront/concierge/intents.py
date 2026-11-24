@@ -668,6 +668,9 @@ class PartReply:
     tool_events: list[dict] = field(default_factory=list)
     #: Mensagens próprias que seguem a resposta (o código Pix da consulta, para copiar).
     extra_replies: list[str] = field(default_factory=list)
+    #: A escolha que esta parte pede à sacola (``{asked, qty, options}``): com duas ou mais no
+    #: turno, viram uma pergunta só, uma linha por coisa pedida (#3597).
+    choice: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -1337,7 +1340,10 @@ def _cart_change(act: Act, *, conversation, context, copy):
         listed = dialogue.memo_of("search_storefront", {}, found) or {}
         options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
         text = _fill(copy(dialogue.ASK_WHICH_KEY) or "", options=dialogue._options_text(options))
-        return PartReply(act, text=text, memo=listed, keeps_question=True)
+        qty, _relative = _order_qty(act)
+        asked = _cited(act, conversation).strip(" ?!.,;:")
+        return PartReply(act, text=text, memo=listed, keeps_question=True,
+                         choice={"asked": asked, "qty": qty, "options": options})
     item = items[0]
     name, sku = item.get("name", ""), item.get("sku", "")
     qty, relative = _order_qty(act)
@@ -1943,7 +1949,34 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                         # Sem cartão, "já levei à equipe" seria falso: a equipe assume, como antes.
                         run.team.append(reply.act)
                         reply.text = _fill(copy(TEAM_COPY_KEY) or "", topic=TEAM_TOPICS[COMPLAINT])
+    _join_choices(run, copy=copy)
     return run
+
+
+def _join_choices(run: Execution, *, copy) -> None:
+    """Duas ou mais escolhas da sacola no mesmo turno viram uma pergunta só (#3597).
+
+    "1 brioche e 1 campagne oval": cada coisa pedida ganha a sua linha, na ordem do pedido
+    ("Para “brioche”: A ou B?"), no lugar da primeira; a memória guarda todas (``CHOOSE_EACH``),
+    e o cliente responde as duas de uma vez ou uma por vez. Antes, só a última chegava.
+    """
+    from django.utils import timezone
+
+    from . import dialogue
+
+    asking = [reply for reply in run.replies if reply.choice]
+    if len(asking) < 2:
+        return
+    groups = [reply.choice for reply in asking]
+    joined = PartReply(
+        asking[0].act, text=dialogue.each_question(groups, copy=copy), keeps_question=True,
+        memo={"pending": {"kind": dialogue.CHOOSE_EACH, "groups": groups,
+                          "day": timezone.localdate().isoformat()}},
+        tool_events=[event for reply in asking for event in reply.tool_events],
+    )
+    first = run.replies.index(asking[0])
+    run.replies = [reply for reply in run.replies if not reply.choice]
+    run.replies.insert(first, joined)
 
 
 #: "acrescenta 2 croissants no meu pedido", "coloca mais um pão no pedido M63".
@@ -2281,6 +2314,9 @@ def run(conversation, *, binding, decision, client=None):
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
     outcome = _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    if resolution.still_asks and outcome.reply_text:
+        # Uma das escolhas no ar foi respondida: a que falta volta no fim (#3597).
+        outcome.reply_text = "\n\n".join((outcome.reply_text, resolution.still_asks))
     from .service import copy_message
 
     note = order_closing.noted(prefilled, copy=copy_message)

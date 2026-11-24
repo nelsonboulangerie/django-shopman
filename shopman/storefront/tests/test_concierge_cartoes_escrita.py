@@ -171,9 +171,8 @@ NEEDS_PROPOSAL = {
 }
 
 
-#: O que ainda falha, com a issue que carrega: duas escolhas no mesmo turno ("Qual deles?" do
-#: brioche e do campagne) e só a última chega ao cliente (#3597).
-KNOWN_GAPS = {"1 brioche e 1 campagne oval": "#3597: duas escolhas no mesmo turno"}
+#: O que ainda falha, com a issue que carrega (vazio: nada).
+KNOWN_GAPS: dict[str, str] = {}
 
 
 def _proposal() -> dict:
