@@ -422,10 +422,9 @@ export interface CartProjection {
   // "Continuar pelo WhatsApp" (OC-16): só vem quando a passagem para a conversa é
   // possível agora (X1). Ausente ou null: a tela não oferece o gesto.
   continue_in_conversation?: Action | null
-  // A sacola chegou de outro canal com diferenças (#3517), cada uma numa frase.
+  // O que entrou vindo de outro canal ("Entraram 3 itens da sacola do WhatsApp.") e
+  // o que mudou, só se mudou (#3517).
   transfer_arrival?: CartTransferArrival | null
-  // A pergunta "substituir ou manter" depois de um conflito de sacolas (#3517).
-  transfer_conflict?: CartTransferConflict | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
@@ -450,21 +449,12 @@ export interface CartTransferArrival {
   channel: string
   title: string
   lines: string[]
-  total_line: string
 }
 
-export interface CartTransferConflict {
-  channel: string
-  title: string
-  message: string
-  replace: Action
-  keep: Action
-}
-
-// Resposta dos gestos de passagem (`/api/v1/cart/bring/`, `/api/v1/cart/transfer-choice/`).
+// Resposta de "Trazer a sacola do WhatsApp" (`/api/v1/cart/bring/`).
 export interface CartTransferResponse {
   cart: CartProjection
-  cart_transfer?: { status: 'accepted' | 'refused' | 'kept' | string, code?: string, differences?: unknown[] }
+  cart_transfer?: { status: 'accepted' | 'refused' | string, code?: string, differences?: unknown[] }
 }
 
 // "Continuar pelo WhatsApp": a mensagem pronta com o código NB.

@@ -52,7 +52,7 @@ from .availability import (
     StockAlertManagementView,
     StockAlertSubscribeView,
 )
-from .cart_transfer import CartBringView, CartContinueInConversationView, CartTransferChoiceView
+from .cart_transfer import CartBringView, CartContinueInConversationView
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .continuum import CatalogStructureSnapshotView
 from .conversation import OrderConversationView
@@ -183,7 +183,6 @@ urlpatterns = [
         name="api-cart-continue-in-conversation",
     ),
     path("cart/bring/", CartBringView.as_view(), name="api-cart-bring"),
-    path("cart/transfer-choice/", CartTransferChoiceView.as_view(), name="api-cart-transfer-choice"),
     # Checkout
     path("checkout/", views.CheckoutView.as_view(), name="api-checkout"),
     path("checkout/recover/", views.CheckoutRecoverView.as_view(), name="api-checkout-recover"),

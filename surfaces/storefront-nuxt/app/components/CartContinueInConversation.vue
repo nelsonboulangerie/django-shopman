@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CONTINUE_IN_CONVERSATION_HINT, CONTINUE_IN_CONVERSATION_SENT, continueInConversationAction, passageErrorMessage } from '~/presentation/cartPassage'
+import { CONTINUE_IN_CONVERSATION_SENT, continueInConversationAction, passageErrorMessage } from '~/presentation/cartPassage'
 import type { CartConversationStart, CartProjection } from '~/types/shopman'
 
 // "Continuar pelo WhatsApp" (OC-16, C02). Só existe quando o servidor diz que a
@@ -46,8 +46,8 @@ async function start () {
     >
       {{ action.label }}
     </UiButton>
-    <p class="mt-2 shop-body text-muted-foreground" aria-live="polite">
-      {{ sent ? CONTINUE_IN_CONVERSATION_SENT : CONTINUE_IN_CONVERSATION_HINT }}
+    <p v-if="sent" class="mt-2 shop-body text-muted-foreground" aria-live="polite">
+      {{ CONTINUE_IN_CONVERSATION_SENT }}
     </p>
   </div>
 </template>

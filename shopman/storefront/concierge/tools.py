@@ -2256,16 +2256,15 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
         return _error("access_unavailable", "Não consegui preparar o acesso. Sua sacola foi preservada; podemos continuar aqui.")
 
 
-def receive_site_cart(ctx: ToolContext, offer_data, *, replace_existing: bool = False) -> dict:
+def receive_site_cart(ctx: ToolContext, offer_data) -> dict:
     """A sacola que a cliente mandou da loja chega a esta conversa (OC-16, C02).
 
     Quem decide tudo é ``session_transfer.accept``: a sacola com dono só vem para o
     dono; a anônima só para quem tem vínculo ``verified_customer``, e passa a ser
-    dele no aceite; a revisão da loja mudou ⇒ ``source_changed``; esta conversa já
-    tem sacola com itens ⇒ ``destination_conflict``, nunca mescla (``replace_existing``
-    é a resposta "a do site" à pergunta da Nice). O mesmo aceite
-    outra vez devolve o mesmo recibo (X4). Aqui só se prende a sacola que chegou à
-    conversa, como ``_ensure_session`` prende a que nasce nela.
+    dele no aceite; a revisão da loja mudou ⇒ ``source_changed``; com sacola na
+    conversa, os itens entram nela (o mesmo item soma). O mesmo aceite outra vez
+    devolve o mesmo recibo (X4). Aqui só se prende à conversa a sacola nova, como
+    ``_ensure_session`` prende a que nasce nela.
     """
     from shopman.shop.services import session_transfer, sessions
     from shopman.storefront.concierge import service
@@ -2295,7 +2294,6 @@ def receive_site_cart(ctx: ToolContext, offer_data, *, replace_existing: bool = 
                     customer_ref=current.customer_ref,
                     verified_customer=verified,
                     session_key=current.session_key,
-                    replace_existing=replace_existing,
                     origin_channel=_transport_origin(ctx),
                 ),
                 actor="concierge",

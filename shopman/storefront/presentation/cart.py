@@ -202,34 +202,15 @@ class OpenElsewhereProjection:
 
 @dataclass(frozen=True)
 class CartTransferArrivalProjection:
-    """A sacola que chegou de outro canal com diferenças (OC-16, #3517).
+    """O que entrou na sacola vindo de outro canal (OC-16, #3517).
 
-    Só existe quando o recibo da passagem tem diferenças: preço que mudou,
-    quantidade reduzida, item indisponível, recebimento, pagamento, cupom, endereço.
-    Cada uma numa frase, com a soma dos itens quando ela mudou. Sai enquanto a
-    sacola que chegou estiver aberta.
+    Uma linha ("Entraram 3 itens da sacola do WhatsApp.") e, só se houver, as
+    diferenças, cada uma numa frase curta. Sai enquanto a sacola estiver aberta.
     """
 
     channel: str
     title: str
     lines: tuple[str, ...]
-    total_line: str
-
-
-@dataclass(frozen=True)
-class CartTransferConflictProjection:
-    """A pergunta "substituir ou manter" (OC-16, #3517).
-
-    A sacola de outro canal foi oferecida a este navegador, que já tem sacola com
-    itens. O serviço nunca mescla: ``replace`` traz a de lá e descarta a daqui;
-    ``keep`` fica com a daqui, e a de lá continua aberta no canal dela.
-    """
-
-    channel: str
-    title: str
-    message: str
-    replace: Action
-    keep: Action
 
 
 @dataclass(frozen=True)
@@ -346,10 +327,8 @@ class CartProjection:
     # Nice pela mensagem pronta com código NB. Só existe quando a passagem é
     # possível agora (X1): ponte ligada, número da loja e sacola com itens.
     continue_in_conversation: Action | None = None
-    # A sacola chegou de outro canal com diferenças (OC-16, #3517).
+    # O que entrou vindo de outro canal, e as diferenças se houver (OC-16, #3517).
     transfer_arrival: CartTransferArrivalProjection | None = None
-    # A pergunta "substituir ou manter" depois de um ``destination_conflict``.
-    transfer_conflict: CartTransferConflictProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -410,20 +389,13 @@ def build_cart(
         None if data.is_empty or reserved_until
         else cart_data.reservation_lapsed_at(session_key, [line.sku for line in data.lines])
     )
-    conflict = _transfer_conflict(request, data)
     return CartProjection(
         reserved_until_iso=_iso(reserved_until),
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         reservation_lapsed_display=_lapsed_display(lapsed_at),
-        # Com a pergunta "substituir ou manter" na tela, o aviso da mesma sacola sai:
-        # a pergunta já diz o que ela tem e oferece trazê-la.
-        open_elsewhere=tuple(
-            entry for entry in _open_elsewhere(request, channel_ref)
-            if conflict is None or entry.channel != conflict.channel
-        ),
+        open_elsewhere=_open_elsewhere(request, channel_ref),
         continue_in_conversation=_continue_in_conversation(request, channel_ref, is_empty=data.is_empty),
         transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, data.transferred_from),
-        transfer_conflict=conflict,
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -859,7 +831,7 @@ def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhe
             items_phrase=cart_data.items_phrase(entry),
             subtotal_q=entry.subtotal_q,
             subtotal_display=_money(entry.subtotal_q),
-            bring=_bring_action(entry.channel_ref, bridge=bridge),
+            bring=_bring_action(entry.channel_ref, entry.channel_name, bridge=bridge),
         )
         for entry in cart_data.open_elsewhere(customer.ref, channel_ref)
     )
@@ -873,13 +845,17 @@ def _bridge_channel(channel_ref: str) -> str:
     return bridge if bridge and bridge != channel_ref else ""
 
 
-def _bring_action(source_channel: str, *, bridge: str) -> Action:
-    """"Trazer para cá": ligada só quando a passagem dessa sacola é possível agora (X1)."""
+def _bring_action(source_channel: str, channel_name: str, *, bridge: str) -> Action:
+    """"Trazer a sacola do WhatsApp": ligada só quando a passagem é possível agora (X1).
+
+    Os itens entram na sacola daqui (o mesmo item soma): é um gesto só, sem escolha.
+    """
+    label = f"Trazer a sacola do {channel_name}"
     if source_channel and source_channel == bridge:
         return Action(
             ref="bring_cart",
             kind="mutation",
-            label="Trazer para cá",
+            label=label,
             priority="secondary",
             href="/api/v1/cart/bring/",
             method="POST",
@@ -889,7 +865,7 @@ def _bring_action(source_channel: str, *, bridge: str) -> Action:
     return Action(
         ref="bring_cart",
         kind="mutation",
-        label="Trazer para cá",
+        label=label,
         priority="secondary",
         enabled=False,
         reason="A passagem da sacola entre canais ainda não está ligada.",
@@ -992,13 +968,6 @@ def transfer_difference_lines(differences) -> list[str]:
     return lines
 
 
-def transfer_total_line(source_total_q, dest_total_q) -> str:
-    """A soma dos itens depois da passagem, com a de antes quando mudou; vazio quando igual."""
-    if source_total_q is None or dest_total_q is None or int(source_total_q) == int(dest_total_q):
-        return ""
-    return f"Soma dos itens: {_plain_money(dest_total_q)} (era {_plain_money(source_total_q)})."
-
-
 def _plain_money(value_q) -> str:
     """"R$ 0,00" inclusive para zero: a frase da diferença nunca omite o valor."""
     return f"R$ {format_money(int(value_q or 0))}"
@@ -1009,60 +978,30 @@ def _glued(text: str) -> str:
     return text.replace("R$ ", "R$\u00a0")
 
 
+def carried_phrase(carried_lines: int, carried_units: str) -> str:
+    """"3 itens", "1 item"; com item de peso, conta os produtos ("2 produtos")."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        units = Decimal(carried_units or "0")
+    except InvalidOperation:
+        units = Decimal(0)
+    if units > 0 and units == units.to_integral_value():
+        count = int(units)
+        return f"{count} {'item' if count == 1 else 'itens'}"
+    return f"{carried_lines} {'produto' if carried_lines == 1 else 'produtos'}"
+
+
 def _transfer_arrival(session_key: str | None, came_from: dict | None) -> CartTransferArrivalProjection | None:
     arrival = cart_data.transfer_arrival(session_key, came_from)
-    if arrival is None or not arrival.differences:
+    if arrival is None or not arrival.carried_lines:
         return None
+    phrase = carried_phrase(arrival.carried_lines, arrival.carried_units)
+    verb = "Entrou" if phrase.startswith("1 ") else "Entraram"
     return CartTransferArrivalProjection(
         channel=arrival.source_channel,
-        title=f"Sua sacola veio do {arrival.source_channel_name} com mudanças",
+        title=_glued(f"{verb} {phrase} da sacola do {arrival.source_channel_name}."),
         lines=tuple(_glued(line) for line in transfer_difference_lines(arrival.differences)),
-        total_line=_glued(transfer_total_line(arrival.source_total_q, arrival.dest_total_q)),
-    )
-
-
-def _transfer_conflict(request: HttpRequest, data) -> CartTransferConflictProjection | None:
-    """A oferta guardada depois do ``destination_conflict``, enquanto ainda vale.
-
-    A oferta mora na sessão do navegador (``PENDING_CART_TRANSFER_SESSION_KEY``);
-    se a sacola de lá fechou ou mudou, ou se a daqui esvaziou, não há o que
-    perguntar (a resposta da API limpa a chave na próxima escolha).
-    """
-    from shopman.storefront.constants import PENDING_CART_TRANSFER_SESSION_KEY
-
-    pending = getattr(request, "session", {}).get(PENDING_CART_TRANSFER_SESSION_KEY)
-    if not isinstance(pending, dict) or data.is_empty:
-        return None
-    offered = cart_data.offered_cart(str(pending.get("source_channel") or ""), str(pending.get("source_key") or ""))
-    if offered is None or (pending.get("rev") is not None and offered.revision != pending.get("rev")):
-        return None
-    here = f"{data.count} {'item' if data.count == 1 else 'itens'}"
-    there = cart_data.items_phrase(offered)
-    where = offered.channel_name
-    return CartTransferConflictProjection(
-        channel=offered.channel_ref,
-        title="Qual sacola você quer usar?",
-        message=_glued(f"Aqui: {here} ({_money(data.subtotal_q)}). No {where}: {there} ({_money(offered.subtotal_q)})."),
-        replace=Action(
-            ref="replace_cart",
-            kind="mutation",
-            label=f"Trazer a do {where}",
-            priority="primary",
-            href="/api/v1/cart/transfer-choice/",
-            method="POST",
-            payload_schema={"choice": "replace"},
-            idempotency="none",
-        ),
-        keep=Action(
-            ref="keep_cart",
-            kind="mutation",
-            label="Ficar com a daqui",
-            priority="secondary",
-            href="/api/v1/cart/transfer-choice/",
-            method="POST",
-            payload_schema={"choice": "keep"},
-            idempotency="none",
-        ),
     )
 
 
@@ -1146,11 +1085,9 @@ __all__ = [
     "FreeDeliveryProgressProjection",
     "MinimumOrderProgressProjection",
     "CartTransferArrivalProjection",
-    "CartTransferConflictProjection",
     "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
     "transfer_difference_lines",
-    "transfer_total_line",
     "present_cart_date_mismatch",
 ]

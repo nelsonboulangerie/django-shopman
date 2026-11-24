@@ -324,13 +324,6 @@ def open_elsewhere(customer_ref: str, channel_ref: str):
     return open_sessions_for_customer(customer_ref, exclude_channel=channel_ref)
 
 
-def offered_cart(channel_ref: str, session_key: str):
-    """A sacola de outro canal que uma oferta de passagem aponta, contada; ``None`` se fechou."""
-    from shopman.shop.services.sessions import open_session_summary
-
-    return open_session_summary(channel_ref, session_key)
-
-
 def conversation_number_available() -> bool:
     """A loja tem WhatsApp para a mensagem pronta de "Continuar pelo WhatsApp" (X1)."""
     from shopman.shop.services.session_transfer import conversation_number
@@ -342,8 +335,8 @@ def conversation_number_available() -> bool:
 class TransferArrival:
     """A sacola deste canal que chegou de outro, com o recibo da passagem (OC-15/OC-16).
 
-    Só existe na sacola recriada por ``session_transfer.accept``: a adoção no mesmo
-    canal não grava recibo. As diferenças são as do recibo gravado na origem.
+    Só existe na sacola em que ``session_transfer.accept`` pôs os itens (nova, ou a
+    que o destino já tinha): a adoção no mesmo canal não grava recibo. As diferenças são as do recibo gravado na origem.
     """
 
     source_channel: str
@@ -351,6 +344,9 @@ class TransferArrival:
     differences: tuple[dict, ...]
     source_total_q: int
     dest_total_q: int
+    #: O que entrou: linhas e unidades ("3"; "1.5" com item de peso).
+    carried_lines: int = 0
+    carried_units: str = ""
 
 
 def transfer_arrival(session_key: str | None, came_from: dict | None) -> TransferArrival | None:
@@ -382,6 +378,8 @@ def transfer_arrival(session_key: str | None, came_from: dict | None) -> Transfe
         differences=tuple(diff for diff in receipt.get("differences") or () if isinstance(diff, dict)),
         source_total_q=int(receipt.get("source_total_q") or 0),
         dest_total_q=int(receipt.get("dest_total_q") or 0),
+        carried_lines=int(receipt.get("carried_lines") or 0),
+        carried_units=str(receipt.get("carried_units") or ""),
     )
 
 

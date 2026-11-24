@@ -12,7 +12,7 @@ function action (overrides: Partial<Action> = {}): Action {
   return {
     ref: 'bring_cart',
     kind: 'mutation',
-    label: 'Trazer para cá',
+    label: 'Trazer a sacola do WhatsApp',
     priority: 'secondary',
     enabled: true,
     reason: '',
@@ -41,14 +41,13 @@ describe('a sacola aberta no WhatsApp (#3515)', () => {
   it('avisa e oferece trazer só com a ação ligada (X1)', () => {
     const [notice] = openElsewhereNotices({ open_elsewhere: [elsewhere(action())] })
     expect(notice!.text).toBe('Você tem outra sacola no WhatsApp: 3\u00A0itens (R$\u00A02,70).')
-    expect(notice!.consequence).toBe('Ao trazer, ela sai do WhatsApp.')
-    expect(notice!.bring?.label).toBe('Trazer para cá')
+    expect(notice!.bring?.label).toBe('Trazer a sacola do WhatsApp')
   })
 
-  it('com a ação desligada, avisa sem botão e diz que ela fica lá', () => {
+  it('com a ação desligada, avisa sem botão', () => {
     const [notice] = openElsewhereNotices({ open_elsewhere: [elsewhere(action({ enabled: false }))] })
     expect(notice!.bring).toBeNull()
-    expect(notice!.consequence).toBe('Ela fica lá, separada desta.')
+    expect(notice!.text).toBe('Você tem outra sacola no WhatsApp: 3\u00A0itens (R$\u00A02,70).')
   })
 
   it('sem outra sacola, não há aviso', () => {
@@ -58,7 +57,7 @@ describe('a sacola aberta no WhatsApp (#3515)', () => {
 
   it('nenhuma frase usa travessão', () => {
     const [on] = openElsewhereNotices({ open_elsewhere: [elsewhere(action())] })
-    expect(`${on!.text} ${on!.consequence}`).not.toMatch(/[—–]/)
+    expect(on!.text).not.toMatch(/[—–]/)
   })
 })
 

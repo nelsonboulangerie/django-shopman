@@ -8,8 +8,7 @@ export interface OpenElsewhereNotice {
   channel: string
   // "Você tem outra sacola no WhatsApp: 3 itens (R$ 2,70)."
   text: string
-  // O que acontece ao trazer, dito antes do toque (só com a ação ligada).
-  consequence: string
+  // "Trazer a sacola do WhatsApp": só com a ação ligada (X1). Os itens entram aqui.
   bring: Action | null
 }
 
@@ -24,9 +23,6 @@ export function openElsewhereNotices (cart: Pick<CartProjection, 'open_elsewhere
     return {
       channel: entry.channel,
       text: `Você tem outra sacola no ${entry.channel_label}: ${glue(entry.items_phrase)} (${glue(entry.subtotal_display)}).`,
-      consequence: bring
-        ? `Ao trazer, ela sai do ${entry.channel_label}.`
-        : 'Ela fica lá, separada desta.',
       bring
     }
   })
@@ -39,9 +35,8 @@ export function continueInConversationAction (cart: Pick<CartProjection, 'contin
   return action && action.enabled ? action : null
 }
 
-export const CONTINUE_IN_CONVERSATION_HINT = 'Ao enviar a mensagem pronta, a sacola passa para a conversa com a Nice.'
-export const CONTINUE_IN_CONVERSATION_SENT = 'Envie a mensagem no WhatsApp. Até lá, a sacola fica aqui.'
-export const PASSAGE_FALLBACK_ERROR = 'Não foi possível agora. Suas sacolas continuam como estavam.'
+export const CONTINUE_IN_CONVERSATION_SENT = 'Envie a mensagem no WhatsApp.'
+export const PASSAGE_FALLBACK_ERROR = 'Não foi possível agora. Tente de novo.'
 
 // A frase da recusa que o servidor mandou, ou a genérica que não promete nada.
 export function passageErrorMessage (error: unknown): string {

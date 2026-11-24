@@ -3,16 +3,16 @@ import { openElsewhereNotices, passageErrorMessage } from '~/presentation/cartPa
 import type { Action, CartProjection } from '~/types/shopman'
 
 // Os avisos da sacola entre a loja e a conversa (OC-16, #3515, #3517), no alto da
-// sacola e do Finalizar. Tudo o que aparece aqui veio da projeção: a pergunta
-// "substituir ou manter", as diferenças da sacola que chegou e a sacola aberta em
-// outro canal, com "Trazer para cá" só quando a ação está ligada (X1).
+// sacola e do Finalizar. Tudo veio da projeção: o que entrou vindo de outro canal
+// (e o que mudou, só se mudou) e a sacola aberta no WhatsApp, com "Trazer a sacola
+// do WhatsApp" só quando a ação está ligada (X1). Trazer é um gesto só: os itens
+// entram aqui, sem pergunta (decisão do dono, 24/11/2026).
 const props = defineProps<{ cart: CartProjection }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const { runCartPassage } = useCartState()
 
 const notices = computed(() => openElsewhereNotices(props.cart))
-const conflict = computed(() => props.cart.transfer_conflict || null)
 const arrival = computed(() => props.cart.transfer_arrival || null)
 
 // O X fecha o aviso desta vez; ele volta ao recarregar enquanto a sacola que chegou
@@ -26,8 +26,8 @@ async function run (action: Action) {
   if (pending.value) return
   pending.value = action.ref
   try {
-    // Sem aviso flutuante: a confirmação é a própria tela (a sacola que chegou e, com
-    // diferenças, o aviso âmbar no alto). Um toast cobria o item logo abaixo.
+    // Sem aviso flutuante: a confirmação é a própria tela ("Entraram 3 itens…" no
+    // alto e os itens na lista). Um toast cobria o item logo abaixo.
     await runCartPassage(action.href, action.payload_schema || {})
     emit('changed')
   } catch (error) {
@@ -39,42 +39,19 @@ async function run (action: Action) {
 </script>
 
 <template>
-  <div v-if="conflict || (arrival && !arrivalClosed) || notices.length" class="shop-stack-tight" data-cart-passage>
-    <UiAlert v-if="conflict" variant="warning" icon="lucide:shopping-bag" data-cart-transfer-conflict>
-      <UiAlertTitle class="line-clamp-none leading-snug">{{ conflict.title }}</UiAlertTitle>
-      <UiAlertDescription>
-        <p class="shop-body">{{ conflict.message }}</p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <UiButton
-            size="sm"
-            :loading="pending === conflict.replace.ref"
-            :disabled="!!pending"
-            data-cart-transfer-replace
-            @click="run(conflict.replace)"
-          >
-            {{ conflict.replace.label }}
-          </UiButton>
-          <UiButton
-            size="sm"
-            variant="outline"
-            :loading="pending === conflict.keep.ref"
-            :disabled="!!pending"
-            data-cart-transfer-keep
-            @click="run(conflict.keep)"
-          >
-            {{ conflict.keep.label }}
-          </UiButton>
-        </div>
-      </UiAlertDescription>
-    </UiAlert>
-
-    <UiAlert v-if="arrival && !arrivalClosed" variant="warning" icon="lucide:arrow-right-left" class="relative pr-12" data-cart-transfer-arrival>
-      <UiAlertTitle class="line-clamp-none leading-snug">{{ arrival.title }}</UiAlertTitle>
-      <UiAlertDescription>
+  <div v-if="(arrival && !arrivalClosed) || notices.length" class="shop-stack-tight" data-cart-passage>
+    <UiAlert
+      v-if="arrival && !arrivalClosed"
+      :variant="arrival.lines.length ? 'warning' : undefined"
+      icon="lucide:shopping-bag"
+      class="relative pr-12"
+      data-cart-transfer-arrival
+    >
+      <UiAlertTitle class="line-clamp-none leading-snug" data-decisive>{{ arrival.title }}</UiAlertTitle>
+      <UiAlertDescription v-if="arrival.lines.length">
         <ul class="mt-1 list-disc space-y-1 pl-4 shop-body">
           <li v-for="line in arrival.lines" :key="line" data-decisive>{{ line }}</li>
         </ul>
-        <p v-if="arrival.total_line" class="mt-2 shop-body font-semibold" data-decisive>{{ arrival.total_line }}</p>
       </UiAlertDescription>
       <UiButton
         variant="ghost"
@@ -94,13 +71,11 @@ async function run (action: Action) {
       data-cart-open-elsewhere
     >
       <UiAlertTitle class="line-clamp-none leading-snug">{{ notice.text }}</UiAlertTitle>
-      <UiAlertDescription>
-        <p class="shop-body">{{ notice.consequence }}</p>
+      <UiAlertDescription v-if="notice.bring">
         <UiButton
-          v-if="notice.bring"
           size="sm"
           variant="outline"
-          class="mt-3"
+          class="mt-2"
           icon="lucide:shopping-bag"
           :loading="pending === notice.bring.ref"
           :disabled="!!pending"

@@ -107,7 +107,7 @@ def transfer_bridge_channel() -> str:
 
     A ponte é a Concierge atendendo e a chave ``CONCIERGE_TRANSFER_ENABLED`` ligada
     (OC-18 a liga). É a única pergunta que a loja faz antes de oferecer "Continuar
-    pelo WhatsApp" ou "Trazer para cá" (X1): desligada, a ação não aparece.
+    pelo WhatsApp" ou "Trazer a sacola do WhatsApp" (X1): desligada, a ação não aparece.
     """
     if not is_enabled() or config().get("transfer_enabled") is not True:
         return ""

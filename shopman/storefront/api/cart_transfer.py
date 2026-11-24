@@ -1,19 +1,18 @@
 """A sacola entre a loja e a conversa com a Nice (OC-16, C02; #3515; #3517).
 
-Três gestos, todos pelo serviço de transferência (``shop.services.session_transfer``),
-que decide autorização, revisão, conflito, reserva e diferenças. Aqui só se lê o
+Dois gestos, os dois pelo serviço de transferência (``shop.services.session_transfer``),
+que decide autorização, revisão, reserva e diferenças. Aqui só se lê o
 pedido, se chama o serviço e se aponta o navegador para a sacola do recibo.
 
 - ``continue-in-conversation``: "Continuar pelo WhatsApp". OFERECE a sacola desta
   loja à conversa e guarda a oferta sob um código ``NB-`` (o mesmo mecanismo da
   entrada pelo WhatsApp). Não toca a sacola: quem aceita é a Nice, quando a
   mensagem chega pelo número verificado.
-- ``bring``: "Trazer para cá". Oferece e aceita no mesmo gesto a sacola que a
-  cliente tem aberta na conversa (``open_elsewhere``), para este navegador.
-- ``transfer-choice``: a resposta à pergunta "substituir ou manter" depois de um
-  ``destination_conflict`` (da troca do link ou do "Trazer para cá").
+- ``bring``: "Trazer a sacola do WhatsApp". Oferece e aceita no mesmo gesto a sacola
+  que a cliente tem aberta na conversa (``open_elsewhere``): os itens entram na
+  sacola deste navegador (o mesmo item soma), sem pergunta.
 
-As três só existem quando a projeção diz que são possíveis (X1); fora disso, o
+Os dois só existem quando a projeção diz que são possíveis (X1); fora disso, o
 servidor recusa com o motivo, e a tela não as mostra.
 """
 
@@ -31,7 +30,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.shop.services import session_transfer
-from shopman.storefront.constants import PENDING_CART_TRANSFER_SESSION_KEY, STOREFRONT_CHANNEL_REF
+from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.identity import get_authenticated_customer, identity_strength, knows_only_the_number
 
 logger = logging.getLogger(__name__)
@@ -42,11 +41,9 @@ REFUSALS = {
     "invalid_offer": "Não foi possível levar esta sacola. Sua sacola daqui continua como estava.",
     "not_authorized": "Esta sacola é de outra conta. Sua sacola daqui continua como estava.",
     "source_changed": "A outra sacola mudou. Toque de novo para trazer a versão nova.",
-    "destination_conflict": "Aqui já existe uma sacola com itens. Escolha qual manter.",
-    "nothing_available": "Nenhum item da outra sacola está disponível aqui agora. Ela continua onde estava.",
+    "nothing_available": "Nenhum item da outra sacola está disponível aqui agora.",
     "transfer_unavailable": "A passagem da sacola entre a loja e o WhatsApp não está disponível agora.",
     "whatsapp_unavailable": "O WhatsApp da loja está indisponível agora. Sua sacola continua aqui.",
-    "no_pending": "Não há outra sacola esperando a sua escolha.",
 }
 
 
@@ -66,8 +63,8 @@ def _bridge_channel() -> str:
     return bridge if bridge and bridge != STOREFRONT_CHANNEL_REF else ""
 
 
-def _accept_here(request, offer, *, replace_existing: bool) -> Response:
-    """Aceita a oferta neste navegador, ou guarda a pergunta se ele já tem sacola."""
+def _accept_here(request, offer) -> Response:
+    """Aceita a oferta neste navegador: os itens entram na sacola dele, se ela já tem itens."""
     from .surface import _cart_payload_after_mutation
 
     customer = get_authenticated_customer(request)
@@ -75,22 +72,13 @@ def _accept_here(request, offer, *, replace_existing: bool) -> Response:
         customer_ref=str(getattr(customer, "ref", "") or ""),
         identity_strength=identity_strength(request),
         session_key=str(request.session.get("cart_session_key") or ""),
-        replace_existing=replace_existing,
         origin_channel=str(request.session.get("origin_channel") or ""),
     )
     try:
         receipt = session_transfer.accept(offer, dest_context=destination, actor="storefront")
     except session_transfer.TransferRefused as refused:
-        if refused.code == "destination_conflict":
-            request.session[PENDING_CART_TRANSFER_SESSION_KEY] = offer.as_metadata()
-            return Response(
-                {"cart": _cart_payload_after_mutation(request),
-                 "cart_transfer": {"status": "refused", "code": refused.code}}
-            )
-        request.session.pop(PENDING_CART_TRANSFER_SESSION_KEY, None)
         logger.info("cart_transfer.refused code=%s", refused.code)
         return _refused(refused.code, http_status=status.HTTP_409_CONFLICT, request=request)
-    request.session.pop(PENDING_CART_TRANSFER_SESSION_KEY, None)
     request.session["cart_session_key"] = receipt.dest_session_key
     return Response(
         {"cart": _cart_payload_after_mutation(request),
@@ -142,7 +130,7 @@ class CartContinueInConversationView(APIView):
 
 
 class CartBringView(APIView):
-    """POST /api/v1/cart/bring/ ``{channel}``: "Trazer para cá" (#3515).
+    """POST /api/v1/cart/bring/ ``{channel}``: "Trazer a sacola do WhatsApp" (#3515).
 
     Só para a cliente que entrou com o próprio dispositivo e tem sacola aberta no
     canal pedido (a mesma régua de ``open_elsewhere``). Oferta e aceite no mesmo
@@ -174,42 +162,4 @@ class CartBringView(APIView):
             )
         except session_transfer.TransferRefused as refused:
             return _refused(refused.code, http_status=status.HTTP_409_CONFLICT, request=request)
-        return _accept_here(request, offer, replace_existing=False)
-
-
-class CartTransferChoiceView(APIView):
-    """POST /api/v1/cart/transfer-choice/ ``{choice: "replace" | "keep"}`` (#3517).
-
-    ``replace`` traz a sacola oferecida e descarta a daqui inteira (nunca mescla);
-    ``keep`` fica com a daqui, e a de lá continua aberta no canal dela.
-    """
-
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication]
-    throttle_classes = []
-
-    @extend_schema(tags=["cart"], summary="Answer the keep-or-replace question after a cart transfer conflict")
-    def post(self, request):
-        from .surface import _cart_payload_after_mutation
-
-        choice = str((request.data or {}).get("choice") or "").strip()
-        if choice not in {"replace", "keep"}:
-            return Response(
-                {"detail": "Escolha trazer a outra sacola ou ficar com a daqui.", "error_code": "invalid_choice"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        pending = request.session.get(PENDING_CART_TRANSFER_SESSION_KEY)
-        if not isinstance(pending, dict):
-            return _refused("no_pending", http_status=status.HTTP_409_CONFLICT, request=request)
-        if choice == "keep":
-            request.session.pop(PENDING_CART_TRANSFER_SESSION_KEY, None)
-            return Response({"cart": _cart_payload_after_mutation(request), "cart_transfer": {"status": "kept"}})
-        try:
-            offer = session_transfer.TransferOffer.from_metadata(pending)
-        except session_transfer.TransferRefused as refused:
-            request.session.pop(PENDING_CART_TRANSFER_SESSION_KEY, None)
-            return _refused(refused.code, http_status=status.HTTP_409_CONFLICT, request=request)
-        if offer.dest_channel != STOREFRONT_CHANNEL_REF:
-            request.session.pop(PENDING_CART_TRANSFER_SESSION_KEY, None)
-            return _refused("invalid_offer", http_status=status.HTTP_409_CONFLICT, request=request)
-        return _accept_here(request, offer, replace_existing=True)
+        return _accept_here(request, offer)

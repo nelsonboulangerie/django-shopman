@@ -7905,7 +7905,6 @@
             "conversation_number_available",
             "items_phrase",
             "logger",
-            "offered_cart",
             "open_elsewhere",
             "reservation_lapsed_at",
             "reserved_until",

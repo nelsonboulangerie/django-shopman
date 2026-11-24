@@ -565,8 +565,8 @@ export function useCartState () {
     return response.cart
   }
 
-  // A passagem da sacola entre a loja e a conversa (OC-16): "Trazer para cá" e a
-  // resposta "substituir ou manter". Sem otimista e sem repetir sozinha: quem decide
+  // A passagem da sacola entre a loja e a conversa (OC-16): "Trazer a sacola do
+  // WhatsApp". Sem otimista e sem repetir sozinha: quem decide
   // o que chega é o servidor. A recusa (409) também traz a sacola como ficou.
   async function runCartPassage (href: string, body: Record<string, unknown>): Promise<CartTransferResponse> {
     beginMutation()
