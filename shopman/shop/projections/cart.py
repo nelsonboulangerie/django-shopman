@@ -220,6 +220,10 @@ class CartProjection:
     # Mensagem de economia do grupo (texto por grupo, editável no Admin). Vazia
     # quando não houve desconto de grupo.
     group_savings_message: str = ""
+    # De onde a sacola veio quando outro canal a passou para cá (OC-15/OC-16):
+    # ``Session.data["transferred_from"]``, lido na mesma consulta da sacola, para
+    # o recibo da passagem só custar consulta quando existe.
+    transferred_from: dict | None = None
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -349,20 +353,18 @@ class TransferArrival:
     dest_total_q: int
 
 
-def transfer_arrival(session_key: str | None, channel_ref: str) -> TransferArrival | None:
-    """O recibo da passagem que trouxe esta sacola, ou ``None``. Leitura pura."""
+def transfer_arrival(session_key: str | None, came_from: dict | None) -> TransferArrival | None:
+    """O recibo da passagem que trouxe esta sacola, ou ``None``. Leitura pura.
+
+    ``came_from`` é o ``transferred_from`` que ``build_cart`` já leu da sacola: sem
+    ele, nenhuma consulta.
+    """
     if not session_key:
         return None
     from shopman.orderman.models import Session
 
     from shopman.shop.models import Channel
 
-    data = (
-        Session.objects.filter(channel_ref=channel_ref, session_key=session_key, state="open")
-        .values_list("data", flat=True)
-        .first()
-    )
-    came_from = (data or {}).get("transferred_from") if isinstance(data, dict) else None
     if not isinstance(came_from, dict) or not came_from.get("channel_ref") or "tab_ref" in came_from:
         return None
     source_data = (
@@ -509,8 +511,10 @@ def build_cart(
         minimum_order=minimum_order,
     )
 
+    came_from = (session.data or {}).get("transferred_from")
     return CartProjection(
         session_key=session_key,
+        transferred_from=came_from if isinstance(came_from, dict) else None,
         revision=session.rev,
         lines=lines,
         count=count,

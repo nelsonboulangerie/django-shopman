@@ -422,7 +422,7 @@ def build_cart(
             if conflict is None or entry.channel != conflict.channel
         ),
         continue_in_conversation=_continue_in_conversation(request, channel_ref, is_empty=data.is_empty),
-        transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, channel_ref),
+        transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, data.transferred_from),
         transfer_conflict=conflict,
         revision=data.revision,
         draft_context=context,
@@ -979,8 +979,8 @@ def _glued(text: str) -> str:
     return text.replace("R$ ", "R$\u00a0")
 
 
-def _transfer_arrival(session_key: str | None, channel_ref: str) -> CartTransferArrivalProjection | None:
-    arrival = cart_data.transfer_arrival(session_key, channel_ref)
+def _transfer_arrival(session_key: str | None, came_from: dict | None) -> CartTransferArrivalProjection | None:
+    arrival = cart_data.transfer_arrival(session_key, came_from)
     if arrival is None or not arrival.differences:
         return None
     return CartTransferArrivalProjection(
