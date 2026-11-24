@@ -1039,6 +1039,20 @@ def _cart_arrival(conversation, binding, turn_text: str):
     return cart_arrival.receive(conversation, binding, turn_text)
 
 
+def _site_passage(conversation, binding, turn_text: str, decision):
+    """A resposta da casa quando a cliente pede o site ou a sacola de volta (OC-18); ``None`` se não pede."""
+    from . import site_passage
+
+    return site_passage.handle(conversation, binding, turn_text, decision=decision)
+
+
+def _site_passage_lead(conversation, binding) -> str:
+    """Onde a sacola está, na mensagem seguinte ao aceite no site (OC-18); vazio quando não há o que dizer."""
+    from . import site_passage
+
+    return site_passage.lead(conversation, binding)
+
+
 @_observed("turn")
 def _framework_turn(conversation, inbound):
     """O turno pelo motor do framework (N9b), ou ``None``: só com UMA entrada e a chave da classe.
@@ -1155,11 +1169,19 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             # A sacola da loja pelo código NB de "Continuar pelo WhatsApp" (OC-16): o
             # aceite é do serviço de transferência, e a frase é da casa, sem modelo.
             outcome = arrival
+        elif (passage := _site_passage(conversation, binding, turn_text, decision)) is not None:
+            # A cliente pediu o site ou a sacola de volta (OC-18): o link pela ferramenta, a
+            # passagem pelo serviço de transferência, e a frase da casa, sem modelo.
+            outcome = passage
         else:
+            # A sacola desta conversa foi aceita no site (OC-18, §4.4): o turno responde como
+            # sempre e diz, uma vez, onde ela está. Com o aviso, o turno vai pelo caminho de
+            # hoje, que é o que leva o aviso junto da resposta.
+            passage_lead = _site_passage_lead(conversation, binding)
             # N9b: o turno pelo motor do framework, só onde a loja ligou a classe e a casa tem a
             # frase de hoje (``turn_framework``). Com as chaves desligadas, nada muda. Feito pelo
             # motor, a resposta já saiu pelo mesmo caminho do envio; aqui só se fecha o turno.
-            framework = _framework_turn(conversation, inbound)
+            framework = None if passage_lead else _framework_turn(conversation, inbound)
             if framework is not None:
                 meter.layer = metrics.LAYER_FRAMEWORK
                 with transaction.atomic():
@@ -1185,6 +1207,10 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                     conversation, binding=binding, decision=decision, client=intents_client
                 )
                 meter.intents = getattr(outcome, "intents", {}) or {}
+                if passage_lead:
+                    from . import site_passage
+
+                    outcome = site_passage.with_lead(outcome, passage_lead)
             except TurnRevoked:
                 raise
             except Exception:
