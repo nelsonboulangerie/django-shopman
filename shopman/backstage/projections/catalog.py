@@ -237,7 +237,7 @@ class CatalogRowProjection:
     stock_tracked: bool  # há controle de estoque para este SKU?
     stock_qty: int | None  # promissível agora (None = sem controle)
     sold_out: bool  # rastreado e sem estoque para vender
-    low_stock: bool  # rastreado, pouco estoque (≤ threshold do canal)
+    low_stock: bool  # rastreado e acabando: a % do SKU (shop/services/running_low.py)
     replenish_qty: int  # vindo por produção (planejado + em produção) — "fornada"
     keywords: tuple[str, ...]
     cells: tuple[SurfaceCellProjection, ...]  # alinhado à ordem de ``surfaces``
@@ -341,7 +341,7 @@ _EMPTY_STOCK = {
 }
 
 
-def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int) -> dict:
+def _stock_view(info: dict | None, running_low: bool, replenish_qty: int) -> dict:
     """Deriva o estado de estoque da linha a partir do dict canônico de availability.
 
     Esgotado = rastreado e sem promissível AGORA. ``replenish_qty`` vem de uma consulta
@@ -355,7 +355,9 @@ def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int)
         "stock_tracked": True,
         "stock_qty": promisable,
         "sold_out": sold_out,
-        "low_stock": (not sold_out) and promisable <= max(int(low_stock_threshold or 0), 0),
+        # "Acabando" é a régua única do operador (DEV-2026-077): a % do SKU sobre o
+        # que o dia teve, a mesma do botão do PDV e do card da Cozinha.
+        "low_stock": (not sold_out) and running_low,
         "replenish_qty": max(int(replenish_qty or 0), 0),
     }
 
@@ -364,9 +366,9 @@ def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int)
 _STOCK_BUCKETS = ("ok", "low", "out")
 
 
-def _stock_bucket(info: dict | None, low_stock_threshold: int) -> str:
+def _stock_bucket(info: dict | None, running_low: bool) -> str:
     """Balde de UMA linha: esgotado vence estoque baixo; sem rastro, ``ok``."""
-    view = _stock_view(info, low_stock_threshold, 0)
+    view = _stock_view(info, running_low, 0)
     if view["sold_out"]:
         return "out"
     if view["low_stock"]:
@@ -374,14 +376,17 @@ def _stock_bucket(info: dict | None, low_stock_threshold: int) -> str:
     return "ok"
 
 
-def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, int]]:
-    """Availability-agora (canal representante) + threshold + suprimento planejado.
+def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], set[str], dict[str, int]]:
+    """Availability-agora (canal representante) + SKUs acabando + suprimento planejado.
+
+    "Acabando" é a % do SKU (DEV-2026-077, ``shop/services/running_low.py``),
+    medida sobre o promissível que a linha mostra: a mesma régua do PDV e da
+    Cozinha. O operador vê uma régua só.
 
     Estoque é físico/produto-level; usa o scope de UM canal representante (o de menor
     ``display_order``). ``planned`` é uma consulta separada (fornadas futuras próximas).
     Degrada em silêncio (sem Stockman → vazio → tudo untracked → como hoje).
     """
-    from shopman.shop.config import ChannelConfig
     from shopman.shop.models import Channel
 
     # Canal `display` não vende, logo não representa escopo de estoque.
@@ -393,14 +398,19 @@ def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, 
         .first()
     )
     if rep is None or not skus:
-        return {}, 0, {}
-    threshold = int(getattr(ChannelConfig.for_channel(rep).stock, "low_stock_threshold", 0) or 0)
+        return {}, set(), {}
 
     from shopman.shop.projections import catalog_context
+    from shopman.shop.services.running_low import running_low_skus
 
     availability = catalog_context.availability_for_skus(skus, channel_ref=rep.ref)
     planned = catalog_context.planned_supply_for_skus(skus)
-    return availability, threshold, planned
+    shown = {
+        sku: int(info.get("total_promisable") or 0)
+        for sku, info in availability.items()
+        if info and info.get("is_tracked", True)
+    }
+    return availability, running_low_skus(shown), planned
 
 
 def _social_view(product) -> tuple[dict, bool]:
@@ -763,9 +773,9 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     pim_filter = bool(pim_filter) if pim_filter is not None else None
 
     candidate_skus = list(dict.fromkeys(products.order_by().values_list("sku", flat=True)))
-    stock_info, low_stock_threshold, planned_by_sku = _stock_for(candidate_skus)
+    stock_info, running_low, planned_by_sku = _stock_for(candidate_skus)
     stock_buckets = {
-        sku: _stock_bucket(stock_info.get(sku), low_stock_threshold) for sku in candidate_skus
+        sku: _stock_bucket(stock_info.get(sku), sku in running_low) for sku in candidate_skus
     }
 
     # Estado de sync por (produto × plataforma) — uma consulta p/ todos os
@@ -925,7 +935,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             )
 
         stock = _stock_view(
-            stock_info.get(product.sku), low_stock_threshold, planned_by_sku.get(product.sku, 0)
+            stock_info.get(product.sku), product.sku in running_low, planned_by_sku.get(product.sku, 0)
         )
         social_view, pim_complete = _social_view(product)
         rows.append(

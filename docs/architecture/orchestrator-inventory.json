@@ -16037,6 +16037,20 @@
           ]
         }
       ]
+    },
+    {
+      "path": "shopman/shop/services/running_low.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [
+        "shop.services-running-low"
+      ],
+      "responsibilities": [
+        "composição"
+      ],
+      "support_claims": []
     }
   ]
 }

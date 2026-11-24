@@ -99,7 +99,7 @@ def test_os_selos_sozinhos_sao_os_mesmos_da_projecao_e_custam_uma_fracao(balcao)
     da_projecao = {
         p["sku"]: {
             "sku": p["sku"], "sold_out": p["sold_out"], "sold_out_reason": p["sold_out_reason"],
-            "units_left": p["units_left"],
+            "units_left": p["units_left"], "running_low": p["running_low"],
         }
         for p in inteira["pos"]["products"]
     }
