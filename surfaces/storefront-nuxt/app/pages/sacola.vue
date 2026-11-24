@@ -234,7 +234,7 @@ useSeoMeta({
           </UiEmptyMedia>
           <UiEmptyHeader>
             <UiEmptyTitle>{{ cart.empty_title }}</UiEmptyTitle>
-            <UiEmptyDescription>{{ cart.empty_message }}</UiEmptyDescription>
+            <UiEmptyDescription v-if="cart.empty_message">{{ cart.empty_message }}</UiEmptyDescription>
           </UiEmptyHeader>
           <UiEmptyContent class="flex flex-col items-center gap-2">
             <UiButton :to="continueAction?.href || '/menu'" icon="lucide:utensils">

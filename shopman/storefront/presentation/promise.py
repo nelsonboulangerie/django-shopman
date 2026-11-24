@@ -125,3 +125,49 @@ def _day_label(day: date, *, today: date) -> str:
     if day == today + timedelta(days=1):
         return f"amanhã, {weekday}"
     return f"{weekday}, {day:%d/%m}"
+
+
+# ── Dá para pedir? (OC-04) ─────────────────────────────────────────────
+
+ORDERING_NOW = "now"
+ORDERING_PREORDER = "preorder"
+ORDERING_NONE = "none"
+
+
+@dataclass(frozen=True)
+class OrderingProjection:
+    """Se a loja aceita pedido agora, e para quando, lido das promessas do cardápio.
+
+    Não é regra nova: é o resumo das promessas que o card, o produto e a sacola
+    já dizem (:func:`promise_for`). A frase da home e da sacola sai daqui, e por
+    isso nunca oferece o que nenhum card oferece (U1 do laudo da Etapa II: às
+    22h, com 0 de 31 itens podendo ir à sacola, a home dizia "Você já pode
+    finalizar o pedido").
+
+    - ``now``: ao menos um item tem horário HOJE (pronto, fornada de hoje, ou
+      casa fechada que ainda abre hoje);
+    - ``preorder``: há item para pedir, mas o primeiro horário é de outro dia;
+      ``next_date`` é esse dia e ``day_label`` é como a frase o diz ("amanhã,
+      terça", "quinta, 19/11");
+    - ``none``: nenhum item do cardápio tem promessa. Ninguém consegue pôr nada
+      na sacola, e a tela não oferece finalização.
+    """
+
+    state: str
+    next_date: str | None = None
+    day_label: str = ""
+
+
+def ordering_from_promises(promises, *, today: date) -> OrderingProjection:
+    """O resumo de um conjunto de promessas: o dia mais cedo em que algo se entrega.
+
+    ``promises`` são as do cardápio inteiro (``None`` para o item sem promessa).
+    O estado sai só das datas: o dia mais cedo é hoje (``now``), outro dia
+    (``preorder``) ou não há nenhum (``none``).
+    """
+    days = sorted({p.date for p in promises if p is not None})
+    if not days:
+        return OrderingProjection(ORDERING_NONE)
+    earliest = date.fromisoformat(days[0])
+    state = ORDERING_NOW if earliest <= today else ORDERING_PREORDER
+    return OrderingProjection(state, earliest.isoformat(), _day_label(earliest, today=today))
