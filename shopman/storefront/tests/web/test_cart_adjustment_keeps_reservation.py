@@ -343,7 +343,7 @@ class TestAdjustmentRefusalOffersTheLineCeiling:
 
     A ação de 1 toque leva a linha a N (absoluto). Mandar o livre além da
     reserva fazia o botão mentir: sacola 2, fornada 4, pediu 6 oferecia
-    "Pré-reservar 2", que não muda nada, quando 4 cabem; e linha 4, pediu 5
+    "Reservar 2", que não muda nada, quando 4 cabem; e linha 4, pediu 5
     oferecia "Levar 2", que ENCOLHIA a sacola. O teto é o que a linha segura
     mais o livre; na linha nova os dois números coincidem.
     """

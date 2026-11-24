@@ -2210,8 +2210,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO": {
         WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar de {name}?")},
     },
+    # O item acabou e há próximo lote: a folha diz quando ele fica disponível, e o
+    # botão é "Reservar" (dono, 24/11/2026, KISS). ``{when}`` é o pedaço da promessa
+    # do próximo lote: "a partir das 15h", "amanhã, quarta, a partir das 7h". Sobre o
+    # produto a loja fala de disponibilidade, nunca de prontidão.
     "KINTSUGI_PLANNED_OFFER": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Fica pronto no próximo lote, fresquinho. Quer garantir o seu?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Disponível {when}")},
     },
 
     # ── Reorder ──────────────────────────────────────────────────

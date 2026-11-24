@@ -217,9 +217,9 @@ def test_the_rest_of_the_house_copy_says_ficar_pronto():
     registry = _registry_texts()
     assert registry["CART_EMPTY/manha/anon/message"] == "Pão fresquinho acabou de ficar pronto."
     assert registry["CART_EMPTY/manha/*/message"] == "Pão fresquinho acabou de ficar pronto."
-    assert registry["KINTSUGI_PLANNED_OFFER/*/*/message"] == (
-        "Fica pronto no próximo lote, fresquinho. Quer garantir o seu?"
-    )
+    # O próximo lote fala de disponibilidade, como o produto (dono, 24/11/2026).
+    assert registry["KINTSUGI_PLANNED_OFFER/*/*/title"] == "Disponível {when}"
+    assert "KINTSUGI_PLANNED_OFFER/*/*/message" not in registry
     # O chamado da fila: a mesma voz do acompanhamento ("Chegou a sua vez!", "vaga").
     assert CUSTOMER_COPY["waitlist_available"]["subject"] == "Chegou a sua vez: confirme o pedido {order_ref_short}"
     assert CUSTOMER_COPY["waitlist_available"]["body"] == (
