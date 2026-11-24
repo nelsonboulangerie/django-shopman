@@ -14,13 +14,13 @@ import { capture, newCustomerPhone, settled } from './support/stack'
 // do perfil), e a loja da pilha está aberta.
 const PRODUCT = 'Tabatière'
 // Sem âncora: o parágrafo começa com o ícone do relógio, e a loja usa espaço inseparável.
-const PROMISE_TOMORROW = /Fica\s+pronto\s+amanhã,\s+[a-zçá]+,\s+a\s+partir\s+das\s+\d{1,2}h(\d{2})?/
+const PROMISE_TOMORROW = /Disponível\s+amanhã,\s+[a-zçá]+,\s+a\s+partir\s+das\s+\d{1,2}h(\d{2})?/
 
 test('J2: a encomenda da fornada de amanhã, do produto ao acompanhamento', async ({ page }, testInfo) => {
   test.setTimeout(300_000)
   const customer = { phone: newCustomerPhone(), name: 'Helena' }
 
-  await test.step('o produto diz quando fica pronto, antes de ela montar a sacola', async () => {
+  await test.step('o produto diz quando fica disponível, antes de ela montar a sacola', async () => {
     await page.goto('/menu')
     await settled(page)
     await expect(page.getByText(/^(Aberto|Últimos pedidos)\b/).first(), 'a loja da pilha precisa estar aberta agora').toBeVisible()

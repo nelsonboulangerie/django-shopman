@@ -2,7 +2,7 @@
 import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
-import { inCartWhenLine, pickupStoreLines, promiseAddLabel } from '~/presentation/promise'
+import { inCartWhenLine, pickupStoreLines, productPromiseLine, promiseAddLabel } from '~/presentation/promise'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -83,6 +83,7 @@ const badge = computed(() => {
 // HTML do servidor (o robô do Google lê sem JavaScript). Sem promessa, nada é
 // prometido: nem "hoje", nem a loja.
 const promise = computed(() => product.value?.promise || null)
+const promiseLine = computed(() => productPromiseLine(promise.value))
 const storeLines = computed(() => pickupStoreLines(promise.value, product.value?.pickup_store))
 const addLabel = computed(() => promiseAddLabel(promise.value))
 const inCartWhen = computed(() => inCartWhenLine(currentQty.value, promise.value))
@@ -344,21 +345,25 @@ useHead({
                   <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
                     antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
                   </p>
+                  <!-- "~70 g/un.", a mesma forma do cardápio (dono, 24/11/2026). -->
                   <p v-if="product.unit_weight_label" class="shop-meta">
-                    {{ product.unit_weight_label }}
+                    {{ compactUnitWeightLabel(product.unit_weight_label) }}
                   </p>
                 </div>
-                <p v-if="promise" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise data-decisive="availability">
+                <!-- Só quando a disponibilidade difere do normal: "Disponível a partir das
+                     15h", "Disponível amanhã, quarta, a partir das 7h". Disponível agora não
+                     se diz (dono, 24/11/2026). -->
+                <p v-if="promiseLine" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise data-decisive="availability">
                   <Icon name="lucide:clock" class="size-3.5 shrink-0" />
-                  {{ promise.text }}
+                  {{ promiseLine }}
                 </p>
-                <div v-if="storeLines" class="mt-1 flex items-start gap-1 shop-meta" data-pdp-in-store-pickup>
-                  <Icon name="lucide:store" class="mt-0.5 size-3.5 shrink-0" />
-                  <p>
-                    <span class="block" :data-pdp-available-today="storeLines.availableToday" data-decisive="availability">{{ storeLines.availability }}</span>
-                    <span class="block">{{ storeLines.address }}</span>
-                  </p>
-                </div>
+                <!-- A loja e o estado de hoje, numa linha: é o que o Google exige para a
+                     disponibilidade na loja (#2652). Sem endereço: com uma loja só, ele era
+                     ruído (dono, 24/11/2026). -->
+                <p v-if="storeLines" class="mt-1 flex items-center gap-1 shop-meta" data-pdp-in-store-pickup>
+                  <Icon name="lucide:store" class="size-3.5 shrink-0" />
+                  <span :data-pdp-available-today="storeLines.availableToday" data-decisive="availability">{{ storeLines.availability }}</span>
+                </p>
                 <p v-if="inCartWhen" class="shop-meta" data-pdp-in-cart-when>{{ inCartWhen }}</p>
                 <p v-else-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
                   {{ formatCount(currentQty, 'na sacola', 'na sacola') }}

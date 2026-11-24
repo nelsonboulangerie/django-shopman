@@ -91,7 +91,7 @@ def test_fornada_de_amanha_fala_a_promessa_da_loja():
     [item] = result["items"]
     assert item["availability"] == "planned_ok"
     reply = tools.render_result("search_storefront", result)
-    assert "Fica pronto amanhã, quarta, a partir das 15h" in reply
+    assert "Disponível amanhã, quarta, a partir das 15h" in reply
     assert "Lista de espera" not in reply
     assert "—" not in reply
 
@@ -115,4 +115,4 @@ def test_sem_promessa_continua_lista_de_espera(monkeypatch):
     assert item["availability"] == "planned_ok"
     reply = tools.render_result("search_storefront", result)
     assert "Lista de espera" in reply
-    assert "Fica pronto" not in reply
+    assert "a partir das" not in reply

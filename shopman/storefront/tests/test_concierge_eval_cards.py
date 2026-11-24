@@ -169,3 +169,72 @@ def test_the_rehearsal_offers_the_channel_payment_methods(house):
 def test_the_rehearsal_takes_the_store_classes_and_refuses_an_unknown_one(house):
     _out, error = _run("--classes", "inform,pedido")
     assert "classe desconhecida: pedido" in error
+
+
+# ── a leitura na conversa, com o verificador (ADR-051) ──────────────────────────────────
+
+
+class ContextAI(FakeAI):
+    """A IA do perfil nas duas rotas: lê a fala pelo roteiro e, quando é o verificador, devolve ``choice``."""
+
+    def __init__(self, choice):
+        super().__init__()
+        self.choice, self.verified = choice, []
+
+    def create(self, **request):
+        if request["system"][0]["text"] == model_reader.VERIFIER_PROMPT:
+            self.calls += 1
+            self.verified.append(request["messages"][0]["content"])
+            return SimpleNamespace(stop_reason="end_turn", usage=SimpleNamespace(input_tokens=80, output_tokens=5),
+                                   content=[SimpleNamespace(type="text", text=json.dumps({"choice": self.choice}))])
+        return super().create(**request)
+
+
+def _conversation_with_the_pickup_time_asked(house, monkeypatch, choice, *after):
+    """ "vou buscar às 16h" logo depois de a Nice perguntar o horário da retirada, com o Jev lendo "horário da
+    loja" (o ensaio no ar de 24/11)."""
+    from conversational_commerce.ports import TrustedContext
+    from conversational_commerce.testing.journeys import j4
+    from django.utils import timezone
+
+    from shopman.storefront.concierge import eval_cards
+
+    roteiro = {**ROTEIRO, "amanhã": [{"act": "choose_fulfillment", "day": "tomorrow"}],
+               "vou retirar": [{"act": "choose_fulfillment", "mode": "pickup"}],
+               "vou buscar às 16h": [{"act": "choose_fulfillment", "mode": "pickup", "time": "16:00"}]}
+    monkeypatch.setitem(globals(), "ROTEIRO", roteiro)
+    ai = ContextAI(choice)
+
+    def reader(conversa, linhas):
+        return model_reader.NiceReader(client=ai, model="deepseek-flash", conversation=conversa, lines_of=linhas,
+                                       gate=lambda text: "ask_hours" if "buscar" in text else "")
+
+    engine, world = eval_cards.engine_for(reader, today=timezone.localdate())
+    ctx = TrustedContext(tenant=engine.profile.tenant, environment="live", subject=eval_cards.SUBJECT)
+    results = []
+    for number, said in enumerate(("quero 2 croissants", "pode fechar", "amanhã", "vou retirar",
+                                   "vou buscar às 16h", *after), 1):
+        world.clock.advance(30)
+        results.append(engine.turn(ctx, j4.message(f"adr051-{number}", said)))
+    return results, world, ai
+
+
+def test_the_pickup_time_is_not_read_as_the_store_hours_once_the_nice_asked_it(house, monkeypatch):
+    from shopman.storefront.concierge import eval_cards
+
+    (*_, asked, time), world, ai = _conversation_with_the_pickup_time_asked(house, monkeypatch, 0)
+    assert asked.reply.template_ids[-1] == "present_terms.needs_delivery_time_slot"
+    assert world.state.fulfillment[eval_cards.CART]["time"] == "16:00"  # a hora da retirada, não o horário da loja
+    assert "adjudicate:chose:0" in time.fallbacks
+    [content] = ai.verified
+    assert "A Nice acabou de perguntar o horário da retirada" in content and "1: ask_hours" in content
+
+
+def test_in_doubt_the_nice_asks_in_the_combinado_words_and_the_yes_applies(house, monkeypatch):
+    from shopman.storefront.concierge import eval_cards
+
+    (*_, time, yes), world, _ = _conversation_with_the_pickup_time_asked(house, monkeypatch, -1, "sim")
+    assert time.text == "Só para confirmar: retirada às 16h?"
+    assert not time.commands
+    assert world.state.fulfillment[eval_cards.CART]["time"] == "16:00"  # o "sim" aplicou
+    assert "conference:confirmed" in yes.fallbacks

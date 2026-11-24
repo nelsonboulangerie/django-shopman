@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from conversational_commerce.contracts import Producer, ReplyPlan, Unavailable, Understanding
 from conversational_commerce.ports import (
+    AdjudicateRequest,
+    Adjudication,
     Capabilities,
     Consumption,
     Draft,
@@ -87,6 +89,16 @@ class FakeModel(FakeBase):
         consumption = self._consume(request)
         moves = ", ".join(part.move for part in plan.parts)
         return Draft(text=f"[draft: {moves}]", consumption=consumption)
+
+    def adjudicate(self, ctx: TrustedContext, request: AdjudicateRequest) -> Adjudication:
+        """O verificador sintético: a primeira candidata com um ato que responde à pergunta no ar; sem ela,
+        dúvida."""
+        self._common_faults("adjudicate", request.request)
+        consumption = self._consume(request.request)
+        expected = set(request.context.expected_acts)
+        choice = next((index for index, candidate in enumerate(request.candidates)
+                       if {act.act for act in candidate.acts} & expected), None)
+        return Adjudication(choice=choice, consumption=consumption)
 
     def score(self, ctx: TrustedContext, request: ScoreRequest) -> Scores:
         self._common_faults("score", request.request)
