@@ -520,7 +520,7 @@ def build_client():
 def jev_gate(text: str) -> str:
     """O ato do motor que o Jev entrega sem a IA, ou vazio (o portão hesita, ou o ato pede campo)."""
     from . import triage
-    from .intents import _only_fulfillment, gate
+    from .intents import gate
     from .ports import ACT_MAP
 
     if not triage.jev_enabled():
@@ -531,10 +531,6 @@ def jev_gate(text: str) -> str:
     rules_intent, rules_source = triage.classify_rules(text)
     decided = gate(text, rules_intent=rules_intent, rules_source=rules_source, jev_scores=proposal.get("scores"))
     act = ACT_MAP.get(decided.intent, "") if decided.direct else ""
-    if act == "ask_hours" and _only_fulfillment(text):
-        # "vou buscar às 16h", "retirada amanhã 16h": dizem QUANDO o cliente recebe, não perguntam o horário
-        # da loja (ensaio no ar, 24/11). A MESMA régua do caminho de hoje; a leitura fica com a IA.
-        return ""
     return act if act in FIELDLESS else ""
 
 

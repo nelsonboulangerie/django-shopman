@@ -227,21 +227,6 @@ def test_without_jev_the_gate_never_answers(monkeypatch):
     assert model_reader.jev_gate("que horas abre?") == ""
 
 
-@pytest.mark.parametrize("text", ["vou buscar às 16h", "amanhã às 16h, retirada", "retirada amanhã 16h"])
-def test_the_gate_does_not_take_the_pickup_time_for_the_store_hours(monkeypatch, text):
-    """Ensaio no ar (24/11): o Jev lia "vou buscar às 16h" como horário da loja, e a hora de buscar se perdia.
-    A fala que só diz QUANDO recebe vai à IA (a mesma régua do caminho de hoje, ``intents._only_fulfillment``)."""
-    from shopman.storefront.concierge import intents, triage
-
-    monkeypatch.setattr(triage, "jev_enabled", lambda: True)
-    monkeypatch.setattr(triage, "classify_with_jev", lambda t, **k: {"intent": "hours_delivery", "scores": {}})
-    monkeypatch.setattr(intents, "gate", lambda t, **k: intents.GateDecision(True, "jev_certain", "hours_delivery"))
-    assert model_reader.jev_gate(text) == ""
-    # Controle negativo: a pergunta do horário da loja segue no portão, sem a IA.
-    assert model_reader.jev_gate("que horas vocês abrem?") == "ask_hours"
-    assert model_reader.jev_gate("até que horas posso retirar?") == "ask_hours"
-
-
 # ── "dia 25", o erro de digitação e o "troca por" (ensaio no ar, 24/11) ────────────────
 
 
