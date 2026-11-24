@@ -90,7 +90,9 @@ def test_who_has_a_saved_address_hears_it_first(conversation, monkeypatch):
     monkeypatch.setattr(address_service, "addresses", lambda ref: saved if ref == "cust-1" else [])
     missing, value = _missing(fulfillment_type="delivery", payment={"method": "pix"})
     assert missing == ["delivery_address_saved"]
-    assert list(value["delivery_address_saved"]) == ["saved-address:sess-1:8", "saved-address:sess-1:3"]
+    refs = list(value["delivery_address_saved"])
+    assert [ref.rsplit(":", 1)[0] for ref in refs] == ["saved-address:sess-1:8", "saved-address:sess-1:3"]
+    assert all(len(ref.rsplit(":", 1)[1]) == 16 for ref in refs)  # com o resumo opaco do endereço
     assert "present_terms.needs_delivery_address_saved" in turn_framework.nice_templates()
 
 
@@ -374,6 +376,36 @@ def test_the_house_reads_only_the_address_clauses():
     assert address_of("Av. Brasil 1200") == "Av. Brasil 1200"  # o ponto não divide
     assert address_of("apto 12, e põe mais um croissant") == "apto 12"
     assert masked_for_reading("bloco B, apto 12 e quero mais um") == "[endereço omitido] e quero mais um"
+
+
+@pytest.mark.parametrize("text", ["o do trabalho", "casa da minha mãe", "Clínica Vida"])
+def test_the_name_of_a_saved_address_never_reaches_the_ai(conversation, monkeypatch, text):
+    """P17: com a oferta do endereço do cadastro no ar, o nome dele não vai à IA; o motor recebe ``give_address``
+    sem IA, e o sítio escolhe pela etiqueta, sem depender da IA classificar a fala."""
+    from types import SimpleNamespace
+
+    from conversational_commerce.engine.acts import ACTS
+
+    from shopman.storefront.concierge import address
+    from shopman.storefront.tests.test_concierge_model_reader import FakeAI, _fields, _read
+
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [SimpleNamespace(pk=7)])
+    _session(fulfillment_type="delivery")
+    ai = FakeAI(error=AssertionError("o nome do endereço não vai à IA"))
+    understanding, consumption = _read(text, ai, allowed=ACTS)
+    assert _fields(understanding) == [("give_address", {})] and ai.requests == []
+
+
+def test_yes_and_no_to_the_saved_address_offer_are_read_not_taken_as_address(conversation, monkeypatch):
+    from types import SimpleNamespace
+
+    from shopman.storefront.concierge import address
+    from shopman.storefront.concierge.model_reader import address_answer
+
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [SimpleNamespace(pk=7)])
+    _session(fulfillment_type="delivery")
+    for said in ("sim", "pode ser", "esse mesmo", "não"):
+        assert not address_answer(conversation, said), said
 
 
 @pytest.mark.parametrize("text", ["obrigada", "não, deixa pra lá", "pode fechar", "vou pagar no pix",

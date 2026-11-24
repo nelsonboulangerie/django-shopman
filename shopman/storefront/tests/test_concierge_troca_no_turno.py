@@ -363,7 +363,7 @@ def _saved(pk, route, number, tag, *, default=False):
                            label="other", label_custom=tag, display_label=tag)
 
 
-def _saved_flow(conversation, monkeypatch, script, saved):
+def _saved_flow(conversation, monkeypatch, script, saved, *, said_in_order=None, before_turn=None):
     """A sacola com pão, entrega e Pix; o cadastro do cliente; a leitura e a gravação do recebimento da casa."""
     from shopman.guestman.services import address as address_service
     from shopman.orderman.models import Session
@@ -397,7 +397,9 @@ def _saved_flow(conversation, monkeypatch, script, saved):
     conversation.session_key = "sess-salvo"
     conversation.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
-        for index, said in enumerate(script):
+        for index, said in enumerate(said_in_order or list(script)):
+            if before_turn is not None:
+                before_turn(index)
             _receive(conversation, said, f"salvo-{index}")
             service.run_turn(conversation.pk, _binding(conversation).pk)
     return written
@@ -411,7 +413,7 @@ def test_the_saved_address_is_offered_with_today_phrase_and_yes_takes_it(order_o
     script = {"pode fechar": [{"act": "place_order"}], "sim": [{"act": "affirm"}]}
     written = _saved_flow(order_on_air, monkeypatch, script, saved)
     assert outbox.sent[0] == saved_offer(saved) == "Entregamos no endereço do seu cadastro, Rua do Cadastro, 10 - Centro?"
-    assert written and written[0].get("use_saved_address") is True  # o "sim" grava o endereço do cadastro
+    assert written and written[0].get("saved_address_pk") == 7  # o "sim" grava O endereço oferecido, pelo id
     # O "sim" volta ao resumo, com o endereço do cadastro na linha da entrega, pronto para o "sim" do pedido.
     assert "Entrega\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1] and outbox.sent[1].endswith("Posso registrar?")
 
@@ -435,3 +437,31 @@ def test_with_two_saved_addresses_the_name_chooses_one(order_on_air, outbox, mon
     written = _saved_flow(order_on_air, monkeypatch, script, saved)
     assert outbox.sent[0] == saved_offer(sorted(saved, key=lambda item: not item.is_default))
     assert written and written[0].get("saved_address_label") == "Trabalho"
+
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_with_the_name_in_the_same_message_chooses_by_the_name(order_on_air, outbox, monkeypatch):
+    """ "Não, o do trabalho": o "não" é correção, e ganha a escolha pela etiqueta. A IA lê o nome mascarado."""
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True), _saved(9, "Avenida Brasil", "200", "Trabalho")]
+    # A IA vê o nome mascarado: o roteiro dela é pela fala MASCARADA.
+    script = {"pode fechar": [{"act": "place_order"}],
+              "não, [endereço omitido]": [{"act": "deny"}, {"act": "give_address"}]}
+    written = _saved_flow(order_on_air, monkeypatch, script, saved,
+                          said_in_order=["pode fechar", "não, o do trabalho"])
+    assert written and written[0].get("saved_address_label") == "Trabalho"
+    assert not any("Qual é o endereço" in text for text in outbox.sent[1:])  # o "não" não pediu outro endereço
+
+
+@pytest.mark.django_db(transaction=True)
+def test_yes_after_the_saved_address_changed_writes_nothing(order_on_air, outbox, monkeypatch):
+    """O "sim" aceita o endereço OFERECIDO: editado o cadastro depois da oferta, nada se grava no lugar dele."""
+    saved = [_saved(7, "Rua do Cadastro", "10", "Casa", default=True)]
+
+    def edit_after_offer(index):
+        if index == 1:
+            saved[0].street_number = "12"  # o cliente editou o número no site entre a oferta e o "sim"
+
+    script = {"pode fechar": [{"act": "place_order"}], "sim": [{"act": "affirm"}]}
+    written = _saved_flow(order_on_air, monkeypatch, script, saved, before_turn=edit_after_offer)
+    assert written == []  # nada gravado com um endereço que o cliente não viu
