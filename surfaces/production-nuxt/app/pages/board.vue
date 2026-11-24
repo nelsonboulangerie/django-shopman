@@ -10,7 +10,7 @@
 // · NOME do produto nas palhetas (SKU saiu), na largura do maior nome do dia;
 //   quantidade com a unidade que a projeção traz ("12 UN", "18,5 KG");
 // · sem conexão, o último quadro fica no ar e o aviso, com a hora da leitura,
-//   é o primeiro conteúdo da tela, na escala da linha;
+//   é o primeiro conteúdo da tela, numa linha de palhetas âmbar;
 // · atrasado não pisca: as palhetas RE-GIRAM periodicamente até o mesmo
 //   valor, como os painéis mecânicos reais fazem;
 // · ordem de aeroporto: cronológica pelo horário — status muda cor, nunca
@@ -28,6 +28,7 @@ import {
   boardQtyChars,
   boardQtyLabel,
   boardRowSpoken,
+  boardStaleFlaps,
   boardStaleNotice,
   forecastTimeTone,
   fullDateLabel,
@@ -63,6 +64,9 @@ const stale = computed(() =>
 );
 const staleNotice = computed(() =>
   boardStaleNotice(lastRead.value?.generated_at_display ?? ""),
+);
+const staleFlaps = computed(() =>
+  boardStaleFlaps(lastRead.value?.generated_at_display ?? ""),
 );
 // O aviso fecha no X e VOLTA enquanto a causa durar (regra da casa, #2095): na
 // próxima leitura que falhar, ou depois de um minuto, se a conexão seguir caída.
@@ -247,17 +251,23 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
     <section
       class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 md:px-8"
     >
-      <!-- Sem conexão: primeiro conteúdo abaixo do topo, em âmbar cheio,
-           com a hora da leitura que continua no ar. Some quando a leitura
-           seguinte dá certo; o X fecha, e ele volta enquanto a causa durar. -->
+      <!-- Sem conexão: uma linha do próprio Letreiro, em palhetas âmbar (o dono:
+           "mais fidedigno"), primeiro conteúdo abaixo do topo, com a hora da
+           leitura que continua no ar. Some quando a leitura seguinte dá certo;
+           o X fecha, e ele volta enquanto a causa durar. -->
       <div
         v-if="showStale"
         role="alert"
         data-board-stale
-        class="board-stale mb-4 flex shrink-0 items-center gap-[0.5em]"
+        class="board-stale mb-4 flex shrink-0 items-center gap-3"
       >
-        <Icon name="lucide:wifi-off" class="board-stale-icon shrink-0" />
-        <span data-board-stale-text class="min-w-0 flex-1">{{ staleNotice }}</span>
+        <span data-board-stale-text class="sr-only">{{ staleNotice }}</span>
+        <SplitFlap
+          :value="staleFlaps"
+          :upper="false"
+          aria-hidden="true"
+          class="board-flap board-stale-flaps min-w-0 flex-1"
+        />
         <NuxtButton
           color="neutral"
           variant="ghost"
@@ -453,43 +463,44 @@ const boardScale = computed(() => !scaleReady.value ? {} : ({
   text-transform: none;
 }
 
-/* O aviso de conexão: alto contraste (âmbar cheio, letra escura), na escala da
-   linha: lido a 2 m como o resto do Letreiro, sem gritar mais que ele (dono). */
+/* O aviso de conexão é uma linha do Letreiro: a mesma moldura, a mesma Oswald,
+   as mesmas palhetas, só que âmbar com letra escura (alto contraste). */
 .board-stale {
-  font-size: max(1rem, var(--scale-row));
-  font-weight: 600;
-  line-height: 1.1;
-  padding: 0.3em 0.5em;
+  font-size: var(--scale-row);
+  border: 1px solid var(--board-line);
   border-radius: 0.75rem;
-  background: var(--board-amber);
+  background: var(--board-panel);
+  padding: 0.5rem 1rem;
+}
+.board-stale-flaps {
+  overflow: hidden;
+}
+.board-stale-flaps :deep(.flap-cell) {
   color: var(--board-bg);
+  background: linear-gradient(180deg, #f6d185 0%, #f2c46b 48%, #d9a94f 52%, #eebd60 100%);
 }
-.board-stale-icon {
-  width: 1.2em;
-  height: 1.2em;
+.board-stale-flaps :deep(.flap-cell--blank) {
+  background: linear-gradient(180deg, #c99a45 0%, #b88a3a 48%, #9c742f 52%, #b08438 100%);
 }
-/* O X na pele do aviso: letra escura sobre o âmbar, alvo de 44px ou mais e
-   ícone em proporção à letra, nunca menor que o do kit (20px). */
+/* O X discreto no fim da linha, na cor dos rótulos; alvo de 44px. */
 .board-stale-close {
-  /* Na escala do aviso (o botão traz fonte pequena de controle). */
-  font-size: inherit;
   display: grid;
   place-items: center;
-  width: max(2.75rem, 1.1em);
-  height: max(2.75rem, 1.1em);
+  width: 2.75rem;
+  height: 2.75rem;
   padding: 0;
   border-radius: 0.5rem;
-  color: var(--board-bg);
+  color: var(--board-dim);
   background: transparent;
 }
 .board-stale-close:hover {
-  color: var(--board-bg);
-  background: rgb(0 0 0 / 10%);
+  color: var(--board-text);
+  background: var(--board-line);
 }
 .board-stale-close :deep(.iconify),
 .board-stale-close :deep(svg) {
-  width: max(1.25rem, 0.75em);
-  height: max(1.25rem, 0.75em);
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .board-key {

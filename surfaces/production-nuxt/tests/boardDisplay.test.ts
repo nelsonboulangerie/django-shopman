@@ -9,6 +9,7 @@ import {
   boardQtyChars,
   boardQtyLabel,
   boardRowSpoken,
+  boardStaleFlaps,
   boardStaleNotice,
   isStale,
 } from "../app/presentation/production";
@@ -125,5 +126,9 @@ describe("Letreiro — escala e nome", () => {
   it("o aviso de conexão diz de quando é o quadro", () => {
     expect(boardStaleNotice("9h05")).toBe("Sem conexão. Lido às 9h05");
     expect(boardStaleNotice("")).toBe("Sem conexão. Mostrando a última leitura");
+    // Nas palhetas: maiúsculas de painel, hora com o "h" minúsculo.
+    expect(boardStaleFlaps("6h42")).toBe("SEM CONEXÃO. LIDO ÀS 6h42");
+    expect(boardStaleFlaps("10h")).toBe("SEM CONEXÃO. LIDO ÀS 10h");
+    expect(boardStaleFlaps("")).toBe("SEM CONEXÃO. MOSTRANDO A ÚLTIMA LEITURA");
   });
 });

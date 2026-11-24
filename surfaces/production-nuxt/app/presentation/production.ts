@@ -576,3 +576,11 @@ export function boardRowSpoken(row: {
 export function boardStaleNotice(readAt: string): string {
   return readAt ? `Sem conexão. Lido às ${readAt}` : "Sem conexão. Mostrando a última leitura";
 }
+
+/** O aviso nas palhetas do Letreiro: maiúsculas de painel, mas a hora da casa
+ *  guarda o "h" minúsculo ("SEM CONEXÃO. LIDO ÀS 6h42"). */
+export function boardStaleFlaps(readAt: string): string {
+  return boardStaleNotice(readAt)
+    .toUpperCase()
+    .replace(/(\d)H(\d{2})?\b/g, (_, hour: string, minute = "") => `${hour}h${minute}`);
+}
