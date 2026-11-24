@@ -158,6 +158,30 @@ def test_x14_session_request_never_reaches_the_public_twin():
     assert carries_credentials(request)
 
 
+def test_x14_team_member_marked_in_the_register_gets_b_privately():
+    """A equipe entra pelo próprio cadastro (decisão do dono, 24/11) e a resposta B é privada."""
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    from shopman.shop.services.experience import TEAM_OPERATOR_KEY
+
+    _seed_surface()
+    fran = get_user_model().objects.create_user(username="fran", is_staff=True)
+    fran.groups.add(Group.objects.get_or_create(name="Caixa")[0])
+    customer = Customer.objects.create(
+        ref="CLI-FRAN", first_name="Fran", phone="+5543999990089", metadata={TEAM_OPERATOR_KEY: fran.pk}
+    )
+    client, _ = _customer_client(customer=customer)
+    _experiment(internal=[])
+
+    private = client.get(PRIVATE_SHELL)
+
+    assert private.json()["shell"]["experience"] == [{"ref": "para-quando", "variant": "b"}]
+    assert private["Cache-Control"] == "private, no-store"
+    assert client.get(PUBLIC_SHELL).status_code == 400
+    assert Client().get(PUBLIC_SHELL).json()["shell"]["experience"] == [{"ref": "para-quando", "variant": "a"}]
+
+
 def test_x14_public_twin_only_ever_serves_the_default():
     _seed_surface()
     _, customer = _customer_client()

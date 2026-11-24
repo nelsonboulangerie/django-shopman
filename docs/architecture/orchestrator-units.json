@@ -20627,6 +20627,7 @@
             "REASON_PILOT",
             "REASON_SESSION",
             "SESSION_KEY",
+            "TEAM_OPERATOR_KEY",
             "_active_experiments",
             "_cohort_lookup",
             "_decide",
@@ -20639,14 +20640,17 @@
             "operator_customer_refs",
             "order_mark",
             "remember",
-            "resolve"
+            "resolve",
+            "team_operators"
           ]
         }
       ],
       "touchpoints": [
         "service"
       ],
-      "domains": [],
+      "domains": [
+        "guestman"
+      ],
       "ports": [],
       "events": [],
       "directives": [],
