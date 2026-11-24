@@ -91,7 +91,7 @@ useHead({
             <span>{{ item.question }}</span>
             <Icon name="lucide:chevron-down" class="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
           </summary>
-          <p class="whitespace-pre-line pb-4 text-sm leading-6 text-muted-foreground">{{ item.answer }}</p>
+          <p class="shop-reading whitespace-pre-line pb-4 text-muted-foreground">{{ item.answer }}</p>
         </details>
       </div>
 

@@ -233,8 +233,8 @@ useHead({
                   <Icon name="lucide:chef-hat" class="size-5" />
                 </span>
                 <div class="min-w-0 flex-1">
-                  <p class="shop-body font-semibold">{{ activeOrder.status_label }}</p>
-                  <p class="text-xs opacity-80">Pedido {{ activeOrder.ref }}</p>
+                  <p class="shop-body font-semibold" data-decisive="state">{{ activeOrder.status_label }}</p>
+                  <p class="shop-body">Pedido {{ activeOrder.ref }}</p>
                 </div>
                 <span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-cta-foreground/15 py-1 pl-3 pr-2 text-sm font-semibold">
                   Acompanhar
@@ -406,7 +406,7 @@ useHead({
               <div class="flex flex-wrap items-center gap-2">
                 <Icon name="lucide:store" class="size-5 shrink-0 text-muted-foreground" />
                 <h3 class="shop-item-title font-semibold">{{ sectionsCopy.how_store_heading.title }}</h3>
-                <UiBadge v-if="operationalStatus.label" variant="secondary" class="font-normal">{{ operationalStatus.label }}</UiBadge>
+                <UiBadge v-if="operationalStatus.label" variant="secondary" class="font-normal" data-decisive="state">{{ operationalStatus.label }}</UiBadge>
               </div>
               <ul v-if="storeSteps.length" class="flex flex-col gap-2">
                 <li v-for="(step, index) in storeSteps" :key="index" class="shop-muted">
@@ -470,7 +470,8 @@ useHead({
             class="mt-6 border-y"
           >
             <template #content="{ item }">
-              <UiAccordionContent>{{ item.content }}</UiAccordionContent>
+              <!-- A resposta é corpo de LEITURA: 16 px, não os 14 do acordeão (X9, OC-30). -->
+              <UiAccordionContent><p class="shop-reading whitespace-pre-line">{{ item.content }}</p></UiAccordionContent>
             </template>
           </UiAccordion>
           <div class="mt-4 text-center">

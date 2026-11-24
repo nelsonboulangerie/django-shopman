@@ -54,9 +54,15 @@
 
   import type { NuxtLinkProps } from "#app/components";
 
-  /** Exported button styles that can be used by other components. */
+  /** Exported button styles that can be used by other components.
+   *
+   *  O rótulo QUEBRA LINHA em vez de vazar (X11, OC-30): com a fonte do sistema a 200 %,
+   *  "Encomendar para amanhã" e "Prefere receber um código por SMS?" saíam da tela com o
+   *  `whitespace-nowrap`. Por isso a altura de cada tamanho é MÍNIMA (o botão cresce com a
+   *  segunda linha) e o botão nunca passa da largura de quem o contém (`max-w-full`). Na
+   *  fonte normal todo rótulo cabe numa linha e nada muda. */
   export const buttonStyles = tv({
-    base: "group focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] active:translate-y-px data-[acknowledged=true]:ring-2 data-[acknowledged=true]:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    base: "group focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex max-w-full shrink-0 items-center justify-center gap-2 rounded-md text-center text-sm font-medium transition-all outline-none focus-visible:ring-[3px] active:translate-y-px data-[acknowledged=true]:ring-2 data-[acknowledged=true]:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs",
@@ -89,10 +95,10 @@
           "animate-gradient-flow bg-[linear-gradient(-45deg,var(--gradient-lime),var(--gradient-ocean),var(--gradient-wine),var(--gradient-rust))] bg-size-[400%] text-white",
       },
       size: {
-        xs: "h-7 gap-1 px-2.5 text-xs has-[>svg]:px-2",
-        sm: "h-8 gap-1.5 px-3 has-[>svg]:px-2.5",
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        lg: "h-10 px-6 has-[>svg]:px-4",
+        xs: "min-h-7 gap-1 px-2.5 text-xs has-[>svg]:px-2",
+        sm: "min-h-8 gap-1.5 px-3 py-1 has-[>svg]:px-2.5",
+        default: "min-h-9 px-4 py-2 has-[>svg]:px-3",
+        lg: "min-h-10 px-6 py-2 has-[>svg]:px-4",
         "icon-xs": "size-7",
         "icon-sm": "size-8",
         icon: "size-9",

@@ -389,6 +389,11 @@
    *
    * Escala FECHADA (degraus sancionados): 12/xs · 14/sm · 16/base · 20/xl · 30/3xl
    *   + display do hero 36/4xl → 48/5xl. lg(18) e 2xl(24) abolidos.
+   * Piso de leitura (X9, OC-30): o que DECIDE a compra (preço, disponibilidade, total,
+   *   estado, erro) nunca fica abaixo de 14 e leva `data-decisive` no elemento que tem o
+   *   texto; o corpo de LEITURA (parágrafo que se lê em sequência: descrição do produto,
+   *   resposta da FAQ) é 16. O 12 sobra só para o eyebrow (.shop-kicker), contador em
+   *   pílula e chrome de rodapé, nunca para informação que muda a decisão.
    * Pesos: SOMENTE 400 e 600 nas telas (500 reservado ao chrome das primitivas Ui;
    *   sem 700 autoral). No mesmo tamanho o nível sobe por PESO ou COR — nunca por
    *   um tamanho vizinho.
@@ -399,8 +404,9 @@
    *   .shop-title       título de página h1 (30, serif)
    *   .shop-heading     título de seção h2 (20, sans 600)
    *   .shop-item-title  título de card/linha (16, 400)
-   *   .shop-body        corpo, controles, footer (14, 400, leading confortável)
-   *   .shop-meta        metadados muted (12, 400)
+   *   .shop-reading     corpo de leitura (16, 400, leading 1.6)
+   *   .shop-body        controles, rótulos, footer (14, 400, leading confortável)
+   *   .shop-meta        metadados muted (14, 400, leading compacto)
    *   .shop-muted       parágrafo muted de corpo (14, 400, muted)
    *   .shop-kicker      eyebrow uppercase (12, 600, tracking-wide, muted)
    *   .shop-price       preço/valor de card/linha (14, 600, tabular-nums)
@@ -420,6 +426,11 @@
     font-optical-sizing: auto;
     @apply text-3xl font-semibold tracking-tight;
     line-height: 1.12;
+    /* Com a fonte a 200 % numa tela de 320 px, um nome de uma palavra só ("Tabatière")
+       fica mais largo que a coluna e empurra o coração de favoritos para fora da tela
+       (X11, OC-30). `anywhere` deixa a palavra quebrar e encolher a caixa; na fonte
+       normal todo nome cabe e nada muda. */
+    overflow-wrap: anywhere;
   }
 
   .shop-heading {
@@ -431,13 +442,21 @@
     @apply text-base font-normal leading-5;
   }
 
+  .shop-reading {
+    @apply text-base font-normal;
+    line-height: 1.6;
+  }
+
   .shop-body {
     @apply text-sm font-normal;
     line-height: 1.5;
   }
 
+  /* 14, não 12: a "meta" da loja carrega o que decide (o "antes" riscado, o peso, o
+     motivo de indisponível, a promessa da linha), e a 12 px o laudo de 23/11 mediu 19
+     textos ilegíveis só na home (U2). */
   .shop-meta {
-    @apply text-xs font-normal text-muted-foreground;
+    @apply text-sm font-normal text-muted-foreground;
     line-height: 1.4;
     overflow-wrap: anywhere;
   }

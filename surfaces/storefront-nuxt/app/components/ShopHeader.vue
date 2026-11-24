@@ -119,8 +119,8 @@ onBeforeUnmount(() => {
           <Icon name="lucide:clock" class="size-3.5 shrink-0" />
           <!-- Na tela estreita o estado ("Fechado agora.") sai e a hora de abertura
                fica inteira; o leitor de tela ouve a frase toda. -->
-          <span v-if="statusParts.lead" class="sr-only sm:not-sr-only sm:truncate" data-shop-status-lead>{{ statusParts.lead }}</span>
-          <span class="whitespace-nowrap" data-shop-status-tail>{{ statusParts.tail || 'Confira nossos horários' }}</span>
+          <span v-if="statusParts.lead" class="sr-only sm:not-sr-only sm:truncate" data-shop-status-lead data-decisive="state">{{ statusParts.lead }}</span>
+          <span class="min-w-0" data-shop-status-tail data-decisive="state">{{ statusParts.tail || 'Confira nossos horários' }}</span>
         </span>
         <a
           v-if="statusOpen && shop?.phone_url"

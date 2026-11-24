@@ -529,7 +529,9 @@ useHead({
           />
           <UiTabs v-model="activeSection" class="min-w-0 flex-1" @update:model-value="selectSection">
             <div data-menu-pillrail class="no-scrollbar overflow-x-auto scroll-smooth motion-reduce:scroll-auto">
-              <UiTabsList :pill="false" class="gap-1 bg-transparent p-0">
+              <!-- A pílula inativa herda o texto inteiro, não os 70 % da lista: sobre a barra
+                   Brass os 70 % davam 3,3:1, abaixo do AA (X9, OC-30). -->
+              <UiTabsList :pill="false" class="gap-1 bg-transparent p-0 text-muted-foreground">
                 <UiTabsTrigger
                   v-if="hasAppliedFilters"
                   :value="FILTERED_SECTION_VALUE"
