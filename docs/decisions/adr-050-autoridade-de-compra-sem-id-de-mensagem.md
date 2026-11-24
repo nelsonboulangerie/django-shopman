@@ -111,6 +111,26 @@ aberto no gateway por último e `payment.initiate` abre um novo pelo valor novo,
 própria. Pago no meio, o pagamento vale e a alteração vai à equipe; cancelamento recusado
 no gateway, nada muda. Nunca um estorno silencioso.
 
+### 6. O "sim" do motor no lugar do código (emenda de 24/11/2026)
+
+O pedido pelo motor do framework (DEV-2026-080) fecha com "Posso registrar?" e "sim", frase aprovada pelo dono
+em 23/11 no lugar do código. O motor prende esse "sim" aos termos que o cliente viu: a concessão
+(`AuthorizationGrant`), o hash dos termos, a revisão da sacola (`Session.rev`) e a época de posse. A guarda do
+Core confere tudo isso dentro do sítio de efeito, na mesma transação do registro. Sem esta emenda, a guarda da
+seção 2 recusava o "sim" (`confirmation_required`, medido em 24/11), porque ele não é o código do resumo.
+
+- **A casa aceita a confirmação do motor no lugar do código**, e só dentro do sítio de efeito do motor
+  (`effect_site._place_by_engine`, `tools.engine_confirmed`). Fora dele, o código da seção 2 continua sendo a
+  única confirmação.
+- **A confirmação é presa à revisão da casa feita no próprio efeito**, depois da guarda do Core
+  (`EngineConfirmation.quote_token`).
+- **Sacola mudada depois da oferta sobe a revisão**: a guarda do Core recusa o "sim", e a Nice diz o total novo
+  para o cliente conferir. Nada é registrado.
+- **A concessão vale uma vez.** O registro é uma mutação única pela concessão (`concierge.engine_grant`). O
+  mesmo comando repete o mesmo pedido; outro comando com a mesma concessão é recusado
+  (`confirmation_used`) antes de chegar à casa.
+- **"Sim" sem a oferta no ar** não gera concessão, e nada é registrado.
+
 ## Consequências
 
 - O pedido na conversa fica possível com o ManyChat de hoje, sem esperar identificador.
