@@ -738,3 +738,35 @@ def test_the_close_asks_the_when_with_today_questions_before_the_summary(order_o
     assert yes.startswith("Pedido ORD-WHEN-1 registrado.") and placed == ["tok-when"]
     data = Session.objects.get(session_key="sess-when").data
     assert data["fulfillment_type"] == "pickup" and data["delivery_time_slot"]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_day_said_with_the_order_is_not_asked_again(order_on_air, outbox, monkeypatch):
+    """Controle negativo do #3482: "pra amanhã, pode fechar" já diz o dia; o fechamento segue para retirar ou
+    entregar e o horário, e nunca pergunta o dia de novo."""
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    script = {"pra amanhã, pode fechar": [{"act": "choose_fulfillment", "day": "tomorrow"}, {"act": "place_order"}],
+              "vou retirar": [{"act": "choose_fulfillment", "mode": "pickup"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    shop = Shop.load()
+    shop.conversational_live_inform = True  # a config do teste do dono: "informar" e "pedido"
+    shop.save()
+    Session.objects.create(session_key="sess-day", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}])
+    order_on_air.session_key = "sess-day"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        for index, said in enumerate(script):
+            _receive(order_on_air, said, f"day-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    ask_date = service.copy_message("CONCIERGE_CLOSE_ASK_DATE").strip()
+    assert not any(ask_date in text for text in outbox.sent)
+    assert outbox.sent[0].endswith(service.copy_message("CONCIERGE_CLOSE_ASK_FULFILLMENT").strip())
+    assert outbox.sent[1].startswith("Qual horário de retirada fica melhor?")
+    assert Session.objects.get(session_key="sess-day").data["delivery_date"]

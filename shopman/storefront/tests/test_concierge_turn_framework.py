@@ -349,3 +349,14 @@ def test_the_judge_reads_an_effect_turn_by_its_templates():
     other = gap + [Finding("number_without_fact", 0)]
     assert turn_framework.judge(shadow(other), enabled=frozenset({"order"}), approved=approved).reason == (
         "held:number_without_fact")
+
+
+def test_the_turn_reads_ceiling_fits_a_close_with_every_effect():
+    """P16 (#3482): o teto do motor conta LEITURAS, não as voltas da IA do caminho de hoje. Com 5, "pra amanhã,
+    pode fechar" estourava e os termos não se apresentavam. Cabe: cotação e o que falta, os nomes de uma sacola
+    grande, e cotar de novo e reler o que falta depois de cada efeito da sequência."""
+    from conversational_commerce.engine.turn import EFFECT_SEQUENCE
+
+    from shopman.storefront.concierge.profile import _max_steps
+
+    assert _max_steps() >= 2 + 8 + 2 * len(EFFECT_SEQUENCE)
