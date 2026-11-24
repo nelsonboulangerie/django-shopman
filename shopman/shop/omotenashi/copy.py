@@ -147,17 +147,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    # Sacola vazia quando NENHUM item do cardápio pode ser pedido (OC-04): a copy
-    # do momento convida a pedir, e não há o que pedir. Vale em qualquer momento.
-    # O caminho que existe é o "Me avise" de cada item, no cardápio.
-    "CART_EMPTY_NO_ORDERING": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                title="Hoje não há encomenda aberta",
-                message="Toque em “Me avise” no item do cardápio.",
-            ),
-        },
-    },
 
     # ── Product states ────────────────────────────────────────────
 

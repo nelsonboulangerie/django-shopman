@@ -5,19 +5,7 @@
       "page": "home",
       "viewport": "m375",
       "noHorizontalScroll": true,
-      "eyebrow": {
-        "text": "Hoje não há encomenda aberta. Toque em “Me avise” no item.",
-        "fontSizePx": 14,
-        "fontWeight": "600",
-        "contrastOverPhoto": {
-          "worst": 4.58,
-          "p05": 8.87,
-          "median": 15.96
-        },
-        "aboveTitle": true,
-        "centeredWithTitle": true,
-        "insideViewport": true
-      },
+      "eyebrow": null,
       "heroCta": "Ver cardápio",
       "railHeading": "Do nosso cardápio",
       "railCards": [
@@ -48,34 +36,25 @@
       "viewport": "m375",
       "noHorizontalScroll": true,
       "empty": {
-        "title": "Hoje não há encomenda aberta",
+        "title": "Sacola vazia",
         "titleFontSizePx": 18,
         "titleContrast": 11.27,
-        "message": "Toque em “Me avise” no item do cardápio.",
-        "messageFontSizePx": 14,
-        "messageContrast": 5.38,
-        "titleAboveMessage": true,
+        "message": null,
+        "messageFontSizePx": null,
+        "messageContrast": null,
+        "titleAboveMessage": null,
+        "titleAboveButton": true,
         "centered": true,
-        "button": "Ver cardápio"
+        "button": "Ver cardápio",
+        "buttonFontSizePx": 14,
+        "buttonContrast": 7.25
       }
     },
     {
       "page": "home",
       "viewport": "desktop",
       "noHorizontalScroll": true,
-      "eyebrow": {
-        "text": "Hoje não há encomenda aberta. Toque em “Me avise” no item.",
-        "fontSizePx": 14,
-        "fontWeight": "600",
-        "contrastOverPhoto": {
-          "worst": 4.44,
-          "p05": 6.7,
-          "median": 16.33
-        },
-        "aboveTitle": true,
-        "centeredWithTitle": true,
-        "insideViewport": true
-      },
+      "eyebrow": null,
       "heroCta": "Ver cardápio",
       "railHeading": "Do nosso cardápio",
       "railCards": [
@@ -106,15 +85,18 @@
       "viewport": "desktop",
       "noHorizontalScroll": true,
       "empty": {
-        "title": "Hoje não há encomenda aberta",
+        "title": "Sacola vazia",
         "titleFontSizePx": 18,
         "titleContrast": 11.27,
-        "message": "Toque em “Me avise” no item do cardápio.",
-        "messageFontSizePx": 14,
-        "messageContrast": 5.38,
-        "titleAboveMessage": true,
+        "message": null,
+        "messageFontSizePx": null,
+        "messageContrast": null,
+        "titleAboveMessage": null,
+        "titleAboveButton": true,
         "centered": true,
-        "button": "Ver cardápio"
+        "button": "Ver cardápio",
+        "buttonFontSizePx": 14,
+        "buttonContrast": 7.25
       }
     }
   ]

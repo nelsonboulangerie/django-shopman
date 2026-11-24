@@ -13,18 +13,13 @@ import type { OrderingProjection } from '~/types/shopman'
 // Algo tem horário hoje (a casa ainda abre hoje).
 export const CLOSED_HERO_HINT = 'Já dá para pedir.'
 
-// Nada do cardápio pode ir à sacola: diz isso e aponta o "Me avise" de cada
-// item. Nunca promete finalização.
-export const NO_ORDERING_HINT = 'Hoje não há encomenda aberta. Toque em “Me avise” no item.'
-
 // O primeiro horário é de outro dia: a frase diz qual ("amanhã, terça").
 export function preorderHint (dayLabel: string): string {
   return `Encomende para ${dayLabel}.`
 }
 
 function orderingHint (ordering: OrderingProjection, statusOpen: boolean): string {
-  if (ordering.state === 'none') return NO_ORDERING_HINT
-  if (statusOpen) return ''
+  if (ordering.state === 'none' || statusOpen) return ''
   if (ordering.state === 'preorder' && ordering.day_label.trim()) return preorderHint(ordering.day_label.trim())
   return CLOSED_HERO_HINT
 }
@@ -32,10 +27,12 @@ function orderingHint (ordering: OrderingProjection, statusOpen: boolean): strin
 /**
  * A linha acima do título do hero, ou `undefined` quando não há o que dizer.
  *
- * Nada encomendável (aberta ou fechada): só isso e o "Me avise". Casa fechada
- * com o que pedir: a primeira frase do estado ("Fechado agora") e o que fazer.
- * Casa aberta com o que pedir: nada. Sem `ordering` (resposta sem o campo), só
- * o estado inteiro: a frase nunca promete o que a projeção não confirmou.
+ * Casa fechada com o que pedir: a primeira frase do estado ("Fechado agora") e
+ * o que fazer. Nada encomendável (aberta ou fechada) ou casa aberta: nada; o
+ * hero fica com a saudação e o botão, e o "Me avise" vive em cada item (dono,
+ * prévia de 24/11: "é uma informação que pertence aos itens"). Sem `ordering`
+ * (resposta sem o campo), só o estado: nunca promete o que a projeção não
+ * confirmou.
  */
 export function heroEyebrow (input: {
   statusOpen: boolean
@@ -47,7 +44,7 @@ export function heroEyebrow (input: {
     return input.statusOpen || !label ? undefined : `${label}.`
   }
   const hint = orderingHint(input.ordering, input.statusOpen)
-  if (input.ordering.state === 'none' || input.statusOpen) return hint || undefined
+  if (!hint) return undefined
   const state = label.split('. ')[0]?.trim()
   return state ? `${state}. ${hint}` : hint
 }

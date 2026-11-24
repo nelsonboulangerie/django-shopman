@@ -266,9 +266,8 @@ def test_x1_nada_encomendavel_a_home_e_a_sacola_nao_oferecem_finalizar():
     rendered = json.dumps(offers, ensure_ascii=False) + json.dumps(cart, ensure_ascii=False)
     assert "finalizar o pedido" not in rendered
     assert "Você pode encomendar" not in rendered
-    # A sacola vazia diz o que há (nenhuma encomenda) e aponta o aviso.
-    assert cart["empty_title"] == "Hoje não há encomenda aberta"
-    assert "Me avise" in cart["empty_message"]
+    # A sacola vazia fica no vazio simples: o "Me avise" vive em cada item.
+    assert (cart["empty_title"], cart["empty_message"]) == ("Sacola vazia", "")
     [continue_action] = [a for a in cart["actions"] if a["ref"] == "continue_shopping"]
     assert continue_action["label"] == "Ver cardápio"
 

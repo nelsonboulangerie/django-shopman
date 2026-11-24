@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   CLOSED_HERO_HINT,
-  NO_ORDERING_HINT,
   closedHeroCtaLabel,
   heroEyebrow,
   preorderHint
@@ -13,20 +12,11 @@ const PREORDER: OrderingProjection = { state: 'preorder', next_date: '2026-11-18
 const NONE: OrderingProjection = { state: 'none', next_date: null, day_label: '' }
 const CLOSED = 'Fechado agora. Abrimos amanhã às 9h'
 
-// Toda frase que convida a pedir (finalizar, encomendar, fazer pedido).
-const ORDER_OFFER = /finalizar|encomendar para|Encomende|dá para pedir|Fazer pedido/
-
 describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () => {
-  it('X1: com nada encomendável, a home não oferece finalização, aberta ou fechada', () => {
-    const closed = heroEyebrow({ statusOpen: false, statusLabel: CLOSED, ordering: NONE })
-    const open = heroEyebrow({ statusOpen: true, statusLabel: 'Aberto até 18h', ordering: NONE })
-
-    expect(closed).toBe('Hoje não há encomenda aberta. Toque em “Me avise” no item.')
-    expect(open).toBe(NO_ORDERING_HINT)
-    for (const text of [closed, open]) {
-      expect(text).not.toMatch(ORDER_OFFER)
-      expect(text).toMatch(/Me avise/)
-    }
+  it('X1: com nada encomendável, o topo não diz nada (aberta ou fechada) e o botão é o do cardápio', () => {
+    // O "Me avise" vive em cada item (dono, prévia de 24/11); a faixa do topo já diz quando abre.
+    expect(heroEyebrow({ statusOpen: false, statusLabel: CLOSED, ordering: NONE })).toBeUndefined()
+    expect(heroEyebrow({ statusOpen: true, statusLabel: 'Aberto até 18h', ordering: NONE })).toBeUndefined()
     // Sem rótulo próprio: o hero cai na copy do servidor (HOME_MENU_CTA, "Ver cardápio").
     expect(closedHeroCtaLabel(NONE)).toBeUndefined()
   })
@@ -62,7 +52,7 @@ describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () =>
   })
 
   it('frases curtas, sem travessão e sem "finaliza quando abrirmos" (beta 06/11; dono 24/11: prolixo)', () => {
-    for (const text of [CLOSED_HERO_HINT, NO_ORDERING_HINT, preorderHint('amanhã, quarta')]) {
+    for (const text of [CLOSED_HERO_HINT, preorderHint('amanhã, quarta')]) {
       expect(text).not.toMatch(/[—–]/)
       expect(text).not.toMatch(/finaliza quando abrirmos/)
       expect(text.split(/\s+/).length).toBeLessThanOrEqual(12)

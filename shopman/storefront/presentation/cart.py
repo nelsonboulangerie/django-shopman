@@ -851,17 +851,23 @@ def _empty_copy(
 
     ``nothing_to_order``: nenhum item do cardápio tem promessa (OC-04). A copy
     do momento convida a pedir ("Você pode encomendar para o próximo dia",
-    "Pode ir escolhendo o que quer"), e ninguém consegue; a sacola diz que hoje
-    não há encomenda aberta e aponta o aviso, em qualquer momento.
+    "Ainda dá tempo", "Pode ir escolhendo o que quer"), e ninguém consegue.
+    A sacola fica no vazio simples, sem frase: o que falta para cada item (o
+    "Me avise") é dito no próprio item (dono, prévia de 24/11).
     """
     if not is_empty:
         return "", ""
+    if nothing_to_order:
+        return _PLAIN_EMPTY_TITLE, ""
     from shopman.shop.omotenashi import OmotenashiContext
 
     omo = OmotenashiContext.from_request(request)
-    key = "CART_EMPTY_NO_ORDERING" if nothing_to_order else "CART_EMPTY"
-    entry = resolve_copy(key, moment=omo.moment, audience=omo.audience)
+    entry = resolve_copy("CART_EMPTY", moment=omo.moment, audience=omo.audience)
     return (entry.title or "").strip(), (entry.message or "").strip()
+
+
+#: O vazio sem convite: diz o estado da sacola e mais nada (OC-04).
+_PLAIN_EMPTY_TITLE = "Sacola vazia"
 
 
 def _cart_actions(
