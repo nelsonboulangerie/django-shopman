@@ -95,7 +95,7 @@ describe('SubstituteSheet', () => {
     await mountSuspended(SubstituteSheet)
     await nextTick()
     const body = document.body.textContent || ''
-    expect(body).toContain('Reservar 4 unidades no total')
+    expect(body).toContain('Reservar 4 no total')
     expect(body).not.toContain('Reservar 2')
   })
 
@@ -105,9 +105,20 @@ describe('SubstituteSheet', () => {
     await nextTick()
     const body = document.body.textContent || ''
     expect(body).toContain('Disponível a partir das 15h')
-    expect(body).toContain('Reservar 4 unidades')
+    // O lote cobre MENOS do que ela pediu (6): o número é a verdade que ela precisa ver.
+    expect(body).toContain('Reservar 4')
+    expect(body).not.toContain('unidades')
     expect(body).not.toContain('Agora temos')
     expect(body).not.toMatch(/pront/i)
+  })
+
+  it('quando o lote cobre o que ela pediu, o botão é só "Reservar" (dono, 24/11/2026)', async () => {
+    await setIssue({ ...OUT_OF_STOCK, requested_qty: 3, available_qty: 4, is_planned: true, planned_offer_title: 'Disponível a partir das 15h', planned_offer_message: '', substitutes: [] })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const labels = [...document.body.querySelectorAll('button')].map(button => (button.textContent || '').trim())
+    expect(labels).toContain('Reservar')
+    expect(labels.some(label => /^Reservar \d/.test(label))).toBe(false)
   })
 
   it('a line already at its ceiling is told so, with no button that shrinks it', async () => {

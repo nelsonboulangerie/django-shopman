@@ -73,11 +73,19 @@ const description = computed(() => {
   return `${itemName.value} acabou agora, e não temos substituto para oferecer hoje.`
 })
 // Linha que já existe: o número é o TOTAL que ela passa a ter, e o rótulo diz
-// isso. "Reservar 4 unidades" com 2 já na sacola leria como mais quatro.
+// isso. "Reservar 4" com 2 já na sacola leria como mais quatro.
+//
+// Próximo lote (dono, 24/11/2026): "Reservar" quando o lote cobre o que ela pediu;
+// só quando cobre MENOS, "Reservar 4", porque aí o número é a verdade que ela
+// precisa ver.
 const primaryQtyLabel = computed(() => {
-  const n = formatCount(availableQty.value!, 'unidade', 'unidades')
   const total = lineQty.value != null && lineQty.value > 0 ? ' no total' : ''
-  return isPlanned.value ? `Reservar ${n}${total}` : `Levar ${n}${total}`
+  if (isPlanned.value) {
+    const requested = cartIssue.value?.requested_qty ?? null
+    const covers = requested != null && availableQty.value! >= requested
+    return covers ? 'Reservar' : `Reservar ${availableQty.value}${total}`
+  }
+  return `Levar ${formatCount(availableQty.value!, 'unidade', 'unidades')}${total}`
 })
 
 function useAvailable () {
