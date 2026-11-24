@@ -65,6 +65,18 @@ export interface ReadyPromise {
   text: string
 }
 
+// Dá para pedir agora, e para quando (OC-04), escrito pelo servidor
+// (`presentation/promise.py`, `OrderingProjection`): o resumo das MESMAS promessas
+// dos cards. 'now': algo tem horário hoje; 'preorder': o primeiro horário é de
+// outro dia (`next_date` ISO, `day_label` "amanhã, terça" | "quinta, 19/11");
+// 'none': nenhum item do cardápio pode ir à sacola, e a tela não oferece
+// finalização. A frase da home e da sacola escolhe por aqui, nunca por constante.
+export interface OrderingProjection {
+  state: 'now' | 'preorder' | 'none'
+  next_date: string | null
+  day_label: string
+}
+
 // A loja onde a cliente retira (nome e endereço, da `Shop`). A página do produto
 // a nomeia e o JSON-LD de Offer a declara como local de retirada (#2652).
 export interface PickupStoreProjection {
@@ -425,6 +437,9 @@ export interface CartProjection {
   // O que entrou vindo de outro canal ("Entraram 3 itens da sacola do WhatsApp.") e
   // o que mudou, só se mudou (#3517).
   transfer_arrival?: CartTransferArrival | null
+  // Só na sacola vazia (com itens, cada linha já diz quando fica pronta): null
+  // com a sacola cheia. Ver `OrderingProjection`.
+  ordering?: OrderingProjection | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
@@ -808,6 +823,7 @@ export interface HomeProjection {
   featured_items: CatalogItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
+  ordering?: OrderingProjection
 }
 
 /**

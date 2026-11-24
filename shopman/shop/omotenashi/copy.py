@@ -291,7 +291,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="todo dia")},
     },
     "HOME_MENU_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ver Cardápio")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ver cardápio")},
     },
     "HOME_BIRTHDAY_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ver minha oferta de aniversário")},
@@ -391,7 +391,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Peça ao atendente. Preparamos na hora.")},
     },
     "HOW_PREORDER_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Escolha o dia ao finalizar o pedido. Encomendas com até {window} de antecedência.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Encomendas com até {window} de antecedência.")},
     },
     "HOW_TRACKING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Use seu telefone para consultar o status dos pedidos a qualquer momento.")},

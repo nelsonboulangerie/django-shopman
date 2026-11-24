@@ -8,7 +8,7 @@ status, opening hours, and a small set of featured items for "Direto do Forno".
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from django.http import HttpRequest
 
@@ -21,8 +21,10 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
 from shopman.storefront.presentation.catalog import (
     CatalogItemProjection,
     build_featured_items,
+    build_ordering,
     fresh_from_oven_skus,
 )
+from shopman.storefront.presentation.promise import ORDERING_NONE, OrderingProjection
 from shopman.storefront.presentation.public_information import HOME_FAQ_LIMIT, FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
@@ -303,6 +305,9 @@ class HomeProjection:
     featured_items: tuple[CatalogItemProjection, ...]
     origin_channel: str | None
     public_config: PublicConfigProjection
+    # Dá para pedir agora, e para quando (OC-04): a frase do topo com a loja
+    # fechada sai daqui, nunca de uma constante. Ver ``OrderingProjection``.
+    ordering: OrderingProjection
 
 
 def build_shell(
@@ -431,8 +436,13 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
     shell = build_shell(request, cart_has_items=cart_has_items)
     last_ref, last_items = _reorder_context(request)
     fresh = fresh_from_oven_skus(STOREFRONT_CHANNEL_REF)
+    catalog_ordering = build_ordering(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
     featured = build_featured_items(
-        channel_ref=STOREFRONT_CHANNEL_REF, request=request, limit=3, prefer_skus=fresh,
+        channel_ref=STOREFRONT_CHANNEL_REF,
+        request=request,
+        limit=3,
+        prefer_skus=fresh,
+        orderable_skus=catalog_ordering.orderable_skus,
     )
     # O título diz o que o rail mostra: "Direto do forno" só com fornada recente nele;
     # "Os mais pedidos" só com um mais pedido nele; sem nenhum dos dois, o rail é a
@@ -447,10 +457,13 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
     return HomeProjection(
         omotenashi=shell.omotenashi,
         hero_copy=_home_hero_copy(shell.omotenashi),
-        sections_copy=_home_sections_copy(
-            shell.omotenashi,
-            default_city=shell.shop.default_city,
-            rail_heading_key=rail_heading_key,
+        sections_copy=_without_preorder_offer(
+            _home_sections_copy(
+                shell.omotenashi,
+                default_city=shell.shop.default_city,
+                rail_heading_key=rail_heading_key,
+            ),
+            ordering=catalog_ordering.ordering,
         ),
         auth_copy=shell.auth_copy,
         pwa_copy=shell.pwa_copy,
@@ -465,6 +478,23 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         featured_items=featured,
         origin_channel=shell.origin_channel,
         public_config=shell.public_config,
+        ordering=catalog_ordering.ordering,
+    )
+
+
+def _without_preorder_offer(
+    sections: HomeSectionsCopyProjection, *, ordering: OrderingProjection
+) -> HomeSectionsCopyProjection:
+    """Sem nada encomendável, a faceta de encomenda sai de "Como funciona" (OC-04, X1).
+
+    "Encomendas com até 30 dias de antecedência" convida a encomendar; o laudo da Etapa II (U1) a mediu na home
+    às 22h, com 0 de 31 itens podendo ir à sacola. Com ``ordering.state ==
+    "none"`` ela some; com algo encomendável, fica como está.
+    """
+    if ordering.state != ORDERING_NONE:
+        return sections
+    return replace(
+        sections, how_facets=tuple(f for f in sections.how_facets if f.ref != "preorder")
     )
 
 

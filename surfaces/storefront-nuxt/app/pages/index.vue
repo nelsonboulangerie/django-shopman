@@ -9,6 +9,7 @@ import {
   websiteJsonLd
 } from '~/presentation/seo'
 import type { Action } from '~/types/shopman'
+import { closedHeroCtaLabel } from '~/presentation/home'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
@@ -249,7 +250,7 @@ useHead({
               :reorder-loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
               :status-open="operationalStatus.isOpen"
               :status-label="operationalStatus.label"
-              closed-cta-label="Fazer pedido"
+              :closed-cta-label="closedHeroCtaLabel(home.ordering)"
               @reorder="handleReorder"
             />
 

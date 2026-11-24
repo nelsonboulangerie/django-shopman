@@ -239,3 +239,22 @@ def test_storefront_site_matches_shared_contract(canonical_catalog):
     payload = projection_data(build_site(shop=shop, channel_ref=STOREFRONT_CHANNEL_REF))
 
     _assert_matches_contract(payload, "storefront_site")
+
+
+def test_storefront_ordering_matches_shared_contract(canonical_catalog):
+    """"Dá para pedir?" (OC-04): a home e a sacola vazia dizem o mesmo, na mesma forma.
+
+    O cardápio canônico, terça às 10h com a casa aberta, tem pronto hoje: ``now``.
+    O vitest atravessa este arquivo pela frase do topo (``presentation/home.ts``).
+    """
+    from django.core.cache import cache
+    from django.test import Client
+
+    cache.clear()
+    client = Client()
+    home = client.get("/api/v1/storefront/home/").json()["home"]
+    cart = client.get("/api/v1/storefront/cart/").json()["cart"]
+
+    _assert_matches_contract(
+        {"home": home["ordering"], "empty_cart": cart["ordering"]}, "storefront_ordering"
+    )
