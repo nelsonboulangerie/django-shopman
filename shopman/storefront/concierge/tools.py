@@ -2447,6 +2447,9 @@ AMEND_EFFECT = {
     "total": "Total: {after} (era {before}).",
     "total_same": "Total: continua {total}.",
     "collect": "A pagar na {mode}: {amount}.",
+    # Pix aberto e nada pago: o Pix antigo é cancelado e o novo sai pelo valor novo
+    # (decisão do dono, 24/11/2026).
+    "new_pix": "O código Pix muda para o novo valor.",
 }
 AMEND_CONFIRM = "Para confirmar, responda: confirmo {code}"
 AMEND_STALE = "O pedido {ref} mudou desde a minha pergunta. Confira de novo:"
@@ -2504,6 +2507,10 @@ AMEND_REFUSED = {
         "O pagamento do pedido {ref} está dividido em mais de uma forma, e aí a diferença precisa da equipe."
     ),
     "payment_unreadable": "Não consegui conferir o pagamento do pedido {ref} agora.",
+    "pix_paid_meanwhile": "O Pix do pedido {ref} foi pago agora há pouco, e aí a alteração precisa da equipe.",
+    "open_pix_not_cancelled": (
+        "Não consegui cancelar o código Pix antigo do pedido {ref} agora, e aí o pedido continua como estava."
+    ),
     "activation_running": "O pedido {ref} está indo para a cozinha neste instante.",
     "generic": "Não consigo fazer essa alteração no pedido {ref} por aqui.",
 }

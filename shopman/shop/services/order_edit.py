@@ -116,6 +116,10 @@ SETTLE_REFUND_GATEWAY = "refund_gateway"
 SETTLE_REFUND_CASH = "refund_cash"
 #: Estorno na maquininha do balcão — pendência guiada, registrada pelo operador.
 SETTLE_REFUND_CARD_MACHINE = "refund_card_machine"
+#: O Pix aberto (nada pago) é trocado por um Pix novo pelo valor novo (decisão do
+#: dono, 24/11/2026, OC-11): só quando quem edita pede (``reissue_open_pix``).
+#: ``amount_q`` = o valor do Pix novo.
+SETTLE_NEW_PIX = "new_pix"
 
 REFUND_KINDS = frozenset({SETTLE_REFUND_GATEWAY, SETTLE_REFUND_CASH, SETTLE_REFUND_CARD_MACHINE})
 
@@ -183,6 +187,8 @@ class EditPlan:
     new_line_ids: tuple[str, ...] = ()
     #: Chaves de ``Order.data`` que a edição reescreve (``None`` = remover).
     data_updates: dict = field(default_factory=dict)
+    #: O Pix aberto do pedido é cancelado e um novo nasce pelo valor novo (``SETTLE_NEW_PIX``).
+    reissues_pix: bool = False
 
 
 @dataclass(frozen=True)
@@ -299,7 +305,10 @@ def product_lines(order) -> list[dict]:
 # ── Prévia ───────────────────────────────────────────────────────────────────
 
 
-def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, source: str = SOURCE) -> EditPlan:
+def plan(
+    order, *, lines=None, notes=None, fulfillment=None, schedule=None, source: str = SOURCE,
+    reissue_open_pix: bool = False,
+) -> EditPlan:
     """Calcula a edição sem gravar nada: itens, total, diferença e o destino dela.
 
     - ``lines``: a lista FINAL de itens de produto, ``[{line_id?, sku, qty,
@@ -316,6 +325,10 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
     - ``schedule``: ``{date, slot}``; ``None`` mantém.
     - ``source``: quem edita (:data:`SOURCE`, o balcão, :data:`CONCIERGE_SOURCE` ou
       :data:`CONCIERGE_AMEND_SOURCE`);
+    - ``reissue_open_pix``: com o Pix do pedido aberto e nada pago, o valor pode
+      mudar: o Pix aberto é trocado por um novo pelo valor novo (:data:`SETTLE_NEW_PIX`,
+      decisão do dono de 24/11/2026). Sem ele, a cobrança aberta trava a mudança de
+      valor, como sempre;
       vai para a linha nova (``meta.added_by``) e para o evento do histórico.
     """
     if source not in _ID_PREFIXES:
@@ -376,7 +389,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
 
     # ── dinheiro
     settlement, balance_before_q, balance_after_q, intents = _settlement(
-        order, previous_total_q=previous_total_q, total_q=total_q,
+        order, previous_total_q=previous_total_q, total_q=total_q, reissue_open_pix=reissue_open_pix,
     )
     data_updates = dict(receiving["data_updates"])
     if notes_changed:
@@ -420,6 +433,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
         balance_before_q=balance_before_q,
         balance_after_q=balance_after_q,
         requires_manager_approval=settlement.kind in REFUND_KINDS,
+        reissues_pix=settlement.kind == SETTLE_NEW_PIX,
         new_line_ids=tuple(new_line_ids),
         data_updates=data_updates if (items_changed or notes_changed or receiving["changed"]) else {},
     )
@@ -431,7 +445,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
 
 def edit(
     order, *, lines=None, notes=None, fulfillment=None, schedule=None, actor: str, approved_by=None,
-    source: str = SOURCE, notify_customer: bool = True,
+    source: str = SOURCE, notify_customer: bool = True, reissue_open_pix: bool = False,
 ) -> EditResult:
     """Aplica a edição sob o lock do pedido, numa transação.
 
@@ -443,6 +457,11 @@ def edit(
     ``notify_customer=False`` quando quem edita já está falando com o cliente e
     leva o que o aviso ``order_updated`` diria na própria resposta (a Concierge):
     o cliente recebe UMA mensagem por edição, nunca duas.
+
+    ``reissue_open_pix=True`` (a Concierge, decisão do dono de 24/11/2026): com o Pix
+    aberto e nada pago, o valor muda e o Pix aberto é trocado por um novo pelo valor
+    novo. Pedido e pagamentos travados antes da prévia; o Pix aberto é cancelado no
+    gateway por último, e pago no meio ou recusado lá, a edição inteira volta.
     """
     from shopman.orderman.exceptions import ValidationError
 
@@ -450,7 +469,16 @@ def edit(
 
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
-        result = plan(locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule, source=source)
+        if reissue_open_pix:
+            # Os pagamentos do pedido travados ANTES da prévia: um Pix confirmado agora
+            # espera esta transação, e a prévia que decide trocar o Pix é a que vale.
+            from shopman.shop.services import payment as payment_service
+
+            payment_service.lock_order_payment(locked)
+        result = plan(
+            locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule, source=source,
+            reissue_open_pix=reissue_open_pix,
+        )
         if not result.changed:
             return EditResult(plan=result, revision=None)
         if result.requires_manager_approval and approved_by is None:
@@ -513,6 +541,16 @@ def edit(
             transaction.on_commit(lambda: _refund_gateway(ref, amount_q=amount_q, idempotency_key=key))
         if result.items_changed:
             _relink_production(locked, previous_skus=previous_skus)
+        if result.reissues_pix:
+            # O Pix aberto morre no gateway por último, quando tudo o mais já passou:
+            # pago no meio ou recusado lá, a edição inteira volta e nada muda (nunca um
+            # estorno silencioso). Depois, o Pix novo pelo total novo (``initiate`` cobra
+            # o total efetivo); se ele não nascer, o pedido fica em Pix com o erro, e o
+            # "Tentar novamente" do acompanhamento refaz.
+            from shopman.shop.services import payment as payment_service
+
+            _retire_open_pix(locked)
+            payment_service.initiate(locked)
         if notify_customer:
             _notify_customer(locked, result)
 
@@ -849,7 +887,7 @@ def _schedule(order, schedule) -> tuple[bool, str, str]:
 # ── A diferença de valor ─────────────────────────────────────────────────────
 
 
-def _settlement(order, *, previous_total_q: int, total_q: int):
+def _settlement(order, *, previous_total_q: int, total_q: int, reissue_open_pix: bool = False):
     """O destino da diferença — e a recusa quando o meio não sabe devolver parte."""
     from shopman.shop.services import payment as payment_service
 
@@ -874,6 +912,10 @@ def _settlement(order, *, previous_total_q: int, total_q: int):
             code="on_account_total_locked",
         )
     if total_changes and _open_digital_charge(order):
+        if reissue_open_pix and captured == 0 and on_account == 0 and _open_charge_is_pending_pix(order):
+            # Decisão do dono (24/11/2026): nada pago e o Pix aberto, o Pix aberto dá
+            # lugar a um novo pelo valor novo. O cancelamento e o Pix novo são do ``edit``.
+            return Settlement(SETTLE_NEW_PIX, total_q, "pix"), balance_before_q, total_q, _intents(order)
         raise EditRefused(
             "Há uma cobrança (Pix ou link) com o valor antigo esperando o cliente. "
             "Receba ou cancele essa cobrança antes de mudar o valor.",
@@ -970,6 +1012,66 @@ def _open_digital_charge(order) -> bool:
 
 
 def _payment_after(
+    order, *, total_q: int, settlement: Settlement, balance_after_q: int, fulfillment_after: str,
+    delivery_payment_method: str, intents,
+) -> dict | None:
+    if settlement.kind == SETTLE_NEW_PIX:
+        # O Pix aberto sai (o ``edit`` cancela no gateway) e o bloco perde os dados
+        # dele: o ``payment.initiate`` abre o novo pelo total novo. A forma continua Pix.
+        payment = {key: value for key, value in ((order.data or {}).get("payment") or {}).items()
+                   if key not in _OPEN_CHARGE_KEYS}
+        if "amount_q" in payment:
+            payment["amount_q"] = int(total_q)
+        return payment
+    return _payment_after_settlement(
+        order, total_q=total_q, settlement=settlement, balance_after_q=balance_after_q,
+        fulfillment_after=fulfillment_after, delivery_payment_method=delivery_payment_method, intents=intents,
+    )
+
+
+#: Os dados da cobrança da vez em ``Order.data["payment"]``: saem com o Pix aberto que
+#: é trocado, para o ``payment.initiate`` abrir o novo (``SETTLE_NEW_PIX``).
+_OPEN_CHARGE_KEYS = ("intent_ref", "idempotency_key", "qr_code", "copy_paste", "expires_at", "checkout_url", "error")
+
+
+def _open_charge_is_pending_pix(order) -> bool:
+    """A cobrança aberta do pedido é só Pix esperando pagamento (nenhum cartão, nada autorizado)?"""
+    from shopman.payman import PaymentService
+
+    open_intents = list(
+        PaymentService.get_by_order(order.ref)
+        .filter(status__in=("pending", "authorized"))
+        .exclude(method="account")
+        .exclude(gateway="")
+    )
+    return bool(open_intents) and all(
+        str(intent.method or "").lower() == "pix" and intent.status == "pending" for intent in open_intents
+    )
+
+
+def _retire_open_pix(order) -> None:
+    """Cancela o Pix aberto no gateway, com o pedido e os pagamentos travados, ou recusa.
+
+    Pago no meio (o pagamento chegou ao Payman), o pagamento vale e a edição volta
+    com o motivo. Recusado no gateway (o cliente pagou lá e o aviso ainda não
+    chegou, ou o gateway não respondeu), nada muda: o Pix antigo segue valendo.
+    """
+    from shopman.shop.services import payment as payment_service
+
+    if (payment_service.captured_balance_q(order) or 0) > 0:
+        raise EditRefused(
+            "O Pix deste pedido foi pago agora há pouco: o pagamento vale e a edição não foi feita.",
+            code="pix_paid_meanwhile",
+        )
+    payment_service.cancel_stale_intents(order, keep_intent_ref="", reason="superseded_by_order_edit")
+    if _open_digital_charge(order):
+        raise EditRefused(
+            "O Pix aberto deste pedido não pôde ser cancelado agora: nada foi alterado.",
+            code="open_pix_not_cancelled",
+        )
+
+
+def _payment_after_settlement(
     order, *, total_q: int, settlement: Settlement, balance_after_q: int, fulfillment_after: str,
     delivery_payment_method: str, intents,
 ) -> dict | None:
@@ -1177,6 +1279,8 @@ def money_for_customer(result: EditPlan) -> str:
     total = _brl(result.total_q)
     where = "na entrega" if result.fulfillment_after == "delivery" else "na retirada"
     settlement = result.settlement
+    if settlement.kind == SETTLE_NEW_PIX:
+        return f"O novo total é {total}. O código Pix muda para o novo valor."
     if settlement.kind in REFUND_KINDS:
         amount = _brl(settlement.amount_q)
         if settlement.kind == SETTLE_REFUND_CASH:
@@ -1441,6 +1545,7 @@ __all__ = [
     "GOODS_STILL_IN_THE_HOUSE",
     "REFUND_KINDS",
     "SETTLE_COLLECT",
+    "SETTLE_NEW_PIX",
     "SETTLE_NONE",
     "SETTLE_REFUND_CARD_MACHINE",
     "SETTLE_REFUND_CASH",

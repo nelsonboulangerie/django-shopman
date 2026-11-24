@@ -67,6 +67,8 @@ TEAM_CODES = frozenset({
     "on_account_total_locked",
     "split_pending_tenders",
     "payment_unreadable",
+    "pix_paid_meanwhile",
+    "open_pix_not_cancelled",
     "fiscal_authorized",
     "activation_running",
 })
@@ -209,6 +211,8 @@ class Result:
     team_reason: str = ""
     #: A pergunta que fica no ar (``flags["pending_amendment"]``) quando falta o que mudar.
     pending: dict | None = None
+    #: O que segue em mensagem própria: o código Pix novo (OC-05), para copiar.
+    copies: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         return {
@@ -221,6 +225,7 @@ class Result:
             "team": self.team,
             "team_reason": self.team_reason,
             "order_found": bool(self.order_ref),
+            "copies": list(self.copies),
         }
 
 
@@ -538,7 +543,7 @@ def draft(conversation, order, request: Request, *, options=None) -> tuple[Draft
             return None, stop
         edit_args["fulfillment"] = fulfillment
     try:
-        plan = order_edit.plan(order, source=order_edit.CONCIERGE_AMEND_SOURCE, **edit_args)
+        plan = order_edit.plan(order, source=order_edit.CONCIERGE_AMEND_SOURCE, reissue_open_pix=True, **edit_args)
     except order_edit.EditRefused as exc:
         return None, _refused(order, exc.code, exc.message, request.kind)
     if not plan.changed:
@@ -595,6 +600,8 @@ def effect_lines(found: Draft) -> list[str]:
         rows.append(tools.AMEND_EFFECT["total"].format(after=_brl(plan.total_q), before=_brl(plan.previous_total_q)))
     else:
         rows.append(tools.AMEND_EFFECT["total_same"].format(total=_brl(plan.total_q)))
+    if plan.reissues_pix:
+        rows.append(tools.AMEND_EFFECT["new_pix"])
     if plan.settlement.kind == order_edit.SETTLE_COLLECT and plan.balance_after_q != plan.balance_before_q:
         rows.append(tools.AMEND_EFFECT["collect"].format(mode=mode, amount=_brl(plan.settlement.amount_q)))
     return rows
@@ -684,6 +691,7 @@ def propose(conversation, request: Request, *, order_ref: str = "", text: str = 
     _set_pending(conversation, {
         "stage": STAGE_CONFIRM, "kind": request.kind, "order_ref": order.ref,
         "request": request.args(), "options": options or [], "token": token, "code": code,
+        "reissues_pix": bool(found.plan.reissues_pix),
     })
     return Result(
         "proposed", order.ref, lead=tools.AMEND_PREVIEW_LEAD.format(ref=order.ref), lines=effect_lines(found),
@@ -722,11 +730,25 @@ def confirm(conversation, code: str, *, channel_ref: str) -> Result:
         clear(conversation)
         return Result("no_order", lead=tools.AMEND_REFUSED["no_order"])
     _refresh(order)
+    if state.get("reissues_pix") and _open_pix(order):
+        # Antes de trocar o Pix, a pergunta ao gateway: pago e ainda sem aviso, o pagamento
+        # é registrado agora (fora da transação da alteração, para valer mesmo se ela
+        # voltar), e a prévia recalculada abaixo segue o caminho do pedido pago.
+        from shopman.shop.services import payment as payment_service
+
+        if payment_service.settle_from_gateway(order) == "indeterminate":
+            clear(conversation)
+            return _refused(order, "payment_unreadable", "", request.kind)
+        order.refresh_from_db()
     with transaction.atomic():
-        # A posse da conversa reconferida na transação que grava (#2625), e o pedido travado:
-        # a prévia é recalculada sob a trava, e só o que o cliente viu é aplicado (X5).
+        # A posse da conversa reconferida na transação que grava (#2625), e o pedido e os
+        # pagamentos travados: a prévia é recalculada sob a trava, e só o que o cliente viu
+        # é aplicado (X5). Um Pix confirmado agora espera esta transação.
+        from shopman.shop.services import payment as payment_service
+
         lock_turn_authority(conversation, channel_ref=channel_ref, level=tools.CART_LEVEL)
         locked = Order.objects.select_for_update().get(pk=order.pk)
+        payment_service.lock_order_payment(locked)
         found, stop = draft(conversation, locked, request, options=state.get("options") or [])
         if stop is not None:
             clear(conversation)
@@ -734,30 +756,55 @@ def confirm(conversation, code: str, *, channel_ref: str) -> Result:
         token = found.token()
         if token != state.get("token"):
             fresh = _code_for(token, avoid=str(state.get("code") or ""))
-            _set_pending(conversation, {**state, "token": token, "code": fresh})
+            _set_pending(conversation, {**state, "token": token, "code": fresh,
+                                        "reissues_pix": bool(found.plan.reissues_pix)})
             return Result("stale", ref, lead=tools.AMEND_STALE.format(ref=ref), lines=effect_lines(found),
                           confirm_code=fresh)
         try:
             # Uma mensagem só: a resposta da Nice leva o efeito, e o aviso ``order_updated`` não sai.
             done = order_edit.edit(
                 locked, actor=ACTOR, source=order_edit.CONCIERGE_AMEND_SOURCE, notify_customer=False,
-                **found.edit_args,
+                reissue_open_pix=True, **found.edit_args,
             )
         except order_edit.EditRefused as exc:
-            transaction.set_rollback(True)
-            clear(conversation)
-            return _refused(locked, exc.code, exc.message, request.kind)
-        ConversationMessage.objects.create(
-            conversation=conversation,
-            role=ConversationMessage.Role.ASSISTANT,
-            kind=ConversationMessage.Kind.NOTE,
-            text=f"{HISTORY_NOTE}: {tools.AMEND_GESTURES[request.kind]} (pedido {ref}).",
-            envelope={"version": 3, "order_ref": ref, "turn_fence": conversation.turn_fence},
-        )
-        _set_pending(conversation, {**state, "stage": STAGE_APPLIED})
+            # O ``edit`` voltou inteiro (a transação dele): nada foi gravado no pedido nem
+            # no pagamento. A recusa sai depois deste bloco.
+            refusal = _refused(locked, exc.code, exc.message, request.kind)
+        else:
+            refusal = None
+            ConversationMessage.objects.create(
+                conversation=conversation,
+                role=ConversationMessage.Role.ASSISTANT,
+                kind=ConversationMessage.Kind.NOTE,
+                text=f"{HISTORY_NOTE}: {tools.AMEND_GESTURES[request.kind]} (pedido {ref}).",
+                envelope={"version": 3, "order_ref": ref, "turn_fence": conversation.turn_fence},
+            )
+            _set_pending(conversation, {**state, "stage": STAGE_APPLIED})
+    if refusal is not None:
+        clear(conversation)
+        return refusal
     logger.info("concierge.amend: order=%s kind=%s revision=%s", ref, request.kind, done.revision)
-    return Result("applied", ref, lead=tools.AMEND_DONE["applied"].format(ref=ref),
-                  lines=effect_lines(Draft(found.order, found.kind, found.edit_args, done.plan)))
+    result = Result("applied", ref, lead=tools.AMEND_DONE["applied"].format(ref=ref),
+                    lines=effect_lines(Draft(found.order, found.kind, found.edit_args, done.plan)))
+    if done.plan.reissues_pix:
+        # O código Pix novo, sozinho na mensagem seguinte (OC-05); sem ele, o que a página
+        # oferece ("Tentar novamente"), pela mesma frase do OC-12.
+        locked.refresh_from_db()
+        code = str(((locked.data or {}).get("payment") or {}).get("copy_paste") or "").strip()
+        if code:
+            result.lines.append(tools.PIX_CODE_FOLLOWS)
+            result.copies = [code]
+        else:
+            result.lines.append(tools.REPAY_DONE["still_failing"].format(ref=ref))
+    return result
+
+
+def _open_pix(order) -> bool:
+    """O pedido é de Pix, com a cobrança esperando pagamento (o caso da troca do Pix)."""
+    from shopman.shop.services import payment as payment_service
+
+    method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
+    return method == "pix" and (payment_service.get_payment_status(order) or "").lower() == "pending"
 
 
 # ── O turno ───────────────────────────────────────────────────────────
@@ -830,6 +877,7 @@ def outcome(result: dict, *, memory):
     return TurnOutcome(
         reply_text=text, layer=LAYER_CONTEXT, memory=memory, tool_events=[event],
         order_ref=str(result.get("order_ref") or "") if result.get("code") == "applied" else "",
+        extra_replies=list(result.get("copies") or []),
     )
 
 
@@ -873,7 +921,9 @@ def offered(order) -> list[str]:
         if qty > 1 and qty == qty.to_integral_value():
             trial.insert(0, {"line_id": first["line_id"], "sku": first["sku"], "qty": str(qty - 1)})
         try:
-            plan = order_edit.plan(order, lines=trial, source=order_edit.CONCIERGE_AMEND_SOURCE) if trial else None
+            plan = order_edit.plan(
+                order, lines=trial, source=order_edit.CONCIERGE_AMEND_SOURCE, reissue_open_pix=True,
+            ) if trial else None
         except order_edit.EditRefused:
             plan = None
         if plan is not None and not plan.requires_manager_approval:
