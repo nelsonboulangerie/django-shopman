@@ -382,6 +382,15 @@ def emit(order) -> None:
         logger.info("fiscal.emit: pedido de teste order=%s — emissão suprimida", order.ref)
         return
 
+    # Pedido desfeito não teve saída de mercadoria. O caso que mais pesa é a
+    # encomenda paga e não retirada: o valor retido é multa, com recibo e sem
+    # NFC-e (contador, #2695). O handler também recusa pedido desfeito, mas a
+    # emissão não deve nem entrar na fila.
+    status = str(getattr(order, "status", "") or "")
+    if status in ("cancelled", "returned"):
+        logger.info("fiscal.emit: pedido %s order=%s — sem saída, sem NFC-e", status, order.ref)
+        return
+
     if not fiscal_pool.get_backend():
         return
 

@@ -314,14 +314,14 @@ const screenSubtitle = computed(() => {
 const screenPlanned = computed(() => {
   if (!selectedOrder.value) return null;
   const value = Number(selectedOrder.value.planned_qty);
-  return Number.isFinite(value) ? Math.round(value) : null;
+  return Number.isFinite(value) ? value : null;
 });
 // A fornada real que entrou no forno (started): quando diverge do previsto,
 // é ELA que ancora a finalização — ver `ovenAnchor` em presentation/qc.ts.
 const screenStarted = computed(() => {
   if (!selectedOrder.value?.started_qty) return null;
   const value = Number(selectedOrder.value.started_qty);
-  return Number.isFinite(value) ? Math.round(value) : null;
+  return Number.isFinite(value) ? value : null;
 });
 
 // O quadradão "Finalizar" mostra a âncora, e a âncora É o previsto DESTA
@@ -643,6 +643,7 @@ function onTimerKeydown(event: KeyboardEvent) {
       :subtitle="screenSubtitle"
       :planned="screenPlanned"
       :started="screenStarted"
+      :unit="selectedOrder?.output_unit ?? ''"
       :grades="kiosk.grades"
       :defects="kiosk.defects"
       :submitting="submitting"

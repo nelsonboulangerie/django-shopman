@@ -206,6 +206,19 @@ class OpenElsewhereProjection:
 
 
 @dataclass(frozen=True)
+class CartTransferArrivalProjection:
+    """O que entrou na sacola vindo de outro canal (OC-16, #3517).
+
+    Uma linha ("Entraram 3 itens da sacola do WhatsApp.") e, só se houver, as
+    diferenças, cada uma numa frase curta. Sai enquanto a sacola estiver aberta.
+    """
+
+    channel: str
+    title: str
+    lines: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CartProjection:
     """Full projection for the storefront cart."""
 
@@ -315,6 +328,12 @@ class CartProjection:
     # Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
     # sincronização. Vazio para visitante, para link encaminhado e sem outra sacola.
     open_elsewhere: tuple[OpenElsewhereProjection, ...] = ()
+    # "Continuar pelo WhatsApp" (OC-16, C02): a sacola passa para a conversa com a
+    # Nice pela mensagem pronta com código NB. Só existe quando a passagem é
+    # possível agora (X1): ponte ligada, número da loja e sacola com itens.
+    continue_in_conversation: Action | None = None
+    # O que entrou vindo de outro canal, e as diferenças se houver (OC-16, #3517).
+    transfer_arrival: CartTransferArrivalProjection | None = None
     # Dá para pedir agora, e para quando (OC-04), pela mesma leitura da home
     # (``catalog.build_ordering``). Só na sacola VAZIA, que é onde a tela convida
     # a pedir ("Você pode encomendar para o próximo dia"); com itens, cada linha
@@ -392,6 +411,8 @@ def build_cart(
         reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
         reservation_lapsed_display=_lapsed_display(lapsed_at),
         open_elsewhere=_open_elsewhere(request, channel_ref),
+        continue_in_conversation=_continue_in_conversation(request, channel_ref, is_empty=data.is_empty),
+        transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, data.transferred_from),
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -819,6 +840,7 @@ def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhe
     customer = get_authenticated_customer(request)
     if customer is None:
         return ()
+    bridge = _bridge_channel(channel_ref)
     return tuple(
         OpenElsewhereProjection(
             channel=entry.channel_ref,
@@ -827,16 +849,177 @@ def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhe
             items_phrase=cart_data.items_phrase(entry),
             subtotal_q=entry.subtotal_q,
             subtotal_display=_money(entry.subtotal_q),
-            bring=Action(
-                ref="bring_cart",
-                kind="mutation",
-                label="Trazer esta sacola para cá",
-                priority="secondary",
-                enabled=False,
-                reason="A passagem da sacola entre canais ainda não está ligada.",
-            ),
+            bring=_bring_action(entry.channel_ref, entry.channel_name, bridge=bridge),
         )
         for entry in cart_data.open_elsewhere(customer.ref, channel_ref)
+    )
+
+
+def _bridge_channel(channel_ref: str) -> str:
+    """O canal da Nice quando a ponte de sacola está ligada e não é este canal; vazio se não."""
+    from shopman.storefront.concierge.service import transfer_bridge_channel
+
+    bridge = transfer_bridge_channel()
+    return bridge if bridge and bridge != channel_ref else ""
+
+
+def _bring_action(source_channel: str, channel_name: str, *, bridge: str) -> Action:
+    """"Trazer a sacola do WhatsApp": ligada só quando a passagem é possível agora (X1).
+
+    Os itens entram na sacola daqui (o mesmo item soma): é um gesto só, sem escolha.
+    """
+    label = f"Trazer a sacola do {channel_name}"
+    if source_channel and source_channel == bridge:
+        return Action(
+            ref="bring_cart",
+            kind="mutation",
+            label=label,
+            priority="secondary",
+            href="/api/v1/cart/bring/",
+            method="POST",
+            payload_schema={"channel": source_channel},
+            idempotency="none",
+        )
+    return Action(
+        ref="bring_cart",
+        kind="mutation",
+        label=label,
+        priority="secondary",
+        enabled=False,
+        reason="A passagem da sacola entre canais ainda não está ligada.",
+    )
+
+
+def nice_answers_this_customer(request: HttpRequest, bridge_channel: str) -> bool:
+    """A Nice atende ESTE cliente no WhatsApp? Sem isso, oferecer a passagem é mentir (X1).
+
+    A Concierge pode atender só uma coorte (``allowed_subjects`` da conexão). Quem já
+    conversou com ela tem assinante conhecido: a resposta é a da admissão do runtime
+    (``service.is_allowed`` para o vínculo dele). Anônimo, ou cliente sem conversa:
+    só quando a Nice atende todo visitante, o mesmo predicado da home (OC-06).
+    """
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import service
+    from shopman.storefront.identity import get_authenticated_customer
+    from shopman.storefront.presentation.home import _concierge_answers_whatsapp
+
+    customer = get_authenticated_customer(request) if getattr(request, "customer", None) is not None else None
+    if customer is not None:
+        binding = (
+            ConversationBinding.objects.filter(
+                conversation__customer_ref=customer.ref,
+                conversation__channel_ref=bridge_channel,
+                status=ConversationBinding.Status.ACTIVE,
+            )
+            .order_by("-pk")
+            .first()
+        )
+        if binding is not None:
+            return service.is_allowed(binding)
+    return _concierge_answers_whatsapp()
+
+
+def _continue_in_conversation(request: HttpRequest, channel_ref: str, *, is_empty: bool) -> Action | None:
+    """"Continuar pelo WhatsApp", só quando a passagem é possível agora (X1, OC-16)."""
+    from shopman.storefront.identity import knows_only_the_number
+
+    if is_empty or knows_only_the_number(request):
+        return None
+    bridge = _bridge_channel(channel_ref)
+    if not bridge or not cart_data.conversation_number_available() or not nice_answers_this_customer(request, bridge):
+        return None
+    return Action(
+        ref="continue_in_conversation",
+        kind="mutation",
+        label="Continuar pelo WhatsApp",
+        priority="secondary",
+        href="/api/v1/cart/continue-in-conversation/",
+        method="POST",
+        idempotency="none",
+    )
+
+
+#: Como a loja e a Nice nomeiam o que não viajou na passagem da sacola (OC-16, #3517).
+_FULFILLMENT_NAMES = {"delivery": "Entrega", "pickup": "Retirada"}
+_PAYMENT_NAMES = {"pix": "Pix", "card": "Cartão", "cash": "Dinheiro", "external": "Pagamento externo"}
+_ADDRESS_FIELDS = frozenset(
+    {"delivery_address", "delivery_address_structured", "saved_address_id", "address_label"}
+)
+_GIFT_FIELDS = frozenset({"is_gift", "recipient", "gift_message", "gift_hide_values"})
+
+
+def transfer_difference_lines(differences) -> list[str]:
+    """Uma frase por diferença do recibo da passagem (``TransferReceipt.differences``).
+
+    A mesma frase na loja e na conversa, dita do lado que recebeu a sacola ("aqui").
+    Tipo que esta função não conhece vira uma frase que manda conferir, nunca silêncio.
+    """
+    lines: list[str] = []
+    for diff in differences or ():
+        if not isinstance(diff, dict):
+            continue
+        kind = diff.get("kind")
+        name = str(diff.get("name") or diff.get("sku") or "Um item")
+        if kind == "price_changed":
+            lines.append(f"{name}: agora {_plain_money(diff.get('to_q'))} (era {_plain_money(diff.get('from_q'))}).")
+        elif kind == "qty_reduced":
+            lines.append(f"{name}: só temos {diff.get('to_qty')} (eram {diff.get('from_qty')}).")
+        elif kind == "unavailable":
+            lines.append(f"{name}: indisponível, ficou de fora.")
+        elif kind == "fulfillment_not_available":
+            label = _FULFILLMENT_NAMES.get(str(diff.get("fulfillment_type") or ""), "A forma de receber")
+            lines.append(f"{label} indisponível aqui: escolha outra ao finalizar.")
+        elif kind == "payment_not_available":
+            method = _PAYMENT_NAMES.get(str(diff.get("method") or ""), "A forma de pagamento")
+            lines.append(f"{method} indisponível aqui: escolha outra forma ao finalizar.")
+        elif kind == "coupon_not_applied":
+            code = str(diff.get("code") or "")
+            lines.append(f"O cupom {code} não vale aqui." if code else "O cupom não vale aqui.")
+        elif kind == "details_not_carried":
+            fields = set(diff.get("fields") or ())
+            if fields & _ADDRESS_FIELDS:
+                lines.append("Endereço de entrega: informe ao finalizar.")
+            if fields & _GIFT_FIELDS:
+                lines.append("Dados do presente: informe ao finalizar.")
+        else:
+            lines.append("Um item chegou diferente. Confira a sacola.")
+    return lines
+
+
+def _plain_money(value_q) -> str:
+    """"R$ 0,00" inclusive para zero: a frase da diferença nunca omite o valor."""
+    return f"R$ {format_money(int(value_q or 0))}"
+
+
+def _glued(text: str) -> str:
+    """"R$ 7,65" sem quebra de linha entre o símbolo e o valor (a frase quebra em 375 px)."""
+    return text.replace("R$ ", "R$\u00a0")
+
+
+def carried_phrase(carried_lines: int, carried_units: str) -> str:
+    """"3 itens", "1 item"; com item de peso, conta os produtos ("2 produtos")."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        units = Decimal(carried_units or "0")
+    except InvalidOperation:
+        units = Decimal(0)
+    if units > 0 and units == units.to_integral_value():
+        count = int(units)
+        return f"{count} {'item' if count == 1 else 'itens'}"
+    return f"{carried_lines} {'produto' if carried_lines == 1 else 'produtos'}"
+
+
+def _transfer_arrival(session_key: str | None, came_from: dict | None) -> CartTransferArrivalProjection | None:
+    arrival = cart_data.transfer_arrival(session_key, came_from)
+    if arrival is None or not arrival.carried_lines:
+        return None
+    phrase = carried_phrase(arrival.carried_lines, arrival.carried_units)
+    verb = "Entrou" if phrase.startswith("1 ") else "Entraram"
+    return CartTransferArrivalProjection(
+        channel=arrival.source_channel,
+        title=_glued(f"{verb} {phrase} da sacola do {arrival.source_channel_name}."),
+        lines=tuple(_glued(line) for line in transfer_difference_lines(arrival.differences)),
     )
 
 
@@ -937,8 +1120,10 @@ __all__ = [
     "DiscountLineProjection",
     "FreeDeliveryProgressProjection",
     "MinimumOrderProgressProjection",
+    "CartTransferArrivalProjection",
     "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
+    "transfer_difference_lines",
     "present_cart_date_mismatch",
 ]

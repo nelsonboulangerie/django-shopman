@@ -164,8 +164,10 @@ export function productsForOrderDate(
 ): POSProductProjection[] {
   if (!schedule || !deliveryDate || schedule.is_today || schedule.date !== deliveryDate) return products;
   // O "Restam 3" é o saldo de HOJE: na encomenda para outro dia ele não diz nada
-  // sobre a data, e sai do tile (#2610).
-  products = products.map((product) => (product.units_left == null ? product : { ...product, units_left: null }));
+  // sobre a data, e sai do tile (#2610), junto com o "acabando" (DEV-2026-077).
+  products = products.map((product) => (
+    product.units_left == null && !product.running_low ? product : { ...product, units_left: null, running_low: false }
+  ));
   if (!Array.isArray(schedule.sold_out_skus)) return products;
   const soldOut = new Set(schedule.sold_out_skus);
   const unplanned = new Set(schedule.unplanned_skus ?? []);

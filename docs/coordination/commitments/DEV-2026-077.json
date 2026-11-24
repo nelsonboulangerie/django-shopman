@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-077",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Saldo em número no botão do produto no PDV: só acho que poderia ficar mais abreviado... ou aparecer só no hover ou algo assim",
+  "dono": "Engenharia",
+  "criado": "2026-11-23",
+  "revisar_em": "2026-11-30",
+  "gatilho": "Decisão do dono, 23/11: opção C (saldo à vista só quando acaba), por porcentagem configurável por SKU, em unidades, arredondando para cima.",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}
