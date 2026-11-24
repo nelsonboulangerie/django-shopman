@@ -1964,7 +1964,7 @@ def repay_order(ctx: ToolContext, order_ref: str = "", method: str = "") -> dict
             lead = f"{lead} {OLD_PIX_CODE_WARNING}"
         # Recusada a troca, a cobrança que vale continua embaixo (o código ou o link).
         return {"ok": True, "code": reason, "order_ref": order.ref, "lead": lead, "payable": False,
-                "orders": [entry] if still_due else [], "tracking_url": entry["tracking_url"]}
+                "orders": [entry] if still_due else [], "order_url": entry["tracking_url"]}
     if code == "ready":
         return {"ok": True, "code": code, "order_ref": order.ref, "lead": "", "orders": [entry], "payable": True}
     status, entry = _payment_entry(ctx, order.ref)
@@ -2476,8 +2476,10 @@ def render_result(name: str, result: dict) -> str:
         rows = [result["lead"]] if result.get("lead") else []
         if result.get("orders"):
             rows.append(render_result("order_status", result))
-        elif result.get("tracking_url"):
-            rows.append(f"Acompanhar: {result['tracking_url']}")
+        elif result.get("order_url"):
+            # A página do pedido (``/pedido/<ref>/``), não o link do entregador: esse só
+            # se lê por ``courier.proven_tracking``.
+            rows.append(f"Acompanhar: {result['order_url']}")
         return "\n".join(rows)
     if name == "send_web_link":
         return f"Continue no site: {result['url']}"
