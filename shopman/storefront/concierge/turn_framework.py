@@ -522,7 +522,7 @@ def build_engine(conversation, *, environment: str = ENVIRONMENT, channel=None) 
     profile = build_profile(environment=environment)
     ctx = TrustedContext(tenant=profile.tenant, environment=environment, subject=subject_of(conversation.pk))
     bodies: dict[str, str] = {}
-    channel = replace(channel, bodies=bodies)
+    channel = replace(channel, bodies=bodies, handoffs=[])
     channel_ref = conversation.channel_ref or "whatsapp"
     ports = Ports(
         channel=channel, model=NiceReader(),
@@ -731,6 +731,11 @@ def run(conversation, message, *, channel=None, interrupted=None):
                         conversation.pk, result.outcome, list(result.fallbacks))
             return None
         send_house_extras(conversation, result, live)
+        handoffs = list(getattr(live.ports.channel, "handoffs", None) or [])
+        if handoffs:
+            # A resposta ("Solicitei atendimento a alguém da equipe…") já saiu; o serviço entrega a conversa à
+            # equipe ao fechar o turno (``service.run_turn``), pelo caminho de hoje, uma vez só.
+            conversation._framework_handoff = handoffs[0]
         return result
     except Exception:  # noqa: BLE001 — o motor que cai nunca derruba o turno: segue o caminho de hoje
         logger.warning("concierge.turn_framework.failed conversation=%s", getattr(conversation, "pk", None),

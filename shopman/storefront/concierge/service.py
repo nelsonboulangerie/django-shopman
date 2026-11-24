@@ -948,6 +948,15 @@ def _best_window_evidence(
     return max(candidates, default=(None, None, None))[2]
 
 
+#: Por que o motor encaminhou, como a equipe lê no cartão e na conversa.
+FRAMEWORK_HANDOFF_REASON = "A Concierge encaminhou a conversa à equipe"
+FRAMEWORK_HANDOFF_REASONS = {
+    "customer_request": "Cliente pediu para falar com alguém da equipe",
+    "risk": "A Concierge encaminhou por risco na conversa",
+    "rule": "A Concierge encaminhou por regra da casa",
+}
+
+
 @_observed("turn")
 def _framework_turn(conversation, inbound):
     """O turno pelo motor do framework (N9b), ou ``None``: só com UMA entrada e a chave da classe.
@@ -1076,6 +1085,13 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                     Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=0)
                 result.processed_message_ids = ids
                 result.replies = [framework.text] if framework.text else []
+                handoff = getattr(conversation, "_framework_handoff", None)
+                if handoff:
+                    # O motor encaminhou (``handoff``): a MESMA entrega à equipe de hoje, depois do turno fechado,
+                    # com o cartão de "cliente esperando atendente". O aviso ao cliente foi a frase do motor.
+                    mark_handoff(conversation, binding, FRAMEWORK_HANDOFF_REASONS.get(handoff, FRAMEWORK_HANDOFF_REASON))
+                    result.handoff = True
+                    return result
                 result.pending_more = bool(unanswered_inbound(conversation, binding))
                 return result
             try:

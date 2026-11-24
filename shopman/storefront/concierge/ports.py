@@ -129,6 +129,10 @@ class NiceChannel:
 
     adapter: Any
     bodies: Mapping[str, str] | None = None
+    #: Os pedidos de transferência do turno (``request_handoff``). A entrega à equipe é a de hoje
+    #: (``service.mark_handoff``), feita DEPOIS que o turno do motor fecha: ela sobe a cerca do turno e tira a
+    #: conversa da Concierge, e no meio do turno revogaria a resposta que diz ao cliente que a equipe vem.
+    handoffs: list[str] | None = None
     PORT = "channel"
 
     def capabilities(self) -> Capabilities:
@@ -206,7 +210,10 @@ class NiceChannel:
             recipient=recipient or "unknown", attempt=attempts, state=state)
 
     def request_handoff(self, ctx, request):
-        raise PortError("capability_missing", "a transferência da Nice segue pelo caminho legado até o N9")
+        """Anota o pedido de transferência; quem transfere é o serviço, ao fechar o turno (``handoffs``)."""
+        if self.handoffs is None:
+            raise PortError("capability_missing", "canal sem turno do motor: a transferência segue pelo caminho de hoje")
+        self.handoffs.append(str(request.reason or "customer_request"))
 
 
 def _cart_fields(act, conversation, text: str) -> dict:
