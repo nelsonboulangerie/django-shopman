@@ -1176,3 +1176,31 @@ duplicaríamos???"* O recebimento do saldo passa a usar a tela de Pagamento do P
 F2, #2559).
 
 **Fonte.** Conversa de 16/11/2026; PR #2557.
+
+## D-042 · Produção: lote que rende menos, data sem lote, falta de insumo, etapas e o "Separado"
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-23 · **revisar_em:** 2026-12-23
+
+**Decisão do dono**, respondendo às perguntas do
+[EXCELENCIA-PRODUCAO-PLANO](../plans/EXCELENCIA-PRODUCAO-PLANO.md) (#3367, DEV-2026-079). Para
+as quatro primeiras ele disse *"No mais, aceito as sugestões"*, e todas ficaram como o plano
+recomendava:
+
+1. O lote que rendeu menos que o encomendado **fecha com o número verdadeiro**, o pão entra no
+   estoque e as encomendas que ficaram sem pão vão para "Promessa em risco" no Gestor (WP-F06).
+2. Encomenda para data sem lote (o que a D-041 deixou em aberto): **a Produção só planeja**. O
+   pedido aparece no Planejamento da data com "Planejar N", e quem fala com o cliente é o
+   Gestor (WP-F13).
+3. O lote com falta de insumo **fecha com a autorização da Gerente ou do Dono**, escolhidos da
+   lista e assinando com o próprio PIN (WP-F11).
+4. As etapas da receita no lote aberto (#2385) **não serão feitas**. Vale a decisão de 16/09:
+   etapa não é fluxo obrigatório, e o timer é ferramenta livre.
+5. O "Separado" da Preparação **é gravado no servidor e vale para a bancada inteira** (WP-F09):
+   *"Sim, óbvio! No servidor, sempre! Não precisava nem ter perguntado!"*
+
+**A regra que o item 5 deixa.** Estado de trabalho que mais de uma pessoa ou dispositivo divide
+(marca de conferência, progresso, "já feito") mora no servidor. Guardar esse estado no
+`localStorage` do dispositivo é defeito, e não se pergunta ao dono. O `localStorage` fica só
+para preferência de quem está diante da tela (filtro, aba lembrada, seção recolhida).
+
+**Fonte.** Conversa de 23/11/2026; PR #3367.
