@@ -313,7 +313,9 @@ useHead({
 
           </section>
 
-          <div class="min-w-0 p-4 sm:p-6">
+          <!-- Coluna única (até lg): a moldura da foto já deixa o respiro embaixo,
+               e o topo zerado evita o vão em dobro antes do nome (#3343). -->
+          <div class="min-w-0 px-4 pt-0 pb-4 sm:px-6 sm:pb-6 lg:pt-6">
 
             <div v-if="(badge && product.availability !== 'unavailable') || fomo.length || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2" data-product-badges>
               <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
@@ -328,30 +330,20 @@ useHead({
               <h1 class="shop-title text-balance lg:line-clamp-3" :title="product.name">{{ product.name }}</h1>
               <FavoriteHeart :sku="product.sku" :name="product.name" :initial="product.is_favorite" class="-mr-1 shrink-0" />
             </div>
-            <p class="mt-2 line-clamp-3 shop-muted" :title="product.short_description">{{ product.short_description }}</p>
-            <p v-if="longDescription" class="mt-2 shop-reading text-muted-foreground">{{ longDescription }}</p>
-            <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
-
-            <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
-                 constantes da ficha. Não vai para o selo do card do cardápio: lá
-                 o slot é de exceção ("Últimas unidades", "Lista de espera"), e um
-                 selo permanente em ~1 de cada 4 produtos ensinaria o cliente a
-                 parar de ler justamente o aviso que o faz agir. -->
-            <div v-if="product.is_made_to_order && product.made_to_order_label" class="mt-3" data-pdp-made-to-order>
-              <UiBadge variant="outline">
-                <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
-                {{ product.made_to_order_label }}
-              </UiBadge>
-            </div>
-
+            <!-- Preço e promessa logo abaixo do nome (#3343): no celular o card
+                 flutuante de Adicionar cobre o pé da primeira tela, e o que vinha
+                 depois da descrição ficava atrás dele. Quanto custa e quando fica
+                 pronto são o que se decide primeiro; a descrição vem depois. -->
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
-                <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
-                  antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
-                </p>
+                <!-- O risco mudo não dizia que o desconto já está no valor grande. O "antes"
+                     vem na linha do preço, não acima dela: cada linha a mais empurra a
+                     promessa para trás do card flutuante no celular (#3343). -->
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   <p class="shop-price-strong" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+                  <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
+                    antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
+                  </p>
                   <p v-if="product.unit_weight_label" class="shop-meta">
                     {{ product.unit_weight_label }}
                   </p>
@@ -386,6 +378,22 @@ useHead({
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta" data-decisive="availability">{{ unavailableReason }}</p>
               </div>
+            </div>
+
+            <p class="mt-3 line-clamp-3 shop-muted" :title="product.short_description">{{ product.short_description }}</p>
+            <p v-if="longDescription" class="mt-2 shop-reading text-muted-foreground">{{ longDescription }}</p>
+            <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
+
+            <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
+                 constantes da ficha. Não vai para o selo do card do cardápio: lá
+                 o slot é de exceção ("Últimas unidades", "Lista de espera"), e um
+                 selo permanente em ~1 de cada 4 produtos ensinaria o cliente a
+                 parar de ler justamente o aviso que o faz agir. -->
+            <div v-if="product.is_made_to_order && product.made_to_order_label" class="mt-3" data-pdp-made-to-order>
+              <UiBadge variant="outline">
+                <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
+                {{ product.made_to_order_label }}
+              </UiBadge>
             </div>
 
             <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4">
@@ -458,11 +466,17 @@ useHead({
                fonte, e o botão desce para a linha de baixo quando os dois não cabem. -->
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="min-w-16 flex-1 basis-0">
-              <p class="line-clamp-2 shop-body">{{ product.name }}</p>
-              <p class="shop-price-strong text-ink-foreground" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
-              <p v-if="product.unit_weight_label" class="text-sm text-ink-foreground/80">
-                {{ compactUnitWeightLabel(product.unit_weight_label) }}
-              </p>
+              <!-- Uma linha: o nome inteiro está logo acima, na página, e cada linha
+                   a mais do card cobre mais da primeira tela (#3343). -->
+              <p class="truncate shop-body" :title="product.name">{{ product.name }}</p>
+              <!-- Peso ao lado do preço: uma linha a menos no card que cobre a tela (#3343).
+                   Sem espaço, ele desce sozinho (flex-wrap). -->
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <p class="shop-price-strong text-ink-foreground" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+                <p v-if="product.unit_weight_label" class="text-sm text-ink-foreground/80">
+                  {{ compactUnitWeightLabel(product.unit_weight_label) }}
+                </p>
+              </div>
               <p v-if="unavailableReason" class="mt-1 text-sm text-ink-foreground/80" data-decisive="availability">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />

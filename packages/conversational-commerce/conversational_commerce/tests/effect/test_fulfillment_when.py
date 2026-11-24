@@ -97,3 +97,45 @@ def test_the_delivery_asks_the_window_after_the_address():
     assert addr.reply.template_ids[-1] == "present_terms.needs_delivery_window"
     assert "das 15h às 18h" in addr.text
     assert window.reply.template_ids[-1] == "present_terms.confirm"
+
+
+def test_what_was_agreed_comes_before_the_cart_summary_in_the_same_turn():
+    """Ensaio no ar (24/11), cartão 1: "2 croissants para retirar amanhã às 16h" respondia o resumo da sacola (que a
+    casa termina com o convite "Quer mais alguma coisa?") e SÓ DEPOIS o combinado. O combinado vem antes do resumo."""
+    said = _step("all", {"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "2"}},
+                 {"act": "choose_fulfillment", "fields": {"date": "2026-01-06", "mode": "pickup", "time": "16:00"}})
+    turn_engine, _ = engine(steps=(said,), world=_world())
+    [result] = (r.result for r in run_journey(turn_engine, CTX, [said]))
+    assert list(result.chosen_moves) == ["change_cart", "set_fulfillment"]  # a decisão segue a ordem da fala
+    assert result.reply.template_ids == ("set_fulfillment.done_time", "change_cart.done")  # a fala, não
+
+
+def test_the_terms_carry_the_agreed_day_and_window_like_the_record_system():
+    """O falso declara nos termos o dia e a janela combinados, como o sistema de registro (o resumo diz o quando)."""
+    said = _step("all", {"act": "choose_fulfillment", "fields": {"date": "2026-01-06", "mode": "pickup",
+                                                                 "time": "16:00"}})
+    steps = (said, CLOSE)
+    turn_engine, world = engine(steps=steps, world=_world())
+    *_, close = (r.result for r in run_journey(turn_engine, CTX, list(steps)))
+    terms = world.commerce_read.quotes[world.state.current_terms["cart-1"]]
+    codes = {condition.code: condition.value for condition in terms.conditions}
+    assert codes["fulfillment_date"] == "2026-01-06" and codes["fulfillment_window"] == "16:00"
+    assert codes["fulfillment_time"] == "16:00"  # a hora dita, que o resumo ecoa
+    assert close.reply.template_ids == ("present_terms.confirm",)
+
+
+def test_the_said_hour_is_echoed_before_the_window_the_house_records():
+    """Com a hora dita e a janela da grade no recibo, o combinado ecoa a hora ("às 16h"); a janela ("a partir
+    das 15h") só quando o cliente não disse a hora (coordenação, 24/11)."""
+    from types import SimpleNamespace
+
+    from conversational_commerce.engine.moves import set_fulfillment
+
+    def receipt(**refs):
+        return SimpleNamespace(status="success", command_id="cmd-1", domain_refs=refs)
+
+    need = SimpleNamespace(need_id="n1")
+    both = SimpleNamespace(receipts={"n1": receipt(mode="pickup", date="2026-01-06", window="slot-15", time="16:00")})
+    window = SimpleNamespace(receipts={"n1": receipt(mode="pickup", date="2026-01-06", window="slot-15")})
+    assert set_fulfillment.reply(both, need).template_id == "set_fulfillment.done_time"
+    assert set_fulfillment.reply(window, need).template_id == "set_fulfillment.done"

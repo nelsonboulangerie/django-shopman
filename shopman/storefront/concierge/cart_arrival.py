@@ -40,15 +40,14 @@ ARRIVED_AGAIN = "Os itens do site já estão aqui."
 CHANGED = "O que mudou:"
 REFUSED = {
     "not_authorized": (
-        "Não consegui trazer: a sacola é de outra conta ou este número ainda não foi verificado. "
-        "Ela continua no site."
+        "Não consegui trazer: a sacola é de outra conta ou este número ainda não foi verificado."
     ),
-    "source_changed": "A sacola do site mudou depois do toque. No site, toque de novo em Continuar pelo WhatsApp.",
-    "nothing_available": "Nenhum item da sacola do site está disponível aqui. Ela continua no site.",
+    "source_changed": "A sacola do site mudou. No site, toque de novo em Continuar pelo WhatsApp.",
+    "nothing_available": "Nenhum item da sacola do site está disponível aqui.",
     "no_cart": "A sacola do site já não está aberta.",
 }
 EXPIRED = "Esse código venceu ou já foi usado. No site, toque de novo em Continuar pelo WhatsApp."
-UNAVAILABLE = "Não consegui trazer a sacola do site agora. Ela continua lá."
+UNAVAILABLE = "Não consegui trazer a sacola do site agora."
 
 
 def _fold(text: str) -> str:

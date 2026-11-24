@@ -8,6 +8,8 @@ import {
   type RevealOptions,
   type RevealPlan
 } from '~/presentation/nextFocus'
+import { focusRulerAllowance } from '~/presentation/scroll'
+import { shopScrollMetrics, shopScrollTarget } from '~/utils/shopScroll'
 
 // O QUE FLUTUA NA BASE DA TELA (card de ação, barra) come área utilizável.
 // Vive aqui, no escopo do módulo, porque dois mecanismos leem o mesmo fato: o
@@ -72,7 +74,9 @@ const NATIVELY_FOCUSABLE = 'input, select, textarea, button, a[href], [contented
 // - na montagem só rola se o foco estiver fora da área visível;
 // - respeita `prefers-reduced-motion`.
 //
-// Espelhado em `operator-kit/app/composables/useNextFocus.ts`.
+// Espelhado em `operator-kit/app/composables/useNextFocus.ts`, com uma diferença
+// que é da loja: a régua acompanha a status bar que recolhe ao rolar
+// (`fitRulerToHeader`).
 export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefined>, options: NextFocusOptions = {}) {
   let ticket = 0
   const { initialReveal = 'if-needed', ...revealDefaults } = options
@@ -92,8 +96,25 @@ export function useNextFocus (source?: MaybeRefOrGetter<string | null | undefine
     control.focus({ preventScroll: true })
   }
 
+  // A régua CSS vale com a status bar recolhida. Se o bloco vai parar numa
+  // rolagem que não a recolhe, a régua desce a altura dela, para o bloco não
+  // ficar atrás do cabeçalho (#3477; a conta mora em `focusRulerAllowance`).
+  // O ajuste é inline e refeito a cada pedido: a régua base continua no CSS.
+  function fitRulerToHeader (block: HTMLElement) {
+    block.style.scrollMarginTop = ''
+    const ruler = Number.parseFloat(getComputedStyle(block).scrollMarginTop) || 0
+    const target = shopScrollTarget()
+    const { top, height, scrollHeight } = shopScrollMetrics(target)
+    const viewportTop = target === window ? 0 : (target as HTMLElement).getBoundingClientRect().top
+    const wanted = top + block.getBoundingClientRect().top - viewportTop - ruler
+    const landing = Math.min(Math.max(0, wanted), Math.max(0, scrollHeight - height))
+    const allowance = focusRulerAllowance(landing)
+    if (allowance) block.style.scrollMarginTop = `${ruler + allowance}px`
+  }
+
   function scrollTo (block: HTMLElement, plan: RevealPlan) {
     if (typeof block.scrollIntoView !== 'function') return
+    if (plan.align === 'start') fitRulerToHeader(block)
     block.scrollIntoView({ block: plan.align, behavior: plan.behavior })
   }
 

@@ -58,3 +58,13 @@ export function closedHeroCtaLabel (ordering?: OrderingProjection | null): strin
   if (!ordering || ordering.state === 'none') return undefined
   return 'Fazer pedido'
 }
+
+/**
+ * O h1 da home: o que a página é (a loja da casa), não a saudação do momento.
+ * "Nelson Boulangerie, Padaria Artesanal"; sem slogan, só a marca.
+ */
+export function homePageHeading (brandName: string, tagline?: string | null): string {
+  const brand = brandName.trim()
+  const kind = tagline?.trim()
+  return kind ? `${brand}, ${kind}` : brand
+}

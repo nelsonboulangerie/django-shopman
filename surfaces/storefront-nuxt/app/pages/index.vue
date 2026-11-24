@@ -9,7 +9,7 @@ import {
   websiteJsonLd
 } from '~/presentation/seo'
 import type { Action } from '~/types/shopman'
-import { closedHeroCtaLabel } from '~/presentation/home'
+import { closedHeroCtaLabel, homePageHeading } from '~/presentation/home'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
@@ -66,12 +66,16 @@ const operationalStatus = computed(() => {
 })
 const quickReorderItems = computed(() => home.value?.last_order_items.slice(0, 3) || [])
 // Sem ação de repetir disponível, o card não pode perguntar "quer repetir?" e responder
-// "ver histórico": pergunta e botão têm de ser a mesma coisa. E o gesto tem UM nome na
-// home inteira — "Repetir pedido", o mesmo do slide do hero.
+// "ver histórico": pergunta e botão têm de ser a mesma coisa. A recompra mora SÓ neste
+// cartão (o hero não tem mais slide de recompra, OC-32), e a pergunta é a copy da casa
+// que era do slide (`hero_copy.reorder_title_*`), editável no Admin.
 const quickReorderTitle = computed(() => {
   if (!reorderAction.value) return 'Seus pedidos anteriores'
-  const name = home.value?.omotenashi.customer_name
-  return `Quer repetir seu último pedido${name ? `, ${name}` : ''}?`
+  const copy = home.value?.hero_copy
+  const prefix = copy?.reorder_title_prefix.title?.trim() || 'Quer repetir seu'
+  const suffix = copy?.reorder_title_suffix.title?.trim() || 'último pedido'
+  const name = home.value?.omotenashi.customer_name?.trim()
+  return `${prefix} ${suffix}${name ? `, ${name}` : ''}?`
 })
 const featuredPreview = computed(() => featured.value.slice(0, 6))
 const quickReorderImageItem = computed(() => {
@@ -122,6 +126,9 @@ function noticeVariant (tone: string) {
 
 const canonicalUrl = computed(() => `${requestUrl.origin}/`)
 const brandName = computed(() => home.value?.shop.brand_name || NELSON_FALLBACK_SHOP.brand_name)
+// O h1 diz o que a página é: a loja da casa. A saudação ("Boa noite.") continua
+// visível no hero, mas como título do slide; não é o assunto da página (OC-32).
+const pageHeading = computed(() => homePageHeading(brandName.value, home.value?.shop.tagline))
 const homePageSeo = computed(() => sitePageSeo(siteSeo.value, 'home'))
 // O título da home é o título INTEIRO ("Marca · o que ela é, onde"), escrito no
 // Admin — por isso `titleTemplate: null` abaixo: o template do shell colaria a
@@ -203,6 +210,7 @@ useHead({
 
 <template>
   <main class="bg-background">
+    <h1 class="sr-only" data-home-page-heading>{{ pageHeading }}</h1>
     <section class="shop-section-cta bg-background pb-6 pt-0 sm:py-8 lg:py-10">
       <div class="shop-container">
         <div v-if="pending" class="shop-stack-block">
@@ -246,12 +254,9 @@ useHead({
             <HomeHeroThing
               :home="home"
               :primary-action="primaryAction"
-              :reorder-action="reorderAction"
-              :reorder-loading="home.last_order_ref ? !!reorderPending[home.last_order_ref] : false"
               :status-open="operationalStatus.isOpen"
               :status-label="operationalStatus.label"
               :closed-cta-label="closedHeroCtaLabel(home.ordering)"
-              @reorder="handleReorder"
             />
 
             <UiButton

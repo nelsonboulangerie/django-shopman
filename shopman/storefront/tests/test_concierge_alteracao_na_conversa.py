@@ -509,8 +509,9 @@ def test_status_offers_only_the_amendments_the_service_takes_now(shop):
 
     status = _turn(shop, "como está meu pedido?", [_act("order_status", "como está meu pedido?")])
 
-    offer = tools.AMEND_OFFER.format(gestures="remarcar ou tirar um item")
-    assert offer == "Se quiser remarcar ou tirar um item, é só me dizer."
+    # Cancelar entra na mesma linha, por último.
+    offer = tools.AMEND_OFFER.format(gestures="remarcar, tirar um item ou cancelar")
+    assert offer == "Posso remarcar, tirar um item ou cancelar, se quiser."
     assert offer in status[0].splitlines(), status
     _no_api(status)
 
@@ -520,7 +521,7 @@ def test_status_of_an_order_with_an_open_pix_offers_to_remove_the_pix_follows(sh
 
     status = _turn(shop, "como está meu pedido?", [_act("order_status", "como está meu pedido?")])
 
-    assert "Se quiser remarcar ou tirar um item, é só me dizer." in status[0].splitlines(), status
+    assert tools.AMEND_OFFER.format(gestures="remarcar, tirar um item ou cancelar") in status[0].splitlines(), status
 
 
 def test_status_of_a_paid_order_does_not_offer_to_remove(shop):
@@ -531,7 +532,7 @@ def test_status_of_a_paid_order_does_not_offer_to_remove(shop):
     status = _turn(shop, "como está meu pedido?", [_act("order_status", "como está meu pedido?")])
 
     lines = status[0].splitlines()
-    assert tools.CONVERSATION_EQUIVALENTS["reschedule_order"] in lines, status
+    assert tools.AMEND_OFFER.format(gestures="remarcar ou cancelar") in lines, status
     assert not any("tirar um item" in line for line in lines), "devolução precisa da equipe: a Nice não oferece"
 
 

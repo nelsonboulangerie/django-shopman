@@ -1,0 +1,14 @@
+OC-32, #3496: carrossel sem o slide que repetia a saudação (decisão do dono, 24/11/2026).
+Prévia local (Nuxt dev + Django, seed qa). Por slide: título (clicando cada pontinho), alvo de cada pontinho,
+h1, rolagem lateral, axe (wcag2a/2aa/21a/21aa/22aa) e as fotos do hero (src do <img>; no desktop o <source> serve a versão larga).
+Logado: 375 com João Oliveira; desktop com Café Parisiense (o reenvio do código para o mesmo número caiu na espera de reenvio).
+
+Antes (auditoria-antes.txt): 4 slides, anônimo ["Boa noite.","Peça. Acompanhe. Aproveite.","Boa noite.","Feito à mão, todo dia"].
+
+{"vp":"375","quem":"anonima","slides":3,"titulos":["Bom dia.","Peça. Acompanhe. Aproveite.","Feito à mão, todo dia"],"titulosRepetidos":[],"pontinhos":["40x44","24x44","24x44"],"h1":["Nelson Boulangerie, Padaria Artesanal"],"overflowX":0,"axe":["color-contrast:1"],"heroImages":["/img/home/facade6.webp","/img/home/selfservice-phone.webp","/img/home/baguette-phone.webp"]}
+{"vp":"375","quem":"logada","slides":3,"titulos":["Bom dia, João.","Peça. Acompanhe. Aproveite.","Feito à mão, todo dia"],"titulosRepetidos":[],"pontinhos":["40x44","24x44","24x44"],"h1":["Nelson Boulangerie, Padaria Artesanal"],"overflowX":0,"axe":["color-contrast:3"],"heroImages":["/img/home/facade6.webp","/img/home/selfservice-phone.webp","/img/home/baguette-phone.webp"]}
+{"vp":"desktop","quem":"anonima","slides":3,"titulos":["Bom dia.","Peça. Acompanhe. Aproveite.","Feito à mão, todo dia"],"titulosRepetidos":[],"pontinhos":["40x44","24x44","24x44"],"h1":["Nelson Boulangerie, Padaria Artesanal"],"overflowX":0,"axe":["color-contrast:1"],"heroImages":["/img/home/facade6.webp","/img/home/selfservice-phone.webp","/img/home/baguette-phone.webp"]}
+{"vp":"desktop","quem":"logada","slides":3,"titulos":["Bom dia, Café.","Peça. Acompanhe. Aproveite.","Feito à mão, todo dia"],"titulosRepetidos":[],"pontinhos":["40x44","24x44","24x44"],"h1":["Nelson Boulangerie, Padaria Artesanal"],"overflowX":0,"axe":["color-contrast:1"],"heroImages":["/img/home/facade6.webp","/img/home/selfservice-phone.webp","/img/home/baguette-phone.webp"]}
+
+Leitura: 3 slides, nenhum título repetido, nenhum pontinho abaixo de 24 px, sem target-size no axe,
+facade4/interior fora do hero. O color-contrast é o mesmo de antes (OC-30).

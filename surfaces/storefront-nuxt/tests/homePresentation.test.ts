@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CLOSED_HERO_HINT,
   closedHeroCtaLabel,
+  homePageHeading,
   heroEyebrow,
   preorderHint
 } from '~/presentation/home'
@@ -57,5 +58,16 @@ describe('home presentation: o topo diz só o que dá para pedir (OC-04)', () =>
       expect(text).not.toMatch(/finaliza quando abrirmos/)
       expect(text.split(/\s+/).length).toBeLessThanOrEqual(12)
     }
+  })
+})
+
+describe('home presentation: o h1 diz o que a página é (OC-32)', () => {
+  it('é a loja da casa, com o que ela é, e nunca a saudação', () => {
+    expect(homePageHeading('Nelson Boulangerie', 'Padaria Artesanal')).toBe('Nelson Boulangerie, Padaria Artesanal')
+  })
+
+  it('sem o que ela é, fica só a marca', () => {
+    expect(homePageHeading('Nelson Boulangerie', '  ')).toBe('Nelson Boulangerie')
+    expect(homePageHeading(' Nelson Boulangerie ', null)).toBe('Nelson Boulangerie')
   })
 })
