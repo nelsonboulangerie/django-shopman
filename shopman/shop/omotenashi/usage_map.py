@@ -681,6 +681,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "HOME_WHATSAPP_CTA": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
+    "HOME_WHATSAPP_CTA_CONCIERGE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
     "HOME_WHATSAPP_CTA_LABEL": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),

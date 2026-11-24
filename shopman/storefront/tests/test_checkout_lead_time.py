@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from django.test import TestCase
 from django.utils import timezone
 
-from shopman.storefront.intents.checkout import _validate_preorder
+from shopman.shop.policies.preorder_date import preorder_date_errors
 
 SKU = "CHECKOUT-LEAD-SKU"
 LEAD_HOURS = 48
@@ -79,7 +79,7 @@ class CheckoutLeadTimeTests(TestCase):
         Stock.plan(Decimal(str(qty)), self.product, target_date)
 
     def _validate(self, chosen_date):
-        return _validate_preorder(
+        return preorder_date_errors(
             chosen_date.isoformat(),
             cart_lines=[_line()],
             channel_ref=self.channel.ref,
@@ -122,7 +122,7 @@ class CheckoutLeadTimeTests(TestCase):
             is_published=True,
             is_sellable=True,
         )
-        errors = _validate_preorder(
+        errors = preorder_date_errors(
             self.tomorrow.isoformat(),
             cart_lines=[_line("CHECKOUT-PLAIN-SKU", name="Baguete", qty=1)],
             channel_ref=self.channel.ref,

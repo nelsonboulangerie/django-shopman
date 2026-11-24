@@ -595,14 +595,17 @@ describe("ProductionStageGrid — planning authority", () => {
     );
   });
 
-  it("zero no ajuste diz Remover do plano, e o aviso diz que saiu", async () => {
+  it("zero no ajuste diz Remover do plano, pede o motivo e o aviso diz que saiu", async () => {
     // Beta 05/11: "Zero remove." com um Confirmar genérico, e o toast dizia
-    // "Planejado: Bâtard × 0".
+    // "Planejado: Bâtard × 0". Desde o #3400 zerar é cancelar: sem motivo, o
+    // servidor recusa, então a tela pede o motivo antes do botão (WP-F07).
     boardRows.value = [
       row({
         suggestion,
         planned_qty: "20",
-        planned_orders: [wo({ pk: 9, ref: "WO-009", rev: 4, status: "planned", planned_qty: "20" })],
+        planned_orders: [
+          wo({ pk: 9, ref: "WO-009", rev: 4, status: "planned", planned_qty: "20", can_void: true }),
+        ],
       }),
     ];
     const w = mountGrid("plan");
@@ -612,12 +615,46 @@ describe("ProductionStageGrid — planning authority", () => {
     await input.setValue("0");
     const remove = byText(w, "button", "Remover do plano");
     expect(remove).toBeDefined();
-    await remove!.trigger("click");
+    expect(remove!.attributes("disabled")).toBeDefined();
+    expect(w.get("[data-lot-stakes-free]").text()).toContain("Nenhuma encomenda depende dele.");
+    await byText(w, "[data-lot-void-preset]", "Planejado a mais")!.trigger("click");
+    expect(byText(w, "button", "Remover do plano")!.attributes("disabled")).toBeUndefined();
+    await byText(w, "button", "Remover do plano")!.trigger("click");
     await flushPromises();
-    expect(planSpy).toHaveBeenCalledWith("PAO-001", expect.objectContaining({ quantity: "0", work_order_id: 9 }));
+    expect(planSpy).toHaveBeenCalledWith(
+      "PAO-001",
+      expect.objectContaining({ quantity: "0", work_order_id: 9, reason: "Planejado a mais" }),
+    );
     expect((globalThis as unknown as { useSonner: { success: ReturnType<typeof vi.fn> } }).useSonner.success).toHaveBeenCalledWith(
       "Pão saiu do plano.",
     );
+  });
+
+  it("zero sem can_void: no lugar do botão, quem cancela; nada vai ao servidor", async () => {
+    // P0-1 (23/11): a Cozinha zerava o lote de uma encomenda paga. O servidor agora
+    // recusa (#3400); a tela não oferece o toque que seria recusado.
+    boardRows.value = [
+      row({
+        suggestion,
+        planned_qty: "20",
+        planned_orders: [
+          wo({ pk: 9, ref: "WO-009", rev: 4, status: "planned", planned_qty: "20", can_void: false }),
+        ],
+      }),
+    ];
+    const w = mountGrid("plan");
+    await plannedAction(w, "Corrigir quantidade")!.trigger("click");
+    await w.find('input[aria-label="Quantidade planejada"]').setValue("0");
+
+    expect(byText(w, "button", "Remover do plano")).toBeUndefined();
+    expect(w.get("[data-remove-hint]").text()).toBe("Cancelar lote é com o gerente.");
+    expect(w.find("[data-lot-void-reason]").exists()).toBe(false);
+    expect(planSpy).not.toHaveBeenCalled();
+
+    // Acima de zero, o ajuste continua dela.
+    await w.find('input[aria-label="Quantidade planejada"]').setValue("12");
+    expect(w.find("[data-remove-hint]").exists()).toBe(false);
+    expect(byText(w, "button", "Confirmar")).toBeDefined();
   });
 
   it("com a produção já assumida, o menu soma um lote novo, nunca em silêncio", async () => {
@@ -1065,9 +1102,8 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     expect(w.text()).not.toContain("Avançar");
 
     await byText(w, "button", "Cancelar lote…")!.trigger("click");
-    await w
-      .find('textarea[aria-label="Motivo do cancelamento"]')
-      .setValue("queimou");
+    expect(byText(w, "button", "Confirmar cancelamento")!.attributes("disabled")).toBeDefined();
+    await w.find("[data-lot-void-reason] textarea").setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith("PAO-001", 7, 2, "queimou");
     // Nunca pelo quadro dos lotes abertos de hoje, que não traz o planejado.
@@ -1086,8 +1122,12 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     const w = mountGrid();
 
     await byText(w, '[role="menuitem"]', "Cancelar lote…")!.trigger("click");
+    // O motivo nunca nasce do código (P1-01): sem escolher, nada sai.
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
-    expect(voidSpy).toHaveBeenCalledWith("PAO-001", 34, 5, "Cancelado pelo operador");
+    expect(voidSpy).not.toHaveBeenCalled();
+    await byText(w, "[data-lot-void-preset]", "Falta insumo")!.trigger("click");
+    await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
+    expect(voidSpy).toHaveBeenCalledWith("PAO-001", 34, 5, "Falta insumo");
     expect(kdsVoidSpy).not.toHaveBeenCalled();
   });
 
@@ -1468,7 +1508,7 @@ describe("ProductionStageGrid — menu da linha da Produção", () => {
     (items[items.length - 1] as HTMLElement).click();
     await flushPromises();
 
-    expect(w.find('textarea[aria-label="Motivo do cancelamento"]').exists()).toBe(
+    expect(w.find("[data-lot-void-reason] textarea").exists()).toBe(
       true,
     );
     expect(byText(w, "button", "Confirmar cancelamento")).toBeDefined();

@@ -65,8 +65,16 @@ SOURCE = "pos:edit"
 #: MESMO caminho do balcão, só com a origem gravada, para o histórico do pedido
 #: dizer quem fez ("Itens acrescentados pela Concierge a pedido do cliente").
 CONCIERGE_SOURCE = "concierge:add"
+#: A Concierge alterando o pedido a pedido do cliente (OC-11): trocar a data ou o
+#: horário, tirar um item, trocar o endereço da entrega. O MESMO caminho do balcão,
+#: com a origem gravada ("Pedido alterado pela Concierge a pedido do cliente").
+CONCIERGE_AMEND_SOURCE = "concierge:amend"
 #: Origem → (prefixo do ``event_id`` do ajuste, prefixo da referência de estoque).
-_ID_PREFIXES = {SOURCE: ("pos-edit", "pos_edit"), CONCIERGE_SOURCE: ("concierge-edit", "concierge_edit")}
+_ID_PREFIXES = {
+    SOURCE: ("pos-edit", "pos_edit"),
+    CONCIERGE_SOURCE: ("concierge-edit", "concierge_edit"),
+    CONCIERGE_AMEND_SOURCE: ("concierge-amend", "concierge_amend"),
+}
 EVENT_TYPE = "order_edited"
 CUSTOMER_NOTICE_TEMPLATE = "order_updated"
 NOTES_MAX_LENGTH = 500
@@ -274,6 +282,20 @@ def state_refusal(order) -> tuple[str, str]:
     return "", ""
 
 
+def product_lines(order) -> list[dict]:
+    """As linhas de produto do pedido como estão, ``[{line_id, sku, qty, name}]``.
+
+    É a lista FINAL que :func:`plan` recebe quando nada muda: quem quer tirar um
+    item parte dela e omite a linha (ou baixa a quantidade). A taxa de entrega e
+    as outras linhas fixas não entram: elas mudam pelo recebimento.
+    """
+    return [
+        {"line_id": item.line_id, "sku": item.sku, "qty": str(item.qty), "name": item.name or item.sku}
+        for item in order_composition.effective_items(order)
+        if not is_fixed_line(item)
+    ]
+
+
 # ── Prévia ───────────────────────────────────────────────────────────────────
 
 
@@ -292,7 +314,8 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
       delivery_address_structured, delivery_fee_override_q, fiscal_tax_id,
       delivery_payment_method}``; ``None`` mantém.
     - ``schedule``: ``{date, slot}``; ``None`` mantém.
-    - ``source``: quem edita (:data:`SOURCE`, o balcão, ou :data:`CONCIERGE_SOURCE`);
+    - ``source``: quem edita (:data:`SOURCE`, o balcão, :data:`CONCIERGE_SOURCE` ou
+      :data:`CONCIERGE_AMEND_SOURCE`);
       vai para a linha nova (``meta.added_by``) e para o evento do histórico.
     """
     if source not in _ID_PREFIXES:
@@ -304,8 +327,8 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
     data = order.data or {}
     current = order_composition.effective_items(order)
     fee_lines = [item for item in current if _is_fee_line(item)]
-    other_fixed = [item for item in current if _is_fixed_line(item) and not _is_fee_line(item)]
-    editable = [item for item in current if not _is_fixed_line(item)]
+    other_fixed = [item for item in current if is_fixed_line(item) and not _is_fee_line(item)]
+    editable = [item for item in current if not is_fixed_line(item)]
     next_revision = int((order_composition.adjustment(order) or {}).get("revision") or 0) + 1
 
     # ── produtos
@@ -1311,7 +1334,7 @@ def _is_fee_line(item) -> bool:
     return str(item.sku or "") == DELIVERY_FEE_SKU or meta.get("type") == "delivery_fee"
 
 
-def _is_fixed_line(item) -> bool:
+def is_fixed_line(item) -> bool:
     """Linha que não é produto (taxa de entrega e afins): a lista de itens não a toca."""
     return str(item.sku or "").startswith("__") or _is_fee_line(item)
 
@@ -1408,6 +1431,7 @@ def _event_payload(result: EditPlan, *, revision, approved_by, source: str = SOU
 
 
 __all__ = [
+    "CONCIERGE_AMEND_SOURCE",
     "CONCIERGE_SOURCE",
     "CUSTOMER_NOTICE_TEMPLATE",
     "EVENT_TYPE",
@@ -1428,7 +1452,9 @@ __all__ = [
     "money_for_customer",
     "edit",
     "fiscal_authorized",
+    "is_fixed_line",
     "plan",
+    "product_lines",
     "refund_route",
     "require_delivery_identity",
     "state_refusal",

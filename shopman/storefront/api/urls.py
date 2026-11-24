@@ -14,6 +14,7 @@ from .account import (
     AccountDeviceDetailView,
     AccountDeviceListView,
     AccountExportView,
+    AccountNotMeView,
     AccountPasskeyDetailView,
     AccountPasskeyListView,
     AccountStepUpView,
@@ -266,6 +267,7 @@ urlpatterns = [
     path("account/phone/request/", PhoneChangeRequestView.as_view(), name="api-account-phone-request"),
     path("account/phone/confirm/", PhoneChangeConfirmView.as_view(), name="api-account-phone-confirm"),
     path("account/step-up/", AccountStepUpView.as_view(), name="api-account-step-up"),
+    path("account/not-me/", AccountNotMeView.as_view(), name="api-account-not-me"),
     path("account/export/", AccountExportView.as_view(), name="api-account-export"),
     path("account/delete/", AccountDeleteView.as_view(), name="api-account-delete"),
     # Geocoding (server-side — key stays on the server)

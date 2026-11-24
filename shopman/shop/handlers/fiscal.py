@@ -9,6 +9,12 @@ Tratamento de erro de produção:
 - Retry NUNCA re-POSTa cego: consulta ``query_status`` primeiro. Um timeout
   pós-emissão deixa a nota autorizada na SEFAZ com o mesmo ``ref`` — o re-POST
   responderia 422 ("referência já utilizada") para sempre e a nota ficaria órfã.
+
+O registro de autoridade da nota é o ``FiscalDocument`` do fiscalman (D-037,
+#3428): a linha nasce ``pending`` ANTES do POST e a autorização, a consulta e o
+cancelamento gravam nela (``shopman.fiscalman.services``). As chaves ``nfce_*``
+de ``Order.data`` são espelho do documento, escrito na mesma transação, para
+quem ainda as lê.
 """
 
 from __future__ import annotations
@@ -16,7 +22,9 @@ from __future__ import annotations
 import logging
 import re
 
+from shopman.fiscalman import services as fiscal_documents
 from shopman.fiscalman.contracts import FiscalBackend, FiscalDocumentResult
+from shopman.fiscalman.models import FiscalDocument
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -132,7 +140,8 @@ class NFCeEmitHandler:
         except Order.DoesNotExist as exc:
             raise DirectiveTerminalError("Order not found") from exc
 
-        if order.data.get("nfce_access_key"):
+        document = fiscal_documents.document_for(order_ref)
+        if document is not None and document.access_key:
             # A nota já existe (emitida por outro caminho, adotada num retry, ou
             # por uma directive irmã). Sair daqui ANTES do e-mail fazia a
             # promessa do balcão morrer junto com a guarda de idempotência: nota
@@ -145,7 +154,13 @@ class NFCeEmitHandler:
         # de chamar o handler, então a PRIMEIRA execução já chega com attempts=1;
         # só a partir da 2ª (re-claim após transiente) é retry de verdade — e
         # só então pode existir um POST anterior com a resposta perdida.
-        is_retry = int(getattr(message, "attempts", 0) or 0) > 1
+        # A linha ``pending`` do documento diz o mesmo sem depender da contagem:
+        # ela é gravada antes do POST e só sai de ``pending`` com a nota
+        # confirmada, então um processo que morreu depois da autorização, uma
+        # resposta perdida ou uma recusa a deixam para trás. O reprocesso
+        # (``fiscal_emit``) nasce com attempts=1 e, sem esta guarda, re-POSTaria.
+        retried = int(getattr(message, "attempts", 0) or 0) > 1
+        left_pending = document is not None and document.status == FiscalDocument.Status.PENDING
 
         if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
             # Venda desfeita enquanto a emissão estava em retry: o POST anterior
@@ -153,15 +168,19 @@ class NFCeEmitHandler:
             # consultar deixava nota válida na SEFAZ sem chave no pedido e sem
             # cancelamento — ``fiscal.cancel`` não age sem a chave. Nunca POSTa
             # para pedido desfeito: só consulta, adota e cancela.
-            if is_retry and self._adopt_for_cancellation(order, order_ref):
+            if (retried or left_pending) and self._adopt_for_cancellation(order, order_ref):
                 return
             raise DirectiveTerminalError(
                 f"Pedido {order_ref} está {order.status}: não emitir NFC-e."
             )
 
-        # Retry: o POST anterior pode ter emitido e a resposta se perdido
-        # (timeout/worker morto). Consultar antes de re-POSTar com o mesmo ref.
-        if is_retry:
+        # A linha nasce ANTES do POST e fica gravada mesmo que o processo morra
+        # com a nota autorizada no provedor: é ela que o reenvio acha. Quem não a
+        # criou agora não é o primeiro a tentar esta referência (processo
+        # anterior, retry, ou um concorrente neste instante): consulta antes de
+        # re-POSTar com o mesmo ref.
+        _document, opened_now = fiscal_documents.open_pending(order_ref)
+        if retried or not opened_now:
             if self._adopt_existing(order, order_ref):
                 return
 
@@ -207,6 +226,9 @@ class NFCeEmitHandler:
         payload = {**(message.payload or {}), "emitter_answer": str(answer or "").strip()}
         Directive.objects.filter(pk=message.pk).update(payload=payload)
         message.payload = payload
+        # A linha do documento fica ``pending``: "recusada" e "resposta perdida
+        # depois de autorizar" não se distinguem daqui (revisão do #3460), e o
+        # reprocesso consulta antes de reenviar a referência.
         raise DirectiveTerminalError(f"NFC-e emission failed: {answer}")
 
     def _emit(self, order_ref: str, payload: dict) -> FiscalDocumentResult:
@@ -481,7 +503,12 @@ class NFCeEmitHandler:
 
     @staticmethod
     def _record(order, result: FiscalDocumentResult) -> None:
-        """Grava a nota em ``order.data`` relendo a linha SOB LOCK.
+        """Grava a nota no ``FiscalDocument`` e o espelho em ``order.data``, SOB LOCK.
+
+        O documento é a autoridade (D-037): a autorização completa a MESMA linha
+        que o ``open_pending`` abriu, e chave diferente para a mesma referência é
+        recusa terminal (duas notas para um pedido). O espelho ``nfce_*`` sai do
+        documento, na mesma transação.
 
         ``order.data`` é um JSON inteiro com muitos donos (pagamento, PDV,
         lifecycle) e este handler é assíncrono: gravar o dicionário que veio da
@@ -496,49 +523,28 @@ class NFCeEmitHandler:
         na SEFAZ sem registro local, o dedupe deixa de ver a nota e só o
         ``query_status`` do retry a reencontraria — rede por acidente.
 
-        O mesmo padrão dos outros escritores de ``order.data``
-        (``services/pix_confirmation.py``, ``services/operator_orders.py``,
-        ``handlers/returns.py``): reler ``select_for_update`` dentro do
-        ``atomic`` e escrever a partir do valor fresco.
+        O espelho relê a linha ``select_for_update`` dentro do ``atomic`` e
+        escreve a partir do valor fresco (``services/fiscal_mirror.write``), o
+        mesmo padrão dos outros escritores de ``order.data``.
         """
         from django.db import transaction
-        from shopman.orderman.models import Order
+
+        from shopman.shop.services import fiscal_mirror
 
         with transaction.atomic():
-            locked = Order.objects.select_for_update().get(pk=order.pk)
-            data = dict(locked.data or {})
-            data["nfce_access_key"] = result.access_key
-            # O relógio do cancelamento conta da AUTORIZAÇÃO DE USO, não da
-            # emissão nem do salvamento aqui (RICMS/PR, Anexo III, Subanexo I,
-            # art. 35). O adapter já lia ``data_autorizacao`` da Focus e o
-            # contrato já carregava o campo; o que faltava era gravá-lo, e sem
-            # ele ninguém consegue dizer se ainda dá tempo de cancelar.
-            #
-            # Só TEXTO entra: o destino é um JSONField, e o contrato tipa o
-            # campo como ``str | None``. Backend que devolva outra coisa grava
-            # vazio — e vazio tem caminho próprio ("não deu para medir o
-            # prazo"), em vez de explodir na serialização e derrubar a
-            # gravação da chave de acesso junto.
-            authorized_at = result.authorization_date
-            data["nfce_authorized_at"] = authorized_at if isinstance(authorized_at, str) else ""
-            data["nfce_number"] = result.document_number
-            data["nfce_series"] = result.document_series
-            data["nfce_protocol"] = result.protocol_number
-            data["nfce_xml_url"] = result.xml_url
-            data["nfce_danfe_url"] = result.danfe_url
-            data["nfce_qrcode_url"] = result.qrcode_url
-            data["nfce_status"] = result.status
-            locked.data = data
-            locked.save(update_fields=["data", "updated_at"])
-
-        # O objeto do chamador segue em uso (guarda de idempotência, logs).
-        order.data = data
+            try:
+                document = fiscal_documents.record_authorized(order.ref, result)
+            except fiscal_documents.FiscalDocumentConflict as exc:
+                raise DirectiveTerminalError(f"NFC-e do pedido {order.ref}: {exc}") from exc
+            # O objeto do chamador segue em uso (guarda de idempotência, logs):
+            # ``write`` põe nele o ``data`` gravado.
+            fiscal_mirror.write(order, document)
 
         # A nota da entrega nasce com a sacola pronta e a DANFE vai dentro
         # dela: o Gestor precisa saber AGORA, não no próximo poll.
         from shopman.shop.handlers._sse_emitters import emit_fiscal_update
 
-        emit_fiscal_update(locked)
+        emit_fiscal_update(order)
 
 
 class NFCeCancelHandler:
@@ -561,8 +567,15 @@ class NFCeCancelHandler:
         except Order.DoesNotExist as exc:
             raise DirectiveTerminalError("Order not found") from exc
 
-        if order.data.get("nfce_cancelled"):
+        document = fiscal_documents.document_for(order_ref)
+        if document is not None and document.status == FiscalDocument.Status.CANCELLED:
             return
+        if document is None or not document.access_key:
+            # Sem documento autorizado não há o que cancelar, e cancelar "pela
+            # referência" sem registro local é como a nota ficava órfã.
+            raise DirectiveTerminalError(
+                f"Pedido {order_ref} sem NFC-e autorizada no registro fiscal: nada a cancelar."
+            )
 
         # A fila pode ter segurado o pedido além da janela (worker parado,
         # retry): fora dela, tentar só colhe a recusa da SEFAZ. Vira a
@@ -591,7 +604,10 @@ class NFCeCancelHandler:
 
     @staticmethod
     def _record_cancelled(order, result) -> None:
-        """Grava o cancelamento relendo a linha SOB LOCK.
+        """Grava o cancelamento no ``FiscalDocument`` e o espelho em ``order.data``, SOB LOCK.
+
+        O documento cancelado guarda a chave e o protocolo da autorização: o
+        cancelamento grava só os campos dele.
 
         O ``order`` foi lido antes da chamada à Focus, que leva segundos; no
         meio, pagamento (estorno), PDV e lifecycle escrevem no mesmo
@@ -599,16 +615,12 @@ class NFCeCancelHandler:
         Mesmo padrão do ``NFCeEmitHandler._record``.
         """
         from django.db import transaction
-        from shopman.orderman.models import Order
+
+        from shopman.shop.services import fiscal_mirror
 
         with transaction.atomic():
-            locked = Order.objects.select_for_update().get(pk=order.pk)
-            data = dict(locked.data or {})
-            data["nfce_cancelled"] = True
-            data["nfce_cancellation_protocol"] = result.protocol_number
-            locked.data = data
-            locked.save(update_fields=["data", "updated_at"])
-        order.data = data
+            document = fiscal_documents.record_cancelled(order.ref, result)
+            fiscal_mirror.write(order, document)
         # A tentativa anterior pode ter falhado e aberto o aviso: a nota agora
         # está cancelada, então ele deixou de ser verdade.
         from shopman.shop.adapters import alert as alert_adapter

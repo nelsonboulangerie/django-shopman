@@ -32,8 +32,8 @@ from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
 from shopman.shop.services import account as account_service
 from shopman.shop.services import payment as payment_service
+from shopman.shop.services import phone_confirmation, weighed_sale
 from shopman.shop.services import sessions as session_service
-from shopman.shop.services import weighed_sale
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.pos_intent import (
     POS_AUTHORSHIP_META_KEY,
@@ -6212,6 +6212,17 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                     "O cadastro selecionado não está disponível. Busque o cliente novamente.",
                 ) from exc
         created = customer is None
+        # O número é NOVO neste cadastro? Medido antes de qualquer escrita: só o
+        # telefone que o balcão grava agora pede confirmação ao titular (D4), e
+        # a venda seguinte com o mesmo número não pede de novo.
+        phone_is_new = bool(phone) and (
+            created
+            or not ContactPoint.objects.filter(
+                customer=customer,
+                type__in=(ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP),
+                value_normalized=phone,
+            ).exists()
+        )
         # A correção vale para o cadastro que o REF apontou — e para mais
         # ninguém. Se o resolve caiu em outro cliente (ou criou um), corrigir
         # contato reescreveria o contato de quem não estava em jogo.
@@ -6284,6 +6295,10 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             _ensure_contact_point(
                 ContactPoint, customer, ContactPoint.Type.PHONE, phone, promote=correct_phone,
             )
+            if phone_is_new:
+                # Digitado no balcão, o número ainda não é prova de nada: o
+                # titular confirma no WhatsApp, e até lá ele não abre a conta.
+                phone_confirmation.request_on_commit(customer.ref, phone)
         if fill_email:
             _ensure_contact_point(
                 ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email, promote=correct_email,

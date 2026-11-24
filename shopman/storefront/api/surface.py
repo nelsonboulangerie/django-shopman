@@ -407,15 +407,27 @@ class StorefrontShellView(ServerTimingMixin, APIView):
     authentication_classes = []
 
     def get(self, request):
+        from shopman.shop.services import experience as experience_service
+        from shopman.storefront.presentation.home import STOREFRONT_SURFACE
+
         cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+        assignments = experience_service.resolve(request, STOREFRONT_SURFACE)
         shell = build_shell(
             request=request,
             cart_has_items=cart.items_count > 0 and not cart.is_empty,
+            experience=assignments,
         )
-        return Response({
+        response = Response({
             "shell": projection_data(shell),
             "cart": projection_data(cart),
         })
+        if experience_service.has_non_default(assignments):
+            # X14: versão fora do padrão é de alguém. A borda ignora ``Vary``, então
+            # o corpo nunca pode ser cacheável. Quem tem sessão nem chega à gêmea
+            # pública (``carries_credentials`` recusa cookie), e a gêmea, sem
+            # cliente, só resolve o padrão.
+            response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
 
 
 @extend_schema_view(
@@ -643,7 +655,8 @@ class StorefrontPublicProductRecommendationsView(
     ele pagava TTFB inteiro (~0,72 s medidos) para o mesmo corpo que todo visitante
     anônimo recebe: o rail mostra o que se parece com o produto, e para quem não
     tem sessão o corpo é idêntico por construção. Sem cookie, a borda serve a
-    seção por 60 s (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``).
+    seção por 30 s, mais 30 s de revalidação em segundo plano
+    (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``, sob o teto de 60 s do X8).
 
     O que é pessoal (favorito, quantidade na sacola) não se perde: o request
     anônimo já vem com ``is_favorite=false`` e ``qty_in_cart=0``, e o cliente
