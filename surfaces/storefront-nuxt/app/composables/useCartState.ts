@@ -1,7 +1,7 @@
 import { couponAppliedToast } from '~/utils/checkoutFlow'
 import { applyLineQty, applySkuQty, cartQtyForSku, isOptimisticLine, substituteSwapPlan } from '~/presentation/cart'
 import { serverClockOffsetMs } from '~/presentation/deadline'
-import type { CartItemProjection, CartMutationResponse, CartProjection, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
+import type { CartItemProjection, CartMutationResponse, CartProjection, CartTransferResponse, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
 
 export interface CartIssue {
   title: string
@@ -565,6 +565,31 @@ export function useCartState () {
     return response.cart
   }
 
+  // A passagem da sacola entre a loja e a conversa (OC-16): "Trazer para cá" e a
+  // resposta "substituir ou manter". Sem otimista e sem repetir sozinha: quem decide
+  // o que chega é o servidor. A recusa (409) também traz a sacola como ficou.
+  async function runCartPassage (href: string, body: Record<string, unknown>): Promise<CartTransferResponse> {
+    beginMutation()
+    let response: CartTransferResponse
+    try {
+      response = await enqueueMutation(async () => $fetch<CartTransferResponse>(apiPath(href), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        body,
+        credentials: 'include'
+      }))
+    } catch (error) {
+      const data = asRecord((error as { data?: unknown })?.data)
+      const refusedCart = data.cart as CartProjection | undefined
+      if (refusedCart && queueDepth === 1) applyServerCart(refusedCart)
+      throw error
+    } finally {
+      queueDepth -= 1
+    }
+    if (queueDepth === 0) applyServerCart(response.cart)
+    return response
+  }
+
   function replay (mutation: CartMutationSnapshot, qty: number) {
     if (mutation.options) return addLineWithOptions(mutation.meta, qty, mutation.options)
     if (mutation.lineId) return putLineQty(mutation.meta, mutation.lineId, qty)
@@ -653,6 +678,7 @@ export function useCartState () {
     clearCart,
     refreshCart,
     settleCart,
+    runCartPassage,
     qtyForSku,
     isPending,
     setSkuQty,

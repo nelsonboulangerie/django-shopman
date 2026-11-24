@@ -419,6 +419,13 @@ export interface CartProjection {
   // Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
   // sincronização. Ausente ou vazio para visitante e para link encaminhado.
   open_elsewhere?: CartOpenElsewhere[]
+  // "Continuar pelo WhatsApp" (OC-16): só vem quando a passagem para a conversa é
+  // possível agora (X1). Ausente ou null: a tela não oferece o gesto.
+  continue_in_conversation?: Action | null
+  // A sacola chegou de outro canal com diferenças (#3517), cada uma numa frase.
+  transfer_arrival?: CartTransferArrival | null
+  // A pergunta "substituir ou manter" depois de um conflito de sacolas (#3517).
+  transfer_conflict?: CartTransferConflict | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
@@ -437,6 +444,35 @@ export interface CartOpenElsewhere {
   subtotal_q: number
   subtotal_display: string
   bring: Action
+}
+
+export interface CartTransferArrival {
+  channel: string
+  title: string
+  lines: string[]
+  total_line: string
+}
+
+export interface CartTransferConflict {
+  channel: string
+  title: string
+  message: string
+  replace: Action
+  keep: Action
+}
+
+// Resposta dos gestos de passagem (`/api/v1/cart/bring/`, `/api/v1/cart/transfer-choice/`).
+export interface CartTransferResponse {
+  cart: CartProjection
+  cart_transfer?: { status: 'accepted' | 'refused' | 'kept' | string, code?: string, differences?: unknown[] }
+}
+
+// "Continuar pelo WhatsApp": a mensagem pronta com o código NB.
+export interface CartConversationStart {
+  code: string
+  message: string
+  deep_link: string
+  wa_number: string
 }
 
 export interface SocialLinkProjection {
