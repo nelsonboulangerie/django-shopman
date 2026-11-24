@@ -34,13 +34,12 @@ const props = defineProps<{
 // a segunda não custa peso.
 //
 // A versão do celular tem teto de ~120 KB (laudo 23/10, U9): a primeira foto é a
-// maior pintura da home no 4G, e 313 KB atrasavam o LCP. As de pé (facade6,
-// facade4) já são só do celular; as quadradas ganharam irmã `-phone`, menor, e a
+// maior pintura da home no 4G, e 313 KB atrasavam o LCP. A de pé (facade6) já é
+// só do celular; as quadradas ganharam irmã `-phone`, menor, e a
 // original segue para a faixa larga e para o resto da home.
 const HERO_IMAGES = {
   greeting: { phone: '/img/home/facade6.webp', wide: '/img/home/facade2.webp' },
   order: { phone: '/img/home/selfservice-phone.webp', wide: '/img/home/selfservice.webp' },
-  greetingReturn: { phone: '/img/home/facade4.webp', wide: '/img/home/interior.webp' },
   handmade: { phone: '/img/home/baguette-phone.webp', wide: '/img/home/baguette.webp' }
 } as const
 
@@ -187,17 +186,9 @@ const slides = computed<HeroSlide[]>(() => {
 
   // A recompra NÃO é slide: ela tem o cartão próprio logo abaixo do hero, com os
   // itens do último pedido. Com os dois, quem voltava lia "Quer repetir seu
-  // último pedido?" duas vezes na mesma tela (laudo da Etapa II, 23/11).
-  list.push({
-    ref: 'greeting-return',
-    titleLines: [greetingTitle],
-    image: HERO_IMAGES.greetingReturn,
-    imageAlt: shop.brand_name,
-    primaryLabel: menuLabel,
-    primaryIcon: 'lucide:utensils',
-    primaryTo: menuTo.value
-  })
-
+  // último pedido?" duas vezes na mesma tela (laudo da Etapa II, 23/11). E não há
+  // slide que repita a saudação no lugar dela: o dono decidiu tirar o slide de
+  // volta, com as fotos dele (#3496, 24/11).
   list.push({
     ref: 'handmade',
     titleLines: [
