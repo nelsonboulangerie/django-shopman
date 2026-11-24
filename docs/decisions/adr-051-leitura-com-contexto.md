@@ -64,7 +64,7 @@ Os atos esperados vêm de uma tabela do catálogo, condição por condição. As
 As de sim ou não esperam `affirm`, `deny` e `ask_options`, e a oferta dos termos espera `affirm` e
 `deny`. Sem pergunta no ar não há conferência: a leitura segue como hoje.
 
-Também vai ao verificador a **discordância entre leitores**: o leitor devolve as leituras candidatas em
+Também vai ao verificador, com ou sem pergunta no ar, a **discordância entre leitores**: o leitor devolve as leituras candidatas em
 `Understanding.alternatives` (que já existe) quando elas trazem **atos diferentes**. Leituras do mesmo ato
 com campos diferentes continuam na política de ambiguidade que já existe (spec 05, seção 2: duas leituras
 numa mudança → perguntar).
@@ -86,7 +86,9 @@ Ela devolve **uma** candidata, ou **dúvida**.
 **Dúvida → uma pergunta curta de confirmação**, em vez de agir. O motor escolhe o movimento
 `ask_clarification` com o molde `ask_clarification.confirm_reading`, sobre a candidata que responde à
 pergunta no ar ("Só para confirmar: retirada amanhã às 16h?"). Sem candidata que responda, ele repete a
-pergunta no ar. O "sim" à confirmação aplica a candidata; o "não" devolve a pergunta. A frase é da casa: o
+pergunta no ar. O "sim" à confirmação aplica a candidata; o "não" devolve a pergunta. A confirmação não se repete em seguida
+(coordenação, 24/11): se a resposta a ela der dúvida de novo, com o fechamento em curso a pergunta dele volta,
+e sem fechamento a Nice pede para o cliente dizer de outro jeito (`ask_clarification.more`). A frase é da casa: o
 texto vai à coordenação antes de entrar.
 
 ### 4. Conferência da resposta (antes dos efeitos)
@@ -98,10 +100,15 @@ verificador. Não há laço: um turno tem no máximo uma verificação.
 
 ### No leitor da Nice
 
-O portão do Jev decide sem a IA só quando não há pergunta no ar, ou quando o ato dele está em
-`expected_acts` ("sim" à pergunta de sim ou não). Com pergunta no ar e o ato do portão fora do esperado,
-a IA lê com o contexto. Se as duas leituras trazem atos diferentes, ambas vão ao motor (`alternatives`),
-e a seção 2 decide.
+O portão do Jev decide sem a IA só quando a frase sozinha basta: no começo da conversa (sem falas
+recentes), num cumprimento ou num agradecimento, ou quando o ato dele está em `expected_acts` ("sim" à
+pergunta de sim ou não). Com a conversa em andamento, a IA lê com o contexto, com ou sem pergunta no ar.
+Se as duas leituras trazem atos diferentes, ambas vão ao motor (`alternatives`), e a seção 2 decide.
+
+**Emenda de 24/11 (mesmo dia):** os casos que reprovaram no ar ("quero 2 croissants" → "pra amanhã" →
+"vou buscar às 16h") não tinham pergunta no ar, porque o cliente não tinha dito "pode fechar". A discordância
+entre leitores vai ao verificador também sem pergunta no ar (`plan_conference`). Na dúvida sem pergunta no
+ar, a Nice confirma a leitura da IA ("Só para confirmar: retirada amanhã às 16h?").
 
 ## Métrica
 

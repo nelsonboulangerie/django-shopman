@@ -45,6 +45,8 @@ MAX_QTY = 999
 READER = Producer(name="concierge-model-reader", version="1")
 GATE_READER = Producer(name="concierge-jev-gate", version="1")
 VERIFIER = Producer(name="concierge-model-verifier", version="1")
+#: O que o portão do Jev decide sozinho mesmo com a conversa em andamento: cortesia, sem campo e sem efeito.
+GATE_ALONE_ACTS = frozenset({"greet", "thank"})
 UNAVAILABLE = {"status": "unavailable", "reason": "no_calibration"}
 NO_PRICE = {"status": "unavailable", "reason": "no_price"}
 
@@ -554,9 +556,12 @@ class NiceReader:
         pending = context.pending if context is not None else None
         gated = self._gate(text) if text else ""
         gated = gated if gated in allowed else ""
-        if gated and (pending is None or gated in expected):
-            # O portão decide sozinho sem pergunta no ar, ou quando o ato dele responde a ela ("sim" à pergunta de
-            # sim ou não). Fora disso, a conversa contradiz a frase isolada, e a IA lê com o contexto (ADR-051).
+        # O portão decide sozinho quando a frase sozinha basta: no começo da conversa, num cumprimento ou num
+        # agradecimento, ou quando o ato dele responde à pergunta no ar ("sim" à pergunta de sim ou não). Com a
+        # conversa em andamento, a IA lê com o contexto, e a leitura do portão vai junto: se discordarem, o
+        # verificador decide (ADR-051). No ar, "vou buscar às 16h" depois de "pra amanhã" era o horário da loja.
+        alone = context is None or (pending is None and (not context.recent or gated in GATE_ALONE_ACTS))
+        if gated and (alone or gated in expected):
             return self._understanding(ctx, request, [{"act": gated, "fields": {}, "confidence": UNAVAILABLE}],
                                        GATE_READER), Consumption(model=GATE_READER, calls=0, cost=NO_PRICE)
         conversation = self._conversation if self._conversation is not None else _conversation(ctx)
@@ -651,6 +656,7 @@ class NiceReader:
                                    candidates=request.candidates, model=model)
         try:
             response = client.messages.create(**payload)
+            self.last_usage = getattr(response, "usage", None)
             raw = "".join(getattr(block, "text", "") for block in getattr(response, "content", []) or []
                           if getattr(block, "type", "") == "text")
             choice = json.loads(raw).get("choice")

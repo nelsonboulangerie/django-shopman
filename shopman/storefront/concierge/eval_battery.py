@@ -1,4 +1,4 @@
-"""O ensaio do leitor da Nice no ar: a bateria de 56 pedidos pela IA do perfil, sem efeito e sem escrita.
+"""O ensaio do leitor da Nice no ar: a bateria de pedidos pela IA do perfil, sem efeito e sem escrita.
 
 Passo 5 do pedido pelo motor (dono, 23/11/2026: a bateria roda no app do ar, pela conexão DeepSeek que
 já existe, sem chave em máquina nenhuma). Cada caso é uma conversa: as falas da cliente, na ordem, e o
@@ -10,6 +10,10 @@ com o freio e o medidor de gasto da casa). A sacola e o recebimento são acumula
 conversa que não é gravada: nenhum efeito, nenhuma mensagem, nenhuma linha nova no banco (o medidor de
 gasto da casa registra as chamadas, como toda chamada paga). O produto é conferido pelo NOME do item no
 catálogo do ar, não pelo SKU de um teste.
+
+A leitura vai com a conversa em volta, como o motor a passa (ADR-051): as falas anteriores e, nos grupos
+"continuidade" e "ruptura", a pergunta da Nice no ar antes da última fala. A conferência de coerência e o
+verificador rodam como no motor; na dúvida, nada se aplica (o turno perguntaria), e o caso mede isso.
 
 O texto da resposta não entra aqui: ele depende do motor ligado (linha P08) e da decisão da #3374.
 """
@@ -39,6 +43,10 @@ class Caso:
     recebe: str | None = None  # "pickup" / "delivery" / None (não confere)
     janela: str | None = None  # ref da janela da grade, ou None (não confere)
     grupo: str = ""
+    # A pergunta da Nice no ar antes da ÚLTIMA fala (ADR-051): o código da condição, ou "terms" (o resumo).
+    pergunta: str | None = None
+    pagamento: str | None = None  # a forma lida ("pix"), ou None (não confere)
+    atos: tuple[str, ...] = ()  # a última fala precisa ter UM destes atos (vazio: não confere)
 
 
 def _c(id, falas, sacola, **kw):
@@ -111,6 +119,21 @@ CASOS = (
     _c("sem-hoje-tem-amanha", "quero 2 sonhos pra retirar amanhã às 16h", {S: 2}, dia=1, recebe="pickup", janela="slot-15", grupo="não tem"),
     _c("sem-fornada-na-data", "quero 2 sonhos pra retirar amanhã às 16h", {}, grupo="não tem"),
     _c("sem-no-cardapio", "quero 2 empadas pra amanhã", {}, grupo="não tem"),
+    # ── Continuidade: a resposta curta à pergunta da Nice no ar (ADR-051) ──
+    _c("cont-16h", ["quero 2 croissants pra amanhã", "16h"], {C: 2}, dia=1, janela="slot-15", pergunta="delivery_time_slot", grupo="continuidade"),
+    _c("cont-as-10", ["quero 2 croissants pra amanhã", "às 10"], {C: 2}, dia=1, janela="slot-09", pergunta="delivery_time_slot", grupo="continuidade"),
+    _c("cont-vou-buscar-16h", ["quero 2 croissants pra amanhã", "vou buscar às 16h"], {C: 2}, dia=1, recebe="pickup", janela="slot-15", pergunta="delivery_time_slot", grupo="continuidade"),
+    _c("cont-amanha", ["quero 2 croissants", "amanhã"], {C: 2}, dia=1, pergunta="fulfillment_date", grupo="continuidade"),
+    _c("cont-retirada", ["quero 2 croissants pra amanhã", "retirada"], {C: 2}, dia=1, recebe="pickup", pergunta="fulfillment_type", grupo="continuidade"),
+    _c("cont-pix", ["quero 2 croissants", "pix"], {C: 2}, pagamento="pix", pergunta="payment_method", grupo="continuidade"),
+    _c("cont-o-do-trabalho", ["quero 2 croissants com entrega amanhã", "o do trabalho"], {C: 2}, dia=1, recebe="delivery", atos=("give_address", "affirm"), pergunta="delivery_address_saved", grupo="continuidade"),
+    _c("cont-sim-resumo", ["quero 2 croissants", "sim"], {C: 2}, atos=("affirm",), pergunta="terms", grupo="continuidade"),
+    _c("cont-na-verdade-3", ["quero 2 croissants", "na verdade 3"], {C: 3}, pergunta="terms", grupo="continuidade"),
+    # ── Ruptura: o cliente muda de assunto no meio do fechamento ──
+    _c("rupt-pao-de-queijo", ["quero 2 croissants pra amanhã", "tem pão de queijo?"], {C: 2}, dia=1, atos=("ask_item",), pergunta="delivery_time_slot", grupo="ruptura"),
+    _c("rupt-que-horas-fecham", ["quero 2 croissants pra amanhã", "que horas vocês fecham?"], {C: 2}, dia=1, atos=("ask_hours",), pergunta="delivery_time_slot", grupo="ruptura"),
+    _c("rupt-mais-um", ["quero 2 croissants", "põe mais um croissant"], {C: 3}, pergunta="payment_method", grupo="ruptura"),
+    _c("rupt-cancela", ["quero 2 croissants", "cancela"], {C: 2}, atos=("deny", "cancel_order"), pergunta="payment_method", grupo="ruptura"),
 )
 
 
@@ -161,6 +184,7 @@ class Fala:
     tokens_in: int = 0
     tokens_out: int = 0
     erro: str = ""  # o erro verdadeiro da IA, quando a fala caiu para a regra local
+    verificador: str = ""  # a conferência (ADR-051): "escolheu 1", "dúvida: confirmar", "dúvida: perguntar de novo"
 
 
 @dataclass
@@ -193,7 +217,8 @@ def _nomes(skus) -> dict[str, str]:
     return {p.sku: p.name for p in Product.objects.filter(sku__in=list(skus))}
 
 
-def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], today: date) -> list[str]:
+def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], today: date,
+             pagamento: str = "", ultimos: tuple[str, ...] = ()) -> list[str]:
     """O que a leitura entendeu, contra o esperado. Lista vazia: passou."""
     erros: list[str] = []
     nomes = {sku: fold(nome) for sku, nome in _nomes(sacola).items()}
@@ -214,7 +239,28 @@ def conferir(caso: Caso, sacola: dict[str, int], recebimento: dict[str, str], to
         lida = janela_da_hora(recebimento["time"]) if recebimento.get("time") else ""
         if lida != caso.janela:
             erros.append(f"janela {lida or '-'} (hora {recebimento.get('time') or '-'}), esperado {caso.janela}")
+    if caso.pagamento and pagamento != caso.pagamento:
+        erros.append(f"pagamento {pagamento or '-'}, esperado {caso.pagamento}")
+    if caso.atos and not set(caso.atos) & set(ultimos):
+        erros.append(f"última fala lida como {', '.join(ultimos) or '-'}, esperado {' ou '.join(caso.atos)}")
     return erros
+
+
+def contexto(caso: Caso, anteriores: list[str], ultima: bool):
+    """A conversa em volta da fala, como o motor a passa ao leitor (ADR-051): as falas anteriores do cliente e,
+    na última, a pergunta da Nice no ar."""
+    from conversational_commerce.engine.moves import expected_acts
+    from conversational_commerce.engine.turn import TERMS_OFFER_ACTS
+    from conversational_commerce.ports import PendingQuestion, ReadingContext, RecentTurn
+
+    recentes = tuple(RecentTurn(role="customer", content_ref=f"text:{fala}") for fala in anteriores)
+    if not (ultima and caso.pergunta):
+        return ReadingContext(recent=recentes)
+    if caso.pergunta == "terms":
+        return ReadingContext(pending=PendingQuestion(kind="terms_offer", code="terms"),
+                              expected_acts=TERMS_OFFER_ACTS, recent=recentes)
+    return ReadingContext(pending=PendingQuestion(kind="condition", code=caso.pergunta),
+                          expected_acts=expected_acts(caso.pergunta), recent=recentes)
 
 
 @contextmanager
@@ -264,6 +310,8 @@ def _rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: in
             continue
         sacola: dict[str, int] = {}
         recebimento: dict[str, str] = {}
+        pagamento = ""
+        ultimos: tuple[str, ...] = ()
         conversa = Conversation(channel_ref=channel_ref)  # nunca gravada
 
         def linhas(_conversa, sacola=sacola):
@@ -283,7 +331,9 @@ def _rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: in
             request = InterpretRequest(
                 request=ModelRequest(purpose="interpret", data_class="redacted",
                                      budget={"max_calls": 1, "max_spend": {"amount_minor": 0, "currency": "BRL"}}),
-                event_id=f"eval-{caso.id}-{numero}", content_ref=f"text:{fala}", allowed_acts=ACTS)
+                event_id=f"eval-{caso.id}-{numero}", content_ref=f"text:{fala}", allowed_acts=ACTS,
+                context=contexto(caso, [texto(anterior, today) for anterior in caso.falas[:numero - 1]],
+                                 numero == len(caso.falas)))
             started = time.perf_counter()
             reader.last_usage, reader.last_error = None, ""
             understanding, consumption = reader.interpret(ctx, request)
@@ -295,10 +345,11 @@ def _rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: in
             totais["tokens_out"] += tout
             if model:
                 totais["usd"] += ai_governor.estimate_usd(model, tokens_in=tin, tokens_out=tout)
+            acts, verificador = conferencia(reader, ctx, request, understanding, totais, model)
             if reader.last_error:
                 totais["erros"].append(f"{caso.id} #{numero}: {reader.last_error}")
             atos = []
-            for act in understanding.acts:
+            for act in acts:
                 fields = dict(act.fields)
                 atos.append({"act": act.act, "fields": fields})
                 if act.act == "change_quantity" and fields.get("item") and fields.get("quantity") is not None:
@@ -309,12 +360,55 @@ def _rodar(reader_for: Callable, *, channel_ref: str, today: date, max_calls: in
                         sacola.pop(str(fields["item"]), None)
                 elif act.act == "choose_fulfillment":
                     recebimento.update({k: str(v) for k, v in fields.items() if k in ("date", "mode", "time")})
-            falas.append(Fala(fala, understanding.reader.name, atos, ms, tin, tout, reader.last_error))
-        erros = conferir(caso, sacola, recebimento, today) if not totais["interrompido"] else ["não rodou inteiro"]
+                elif act.act == "choose_payment" and fields.get("method"):
+                    pagamento = str(fields["method"])
+            ultimos = tuple(a["act"] for a in atos)
+            falas.append(Fala(fala, understanding.reader.name, atos, ms, tin, tout, reader.last_error, verificador))
+        erros = (conferir(caso, sacola, recebimento, today, pagamento, ultimos) if not totais["interrompido"]
+                 else ["não rodou inteiro"])
         resultados.append(Resultado(caso, not erros, erros, falas, sacola, recebimento))
         if totais["interrompido"]:
             break
     return resultados, totais
+
+
+def conferencia(reader, ctx, request, understanding, totais: dict, model: str) -> tuple[list, str]:
+    """A conferência do motor sobre a leitura (ADR-051), com o verificador de verdade: os atos que o turno
+    aplicaria e o que a conferência fez. Na dúvida, nada se aplica (o turno pergunta), e o caso mede isso."""
+    from conversational_commerce.engine.turn import in_doubt, plan_conference
+    from conversational_commerce.ports import AdjudicateRequest, ModelRequest, PortError
+
+    from .profile import ADJUDICATIONS_PER_TURN
+
+    acts = list(understanding.acts)
+    plan = plan_conference(acts, understanding.alternatives, request.context)
+    if plan is None or not ADJUDICATIONS_PER_TURN or not reader.capabilities().supports("adjudicate"):
+        return acts, ""
+    candidates = list(plan.candidates)
+    adjudicate = AdjudicateRequest(
+        request=ModelRequest(purpose="adjudicate", data_class="redacted",
+                             budget={"max_calls": 1, "max_spend": {"amount_minor": 0, "currency": "BRL"}}),
+        event_id=request.event_id, content_ref=request.content_ref, context=request.context,
+        candidates=tuple(candidates))
+    reader.last_usage = None
+    try:
+        adjudication = reader.adjudicate(ctx, adjudicate)
+        choice = adjudication.choice
+        totais["chamadas"] += int(adjudication.consumption.calls)
+    except PortError:
+        choice = None
+    usage = reader.last_usage
+    tin, tout = int(getattr(usage, "input_tokens", 0) or 0), int(getattr(usage, "output_tokens", 0) or 0)
+    totais["tokens_in"] += tin
+    totais["tokens_out"] += tout
+    if model:
+        from shopman.shop import ai_governor
+
+        totais["usd"] += ai_governor.estimate_usd(model, tokens_in=tin, tokens_out=tout)
+    if choice is not None:
+        return list(candidates[choice].acts), f"{plan.found}: escolheu {choice}"
+    doubt = in_doubt(plan)
+    return [], f"{plan.found}: dúvida, " + ("confirmar" if "confirm" in doubt else "perguntar de novo")
 
 
 def relatorio(resultados: list[Resultado], totais: dict) -> str:
@@ -345,6 +439,8 @@ def relatorio(resultados: list[Resultado], totais: dict) -> str:
             atos = "; ".join(a["act"] + (f" {a['fields']}" if a["fields"] else "") for a in f.atos)
             linhas.append(f"  > {f.texto}")
             linhas.append(f"    {f.leitor} · {f.ms:.0f} ms · {atos}")
+            if f.verificador:
+                linhas.append(f"    conferência: {f.verificador}")
             if f.erro:
                 linhas.append(f"    erro da IA: {f.erro}")
         if not r.passou:

@@ -107,3 +107,44 @@ def test_the_conference_is_off_without_the_profile_ceiling():
     (*_, time), world, model = _run(*ASKED_TIME, four, overrides={"limits": LIMITS})
     assert model.adjudications == [] and "time" not in world.state.fulfillment["cart-1"]
     assert not any(f.startswith("conference") for f in time.fallbacks)
+
+
+ITEMS = _step("items", [{"act": "change_quantity", "fields": {"item": "ITEM-A", "quantity": "2"}}])
+
+
+def test_without_a_question_in_the_air_a_disagreement_still_goes_to_the_verifier():
+    """No ar: "quero 2 croissants", "pra amanhã", "vou buscar às 16h", sem "pode fechar". Nada foi perguntado, e
+    o Jev leu "horário da loja": a IA e o Jev discordam, e o verificador decide com a conversa."""
+    four = _step("four", [AT_FOUR], alternatives=[[HOURS]], adjudication=0)
+    (*_, time), world, model = _run(ITEMS, TOMORROW, four)
+    assert world.state.fulfillment["cart-1"]["time"] == "16:00"
+    assert "conference:free:disagreement" in time.fallbacks
+    assert model.adjudications[0].context.pending is None
+
+
+def test_without_a_question_in_the_air_the_doubt_confirms_the_reader_reading():
+    four = _step("four", [AT_FOUR], alternatives=[[HOURS]])
+    (*_, time, yes), world, _ = _run(ITEMS, TOMORROW, four, YES)
+    assert time.reply.template_ids == ("ask_clarification.confirm_reading",) and not time.commands
+    assert world.state.fulfillment["cart-1"]["time"] == "16:00"  # o "sim" aplicou
+
+
+HMM = _step("hmm", [HOURS], alternatives=[[AT_FOUR]])  # a resposta à confirmação dá dúvida de novo
+
+
+def test_the_confirmation_is_not_repeated_the_close_question_comes_back():
+    """Coordenação (24/11): "Só para confirmar" no máximo uma vez seguida. Com o fechamento em curso, a dúvida
+    seguinte devolve a pergunta do fechamento."""
+    four = _step("four", [HOURS], alternatives=[[AT_FOUR]])
+    (*_, time, again), world, _ = _run(*ASKED_TIME, four, HMM)
+    assert time.reply.template_ids == ("ask_clarification.confirm_reading",)
+    assert again.reply.template_ids[-1] == "present_terms.needs_delivery_time_slot"
+    assert "time" not in world.state.fulfillment["cart-1"]
+
+
+def test_without_a_close_the_second_doubt_asks_to_say_it_another_way():
+    four = _step("four", [AT_FOUR], alternatives=[[HOURS]])
+    (*_, time, again), world, _ = _run(ITEMS, TOMORROW, four, HMM)
+    assert time.reply.template_ids == ("ask_clarification.confirm_reading",)
+    assert again.reply.template_ids == ("ask_clarification.more",)  # nem confirma de novo, nem abre o fechamento
+    assert "time" not in world.state.fulfillment["cart-1"]
