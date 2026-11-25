@@ -1210,6 +1210,13 @@ class Command(BaseCommand):
         # Marca da casa nos feitos aqui, do fabricante na revenda: a mesma
         # tabela que o `apply_product_brands` aplica num banco que já roda.
         apply_brands(apply=True)
+        # As palavras-chave aprovadas pelo dono para a Concierge (24/11/2026), as mesmas
+        # que o `concierge_keywords --write` gravou no ar: "madalena" acha a Madeleine.
+        # Só nos publicados, como no ar; depois da Mercearia, porque a proposta também fala
+        # da água e do camembert.
+        from io import StringIO
+
+        call_command("concierge_keywords", "--write", stdout=StringIO())
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)

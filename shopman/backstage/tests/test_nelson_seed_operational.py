@@ -747,6 +747,24 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_nelson_seed_carries_the_concierge_keywords_the_owner_approved(monkeypatch):
+    """O seed grava as palavras-chave aprovadas (24/11/2026) como o ``--write`` gravou no ar:
+    só nos produtos publicados, o teste vê o que o cliente vê ("madalena" acha a Madeleine)
+    e o corte do dono vale."""
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    from shopman.offerman.models import Product
+
+    def words(sku):
+        return {tag.name for tag in Product.objects.get(sku=sku).keywords.all()}
+
+    assert {"madalena", "bolinho francês"} <= words("MDLN")
+    assert {"campagne oval", "pão oval"} <= words("CPG")
+    assert "italiano" not in words("CI")
+
+
+@pytest.mark.django_db
 def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
     monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
 
