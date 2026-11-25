@@ -49,3 +49,22 @@ Run [45697517315](https://github.com/nelsonboulangerie/django-shopman/actions/ru
 | backstage heavy-1 | 6,0 |
 
 Job mais longo do Runtime Gate: **17,6 → 11,6 min** ao longo do dia, sem custo. O `heavy` partiu 6,0 × 10,0 na CI contra 647 × 650 s nos pesos locais: o peso relativo de alguns arquivos é outro no runner da CI. É o caso que a vigia corrige, re-medindo os pesos pelo junit da fila (`make shard-weights run=<id>`). Este run saiu mais lento em geral que os anteriores (seed 9,3 contra 7,7): n=2, oscilação entre horários.
+
+## `pos-nuxt`: geometria e navegador juntos (Surfaces Gate)
+
+Linha do tempo de 12 grupos verdes da fila (25/11): a cadeia do Surfaces Gate custa ~0,4 min (jobs criados juntos, espera 0,1 min); o caminho crítico é o próprio `pos-nuxt`, 14,6 min de execução, com geometria (6,2) e navegador (3,9) em série. Dentro da geometria, `saleColumn.spec.ts` sozinho leva 5,1 min num worker: todos os testes dele usam a mesma comanda do mock, que guarda estado, e por isso NÃO se soltou o paralelismo dentro do arquivo.
+
+O que se fez: as duas fases (mock, app, portas e outputDir próprios, provados pelo `surface_contract.mjs validate`) rodam juntas, com largada escalonada. Largando juntas, 1 de 2 rodadas locais estourou 120 s no primeiro teste da geometria (o `nuxt build` do navegador disputou CPU com a compilação a frio do `nuxt dev`). Escalonado: 3/3 local e 5/5 na CI.
+
+Run [45706524929](https://github.com/nelsonboulangerie/django-shopman/actions/runs/45706524929), `ubuntu-latest`, 5 repetições:
+
+| rodada | geometria + navegador juntas | job inteiro |
+|---|---:|---:|
+| 1 | 341 s | 8,8 min |
+| 2 | 365 s | 10,1 min |
+| 3 | 493 s | 12,9 min |
+| 4 | 517 s | 13,6 min |
+| 5 | 376 s | 10,2 min |
+| mediana | **376 s (6,3 min)** contra 606 s em série na fila | **10,2 min** contra 14,6 |
+
+As rodadas 3 e 4 caíram em máquinas mais lentas (os testes de componente levaram 182 e 191 s, contra 121 a 136 s nas outras).

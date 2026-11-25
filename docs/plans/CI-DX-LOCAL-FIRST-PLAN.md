@@ -286,3 +286,5 @@ relatório de cada subteste e um `datetime.date` no `subTest(...)` não serializ
 distribuição dos workers poderia levar esse vermelho para a fila. A vigia ganhou um teto de
 **espera por runner** (`runner_wait_p95_min`), porque cada shard a mais disputa os runners grátis no
 pico. É o custo escondido de partir demais, e agora ele também é vigiado.
+
+**Quarta aplicação, no Surfaces Gate:** a linha do tempo da fila mostrou que a cadeia do Surfaces Gate quase não custa (~0,4 min). O caminho crítico é o `pos-nuxt` (14,6 min), com geometria e navegador em série. As duas fases têm mock, app, portas e pasta de saída próprios, e agora rodam **juntas**. A declaração é guardada como as outras decisões: `concurrentPhases` em `surfaces/contracts.json`, e o `surface_contract.mjs validate` reprova porta repetida ou pasta aninhada (as duas travas testadas). A largada é escalonada, porque largando juntas o primeiro teste da geometria estourou em 1 de 2 rodadas. Resultado na CI, 5/5 verdes: as duas fases caem de 10,1 para 6,3 min (mediana) e o job, de 14,6 para 10,2 min. Não se soltou o paralelismo dentro do `saleColumn.spec.ts`: os testes dele dividem a mesma comanda do mock.
