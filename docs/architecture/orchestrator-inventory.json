@@ -16002,12 +16002,20 @@
         {
           "responsibility": "infraestrutura",
           "symbols": [
+            "OPT_OUT_KEY",
+            "REASON_OPTED_OUT",
             "_alert_expired",
             "_customer_ref",
+            "_in_internal",
             "_ref_of",
             "_store",
             "_stored",
-            "logger"
+            "_team_version",
+            "is_opted_out",
+            "logger",
+            "opt_in",
+            "opt_out",
+            "team_preview_refs"
           ]
         }
       ]
