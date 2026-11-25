@@ -425,3 +425,40 @@ def test_o_dado_do_seed_nao_usa_travessao(arvore):
         }
     )
     assert not com_travessao, f"travessão em dado do seed: {com_travessao}"
+
+
+FOTOS = SEED.parents[3] / "surfaces/storefront-nuxt/public/img/products"
+
+
+def _foto_principal_por_sku(arvore):
+    """SKU → nome do arquivo da foto principal (a f-string ``{IMG}/x.webp``)."""
+    fotos = {}
+    for elemento in _no_da_atribuicao(arvore, "products_data").elts:
+        sku = elemento.elts[0].value
+        for parte in elemento.elts[1:]:
+            if isinstance(parte, ast.JoinedStr):
+                texto = "".join(v.value for v in parte.values if isinstance(v, ast.Constant))
+                if texto.endswith(".webp"):
+                    fotos[sku] = texto.lstrip("/")
+    return fotos
+
+
+def test_toda_foto_citada_pelo_seed_existe_na_loja():
+    """Foto apontada e não gravada vira imagem quebrada na loja e no Google."""
+    citadas = set()
+    for linha in SEED.read_text().splitlines():
+        if "{IMG}/" in linha:
+            for pedaco in linha.split("{IMG}/")[1:]:
+                nome = pedaco.split('"')[0].split("'")[0]
+                if nome.endswith(".webp"):
+                    citadas.add(nome)
+    assert citadas, "nenhuma foto {IMG}/… encontrada no seed"
+    faltando = sorted(nome for nome in citadas if not (FOTOS / nome).exists())
+    assert not faltando, f"fotos citadas no seed sem arquivo em {FOTOS}: {faltando}"
+
+
+def test_campagne_oval_e_redondo_nao_dividem_a_foto(arvore):
+    """O oval (CPG) mostrava a foto do redondo (CPR) até 25/11/2026 (#3601)."""
+    fotos = _foto_principal_por_sku(arvore)
+    assert fotos["CPG"] == "cgo.webp"
+    assert fotos["CPR"] == "cgr.webp"

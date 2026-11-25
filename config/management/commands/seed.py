@@ -2281,7 +2281,7 @@ class Command(BaseCommand):
             ("TRADI", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
             ("CPG", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 0, True,
-             f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
+             f"{IMG}/cgo.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 0, True,
              f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,

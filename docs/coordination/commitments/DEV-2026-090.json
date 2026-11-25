@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-090",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Se CPR é o redondo, CPG é o oval, e a foto provavelmente esteja errada",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "issue #3601 (dono, 24/11; foto da Coordenação, 25/11)",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}
