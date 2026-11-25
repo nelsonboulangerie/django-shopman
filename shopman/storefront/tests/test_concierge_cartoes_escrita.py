@@ -126,6 +126,9 @@ CARDS = (
     ("palavra-chave", "quero 2 folhados de maca", [(ORDER, None, "folhados de maca", 2)], ("Chausson aux Pommes",), ()),
     ("palavra-chave", "tem rabanada?", [(ASK, None, "rabanada", 0)], ("Pain Perdu",), ()),
     ("palavra-chave", "tem um sanduiche de presunto?", [(ASK, None, "sanduiche de presunto", 0)], ("Croque Monsieur",), ()),
+    # "oval" distingue: o Pain de Campagne é o oval (dono, 24/11/2026). O Redondo o contradiz e
+    # o de passas é variante: vai direto, sem pergunta.
+    ("palavra-chave", "1 campagne oval", [(ORDER, None, "campagne oval", 1)], ("Pain de Campagne",), ()),
     # Falas reais da observação do ar, 18 a 24/11/2026 (#3591), redigidas: o pedido de produto
     # como o cliente escreveu, fora as do número do dono (testes) e as com nome que a redação
     # deixou passar. A leitura da IA vem como no ar: várias coisas num ato só.

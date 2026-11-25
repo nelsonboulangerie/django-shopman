@@ -667,13 +667,16 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
             # Ainda empatados: o nome que a fala inteira mais cita. "pão champagne" busca só
             # "campagne", e o "pão" da fala é o "Pain" do Pain de Campagne.
             said = len(name_terms & said_terms)
+            # E ainda: o que não é variante. "campagne" põe o Pain de Campagne antes do Campagne
+            # Redondo e do de passas, que levam no nome uma palavra que o cliente não disse.
+            extra = len({heard(word) for word in _public_search_terms(name)} - said_terms - {heard("pao")})
             if score:
-                ranked_items.append((-score, -named, -said, index, item))
-        ranked_items.sort(key=lambda row: (row[0], row[1], row[2], 0 if row[4].can_add_to_cart else 1, row[3]))
+                ranked_items.append((-score, -named, -said, extra, index, item))
+        ranked_items.sort(key=lambda row: (row[0], row[1], row[2], row[3], 0 if row[5].can_add_to_cart else 1, row[4]))
         if ranked_items:
             best_score = -ranked_items[0][0]
             threshold = max(1, best_score - 1)
-            items = [item for score, _named, _said, _, item in ranked_items if -score >= threshold]
+            items = [item for score, _named, _said, _extra, _, item in ranked_items if -score >= threshold]
         else:
             items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
