@@ -351,10 +351,16 @@ def tests_reading(root: Path, pattern: str) -> list[str]:
 
 
 def focused_tests(root: Path, files: list[str]) -> dict[str, list[str]]:
-    """Testes do que mudou: o próprio arquivo de teste e ``test_<módulo>*``.
+    """Testes do que mudou. Devolve {diretório de execução: [alvos]}.
 
-    Devolve {diretório de execução: [alvos]}: os pacotes do Core rodam de
-    dentro de ``packages/<pkg>`` (cada um tem settings próprio).
+    * pacote do Core (``packages/<pkg>``): a suíte INTEIRA do pacote, rodada de
+      dentro dele (cada um tem settings próprio). É barata (a de ``utils`` leva
+      menos de 1 s) e o nome não diz quem testa o quê: medido em 25/11, quebrar
+      ``utils.monetary.format_money`` só reprova em ``test_money_field.py``;
+    * ``shopman/``, ``tools/``, ``config/``: o próprio arquivo de teste, os
+      ``test_<módulo>*`` do app e os testes que importam o módulo pelo nome
+      pontilhado;
+    * ``scripts/``: ``scripts/tests/test_<script>*``.
     """
     out: dict[str, set[str]] = {}
     for path in files:
@@ -362,25 +368,31 @@ def focused_tests(root: Path, files: list[str]) -> dict[str, list[str]]:
         if p.suffix != ".py" or not (root / p).exists():
             continue
         if p.parts[0] == "packages" and len(p.parts) > 2:
-            cwd, rel = f"packages/{p.parts[1]}", Path(*p.parts[2:])
-        elif p.parts[0] in ("shopman", "tools", "config", "scripts"):
-            cwd, rel = ".", p
-        else:
+            out.setdefault(f"packages/{p.parts[1]}", set()).add(".")
             continue
-        base = root / cwd
+        if p.parts[0] not in ("shopman", "tools", "config", "scripts"):
+            continue
         if p.name.startswith("test_"):
-            out.setdefault(cwd, set()).add(str(rel))
+            out.setdefault(".", set()).add(str(p))
             continue
         if p.name in ("__init__.py", "apps.py", "conftest.py") or "migrations" in p.parts:
             continue
-        top = base / rel.parts[0] if len(rel.parts) > 1 else base
-        if cwd == "." and p.parts[0] == "shopman" and len(p.parts) > 2:
-            top = root / "shopman" / p.parts[1]
-        if cwd == "." and p.parts[0] == "scripts":
+        if p.parts[0] == "scripts":
             top = root / "scripts" / "tests"
-        for t in top.rglob(f"test_{p.stem}*.py"):
-            out.setdefault(cwd, set()).add(str(t.relative_to(base)))
-    return {k: sorted(v) for k, v in out.items()}
+        elif p.parts[0] == "shopman" and len(p.parts) > 2:
+            top = root / "shopman" / p.parts[1]
+        else:
+            top = root / p.parts[0]
+        hits = {str(t.relative_to(root)) for t in top.rglob(f"test_{p.stem}*.py")}
+        if p.parts[0] == "shopman":
+            dotted = ".".join(p.with_suffix("").parts)
+            grep = subprocess.run(
+                ["git", "grep", "-l", "-F", dotted, "--", "shopman/*test_*.py"],
+                cwd=root, capture_output=True, text=True,
+            ).stdout.split()
+            hits.update(g for g in grep if (root / g).exists())
+        out.setdefault(".", set()).update(hits)
+    return {k: sorted(v) for k, v in out.items() if v}
 
 
 def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Plan:
@@ -408,11 +420,25 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
             steps.append(Step("ruff (arquivos tocados)", f"{q(str(py.parent / 'ruff'))} check " + " ".join(map(q, py_files)), origin="runtime-gate.yml#quality"))
         for cwd, targets in focused_tests(root, files).items():
             pytest = f"{q(str(py))} -m pytest -q -p no:cacheprovider"
-            if cwd == "." and all(t.startswith("scripts/") for t in targets):
-                pytest = f"PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 {pytest} -p no:django -W ignore::pytest.PytestConfigWarning"
-            elif len(targets) > 3:
-                pytest += " -n auto"
-            steps.append(Step(f"testes do que mudou ({cwd})", f"{pytest} " + " ".join(map(q, targets)), cwd=cwd, slot="cpu", origin="local"))
+            scripts_only = [t for t in targets if t.startswith("scripts/")]
+            others = [t for t in targets if not t.startswith("scripts/")]
+            if scripts_only:
+                steps.append(Step(
+                    "testes do que mudou (scripts)",
+                    f"PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 {pytest} -p no:django -W ignore::pytest.PytestConfigWarning " + " ".join(map(q, scripts_only)),
+                    slot="cpu", origin="local",
+                ))
+            if others:
+                xdist = " -n auto" if cwd == "." and len(others) > 3 else ""
+                steps.append(Step(f"testes do que mudou ({cwd})", f"{pytest}{xdist} " + " ".join(map(q, others)), cwd=cwd, slot="cpu", origin="local"))
+        if any(f.endswith(".md") for f in files):
+            # Plano novo sem índice, link morto, ADR fora do padrão: reprovam no
+            # `quality` e custam segundos aqui (25/11: o plano desta frente).
+            steps.append(Step(
+                "governança documental (ADR, links, índice de planos)",
+                f"{q(str(py))} scripts/check_adr_governance.py && {q(str(py))} scripts/check_docs_governance.py",
+                origin="runtime-gate.yml#quality",
+            ))
         if touched:
             entries = surface_matrix(root, heavy=False, surfaces=json.dumps(sorted(touched)))
             steps += surface_steps(root, entries, ("unit",), remote, touched, install=False)

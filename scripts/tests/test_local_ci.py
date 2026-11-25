@@ -111,9 +111,17 @@ def test_espelho_le_os_jobs_reais_que_o_executor_usa():
 
 
 def test_testes_focados_por_modulo_e_por_pacote():
-    found = local_ci.focused_tests(ROOT, ["scripts/ci_scope.py", "packages/refs/shopman/refs/registry.py"])
+    found = local_ci.focused_tests(ROOT, ["scripts/ci_scope.py", "packages/utils/shopman/utils/monetary.py"])
     assert "scripts/tests/test_ci_scope.py" in found["."]
-    assert all(not t.startswith("packages/") for t in found.get("packages/refs", []))
+    # Core: a suíte inteira do pacote — quem testa format_money é test_money_field.py
+    assert found["packages/utils"] == ["."]
+
+
+def test_testes_focados_incluem_quem_importa_o_modulo():
+    found = local_ci.focused_tests(ROOT, ["shopman/shop/lifecycle.py"])
+    hits = found["."]
+    assert any(h.endswith("test_lifecycle.py") or "lifecycle" in h for h in hits)
+    assert all(h.startswith("shopman/") for h in hits)
 
 
 def test_plano_doc_so_e_leve_e_nao_roda_suite_python(monkeypatch):
