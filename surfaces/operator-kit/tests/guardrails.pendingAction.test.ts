@@ -307,8 +307,8 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
     expect(feedback).toMatch(/@keyframes operator-route-bar \{\s*from \{ transform/);
     const paints = readFileSync(join(kitDir, "app/plugins/navigationPaintsFirst.client.ts"), "utf8");
     expect(paints).toContain("await nextPaint()");
-    const css = readFileSync(join(kitDir, "app/assets/css/operator-base.css"), "utf8");
-    expect(css).toContain("a[data-navigation-pending]");
+    // A marca do link mora no próprio componente (global), não no tema com gate de baseline.
+    expect(feedback).toMatch(/<style>\s*[\s\S]*a\[data-navigation-pending\]/);
     // Todo app da suíte monta o OperatorAppRoot: é por ele que a barra chega.
     for (const dir of OPERATOR_KIT_SURFACES) {
       const app = join(surfacesDir, dir, "app/app.vue");

@@ -1906,7 +1906,7 @@ Contrato:
   `OperatorAppRoot`) começa a espera no `page:loading:start`, antes do middleware, com
   uma barra de rota indeterminada no topo (só `transform`, sem fade: o compositor a
   mantém andando mesmo com a thread presa), e marca o link tocado (`aria-busy` +
-  `data-navigation-pending`, esmaecido pelo `operator-base.css`). O atalho que abre
+  `data-navigation-pending`, esmaecido por um estilo global do próprio componente). O atalho que abre
   outro app (origem diferente) ganha a marca, a barra e o modal no toque: no PWA não
   há barra do navegador para dizer que a página está vindo.
 - **Pinta antes de trabalhar**: `app/plugins/navigationPaintsFirst.client.ts` faz a

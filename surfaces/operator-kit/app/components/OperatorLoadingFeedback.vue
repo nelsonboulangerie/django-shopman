@@ -303,3 +303,16 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+
+<style>
+/* Clique nunca inerte (DEV-2026-094): o link tocado fica esmaecido, com cursor de
+   progresso, do toque até a página chegar (este componente marca e desmarca). Mora
+   aqui, global, e não no tema (`operator-base.css`): é comportamento da espera, não
+   aparência da suíte, e o tema tem gate de baseline. Sem transição: a marca precisa
+   pintar no primeiro quadro depois do toque. */
+a[data-navigation-pending] {
+  cursor: progress;
+  opacity: 0.6;
+  transition: none;
+}
+</style>
