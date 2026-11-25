@@ -365,32 +365,6 @@
       }
     }
   },
-  "billing": [
-    {
-      "sku": "Actions Linux",
-      "minutes": 725244.0,
-      "gross": 4351.46,
-      "net": 0.0
-    },
-    {
-      "sku": "Actions Linux 4-core",
-      "minutes": 16872.0,
-      "gross": 202.46,
-      "net": 184.46
-    },
-    {
-      "sku": "Actions macOS 3-core",
-      "minutes": 34878.0,
-      "gross": 2162.44,
-      "net": 0.0
-    },
-    {
-      "sku": "Actions storage",
-      "minutes": 52657.96,
-      "gross": 17.69,
-      "net": 0.0
-    }
-  ],
   "merges": {
     "merged_via_queue": 618,
     "first_enqueue_to_merge": {
