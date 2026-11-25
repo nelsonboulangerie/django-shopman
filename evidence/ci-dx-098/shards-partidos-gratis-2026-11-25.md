@@ -12,3 +12,21 @@ Run [45673961882](https://github.com/nelsonboulangerie/django-shopman/actions/ru
 | pos-nuxt | 11,0 | 12,5 |
 
 Job mais longo do Runtime Gate: ~17,6 → ~12,9 min, sem custo. Os jobs que não mudaram oscilaram de 1 a 2 min entre os dois runs (horário e carga diferentes; n=2). O próximo limite é o patamar de ~13 min (`heavy`, `shop rest`, `rest-1`) e, no grupo, a cadeia do Surfaces Gate (#3635).
+
+## Com o `shop rest` também partido
+
+Run [45688139461](https://github.com/nelsonboulangerie/django-shopman/actions/runs/45688139461), `ubuntu-latest`, 2 repetições, 18/18 verdes:
+
+| job | min (p50) |
+|---|---:|
+| pos-nuxt (Surfaces Gate) | 13,0 |
+| backstage heavy | 12,6 |
+| backstage rest-2 | 10,6 |
+| backstage rest-1 | 9,0 |
+| backstage seed-2 | 8,5 |
+| shop heavy | 8,5 |
+| shop rest-2 | 8,1 |
+| backstage seed-1 | 7,7 |
+| shop rest-1 | 7,5 |
+
+`shop rest` 10,2–12,7 → 7,5 / 8,1 min. O job mais longo do Runtime Gate passou a ser o `backstage heavy` (12,6), e o do grupo, o `pos-nuxt` (Surfaces Gate). Próximos candidatos: partir o `heavy` pelo mesmo mecanismo e encurtar a cadeia do Surfaces Gate (#3635).
