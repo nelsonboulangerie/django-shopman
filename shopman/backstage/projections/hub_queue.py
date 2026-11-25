@@ -220,6 +220,7 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
 
     from shopman.backstage.projections import order_queue
     from shopman.backstage.projections.preorders import _channel_labels, _fallback_channel_label
+    from shopman.shop.policies.order_payment import awaits_online_payment
     from shopman.shop.services import order_composition
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
@@ -232,7 +233,13 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
     # (60 min de prazo, dono 09/11); a encomenda já aceita que ainda não chegou à
     # hora dela vive na lista "Encomendas" e não é trabalho do dia.
     today_work = [order for order in active if not _waits_outside_the_board(order)]
-    to_accept = [order for order in today_work if order.status == "new"]
+    # O pedido que espera o dinheiro online não é "para aceitar": ninguém consegue
+    # aceitá-lo até o Pix ou o cartão cair (DEV-2026-091). Ele volta a contar no
+    # instante em que o pagamento cai.
+    to_accept = [
+        order for order in today_work
+        if order.status == "new" and not awaits_online_payment(order)
+    ]
     deadlines = order_queue._confirmation_deadlines([order.ref for order in to_accept])
     channels = _channel_labels({order.channel_ref or "" for order in to_accept})
 

@@ -209,6 +209,9 @@ export function queueItems(
   const items: QueueItem[] = [];
   for (const card of cards) {
     if (seen.has(card.ref) || (!card.attention && scope !== "all")) continue;
+    // Esperando o Pix ou o cartão: mora na faixa "Aguardando pagamento", nem no
+    // "Todos" (DEV-2026-091). O prazo vencido devolve o attention e o pedido.
+    if (!card.attention && card.awaits_online_payment) continue;
     seen.add(card.ref);
     const item = itemFor(card, nowMs);
     if (scope === "late" && item.tone !== "late") continue;
@@ -238,8 +241,51 @@ export function queueScopeCounts(
   return {
     attention: attention.length,
     late: attention.filter((item) => item.tone === "late").length,
-    all: new Set(cards.map((card) => card.ref)).size,
+    all: new Set(
+      cards
+        .filter((card) => card.attention || !card.awaits_online_payment)
+        .map((card) => card.ref),
+    ).size,
   };
+}
+
+export interface AwaitingPaymentRow {
+  ref: string;
+  /** "K12": o código que a casa fala. */
+  code: string;
+  /** "Ana · R$ 48,70" */
+  who: string;
+  /** "Aguardando Pix há 2 min" */
+  wait: string;
+}
+
+/**
+ * A faixa "Aguardando pagamento (N)" no fim da Fila (DEV-2026-091, escolha do dono,
+ * 25/11/2026): o pedido novo que só espera o Pix ou o cartão cair. Não pede ninguém,
+ * não conta como pendência e não toca; fica recolhido e só para leitura. No instante
+ * em que o pagamento cai, o servidor dá a ele o `attention` e ele sobe para a Fila
+ * tocando como pedido novo. O prazo do pagamento vencido também devolve o
+ * `attention` ("Cancelar não pago"), e aí ele sai daqui.
+ */
+export function awaitingPayment(
+  cards: OrderCardProjection[],
+  nowMs: number,
+): AwaitingPaymentRow[] {
+  const seen = new Set<string>();
+  return cards
+    .filter((card) => card.awaits_online_payment && !card.attention)
+    .filter((card) => (seen.has(card.ref) ? false : (seen.add(card.ref), true)))
+    .sort((a, b) => a.created_at_iso.localeCompare(b.created_at_iso))
+    .map((card) => {
+      const seconds = secondsSince(card.created_at_iso, nowMs) ?? card.elapsed_seconds ?? 0;
+      const method = String(card.payment_method_label || "pagamento");
+      return {
+        ref: card.ref,
+        code: splitRef(card.ref).code,
+        who: [card.customer_name, card.total_display].filter(Boolean).join(" · "),
+        wait: `Aguardando ${method} há ${minutesLabel(seconds)}`,
+      };
+    });
 }
 
 export interface ProgressLine {

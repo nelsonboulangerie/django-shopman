@@ -679,6 +679,7 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
+  awaits_online_payment: boolean;
   customer_whatsapp_url: string;
   advance_block_waits: boolean;
   promise: OrderPromiseProjection | null;

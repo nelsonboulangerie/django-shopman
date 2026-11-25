@@ -189,10 +189,18 @@ def _stage_attention(order: Order, card) -> str:
     advance = _action(card, "advance")
     advance_ready = bool(advance and advance.enabled and advance.priority == "primary")
     if status == Order.Status.NEW:
-        # Só o pagamento que ainda não caiu bloqueia "de fora" (avança sozinho
-        # quando cair). Qualquer outra recusa do aceite (falta de estoque, por
-        # exemplo) pede uma pessoa: recusar ou resolver.
-        return "blocked" if not card.can_confirm and card.payment_pending else "confirm"
+        if getattr(card, "awaits_online_payment", False):
+            # Esperando o dinheiro online (Pix ou cartão que ainda não caiu): não
+            # há o que fazer até ele cair, e o Gestor não o mostra como pendência,
+            # nem toca (dono, 25/11/2026, DEV-2026-091). Quando o pagamento cai, o
+            # pedido vira "confirm" pela primeira vez, e é ESSE o toque de pedido
+            # novo. Só volta a pedir alguém quando o prazo do pagamento venceu e o
+            # pedido não cancelou sozinho: aí há o "Cancelar não pago".
+            return "blocked" if getattr(card, "payment_lapsed", False) else ""
+        # Qualquer outra recusa do aceite (falta de estoque, por exemplo) pede uma
+        # pessoa: recusar ou resolver. O cartão já autorizado não espera mais nada
+        # de fora: o aceite é que cobra.
+        return "confirm"
     if status == Order.Status.ACCEPTED:
         if advance_ready and card.next_status == Order.Status.PREPARING:
             return "start"

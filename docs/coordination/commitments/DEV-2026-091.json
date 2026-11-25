@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-091",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Se um pedido ainda não pago nem pode ser Aceito, vale a pena mostrá-lo no gestor??? Porque não mostrar no gestor apenas quando o operador pode fazer algo a respeito??? Até porque, quando o pagamento é de fato realizado, o gestor nem recebe um novo alerta.",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

@@ -104,3 +104,24 @@ class PaymentMethodRule(BaseRule):
             return
         code, message = refused
         raise OrderValidationError(code=code, message=message, context={"field": "payment_method"})
+
+
+def awaits_online_payment(order, *, payment_reads=None, channel_config=None) -> bool:
+    """O pedido novo só espera o dinheiro online (Pix ou cartão que não caiu)?
+
+    É a mesma régua do aceite (``lifecycle.ensure_payment_captured``): quem paga
+    na entrega ou na loja, o PDV e o iFood nunca esperam aqui, e o cartão já
+    autorizado também não. Lê, não grava. Usado para tirar da contagem do
+    "para aceitar" o que ninguém consegue aceitar ainda (DEV-2026-091).
+    """
+    from shopman.orderman.exceptions import InvalidTransition
+
+    from shopman.shop.lifecycle import ensure_payment_captured
+
+    if str(getattr(order, "status", "")) != "new":
+        return False
+    try:
+        ensure_payment_captured(order, payment_reads=payment_reads, channel_config=channel_config)
+    except InvalidTransition as exc:
+        return exc.code == "payment_not_captured"
+    return False

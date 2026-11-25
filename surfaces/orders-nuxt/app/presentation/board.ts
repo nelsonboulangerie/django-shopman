@@ -327,6 +327,14 @@ export interface ZoneView {
   icon: string;
   cards: OrderCardProjection[];
   count: number;
+  /** Só na coluna Novos: o pedido que espera o Pix ou o cartão cair (DEV-2026-091).
+   *  Fora de `cards` e de `count`; a coluna o mostra recolhido no fim. */
+  awaiting?: OrderCardProjection[];
+}
+
+/** O pedido novo que só espera o dinheiro online, e ninguém pode fazer nada ainda. */
+function waitsOnlinePayment(card: OrderCardProjection): boolean {
+  return Boolean(card.awaits_online_payment) && !card.attention;
 }
 
 /** O estado vazio de cada coluna, nomeando a zona.
@@ -380,8 +388,9 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
       title: "Novos",
       subtitle: "Aceitar ou recusar",
       icon: "lucide:inbox",
-      cards: queue.intake,
-      count: queue.intake.length,
+      cards: queue.intake.filter((card) => !waitsOnlinePayment(card)),
+      count: queue.intake.filter((card) => !waitsOnlinePayment(card)).length,
+      awaiting: queue.intake.filter(waitsOnlinePayment),
     },
     {
       key: "prep",
