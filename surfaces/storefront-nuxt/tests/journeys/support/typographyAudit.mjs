@@ -8,7 +8,13 @@
 //   - todo `.shop-reading` (corpo de leitura) tem pelo menos 16 px;
 //   - com `zoomed`, nenhum decisivo nem CTA (botão, link com papel de botão) some ou fica
 //     cortado: tamanho zero, fora da largura da tela ou com o texto maior que a própria
-//     caixa sob `overflow` que esconde.
+//     caixa sob `overflow` que esconde;
+//   - com `zoomed` e `obscured` (opt-in, a comparação A/B do OC-23 liga), nenhum decisivo
+//     nem CTA fica EMBAIXO de outra coisa: levado ao meio da tela, o ponto que ele ocupa
+//     é dele, não de um cabeçalho grudado, de uma folha ou de uma foto por cima (WCAG
+//     1.4.4, 1.4.10, 2.4.11). O cartão de ação da base (`.shop-action-dock`) fica de fora
+//     desta: tem regra própria, abaixo (#3573). Opt-in porque a varredura do X9 da fila
+//     (x9-tipografia-decisiva.spec.ts) ainda não tem issue para cada achado desta medida.
 //
 // O fundo é composto subindo pelos ancestrais até o primeiro opaco; cor em qualquer espaço
 // (oklch, color-mix) é normalizada pelo canvas. Sobre foto (`background-image` ou `<img>`
@@ -18,9 +24,10 @@
 // É JavaScript puro (sem TypeScript) para servir à suíte (tests/journeys) e ao script de
 // prévia que mede antes e depois com o mesmo código.
 
-/** @param {{ zoomed?: boolean, inventory?: boolean }} [opts] */
+/** @param {{ zoomed?: boolean, obscured?: boolean, inventory?: boolean }} [opts] */
 export function auditTypographyInPage (opts = {}) {
   const zoomed = Boolean(opts.zoomed)
+  const obscured = zoomed && Boolean(opts.obscured)
   const canvas = document.createElement('canvas')
   canvas.width = 1
   canvas.height = 1
@@ -76,6 +83,20 @@ export function auditTypographyInPage (opts = {}) {
     let o = 1
     for (let node = el; node && node.nodeType === 1; node = node.parentElement) o *= Number(getComputedStyle(node).opacity)
     return o
+  }
+
+  /** O que está por cima PINTA sobre o elemento? O link esticado do cartão (transparente,
+   *  `absolute inset-0`) recebe o toque mas não esconde o preço: não é encobrir. Encobre o
+   *  que tem fundo, imagem ou texto próprio entre o ponto e o ancestral comum. */
+  function paintsOver (hit, el) {
+    if (['IMG', 'SVG', 'VIDEO', 'CANVAS', 'PICTURE'].includes(hit.tagName.toUpperCase())) return true
+    for (let node = hit; node && node.nodeType === 1 && !node.contains(el); node = node.parentElement) {
+      const cs = getComputedStyle(node)
+      if (cs.backgroundImage && cs.backgroundImage !== 'none') return true
+      if (rgba(cs.backgroundColor)[3] > 0.1) return true
+      if ([...node.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) return true
+    }
+    return false
   }
 
   function visible (el) {
@@ -180,6 +201,8 @@ export function auditTypographyInPage (opts = {}) {
     }
 
     const vw = document.documentElement.clientWidth
+    const scrollX0 = window.scrollX
+    const scrollY0 = window.scrollY
     const ctas = document.querySelectorAll('[data-decisive], button, a[role="button"], a[data-slot="button"], [data-cta]')
     for (const el of ctas) {
       const cs = getComputedStyle(el)
@@ -214,7 +237,29 @@ export function auditTypographyInPage (opts = {}) {
       if (clips && el.scrollWidth > el.clientWidth + 1) findings.push({ kind: 'cta', text: name, rule: 'texto cortado com fonte 200 %', where: where(el) })
       // A linha cortada por `line-clamp`/altura fixa: o texto é mais alto que a caixa.
       if (['hidden', 'clip'].includes(cs.overflowY) && el.scrollHeight > el.clientHeight + 2) findings.push({ kind: 'cta', text: name, rule: 'texto cortado na altura com fonte 200 %', where: where(el) })
+      // Botão que só aparece no hover (opacidade zero) não está à vista para ser encoberto.
+      if (obscured && !inRail && effectiveOpacity(el) > 0.05) {
+        // Levado ao meio da tela (o que a cliente faria rolando), o ponto do elemento é
+        // dele? O que não rola até ali (o fim da página sob um cartão fixo) fica embaixo.
+        el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
+        const box = el.getBoundingClientRect()
+        const vh = document.documentElement.clientHeight
+        const cx = Math.min(Math.max(box.left + Math.min(box.width, 40) / 2, 0), vw - 1)
+        const cy = Math.min(Math.max(box.top + box.height / 2, 0), vh - 1)
+        const hit = document.elementFromPoint(cx, cy)
+        // O cartão da base já é medido pela regra dele (área livre, #3573) e, onde segue com
+        // defeito, é exceção declarada (#3590): não se conta duas vezes.
+        const byDock = hit && hit.closest('.shop-action-dock')
+        if (hit && !byDock && !(hit === el || el.contains(hit) || hit.contains(el)) && paintsOver(hit, el)) {
+          // A camada que cobre: o primeiro ancestral fixo ou grudado (barra, cartão da base),
+          // para o achado dizer QUEM cobre mesmo quando o ponto cai num texto dentro dela.
+          let layer = hit
+          while (layer && layer.nodeType === 1 && !['fixed', 'sticky'].includes(getComputedStyle(layer).position)) layer = layer.parentElement
+          findings.push({ kind: 'cta', text: name, rule: 'encoberto com fonte 200 %', by: where(hit), layer: layer && layer.nodeType === 1 ? where(layer) : '', where: where(el) })
+        }
+      }
     }
+    if (obscured) window.scrollTo({ left: scrollX0, top: scrollY0, behavior: 'instant' })
   }
 
   // Inventário da prévia: TODO texto visível da página, decisivo ou não, com tamanho e

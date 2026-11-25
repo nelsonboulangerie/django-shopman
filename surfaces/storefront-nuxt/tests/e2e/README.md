@@ -204,3 +204,23 @@ script sobe sozinho (porta em `JOURNEYS_MAPS_PORT`, padrão 12192).
 
 Derrube o que subiu (`kill` nos processos do `runserver`, do worker e dos dois
 `node .output/server/index.mjs`) e, se o banco era só da jornada, `dropdb shopman_exc_l00`.
+
+## 4. Comparação A/B supervisionada (`tests/e2e/journeys/`, OC-23)
+
+As jornadas essenciais do §5.1 do plano da Etapa II omnicanal, escritas uma vez e rodadas
+para a versão A e para a B na pilha da seção 3, com a mesma cliente (CLI-003) e o mesmo
+seed. Quem decide a versão é o servidor (a cliente fora ou dentro da coorte das
+`RuleConfig` do harness, `shopman/shop/tests/e2e/seed_experience.py --cohort
+--experiment`, que liga o de prova e todo `EXPERIMENT(<ref>)` da loja), nunca a URL.
+Cada passo é auditado em 320/375/390 px e no computador: captura, axe, X9
+(`data-decisive`) e X11 (fonte raiz a 200 %), com a medida da fila
+(`tests/journeys/support/typographyAudit.mjs`). Config própria
+(`playwright.experience.config.ts`); a suíte com servidor de mentira ignora esta pasta.
+
+```bash
+DATABASE_URL=postgres://localhost:5432/<banco só de jornada> \
+  lockf /tmp/shopman-previa.lock make experience-compare
+```
+
+Relatório em `test-results/experience-compare/relatorio.html`. Protocolo completo, com a
+sessão humana: [`docs/guides/comparacao-ab-supervisionada.md`](../../../../docs/guides/comparacao-ab-supervisionada.md).

@@ -14,6 +14,15 @@
 #
 # O banco é APAGADO pelo seed (`--flush`): use um banco só de jornada, nunca o de dev.
 # Só mata o que este script subiu.
+#
+# Botões para quem reusa a pilha com outra suíte (a comparação A/B do OC-23,
+# scripts/run_experience_compare.sh, é quem usa):
+#   JOURNEYS_PLAYWRIGHT_CONFIG  a config do Playwright (padrão playwright.journeys.config.ts)
+#   JOURNEYS_AFTER_SEED         comando que roda depois do seed e ANTES de o Django subir
+#                               (regra gravada com o servidor de pé não seria vista: sem Redis,
+#                               o cache das regras é por processo)
+#   JOURNEYS_SKIP_BUILD=1       usa o build da loja (e do Gestor) que já está em .output
+#   JOURNEYS_WITH_GESTOR=0      não compila nem sobe o Gestor (suíte que não o usa)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -104,9 +113,14 @@ done
 
 # Os builds vêm antes do seed: na pilha da casa que fecha (J5), o relógio começa a contar
 # no seed, e minutos de build não podem comer o tempo até o fechamento.
-echo "── Builds da loja e do Gestor ──"
-(cd "${STORE_DIR}" && npx nuxt build) >"${LOGS}/build-loja.log" 2>&1
-(cd "${GESTOR_DIR}" && npx nuxt build) >"${LOGS}/build-gestor.log" 2>&1
+WITH_GESTOR="${JOURNEYS_WITH_GESTOR:-1}"
+if [[ "${JOURNEYS_SKIP_BUILD:-0}" != "1" ]]; then
+  echo "── Builds da loja e do Gestor ──"
+  (cd "${STORE_DIR}" && npx nuxt build) >"${LOGS}/build-loja.log" 2>&1
+  if [[ "${WITH_GESTOR}" == "1" ]]; then
+    (cd "${GESTOR_DIR}" && npx nuxt build) >"${LOGS}/build-gestor.log" 2>&1
+  fi
+fi
 
 "${PYTHON_BIN}" manage.py migrate --noinput
 if [[ -n "${JOURNEYS_CLOSING_IN_MINUTES:-}" ]]; then
@@ -119,6 +133,10 @@ else
   # não existe, ele não aceita pedido nenhum sozinho. Só o seed o recebe.
   SHOPMAN_STAGING_AUTOPILOT=true SHOPMAN_STAGING_AUTOPILOT_CHANNELS=nenhum-canal \
     "${PYTHON_BIN}" manage.py seed --flush --profile qa
+fi
+if [[ -n "${JOURNEYS_AFTER_SEED:-}" ]]; then
+  echo "── Depois do seed: ${JOURNEYS_AFTER_SEED} ──"
+  bash -c "${JOURNEYS_AFTER_SEED}"
 fi
 
 echo "── Pilha ──"
@@ -154,11 +172,15 @@ PIDS+=("$!")
 HOST=127.0.0.1 PORT="${STORE_PORT}" NUXT_DJANGO_BASE_URL="http://127.0.0.1:${PROXY_PORT}" \
   node "${STORE_DIR}/.output/server/index.mjs" >"${LOGS}/loja.log" 2>&1 &
 PIDS+=("$!")
-HOST=127.0.0.1 PORT="${GESTOR_PORT}" NUXT_DJANGO_BASE_URL="${DJANGO_URL}" NUXT_PUBLIC_DJANGO_BASE_URL="${DJANGO_URL}" \
-  node "${GESTOR_DIR}/.output/server/index.mjs" >"${LOGS}/gestor.log" 2>&1 &
-PIDS+=("$!")
+if [[ "${WITH_GESTOR}" == "1" ]]; then
+  HOST=127.0.0.1 PORT="${GESTOR_PORT}" NUXT_DJANGO_BASE_URL="${DJANGO_URL}" NUXT_PUBLIC_DJANGO_BASE_URL="${DJANGO_URL}" \
+    node "${GESTOR_DIR}/.output/server/index.mjs" >"${LOGS}/gestor.log" 2>&1 &
+  PIDS+=("$!")
+fi
 wait_for "http://127.0.0.1:${STORE_PORT}/sacola" "loja.jornadas.localhost:${STORE_PORT}" "Loja" "${LOGS}/loja.log"
-wait_for "http://127.0.0.1:${GESTOR_PORT}/" "gestor.jornadas.localhost:${GESTOR_PORT}" "Gestor" "${LOGS}/gestor.log"
+if [[ "${WITH_GESTOR}" == "1" ]]; then
+  wait_for "http://127.0.0.1:${GESTOR_PORT}/" "gestor.jornadas.localhost:${GESTOR_PORT}" "Gestor" "${LOGS}/gestor.log"
+fi
 
 echo "── Jornadas ──"
 cd "${STORE_DIR}"
@@ -169,4 +191,4 @@ JOURNEY_MANYCHAT_URL="${MANYCHAT_URL}" \
 JOURNEY_MAPS_URL="${MAPS_URL}" \
 JOURNEY_OTP_FILE="${SHOPMAN_E2E_OTP_FILE}" \
 JOURNEY_PROXY_CONTROL="http://127.0.0.1:${PROXY_PORT}" \
-  npx playwright test --config=playwright.journeys.config.ts "$@"
+  npx playwright test --config="${JOURNEYS_PLAYWRIGHT_CONFIG:-playwright.journeys.config.ts}" "$@"
