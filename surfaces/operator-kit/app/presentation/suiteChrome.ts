@@ -354,6 +354,8 @@ export interface InboxAlertView {
   secondaryHrefLabel?: string;
   /** O gesto que resolve ali mesmo ("Aceitar"), quando o servidor o oferece. */
   actLabel?: string;
+  /** O gesto direto vem depois do lugar que resolve, em contorno (quem monta o cartão decide). */
+  actSecondary?: boolean;
   respondByIso?: string;
   deadlineKind?: "external" | "house";
   origin?: string;

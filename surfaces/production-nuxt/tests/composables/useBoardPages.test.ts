@@ -1,7 +1,7 @@
 import { nextTick, ref } from "vue";
 import { beforeEach, describe, expect, it } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { useBoardPages } from "~/composables/useBoardPages";
+import { boardPageStarts, useBoardPages } from "~/composables/useBoardPages";
 
 installNuxtGlobals();
 
@@ -49,5 +49,19 @@ describe("useBoardPages — airport-panel pagination math", () => {
     const { pageCount, visible } = useBoardPages(ref<number[]>([]));
     expect(pageCount.value).toBe(1);
     expect(visible.value).toEqual([]);
+  });
+
+  // WP-F04: nome longo ocupa duas linhas de palhetas; a página soma a altura real.
+  it("fatia por altura: linha de duas linhas de nome ocupa mais lugar", () => {
+    const fit = { capacity: 300, base: 50, extra: 40 };
+    // 5 linhas simples: 5 × 50 + 4 × 6 = 274 cabem; a sexta vira página.
+    expect(boardPageStarts([1, 1, 1, 1, 1, 1], fit)).toEqual([0, 5]);
+    // Duas linhas de nome (90) no meio: 50 + 90 + 50 + 50 + 3 × 6 = 258; +56 estoura.
+    expect(boardPageStarts([1, 2, 1, 1, 1], fit)).toEqual([0, 4]);
+    // Uma linha maior que a área ainda ganha a própria página (nunca some).
+    expect(boardPageStarts([1, 9, 1], { ...fit, capacity: 100 })).toEqual([0, 1, 2]);
+    expect(boardPageStarts([], fit)).toEqual([0]);
+    // O vão medido na tela entra na conta: com 15 px, 5 × 50 + 4 × 15 = 310 estoura.
+    expect(boardPageStarts([1, 1, 1, 1, 1], { ...fit, gap: 15 })).toEqual([0, 4]);
   });
 });

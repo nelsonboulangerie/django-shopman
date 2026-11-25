@@ -50,7 +50,7 @@ async function audit(page: Page, scope: string, name: string) {
     const out: Array<Record<string, unknown>> = [];
     const box = document.querySelector(root);
     if (!box) return out;
-    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *")) {
+    for (const el of box.querySelectorAll("[data-operator-inbox-answer] *, [data-operator-inbox-answer-field] textarea, [data-page-header-alert] *, button, button *, [data-operator-inbox-panel] p")) {
       const text = (el.childNodes.length && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent!.trim()))
         ? el.textContent!.trim().slice(0, 50) : "";
       if (!text && el.tagName !== "TEXTAREA") continue;
@@ -131,7 +131,39 @@ for (const viewport of VIEWPORTS) {
       await expect(panel).toContainText("conversa para a equipe");
       await expect(panel.getByRole("link", { name: /Responder no Live Chat/ }).first()).toBeVisible();
       await expect(panel.getByRole("link", { name: /Abrir conversa/ }).first()).toBeVisible();
+      // #3578 (dono, 24/11: "Com confirmação"): "Responder no Live Chat" é o principal; "Devolver à Concierge"
+      // vem em contorno, e pede confirmação.
+      const giveBack = panel.getByRole("button", { name: "Devolver à Concierge" });
+      await expect(giveBack).toBeVisible();
+      const [liveChatBox, giveBackBox] = [
+        await panel.getByRole("link", { name: /Responder no Live Chat/ }).first().boundingBox(),
+        await giveBack.boundingBox(),
+      ];
+      expect(liveChatBox && giveBackBox && liveChatBox.y < giveBackBox.y).toBeTruthy();
       await shot(page, `${id}-3-cartao-no-sino`);
+      await audit(page, "[data-operator-inbox-panel]", `${id}-3-cartao-no-sino`);
+
+      // 4. Sem confirmar, nada é devolvido: o "Cancelar" fecha o diálogo e nenhuma chamada sai.
+      const posts: string[] = [];
+      page.on("request", (request) => {
+        if (request.method() === "POST" && request.url().includes("/concierge-handoff/give-back/")) posts.push(request.url());
+      });
+      await giveBack.click();
+      const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog")).filter({ hasText: "A equipe terminou com este cliente?" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toContainText("A Concierge volta a responder.");
+      await shot(page, `${id}-4-confirmacao`);
+      await audit(page, "body", `${id}-4-confirmacao`);
+      await dialog.getByRole("button", { name: "Cancelar" }).click();
+      await expect(dialog).toBeHidden();
+      await page.waitForTimeout(400);
+      expect(posts).toEqual([]);
+
+      // 5. Com o "Devolver" do diálogo, a conversa volta, e o cartão sai.
+      await giveBack.click();
+      await dialog.getByRole("button", { name: "Devolver" }).click();
+      await expect.poll(() => posts.length).toBe(1);
+      await expect(panel.getByRole("button", { name: "Devolver à Concierge" })).toBeHidden();
     });
   }
 }

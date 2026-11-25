@@ -44,6 +44,9 @@ export interface OperatorInboxAlert {
   secondaryHrefLabel?: string;
   /** O gesto que resolve ali mesmo ("Aceitar"); o app executa por `act`. */
   actLabel?: string;
+  /** O gesto direto NÃO é o principal: o lugar que resolve (`href`) vem primeiro, sólido, e o gesto em contorno
+   *  ("Devolver à Concierge" sob "Responder no Live Chat", dono, 24/11: o gesto pede confirmação). */
+  actSecondary?: boolean;
   /** O servidor oferece "Visto" para este alerta. */
   canAck?: boolean;
   /** Prazo em que a causa decide sozinha (ISO). Com prazo e sem Visto, o

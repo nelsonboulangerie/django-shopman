@@ -27,6 +27,7 @@ from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401 (fixt
     outbox,
     surface,
 )
+from shopman.storefront.tests.test_concierge_verification import gestor  # noqa: F401 (fixture)
 
 pytestmark = pytest.mark.django_db
 
@@ -195,3 +196,57 @@ def test_after_the_verification_deadline_the_title_says_since_when(conversation)
 
     clock = format_clock(datetime.fromisoformat(opened))
     assert handoff_cards([card.pk])[card.pk]["subject"] == f"Ana espera a resposta da equipe desde {clock}"
+
+
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True})
+def test_a_message_during_the_handoff_brings_the_seen_card_back(conversation, outbox):  # noqa: F811
+    """#3578, medido no ar em 24/11: a conversa ficou com a equipe, o cliente escreveu, e o cartão já tinha sido
+    visto. A mensagem nova o traz de volta sem o Visto, com a fala do cliente."""
+    _to_team(conversation, "quero falar com um atendente", "h7")
+    _cards().update(acknowledged=True)
+
+    _receive(conversation, "Boa tarde, ainda estão aí?", "h8")  # com a conversa na equipe
+
+    [card] = _cards().filter(resolved_at__isnull=True)
+    assert card.acknowledged is False and "ainda estão aí" in card.message
+
+
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True})
+def test_the_card_gives_the_conversation_back_to_the_concierge_from_the_bell(conversation, outbox, client, gestor):  # noqa: F811
+    """#3578: o cartão do handoff tem "Devolver à Concierge"; o gesto é a mesma devolução do Admin, e o cartão sai."""
+    from shopman.backstage.projections.alerts import build_operator_alerts_projection
+    from shopman.backstage.services import alerts as alert_service
+
+    _to_team(conversation, "quero falar com um atendente", "h9")
+    [row] = build_operator_alerts_projection(
+        alerts=list(_cards()), counts=alert_service.active_counts(scope="orders"), surface="orders"
+    ).alerts
+    [give_back] = [a for a in row.actions if a.kind == "give_back_to_concierge"]
+    assert (give_back.label, give_back.method, give_back.source_alert_effect) == (
+        "Devolver à Concierge", "POST", "resolves")
+    # Com confirmação (dono, 24/11): o Gestor pergunta antes; a resposta do servidor diz isso.
+    assert give_back.confirmation.required is True
+    assert give_back.confirmation.title == "A equipe terminou com este cliente?"
+    client.force_login(gestor)
+
+    response = client.post(give_back.href)
+
+    assert response.status_code == 200 and response.json()["ok"] is True
+    conversation.refresh_from_db()
+    assert conversation.state == Conversation.State.ACTIVE
+    assert _cards().filter(resolved_at__isnull=True).count() == 0
+    # Já devolvida: o cartão fechou, e o gesto não vale de novo.
+    assert client.post(give_back.href).status_code == 404
+
+
+def test_without_the_orders_audience_the_card_cannot_give_back(conversation, outbox, client):  # noqa: F811
+    from django.contrib.auth.models import User
+
+    with override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "human_return_enabled": True}):
+        _to_team(conversation, "quero falar com um atendente", "h10")
+    [card] = _cards()
+    client.force_login(User.objects.create_user("sem-pedidos-handoff", password="pw", is_staff=True))
+
+    assert client.post(f"/api/v1/backstage/alerts/{card.pk}/concierge-handoff/give-back/").status_code == 403
+    conversation.refresh_from_db()
+    assert conversation.state == Conversation.State.HANDOFF
