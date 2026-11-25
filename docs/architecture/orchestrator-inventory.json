@@ -1212,6 +1212,8 @@
             "TEXT_MAX_CHARS",
             "_ACCESS_TOKEN_IN_QUERY",
             "_FIELD_DENYLIST",
+            "_ORDER_BUTTON_FIELD",
+            "_ORDER_BUTTON_VALUE_KEY",
             "_PUBLIC_SUFFIX",
             "_api_call",
             "_build_message",
@@ -8314,6 +8316,7 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "CAPABILITY_WITHHELD_ACTIONS",
             "CARRIER_TRACKING_URLS",
             "COURIER_FRESH_SECONDS",
             "COURIER_NEAR_METERS",
@@ -8336,6 +8339,7 @@
             "_acceptance_deadline_at",
             "_action",
             "_active_progress_key",
+            "_as_capability_view",
             "_bill_line_of",
             "_build_fulfillments",
             "_build_items",
@@ -8343,6 +8347,7 @@
             "_build_progress_steps",
             "_build_promise",
             "_build_timeline",
+            "_build_tracking",
             "_cancellation_contact",
             "_cancellation_customer_text",
             "_carrier_tracking_url",
@@ -8394,6 +8399,7 @@
             "_store_confirmation_is_deferred",
             "_waitlist_call",
             "_waitlist_info",
+            "abbreviated_delivery_address",
             "as_customer_sees",
             "build_tracking",
             "build_tracking_status",
@@ -10200,14 +10206,18 @@
         {
           "responsibility": "leitura",
           "symbols": [
+            "ACCESS_CAPABILITY",
+            "ACCESS_FULL",
             "ACTIVE_STATUSES",
             "CONCLUDED_STATUSES",
             "DEFAULT_CHANNEL_REF",
             "MAX_SESSION_ORDER_ACCESS_REFS",
             "ORDER_ACCESS_SESSION_KEY",
+            "ORDER_CAPABILITY_SESSION_KEY",
             "PHONE_HANDLE_TYPES",
             "SELF_CANCELLED_ALERT_TYPE",
             "_blank_json_key",
+            "_capability_session_can_access_order",
             "_customer_identity_from_info",
             "_customer_identity_from_user",
             "_named_snapshot_items",
@@ -10232,14 +10242,17 @@
             "ensure_payment_intent",
             "find_order",
             "get_accessible_order",
+            "get_accessible_order_with_mode",
             "get_order",
             "get_payment_status",
             "grant_order_access",
+            "grant_order_capability",
             "is_cancelled",
             "last_reorder_context",
             "lock_customer_order",
             "logger",
             "mock_confirm_payment",
+            "order_access_mode",
             "order_count_for_customer",
             "order_matches_customer_identity",
             "payment_is_due",
@@ -13508,6 +13521,42 @@
           "responsibility": "infraestrutura",
           "symbols": [
             "logger"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "shopman/shop/services/order_view_link.py",
+      "touchpoints": [
+        "service"
+      ],
+      "out_of_extraction": false,
+      "unit_ids": [],
+      "responsibilities": [
+        "infraestrutura"
+      ],
+      "support_claims": [
+        {
+          "responsibility": "infraestrutura",
+          "symbols": [
+            "REV_KEY",
+            "SEPARATOR",
+            "VALIDITY_AFTER_CLOSE",
+            "_CAPABILITY_BYTES",
+            "_CLOSED_AT_FIELDS",
+            "_SALT",
+            "capability",
+            "closed_at",
+            "is_within_validity",
+            "link_ref",
+            "link_rev",
+            "logger",
+            "path_for",
+            "path_for_ref",
+            "revoke",
+            "split_link_ref",
+            "url_for",
+            "verify"
           ]
         }
       ]
