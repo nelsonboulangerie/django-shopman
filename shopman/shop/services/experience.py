@@ -34,6 +34,16 @@ pública de ``storefront/api/public_cache.py`` limpa.
 Para cliente identificado a coorte é do ``customer_ref``, então o mesmo cliente vê a
 mesma versão em qualquer dispositivo. ``generation`` incrementada descarta a
 aderência gravada e reatribui pela configuração do momento.
+
+"Ver a versão de sempre" (DEV-2026-096): quem é da equipe e vê a versão de teste
+pode pedir o padrão. O pedido é um COMANDO (``POST
+/api/v1/storefront/experience/opt-out/``, :func:`opt_out`) e mora na mesma sessão de
+servidor, em ``request.session["shopman_experience_opt_out"]``: vale para todos os
+experimentos até a pessoa sair (o logout descarta a sessão) ou desfazer
+(:func:`opt_in`). Com ele, :func:`_decide` devolve o padrão com o motivo
+``opted_out`` antes da aderência, e a aderência gravada fica intacta para a volta.
+O marcador do pedido (:func:`order_mark`) segue o que :func:`resolve` deu, então diz
+a versão realmente vista.
 """
 
 from __future__ import annotations
@@ -53,6 +63,9 @@ logger = logging.getLogger(__name__)
 #: Chave em ``request.session`` (sessão de servidor do Django, não ``Session.data``).
 SESSION_KEY = "shopman_experience"
 
+#: Chave em ``request.session``: ``True`` quando a pessoa pediu a versão de sempre.
+OPT_OUT_KEY = "shopman_experience_opt_out"
+
 #: Por que a requisição recebeu a versão que recebeu. Vai ao log, não à resposta.
 REASON_EXPIRED = "expired"
 REASON_ENVIRONMENT = "environment"
@@ -60,6 +73,7 @@ REASON_SESSION = "session"
 REASON_INTERNAL = "cohort:internal"
 REASON_PILOT = "cohort:pilot"
 REASON_DEFAULT = "default"
+REASON_OPTED_OUT = "opted_out"
 
 
 @dataclass(frozen=True)
@@ -71,6 +85,10 @@ class Assignment:
     default: str
     generation: int
     reason: str
+    #: A pessoa vê a versão candidata POR SER DA EQUIPE (coorte ``internal``), ou a
+    #: veria se não tivesse pedido a versão de sempre. Não sai na resposta como
+    #: campo: só alimenta o selo da equipe (:func:`team_preview_refs`).
+    team: bool = False
 
     @property
     def is_default(self) -> bool:
@@ -151,15 +169,18 @@ def resolve(request, surface: str, *, customer_ref: str | None = None) -> tuple[
     customer_ref = customer_ref or _customer_ref(request)
     stored = _stored(request)
     cohort_of = _cohort_lookup()
+    opted_out = is_opted_out(request)
     assignments: list[Assignment] = []
     for _rule_config, params in rules:
-        variant, reason = _decide(params, customer_ref, stored.get(params["ref"]), cohort_of)
+        record = stored.get(params["ref"])
+        variant, reason = _decide(params, customer_ref, record, cohort_of, opted_out=opted_out)
         assignments.append(Assignment(
             ref=params["ref"],
             variant=variant,
             default=params["default"],
             generation=int(params.get("generation", 1)),
             reason=reason,
+            team=_team_version(params, customer_ref, record, cohort_of),
         ))
     return tuple(sorted(assignments, key=lambda a: a.ref))
 
@@ -195,7 +216,7 @@ def remember(request, customer_ref: str) -> None:
     updates: dict[str, dict] = {}
     for _rule_config, params in rules:
         variant, reason = _decide(params, customer_ref, stored.get(params["ref"]), cohort_of)
-        if reason in (REASON_EXPIRED, REASON_ENVIRONMENT):
+        if reason in (REASON_EXPIRED, REASON_ENVIRONMENT, REASON_OPTED_OUT):
             continue
         updates[params["ref"]] = {"variant": variant, "generation": int(params.get("generation", 1))}
     _store(request, stored, updates)
@@ -238,8 +259,14 @@ def on_user_logged_in(sender, request=None, user=None, **kwargs) -> None:
         logger.warning("experience.remember_failed", exc_info=True)
 
 
-def _decide(params: dict, customer_ref: str | None, record, cohort_of) -> tuple[str, str]:
-    """``(variante, motivo)`` de um experimento, na precedência do D5."""
+def _decide(
+    params: dict, customer_ref: str | None, record, cohort_of, *, opted_out: bool = False
+) -> tuple[str, str]:
+    """``(variante, motivo)`` de um experimento, na precedência do D5.
+
+    ``opted_out`` (a pessoa pediu a versão de sempre) vem antes da aderência: o
+    padrão vale enquanto o pedido durar, e a aderência gravada fica para a volta.
+    """
     default = params["default"]
     generation = int(params.get("generation", 1))
     variants = list(params["variants"])
@@ -250,6 +277,8 @@ def _decide(params: dict, customer_ref: str | None, record, cohort_of) -> tuple[
     if not customer_ref:
         # D2: nenhum cliente anônimo nas coortes.
         return default, REASON_DEFAULT
+    if opted_out:
+        return default, REASON_OPTED_OUT
     if (
         isinstance(record, dict)
         and record.get("generation") == generation
@@ -258,11 +287,58 @@ def _decide(params: dict, customer_ref: str | None, record, cohort_of) -> tuple[
         return record["variant"], REASON_SESSION
     candidate = next(v for v in variants if v != default)
     cohorts = params.get("cohorts") or {}
-    if customer_ref in cohort_of() or customer_ref in (cohorts.get("internal") or ()):
+    if _in_internal(params, customer_ref, cohort_of):
         return candidate, REASON_INTERNAL
     if customer_ref in (cohorts.get("pilot") or ()):
         return candidate, REASON_PILOT
     return default, REASON_DEFAULT
+
+
+def _in_internal(params: dict, customer_ref: str | None, cohort_of) -> bool:
+    """O cliente é da coorte ``internal`` deste experimento (marca "É da equipe" ou allow-list)."""
+    if not customer_ref:
+        return False
+    cohorts = params.get("cohorts") or {}
+    return customer_ref in cohort_of() or customer_ref in (cohorts.get("internal") or ())
+
+
+def _team_version(params: dict, customer_ref: str | None, record, cohort_of) -> bool:
+    """Sem o pedido da versão de sempre, a pessoa veria a candidata por ser da equipe?
+
+    Da equipe AGORA (coorte ``internal``) e vendo, pela coorte ou pela aderência, a
+    versão fora do padrão. Quem está só no ``pilot`` não é da equipe e não ganha o selo.
+    """
+    if not _in_internal(params, customer_ref, cohort_of):
+        return False
+    variant, reason = _decide(params, customer_ref, record, cohort_of)
+    return variant != params["default"] and reason in (REASON_INTERNAL, REASON_SESSION)
+
+
+def team_preview_refs(assignments) -> tuple[str, ...]:
+    """Os experimentos em que a pessoa vê (ou veria) a versão de teste por ser da equipe."""
+    return tuple(a.ref for a in assignments if a.team)
+
+
+def is_opted_out(request) -> bool:
+    """A pessoa pediu a versão de sempre nesta sessão?"""
+    session = getattr(request, "session", None)
+    if session is None:
+        return False
+    try:
+        return session.get(OPT_OUT_KEY) is True
+    except Exception:  # silêncio-deliberado: sessão ilegível é sessão sem o pedido
+        logger.debug("experience.session_unreadable", exc_info=True)
+        return False
+
+
+def opt_out(request) -> None:
+    """Comando: a sessão passa a ver o padrão em todos os experimentos, até sair ou desfazer."""
+    request.session[OPT_OUT_KEY] = True
+
+
+def opt_in(request) -> None:
+    """Comando: desfaz :func:`opt_out`; a versão volta a ser a da coorte (ou a aderida)."""
+    request.session.pop(OPT_OUT_KEY, None)
 
 
 def _cohort_lookup():
