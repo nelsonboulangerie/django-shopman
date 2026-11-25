@@ -155,6 +155,10 @@ useSeoMeta({
     <NuxtPage />
   </div>
   <div v-else class="shop-shell flex min-h-dvh flex-col">
+    <!-- Barra de rota (DEV-2026-094): sem limiar, no latão da casa (o vinho sumia sobre o cabeçalho), do início da
+         navegação (antes do middleware) até a página chegar. Vem antes do aviso: é o
+         sinal dos primeiros 200 ms. -->
+    <NuxtLoadingIndicator :throttle="0" :height="3" color="var(--shop-brass)" />
     <NavigationFeedback />
     <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
          dele, em fluxo normal, para não depender do position:fixed que deriva no

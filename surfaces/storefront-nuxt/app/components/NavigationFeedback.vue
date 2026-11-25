@@ -31,6 +31,25 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null
 let revealFrame: number | null = null
 let visibleSince = 0
+// Clique nunca inerte (DEV-2026-094): o link tocado fica marcado no mesmo instante
+// (`aria-busy` + `data-navigation-pending`, desenhado esmaecido no tailwind.css) até a
+// página chegar. Abaixo dos 200 ms, essa marca e a barra de rota (`NuxtLoadingIndicator`
+// no app.vue) são o sinal; acima, o aviso.
+let pendingLink: HTMLAnchorElement | null = null
+
+function markLink (link: HTMLAnchorElement) {
+  clearLink()
+  pendingLink = link
+  link.setAttribute('aria-busy', 'true')
+  link.setAttribute('data-navigation-pending', '')
+}
+
+function clearLink () {
+  if (!pendingLink) return
+  pendingLink.removeAttribute('aria-busy')
+  pendingLink.removeAttribute('data-navigation-pending')
+  pendingLink = null
+}
 
 function copyForDestination (destination?: URL): WaitCopy {
   const path = destination?.pathname || ''
@@ -66,6 +85,7 @@ function clearWatchdog () {
 }
 
 function hide () {
+  clearLink()
   visible.value = false
   announcement.value = ''
   visibleSince = 0
@@ -135,6 +155,7 @@ function finish () {
 }
 
 function forceFinish () {
+  clearLink()
   awaitingPageContent = false
   active.value = false
   clearRevealSchedule()
@@ -179,6 +200,7 @@ function navigationIntent (event: MouseEvent) {
   // Começa no gesto, antes do middleware que espera a sacola ficar durável.
   // É estritamente observacional: nunca cancela nem engole o clique. Se uma
   // navegação anterior abortar, o segundo gesto ainda precisa chegar ao Nuxt.
+  markLink(link)
   begin(destination)
 }
 

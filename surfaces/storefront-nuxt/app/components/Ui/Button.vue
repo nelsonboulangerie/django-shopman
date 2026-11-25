@@ -5,7 +5,7 @@
     :class="
       buttonStyles({
         hasIcon: !!icon,
-        disabled: disabled || loading,
+        disabled: disabled || busy,
         variant: variant,
         size: size,
         class: normalizeClass(props.class) || undefined,
@@ -16,7 +16,7 @@
       })
     "
     :disabled="isDisabled"
-    :aria-busy="loading || undefined"
+    :aria-busy="busy || undefined"
     :aria-disabled="isDisabled || undefined"
     :tabindex="isDisabled && isLink ? -1 : undefined"
     :data-acknowledged="acknowledged || undefined"
@@ -24,27 +24,27 @@
   >
     <slot name="iconLeft">
       <div
-        v-if="icon && !loading && iconPlacement == 'left'"
+        v-if="icon && !busy && iconPlacement == 'left'"
         class="flex shrink-0 items-center"
       >
         <Icon :name="icon" class="size-4" />
       </div>
     </slot>
     <slot name="loading">
-      <Icon v-if="loading" class="size-4 shrink-0" :name="loadingIcon" aria-hidden="true" />
+      <Icon v-if="busy" class="size-4 shrink-0" :name="loadingIcon" aria-hidden="true" />
     </slot>
     <slot>
       <span v-if="text">{{ text }}</span>
     </slot>
     <slot name="iconRight">
       <div
-        v-if="icon && !loading && iconPlacement == 'right'"
+        v-if="icon && !busy && iconPlacement == 'right'"
         class="flex shrink-0 items-center"
       >
         <Icon :name="icon" class="size-4" />
       </div>
     </slot>
-    <span v-if="loading" class="sr-only">Aguarde.</span>
+    <span v-if="busy" class="sr-only">Aguarde.</span>
   </component>
 </template>
 
@@ -212,7 +212,14 @@
     return !FIXED_HEIGHT.test(normalizeClass(props.class) || "");
   });
   const floors = computed(() => grows.value && !AUTO_HEIGHT.test(normalizeClass(props.class) || ""));
-  const isDisabled = computed(() => props.disabled || props.loading);
+  // Clique nunca inerte na raiz (DEV-2026-094): o clique que devolve promessa deixa o
+  // botão ocupado (giro, `aria-busy`, desabilitado) até ela assentar, com sucesso ou
+  // erro, e o toque repetido nesse meio tempo é ignorado. É o contrato da
+  // `usePendingAction` sem depender de cada tela lembrar; quem já declara `:loading`
+  // continua mandando. Clique síncrono não muda nada.
+  const autoPending = ref(false);
+  const busy = computed(() => props.loading || autoPending.value);
+  const isDisabled = computed(() => props.disabled || busy.value);
   const acknowledged = ref(false);
   let acknowledgementTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -231,9 +238,18 @@
     }, 450);
 
     const handlers = Array.isArray(props.onClick) ? props.onClick : [props.onClick];
+    const pending: PromiseLike<unknown>[] = [];
     for (const handler of handlers) {
-      if (typeof handler === "function") handler(event);
+      if (typeof handler !== "function") continue;
+      const result = handler(event);
+      if (result && typeof (result as PromiseLike<unknown>).then === "function") pending.push(result);
     }
+    if (!pending.length) return;
+    autoPending.value = true;
+    // O erro continua sendo de quem chamou (o aviso é da ação); aqui só se solta o botão.
+    Promise.allSettled(pending).finally(() => {
+      autoPending.value = false;
+    });
   }
 
   onBeforeUnmount(() => {

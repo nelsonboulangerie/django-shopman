@@ -894,3 +894,11 @@
     flex: none;
   }
 }
+
+/* Clique nunca inerte (DEV-2026-094): o link tocado fica esmaecido, com cursor de
+   progresso, do toque até a página chegar (o `NavigationFeedback` marca e desmarca). */
+a[data-navigation-pending] {
+  cursor: progress;
+  opacity: 0.6;
+  transition: opacity 120ms ease-out;
+}
