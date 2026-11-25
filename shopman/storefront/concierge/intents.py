@@ -668,6 +668,9 @@ class PartReply:
     tool_events: list[dict] = field(default_factory=list)
     #: Mensagens próprias que seguem a resposta (o código Pix da consulta, para copiar).
     extra_replies: list[str] = field(default_factory=list)
+    #: A escolha que esta parte pede à sacola (``{asked, qty, options}``): com duas ou mais no
+    #: turno, viram uma pergunta só, uma linha por coisa pedida (#3597).
+    choice: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -1001,10 +1004,11 @@ def _distinctive(text: str) -> set[str]:
     """As palavras do pedido que distinguem produto, como se OUVEM (``tools.heard``)."""
     from . import tools as tools_module
 
+    generic = {tools_module.heard(word) for word in _GENERIC_PRODUCT_WORDS}
     return {
         tools_module.heard(word) for word in tools_module._public_search_terms(text)
         if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
-        and word not in _CITE_LEADING
+        and word not in _CITE_LEADING and tools_module.heard(word) not in generic  # "pain" é o "pão"
     }
 
 
@@ -1027,6 +1031,43 @@ def _holding_all(items: list[dict], asked: str) -> list[dict]:
     return [item for item in items if wanted <= _item_words(item)] if wanted else []
 
 
+#: Palavras que distinguem por uma característica, em famílias: duas da mesma família se
+#: contradizem ("oval" não é "redondo", "grande" não é "mini").
+_ATTRIBUTE_FAMILIES = (
+    frozenset({"oval", "redondo", "redonda", "comprido", "comprida", "quadrado", "quadrada", "bola", "trancado", "trancada"}),
+    frozenset({"mini", "pequeno", "pequena", "grande", "medio", "media"}),
+)
+
+
+def _by_attribute(items: list[dict], asked: str) -> tuple[list[dict], dict | None]:
+    """O que a característica pedida faz com os itens ("1 campagne oval", coordenação, 24/11/2026).
+
+    Devolve (itens sem os que a contradizem, o único que não é variante ou ``None``). "oval" tira
+    o Campagne Redondo, que o contradiz; dos que sobram, o Pain de Campagne é o único sem outra
+    palavra que distinga (o de passas e a baguete são variantes), e é ele. Sem característica
+    pedida de nenhuma família, nada muda.
+    """
+    from . import tools as tools_module
+
+    said = set(re.findall(r"[a-z0-9]+", _fold(asked)))
+    families = [(word, family) for word in said for family in _ATTRIBUTE_FAMILIES if word in family]
+    if not families:
+        return items, None
+    kept = []
+    for item in items:
+        words = set(re.findall(r"[a-z0-9]+", _fold(" ".join([item.get("name") or "", *(item.get("keywords") or ())]))))
+        if any((family & words) - {word} for word, family in families):
+            continue  # a característica do item contradiz a pedida
+        kept.append(item)
+    attributes = {tools_module.heard(word) for word, _family in families}
+    base = _distinctive(asked) - attributes
+    plain = [
+        item for item in kept
+        if base and base <= _item_words(item) and not (_distinctive(item.get("name") or "") - base - attributes)
+    ]
+    return kept, (plain[0] if len(plain) == 1 else None)
+
+
 def asked_pieces(asked: str, menu_names: list[str]) -> list[str]:
     """As coisas pedidas, uma por pedaço ("pão champagne e folhado de maçã" são duas).
 
@@ -1038,6 +1079,11 @@ def asked_pieces(asked: str, menu_names: list[str]) -> list[str]:
         joined = _fold(name)
         if _ASKED_SEPARATOR.search(joined) and joined in folded:
             return [asked]
+    wanted = _distinctive(spelled_as_menu(asked, menu_names)[0])
+    if len(wanted) > 1 and any(wanted <= _item_words({"name": name}) for name in menu_names):
+        # "pão de champanhe e passas" é UM produto, o Campagne Passas & Castanhas: um nome do
+        # cardápio leva todas as palavras pedidas (observação do ar, 19/11/2026).
+        return [asked]
     pieces = [piece.strip(" ?!.") for piece in _ASKED_SEPARATOR.split(asked) if piece.strip(" ?!.")]
     if len(pieces) < 2 or not all(_distinctive(piece) for piece in pieces):
         return [asked]
@@ -1294,6 +1340,12 @@ def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemRea
         # Uma palavra que distingue: valem os itens que a levam no nome ou nas palavras-chave.
         # "4 pães ( chalá" é a Challah, não o Pão Francês que só casou pelo "pão".
         items = _holding_all(items, query) or items
+    if items:
+        # "campagne oval": "oval" tira quem o contradiz (o Redondo) e, se só um não é variante,
+        # é ele (o Pain de Campagne), sem pergunta.
+        items, plain = _by_attribute(items, query)
+        if plain is not None and not _holding_all(items, query):
+            items = [plain]
     if len(_distinctive(query)) > 1 and items:
         # Duas palavras que distinguem: vale o item que leva as duas, no nome ou nas palavras-
         # chave ("folhados de maca" é o Chausson aux Pommes). Nenhum leva as duas: só fica quem
@@ -1337,7 +1389,10 @@ def _cart_change(act: Act, *, conversation, context, copy):
         listed = dialogue.memo_of("search_storefront", {}, found) or {}
         options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
         text = _fill(copy(dialogue.ASK_WHICH_KEY) or "", options=dialogue._options_text(options))
-        return PartReply(act, text=text, memo=listed, keeps_question=True)
+        qty, _relative = _order_qty(act)
+        asked = _cited(act, conversation).strip(" ?!.,;:")
+        return PartReply(act, text=text, memo=listed, keeps_question=True,
+                         choice={"asked": asked, "qty": qty, "options": options})
     item = items[0]
     name, sku = item.get("name", ""), item.get("sku", "")
     qty, relative = _order_qty(act)
@@ -1712,6 +1767,12 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             and result.get("items") and not result.get("overview")
         )
         holding = _holding_all(list(result.get("items") or []), act.product or act.span) if searched else []
+        if searched and not holding:
+            # "tem campagne oval?": "oval" tira quem o contradiz e, se só um não é variante, é ele.
+            kept, plain = _by_attribute(list(result["items"]), act.product or act.span)
+            holding = [plain] if plain is not None else []
+            if kept and len(kept) < len(result["items"]):
+                result = {**result, "items": kept, "count": len(kept)}
         if holding and len(_distinctive(act.product or act.span)) > 1:
             # Duas palavras que distinguem, e só alguns itens levam as duas no nome ou nas
             # palavras-chave: são eles. "folhado de maçã" é o Chausson aux Pommes (keywords
@@ -1943,7 +2004,34 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                         # Sem cartão, "já levei à equipe" seria falso: a equipe assume, como antes.
                         run.team.append(reply.act)
                         reply.text = _fill(copy(TEAM_COPY_KEY) or "", topic=TEAM_TOPICS[COMPLAINT])
+    _join_choices(run, copy=copy)
     return run
+
+
+def _join_choices(run: Execution, *, copy) -> None:
+    """Duas ou mais escolhas da sacola no mesmo turno viram uma pergunta só (#3597).
+
+    "1 brioche e 1 campagne oval": cada coisa pedida ganha a sua linha, na ordem do pedido
+    ("Para “brioche”: A ou B?"), no lugar da primeira; a memória guarda todas (``CHOOSE_EACH``),
+    e o cliente responde as duas de uma vez ou uma por vez. Antes, só a última chegava.
+    """
+    from django.utils import timezone
+
+    from . import dialogue
+
+    asking = [reply for reply in run.replies if reply.choice]
+    if len(asking) < 2:
+        return
+    groups = [reply.choice for reply in asking]
+    joined = PartReply(
+        asking[0].act, text=dialogue.each_question(groups, copy=copy), keeps_question=True,
+        memo={"pending": {"kind": dialogue.CHOOSE_EACH, "groups": groups,
+                          "day": timezone.localdate().isoformat()}},
+        tool_events=[event for reply in asking for event in reply.tool_events],
+    )
+    first = run.replies.index(asking[0])
+    run.replies = [reply for reply in run.replies if not reply.choice]
+    run.replies.insert(first, joined)
 
 
 #: "acrescenta 2 croissants no meu pedido", "coloca mais um pão no pedido M63".
@@ -2281,6 +2369,9 @@ def run(conversation, *, binding, decision, client=None):
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
     outcome = _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    if resolution.still_asks and outcome.reply_text:
+        # Uma das escolhas no ar foi respondida: a que falta volta no fim (#3597).
+        outcome.reply_text = "\n\n".join((outcome.reply_text, resolution.still_asks))
     from .service import copy_message
 
     note = order_closing.noted(prefilled, copy=copy_message)

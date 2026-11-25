@@ -21,7 +21,7 @@
     "CI": {"name": "Ciabatta", "add": ["chapata"], "remove": ["italiano"], "why": "\"pão italiano\" é o Italiano Rústico, não a Ciabatta"},
     "FOA": {"name": "Focaccia Alecrim", "remove": ["italiano"], "why": "\"pão italiano\" é o Italiano Rústico, não a focaccia"},
     "TRADI": {"name": "Baguette de Tradition", "add": ["baguete", "baguete francesa", "baguete tradicional"], "why": "\"Poderia reservar uma baguete\" (cliente real)"},
-    "CPG": {"name": "Pain de Campagne", "add": ["pão de campanha", "pão campanha"], "why": "\"pão champagne\" (cliente real, 24/11)"},
+    "CPG": {"name": "Pain de Campagne", "add": ["pão de campanha", "pão campanha", "campagne oval", "pão oval"], "why": "\"pão champagne\" (cliente real, 24/11); o oval é o Pain de Campagne (dono, 24/11)"},
     "CPR": {"name": "Pain de Campagne Redondo", "add": ["campagne redondo", "pão redondo"], "why": "o nome curto"},
     "MIB": {"name": "Mini Baguete", "add": ["baguetinha"], "why": "o diminutivo"},
     "HOL": {"name": "Pão para Hot Dog", "add": ["pão de cachorro-quente", "pão de hot dog"], "why": "a preposição da fala"},

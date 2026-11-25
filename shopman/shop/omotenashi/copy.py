@@ -1738,6 +1738,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_MEMORY_ASK_WHICH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
     },
+    # Duas ou mais coisas pedidas, cada uma com mais de um item: uma linha por coisa, na
+    # ordem do pedido (#3597). {asked} é o que o cliente escreveu; {options}, "“A” ou “B”".
+    "CONCIERGE_MEMORY_ASK_WHICH_EACH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para “{asked}”: {options}?")},
+    },
     "CONCIERGE_MEMORY_STILL_HERE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estou aqui, sim!")},
     },
