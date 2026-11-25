@@ -6,8 +6,11 @@
 #   make admin       → valida tudo de Admin/Unfold
 #   make install     → instala deps + apps em modo editável
 
-# Python: usa venv se existir, senão o do PATH
-PYTHON := $(shell [ -f .venv/bin/python ] && echo $(CURDIR)/.venv/bin/python || echo python)
+# Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
+# principal — nunca o `python` do PATH, cujo pyenv pode ter editable installs de
+# worktrees mortas (CLAUDE.md). Ver o bloco "Worktree" logo abaixo.
+GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
 ADMIN_URL := $(strip $(or $(url),$(URL)))
 ADMIN_SCOPE_ARGS := $(if $(ADMIN_URL),--url $(ADMIN_URL),)
 COMPOSE ?= docker compose
@@ -17,6 +20,20 @@ NUXT_DIR := surfaces/storefront-nuxt
 PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman:$(CURDIR)/packages/conversational-commerce
+
+# ── Worktree: testar o código DESTA árvore ────────────────────────────────
+# Os editable installs do .venv apontam para a árvore principal. Medido em
+# 25/11/2026 (DEV-2026-098): numa worktree, `.venv/bin/python -c "import
+# shopman.orderman"` resolvia para o checkout PRINCIPAL — `make test-orderman`
+# passava testando outro código. Com a worktree à frente no PYTHONPATH, todo
+# `shopman.*` e `conversational_commerce` resolvem aqui (`python3
+# scripts/local_ci.py origin` prova). No checkout principal e na CI (onde o
+# checkout É a raiz) nada muda.
+ifneq ($(GIT_MAIN_ROOT),)
+ifneq ($(realpath $(CURDIR)),$(realpath $(GIT_MAIN_ROOT)))
+export PYTHONPATH := $(SHOPMAN_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONPATH),)
+endif
+endif
 
 .PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-conversational-commerce test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
@@ -756,6 +773,41 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
 
+# ── Local primeiro: o que a CI vai reprovar, visto antes do push ──────────
+# DEV-2026-098, plano em docs/plans/CI-DX-LOCAL-FIRST-PLAN.md. Mesma
+# classificação de escopo da CI (scripts/ci_scope.py) e os MESMOS passos dos
+# workflows, lidos do YAML (scripts/local_ci.py). Trava de máquina: duas
+# worktrees não disputam os 8 núcleos; SQLite em memória por worker (como o job
+# de testes da CI) isola o banco. A evidência é chaveada pelo hash da ÁRVORE
+# testada, e o `ready` só enfileira o HEAD cuja árvore tem preflight verde.
+# O que só a CI executa sai listado como remoto, nunca como verde.
+.PHONY: check-fast check-impact preflight ci-local ready ci-plan venv-sync ci-baseline
+
+check-fast: ## Iteração: pinos, origem dos imports, ruff e testes do que mudou (+ unit do app Nuxt tocado)
+	@python3 scripts/local_ci.py run fast
+
+check-impact: ## Paridade com o PR: o que o pull_request vai rodar para este diff
+	@python3 scripts/local_ci.py run impact
+
+preflight: ## Antes de promover: impacto + o pesado da fila que o diff alcança; grava a evidência do `ready`
+	@python3 scripts/local_ci.py run preflight
+
+ci-local: ## Tudo o que é executável nesta máquina, como diff de infraestrutura (lista o que só a CI roda)
+	@python3 scripts/local_ci.py run full
+
+ci-plan: ## Mostra o que cada nível rodaria (level=fast|impact|preflight|full), sem rodar
+	@python3 scripts/local_ci.py plan $(or $(level),preflight)
+
+ready: ## Enfileira com prova: make ready pr=<N> [sem_preflight="motivo"]; exige árvore limpa, push e preflight verde do HEAD
+	@test -n "$(pr)" || (echo 'uso: make ready pr=<N> [sem_preflight="motivo"]' >&2; exit 2)
+	@python3 scripts/local_ci.py ready $(pr) $(if $(sem_preflight),--sem-preflight "$(sem_preflight)",) $(if $(dry_run),--dry-run,)
+
+venv-sync: ## Alinha a .venv compartilhada ao constraints.txt (só os pinos divergentes, com trava de máquina)
+	@python3 scripts/local_ci.py pins --fix
+
+ci-baseline: ## Baseline da CI na API do GitHub (since=YYYY-MM-DD until=YYYY-MM-DD; leitura)
+	@python3 scripts/ci_baseline.py $(if $(since),--since $(since),) $(if $(until),--until $(until),) --cache $(or $(cache),.ci-baseline)
+
 # ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
 # O ledger é um arquivo por entrada em docs/coordination/commitments/
 # (DEV-AAAA-NNN.json): dois PRs nunca tocam o mesmo arquivo, e o merge de um não
@@ -800,7 +852,6 @@ commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [creat
 #   medição honesta de um banco vazio).
 # O ALVO (app vivo) se mede com `make production-readiness target=1`, que não lê
 # nada local: ver scripts/release_readiness_target.py.
-GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
 READINESS_PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
 READINESS_RUN = if [ ! -f .env ] && [ -z "$${DJANGO_SECRET_KEY:-}" ]; then \
 	export DJANGO_DEBUG=true DJANGO_SECRET_KEY=local-readiness-not-a-secret; \

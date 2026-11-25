@@ -88,9 +88,25 @@ do PDV mede posição, não pixel.
 - **Teste que lê documentação.** Algumas suítes Python e guardrails das superfícies
   leem `docs/` (vocabulário, runbooks, governança). Num PR só de docs eles rodam só
   na fila.
-- Para ver o pesado antes da fila, rode o alvo local (`make test-shop`,
-  `make test-backstage`, o `surface_contract.mjs run <app> <fase>`) ou dispare o
-  workflow com `workflow_dispatch` quando ele tiver.
+- Para ver o pesado antes da fila: `make preflight` (abaixo).
+
+## Antes do PR: o mesmo escopo, na máquina (DEV-2026-098)
+
+O escopo acima decide o que a CI roda; [`scripts/local_ci.py`](../../scripts/local_ci.py)
+usa a **mesma** `classify()` e executa os **mesmos** passos, lidos do YAML dos workflows
+(sem lista copiada: mudou o workflow, mudou o local).
+
+| Alvo | Quando | O que roda |
+|---|---|---|
+| `make check-fast` | a cada iteração | pinos da `.venv`, origem dos imports, colisão de migração, ruff e testes dos arquivos tocados, unit do app Nuxt tocado |
+| `make check-impact` | antes do push | o que o `pull_request` roda para este diff |
+| `make preflight` | antes de promover | `check-impact` + o pesado da fila que o diff alcança (shop/backstage por domínio, fases de navegador dos apps tocados, testes que leem o repositório ou `docs/`) |
+| `make ci-local` | infraestrutura, dúvida | tudo o que esta máquina executa |
+| `make ready pr=<N>` | promover | exige árvore limpa, push, corpo do PR aprovado e preflight verde **da árvore do HEAD**; liga o auto com `--match-head-commit` |
+
+O que só a CI executa sai nomeado como remoto: retrato de pixel (navegador da CI),
+PostgreSQL + Redis reais, imagem Docker, Browser QA/E2E, cobertura agregada, PWA,
+supply chain, CodeQL. A fila continua sendo o portão: evidência local nunca pula check.
 
 ## Como mexer sem travar o repositório
 

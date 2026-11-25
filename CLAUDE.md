@@ -58,7 +58,7 @@ barrar, a saída é entrar no worktree, **nunca contornar**.
   "orderman_directive" does not exist`. Aconteceu três vezes (22/09, 23/09, 24/09), todas
   logo depois de um agente copiar o banco pelo pool.
 
-E uma sobre testes: **a worktree não testa `packages/*` sozinha.** O `.venv` da raiz tem
+E uma sobre testes: **a worktree não testa `packages/*` sozinha** — pelos alvos do `make`, sim (DEV-2026-098: o Makefile põe a worktree no `PYTHONPATH` e usa a `.venv` da raiz; `python3 scripts/local_ci.py origin` prova a origem). Fora do `make` (pytest direto), o `.venv` da raiz tem
 editable installs apontando para a árvore principal, então rodar teste no worktree exige
 `PYTHONPATH` e `PYTHON` explícitos.
 
@@ -147,6 +147,8 @@ Decidir **não fazer nunca** também é decisão: escreva na issue e feche como
 `not planned`, para que fique registrado e não volte como pendência.
 
 **CI: leve no PR, pesado na fila** (dono, 17/11/2026): o PR roda lint, typecheck e os testes do que mexe; as suítes pesadas rodam no `merge_group`, e check obrigatório pulado reporta verde com o mesmo nome — regra e tabela em [docs/reference/ci-escopo.md](docs/reference/ci-escopo.md).
+
+**Local primeiro, fila com prova** (dono, 23/11/2026: "auto só com o local verde"; DEV-2026-098): `make check-fast` a cada iteração (segundos), `make preflight` antes de promover (o que o PR **e** a fila vão rodar para este diff, com os passos lidos dos próprios workflows), e `make ready pr=<N>` para enfileirar — ele exige árvore limpa, push feito, corpo do PR aprovado pelos checks de "Ficou de fora"/"Compromissos" e preflight verde **da árvore exata do HEAD**, e só então liga o auto com `--match-head-commit`. Exceção (urgência, agente sem ambiente local, PR só de docs) se declara: `make ready pr=<N> sem_preflight="motivo"`, registrada. Evidência local nunca dispensa check remoto. Plano, números e limites: [docs/plans/CI-DX-LOCAL-FIRST-PLAN.md](docs/plans/CI-DX-LOCAL-FIRST-PLAN.md).
 
 **Mecanismo, não lembrete:**
 
