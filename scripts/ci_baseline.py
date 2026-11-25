@@ -12,7 +12,8 @@ antes de mexer em qualquer coisa:
   fila e por quê (``REMOVED_FROM_MERGE_QUEUE_EVENT.reason``);
 * **jobs** (amostra): espera por runner (``started - created``) e execução,
   por job do Runtime Gate e do Surfaces Gate;
-* **minutos e dinheiro** do mês, por SKU de runner (``settings/billing/usage``).
+* (cobrança da organização NÃO entra: o repositório é público e o relatório vai
+  para o resumo do job; gasto se confere na tela de billing, com login.)
 
 Sem dependência fora da stdlib; fala com o GitHub pelo ``gh`` já autenticado.
 As respostas brutas ficam em ``--cache`` (padrão ``.ci-baseline/``, fora do
@@ -314,26 +315,6 @@ def analyse_merges(since: dt.date, until: dt.date) -> dict:
     }
 
 
-def billing(month: dt.date) -> list[dict]:
-    try:
-        data = gh_json(
-            f"/orgs/{OWNER}/settings/billing/usage?year={month.year}&month={month.month}"
-        )
-    except subprocess.CalledProcessError as exc:  # sem permissão de billing
-        return [{"error": exc.stderr.strip()[:200]}]
-    rows = defaultdict(lambda: {"minutes": 0.0, "gross": 0.0, "net": 0.0})
-    for item in data.get("usageItems", []):
-        if item.get("product") != "actions" or item.get("repositoryName") != NAME:
-            continue
-        row = rows[item["sku"]]
-        row["minutes"] += item["quantity"]
-        row["gross"] += item["grossAmount"]
-        row["net"] += item["netAmount"]
-    return [
-        {"sku": sku, **{k: round(v, 2) for k, v in row.items()}} for sku, row in sorted(rows.items())
-    ]
-
-
 def days(since: dt.date, until: dt.date):
     d = since
     while d <= until:
@@ -379,9 +360,6 @@ def print_report(rep: dict) -> None:
                 f"{s['run']['p50_min']} | {s['run']['p95_min']} |"
             )
         print(f"\nRótulos de runner: {j['runner_labels']}\n")
-    print("## Minutos e dinheiro (mês, este repo)\n")
-    for row in rep["billing"]:
-        print(f"- {row}")
 
 
 def main() -> int:
@@ -420,7 +398,6 @@ def main() -> int:
             regime: {"queue": analyse_queue(d["queue"]), "pr": analyse_pr(d["pr"])}
             for regime, d in sorted(by_regime.items())
         },
-        "billing": billing(args.until),
     }
     if not args.no_merges:
         rep["merges"] = analyse_merges(max(args.split, args.since), args.until)
