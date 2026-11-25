@@ -11,7 +11,7 @@ sendo o único portão do `main`. Nenhum gate afrouxado, nenhuma despesa nova.
 
 | Premissa dos planos | Medição | Consequência |
 |---|---|---|
-| A: "reduzir 60–80% do gasto com runners pagos" | Fatura de novembro, este repositório: 724.498 min Linux e 34.878 min macOS **grátis** (repo público); a única linha paga é o `linux-4core` (16.872 min, US$ 184,46), já desligado (`CI_LINUX_RUNNER` não existe hoje). | O gasto pago já é ~zero. Ubicloud/Blacksmith/larger **acrescentam** despesa; só entram se comprarem latência que o grátis não dá. O custo real é tempo e concorrência. |
+| A: "reduzir 60–80% do gasto com runners pagos" | Fatura de novembro: 725 mil min Linux e 35 mil min macOS **grátis** (repo público); o `linux-4core` custou US$ 184,46 em poucos dias e está desligado. **Medido por job (18–21/11, até 545 × 60 amostras): o 4-core rodou cada job na mesma velocidade do grátis, 0,97x a 1,12x** (`evidence/ci-dx-098/runner-4core-vs-std-2026-11-25.md`). O runner grátis de repo público já tem 4 vCPU. | O que o 4-core comprou foi **capacidade nos picos** (outro lote de máquinas), não velocidade. A pergunta certa (dono, 25/11) é acelerar por menos: seção 9. |
 | A: "os 14 cores são agrupados" | Esta máquina: 8 núcleos (4P+4E), **8 GB** de RAM. | Duas worktrees rodando `pytest -n auto` disputavam tudo. Trava de máquina: 2 vagas × 4 workers. |
 | A: 61,7% do backstage no seed | Perfil local antigo; o backstage já tem 3 shards e o shop 2 (Makefile). | Não reapresentar como novidade (B já apontava). O caminho crítico vem do baseline abaixo. |
 | A/B: "reutilizar os mesmos comandos" | O job `quality` tem 20+ passos que só existiam no YAML. | O executor local **lê os passos do YAML** (sem lista copiada). Mudou o workflow, mudou o local. |
@@ -47,10 +47,8 @@ CodeQL, e os passos que dependem do evento (`${{ }}`).
 
 ## 4. Decisões e o que não se fez
 
-- **Sem fornecedor novo e sem runner pago** (WP1 dos dois planos): com gasto pago zero e
-  a medição de 21/11 (o `linux-4core` com ~17 vagas piorou a fila contra as ~60 do
-  grátis), comprar CPU não é o gargalo. Piloto pago só com classe de job identificada no
-  baseline e teto aprovado pelo dono.
+- **Nenhum runner pago ligado nesta frente**: a seção 9 diz onde pagar renderia, e o
+  piloto espera o teto aprovado pelo dono.
 - **Nada em `.github/workflows`, checks obrigatórios ou fila neste PR** (pedido da
   coordenação até #3631 e #3626 entrarem). As mudanças de CI que o baseline justificar
   (rebalancear shards, workflow chamar os alvos do Makefile em vez de duplicar, rodar
@@ -164,3 +162,28 @@ evidência, como deve. Diff estreito (um app, um pacote) não chama os dois shar
 - #3637 — teste do PDV que reprova sob xdist (achado pelo primeiro preflight).
 - #3636 — fila: as 162 saídas `manual` e 82 `invalid_merge_commit` (pilhas), parâmetros
   da fila (5 builds, 1–10 PRs, 120 min) contra o baseline.
+
+## 9. Acelerar por menos (dono, 25/11: "Ter comprado máquina acelerou muito! Só que é muito caro")
+
+O que os números dizem sobre a máquina paga:
+
+- **Velocidade por job: nenhuma.** O `linux-4core` tem o mesmo tamanho do runner grátis de
+  repositório público (4 vCPU). Os 6 jobs que seguram o relógio deram 1,00x a 1,12x.
+- **O que acelerou foi capacidade.** Nos picos a espera por runner chega a 10–19 min (p95);
+  o 4-core era um segundo lote de máquinas. Quando TUDO ia para ele (~17 vagas), a fila
+  piorou (21/11).
+- **O dinheiro ia para todos os jobs.** Por grupo da fila, Runtime + Surfaces somam ~207 min
+  de job; os 6 do caminho crítico (backstage ×3, `pos-nuxt`, shop ×2) são 79 (38%).
+
+Em ordem de custo:
+
+1. **Pedir menos máquina (US$ 0).** 49% dos grupos reprovaram e 32% dos PRs saíram da fila
+   sem entrar; cada saída refaz os grupos de trás e é isso que lota os picos. É o
+   `make preflight` + `make ready` (este PR).
+2. **Mais fatias nos 6 jobs críticos (US$ 0).** Minuto grátis não custa; mais shards
+   encurtam o relógio enquanto houver vaga no pico (#3635).
+3. **Pagar só o que falta, e medindo.** (a) Transbordo: máquina paga só quando as grátis
+   esgotam; (b) máquina maior (8–16 vCPU) só nos 6 jobs críticos, onde o `-n auto` escala
+   com núcleos. Em fornecedor como Ubicloud o minuto sai ~1/3 do preço do GitHub. Que
+   8 vCPU acelerem esses testes é **hipótese, não medida**: o piloto mede no mesmo SHA, com
+   teto aprovado pelo dono, e só fica o que baixar o relógio por menos.
