@@ -134,6 +134,14 @@ mesmo tempo, uma com `format_money` quebrado — `make test-utils` passou numa (
 reprovou na outra (exit 2, `test_money_field.py`), e a trava fez uma esperar a vaga da
 outra; o `check-fast` da quebrada reprovou em 1,5 s.
 
+**Primeiro `make preflight` real** (este branch, escopo inteiro por ser infraestrutura):
+26 min 45 s de relógio, 34 de 35 passos verdes; `test-backstage` 828 s, `test-shop` 219 s,
+`test-storefront` 102 s, `test-cores` 91 s, `make admin` 75 s. O único vermelho é
+**pré-existente** e independente deste branch (que não toca `shopman/`, `packages/` nem
+`config/`): um teste do PDV que reprova sob `-n 4` e passa sozinho, com a causa escondida
+pelo `subTest` com `date` sob xdist (#3637). O `make ready` recusa enfileirar com essa
+evidência, como deve. Diff estreito (um app, um pacote) não chama os dois shards inteiros.
+
 ## 7. Metas (calibradas pelo baseline; medir de novo em 09/12)
 
 | Indicador | Hoje | Meta |
@@ -153,5 +161,6 @@ outra; o `check-fast` da quebrada reprovou em 1,5 s.
 - #3635 — reduzir o caminho crítico com estes números: rebalancear os shards do backstage
   (`rest` 18,6 × `seed` 13,4 min), encurtar a cadeia do Surfaces Gate, o
   `test_check_orchestrator_units`.
+- #3637 — teste do PDV que reprova sob xdist (achado pelo primeiro preflight).
 - #3636 — fila: as 162 saídas `manual` e 82 `invalid_merge_commit` (pilhas), parâmetros
   da fila (5 builds, 1–10 PRs, 120 min) contra o baseline.
