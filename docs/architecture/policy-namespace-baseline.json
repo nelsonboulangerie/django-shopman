@@ -28,7 +28,7 @@
     ],
     "auth.whatsapp-return-safety": [
       "shopman/shop/services/whatsapp_verify.py:WhatsAppVerifyUnavailable",
-      "shopman/shop/services/whatsapp_verify.py:_is_checkout_next",
+      "shopman/shop/services/whatsapp_verify.py:is_checkout_next",
       "shopman/shop/services/whatsapp_verify.py:_safe_next",
       "shopman/shop/services/whatsapp_verify.py:start_access_link"
     ],

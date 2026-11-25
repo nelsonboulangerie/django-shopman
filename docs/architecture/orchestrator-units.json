@@ -18158,7 +18158,7 @@
       "public_entrypoint": "shopman.shop.services.whatsapp_verify:start_access_link",
       "authoritative_symbols": [
         "shopman.shop.services.whatsapp_verify:_safe_next",
-        "shopman.shop.services.whatsapp_verify:_is_checkout_next"
+        "shopman.shop.services.whatsapp_verify:is_checkout_next"
       ],
       "entrypoint_kind": "symbol",
       "sources": [
@@ -18166,7 +18166,7 @@
           "path": "shopman/shop/services/whatsapp_verify.py",
           "symbols": [
             "WhatsAppVerifyUnavailable",
-            "_is_checkout_next",
+            "is_checkout_next",
             "_safe_next",
             "start_access_link"
           ]

@@ -63,6 +63,14 @@ class WhatsAppVerifyStartView(APIView):
 
         from shopman.shop.services import access as access_service
 
+        # O destino fica também com ESTE navegador (DEV-2026-092): o link da resposta pode
+        # chegar sem a referência NB-… e abrir aqui mesmo, numa aba nova. Finalizar sem
+        # sacola não é destino (a mesma régua da referência, ``start_access_link``).
+        has_cart = bool(cart_key)
+        access_service.remember_login_destination(
+            request, next_path if (has_cart or not wa.is_checkout_next(next_path)) else "",
+        )
+
         try:
             result = wa.start_access_link(
                 cart_session_key=cart_key,

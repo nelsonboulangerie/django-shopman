@@ -74,7 +74,7 @@ def _safe_next(raw: str) -> str:
     return ""
 
 
-def _is_checkout_next(path: str) -> bool:
+def is_checkout_next(path: str) -> bool:
     return bool(re.search(r"/(?:checkout|finalizar)(?:/|$)", path))
 
 
@@ -155,7 +155,7 @@ def start_access_link(
     if cart_session_key:
         state["cart_session_key"] = str(cart_session_key)
     safe_next = _safe_next(next_path)
-    if safe_next and (cart_session_key or not _is_checkout_next(safe_next)):
+    if safe_next and (cart_session_key or not is_checkout_next(safe_next)):
         state["next"] = safe_next
 
     code = store_state(state)

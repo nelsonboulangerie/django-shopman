@@ -225,6 +225,31 @@ def _access_link_redirect(metadata: dict | None) -> str:
     return storefront_links.path_home()
 
 
+def _login_redirect(metadata: dict | None, browser_destination: str) -> str:
+    """O destino depois da troca: o do link, ou o que este navegador guardou ao entrar.
+
+    O pedido de um link (``order_ref``) e o destino que veio com a referência NB-… do
+    site ganham sempre: são o contexto daquela entrada. Sem eles, o ``next`` do link é o
+    genérico de quem o pediu (o ``"/menu"`` do ManyChat), e o destino guardado por este
+    navegador ao começar a entrar (``access.remember_login_destination``) diz melhor
+    para onde a pessoa ia: foi ela que tocou em Finalizar (DEV-2026-092).
+    """
+    meta = metadata if isinstance(metadata, dict) else {}
+    if browser_destination and not meta.get("order_ref") and not access_service.link_carries_site_context(meta):
+        return browser_destination
+    return _access_link_redirect(metadata)
+
+
+def _browser_cart_has_items(request) -> bool:
+    try:
+        from shopman.storefront.cart import CartService
+
+        return bool(CartService.has_items(request))
+    except Exception:  # silêncio-deliberado: sem a leitura da sacola o aviso de sacola que não veio continua saindo, como antes
+        logger.debug("access_link_browser_cart_check_degraded", exc_info=True)
+        return False
+
+
 def _access_link_metadata_for_customer(metadata: dict | None, customer) -> dict | None:
     if not isinstance(metadata, dict):
         return metadata
@@ -287,6 +312,11 @@ def exchange_access_token(request, token: str) -> Response:
         return _exchange_cart_only(request, token, metadata)
     # Antes do resgate: depois dele o token está gasto e a origem já não se lê.
     source = access_service.token_source(token)
+    # E antes do login, que pode trocar a sessão: o destino que ESTE navegador guardou ao
+    # começar a entrar pelo WhatsApp (DEV-2026-092). Só a resposta do WhatsApp o usa.
+    browser_destination = (
+        access_service.pop_login_destination(request) if source == "manychat" else ""
+    )
     result = access_service.exchange_token(token, request)
     if not result.success:
         # ⚠️ Token gasto NÃO significa porta fechada. É o segundo toque na mesma
@@ -305,7 +335,7 @@ def exchange_access_token(request, token: str) -> Response:
             return Response({
                 "ok": True,
                 "already_authenticated": True,
-                "redirect": _access_link_redirect(redirect_metadata),
+                "redirect": _login_redirect(redirect_metadata, browser_destination),
                 "identity_strength": identity_strength(request),
                 **_session_payload(already),
             })
@@ -341,7 +371,7 @@ def exchange_access_token(request, token: str) -> Response:
 
     payload = {
         "ok": True,
-        "redirect": _access_link_redirect(redirect_metadata),
+        "redirect": _login_redirect(redirect_metadata, browser_destination),
         "identity_strength": identity_strength(request),
         **_session_payload(customer),
     }
@@ -381,7 +411,13 @@ def exchange_access_token(request, token: str) -> Response:
             logger.warning("access_link_trust_failed", exc_info=True)
     # Handoff do site que expirou: entrou logado, mas a sacola não veio. Avisamos com
     # gentileza (copy configurável), sem bloquear a entrada. Ver ACCESS-LINK-UNIFICATION.
-    if isinstance(metadata, dict) and metadata.get("handoff_expired"):
+    # Mas a sacola que mora NESTE navegador não ficou para trás: quem começou a entrar aqui
+    # continua com ela, e o aviso diria o contrário do que a tela mostra (DEV-2026-092).
+    if (
+        isinstance(metadata, dict)
+        and metadata.get("handoff_expired")
+        and not (browser_destination and _browser_cart_has_items(request))
+    ):
         from shopman.shop.omotenashi import resolve_copy
 
         payload["handoff_expired"] = True

@@ -225,6 +225,93 @@ def resolve_origin(result) -> str:
     return SOURCE_TO_ORIGIN.get(source, "web")
 
 
+# ── Login do site pelo WhatsApp: o destino fica com o navegador que começou ─────
+#
+# ⚠️ DEV-2026-092 (fala do dono): a cliente tocou em Finalizar, entrou pelo WhatsApp e
+# caiu fora do checkout, tendo de tocar em Finalizar de novo. O destino viaja com a
+# referência NB-… da mensagem pronta, e a referência é de uso único: a mesma mensagem
+# processada duas vezes (reenvio, repetição do External Request), o texto que não chega
+# ao ManyChat ou a referência vencida deixam o link da resposta só com o destino genérico
+# do ManyChat (``"/menu"``). O botão da resposta abre a loja numa aba nova do MESMO
+# navegador, e ali a sacola estava (o cookie é o mesmo), mas o destino não.
+#
+# Por isso o servidor guarda o destino também na SESSÃO do navegador que começou a
+# entrar, junto da tentativa (``WhatsAppVerifyStartView``). A troca do link lê esse
+# destino quando o link não traz o do site. Navegador que não começou a entrar não tem
+# nada guardado, e quem decide é o link, como sempre.
+LOGIN_DESTINATION_SESSION_KEY = "shopman:login-destination"
+#: Rotas que nunca são destino de volta: voltar para a entrada é um laço.
+_AUTH_ROUTES = ("/entrar", "/a")
+
+
+def _destination_path(raw: str) -> str:
+    """Só caminho interno da loja, e nunca a própria entrada."""
+    value = str(raw or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return ""
+    bare = value.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+    if any(bare == route or bare.startswith(f"{route}/") for route in _AUTH_ROUTES):
+        return ""
+    return value
+
+
+def remember_login_destination(request, next_path: str) -> None:
+    """Guarda na sessão deste navegador para onde a tentativa de entrar volta.
+
+    Vale pelo mesmo prazo da referência NB-… (``LINK_STATE_TTL_SECONDS``). Tentativa
+    sem destino apaga o anterior: o que vale é o último gesto da pessoa.
+    """
+    import time
+
+    from shopman.doorman.conf import get_doorman_settings
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    path = _destination_path(next_path)
+    if not path:
+        session.pop(LOGIN_DESTINATION_SESSION_KEY, None)
+        return
+    session[LOGIN_DESTINATION_SESSION_KEY] = {
+        "path": path,
+        "until": time.time() + get_doorman_settings().LINK_STATE_TTL_SECONDS,
+    }
+
+
+def pop_login_destination(request) -> str:
+    """O destino que este navegador guardou ao começar a entrar (uso único), ou ``""``."""
+    import time
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return ""
+    stored = session.pop(LOGIN_DESTINATION_SESSION_KEY, None)
+    if not isinstance(stored, dict):
+        return ""
+    try:
+        until = float(stored.get("until") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if until < time.time():
+        return ""
+    return _destination_path(str(stored.get("path") or ""))
+
+
+def link_carries_site_context(metadata) -> bool:
+    """O link nasceu da referência NB-… do site, resolvida (destino e sacola vieram nela).
+
+    A referência sempre deixa uma marca no link: ``site_return`` (login começado no
+    celular), ``released`` (a aba do computador ficou liberável) ou a sacola que viajou.
+    Sem nenhuma delas, o ``next`` do link é o genérico de quem o pediu (o ``"/menu"`` do
+    ManyChat), nunca o destino do site.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    return bool(
+        metadata.get("site_return") or metadata.get("released") or metadata.get("cart_session_key")
+    )
+
+
 # ── Login do site pelo WhatsApp: a aba de origem entra sozinha ──────────────────
 
 

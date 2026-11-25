@@ -3,6 +3,7 @@
 // API de auth (rate limit é recuperação calma, não falha) e cooldown de reenvio.
 
 import { formatClock } from '~/utils/clock'
+import { safeInternalPath } from '~/utils/safeNavigation'
 
 export type AuthStep = 'phone' | 'code' | 'welcome'
 
@@ -153,8 +154,11 @@ export const LOGIN_ADULT_DECLARATION = `${LOGIN_ADULT_DECLARATION_LEAD} ${LOGIN_
 // passo do fluxo OTP, com o destino preservado em `next` para depois do
 // confirmar. Sem nome pendente, o destino do servidor vale direto (o convite de
 // novidades não passa por aqui: é sheet na página de destino).
+//
+// O destino é só caminho interno da loja: o servidor já o confere, e a página não
+// navega para fora nem que a resposta diga (DEV-2026-092).
 export function accessLinkLanding (redirect: string, requiresWelcome: boolean): string {
-  const destination = redirect || '/'
+  const destination = safeInternalPath(redirect, '/')
   if (!requiresWelcome) return destination
   // Destino que já é a tela de entrada não é re-embrulhado (evita next aninhado
   // quando o mesmo caminho atravessa o handoff de navegador e volta para cá).
