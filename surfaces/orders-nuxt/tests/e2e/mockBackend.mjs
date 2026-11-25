@@ -274,8 +274,15 @@ function deliveriesProjection() {
  * "Separar de novo" (`courier-custody`) grava o corpo e a corrida deixa de pedir.
  */
 const CUSTODY_REF = "WEB-261116-R05";
-const custodyState = { body: null };
-function custodyOrder() {
+// Um estado por teste (cookie `e2e_ns`), como o das corridas da casa: um teste que
+// grava ou limpa a custódia não mexe na de outro que roda ao mesmo tempo (#3623).
+const custodyStores = new Map();
+function custodyStore(req) {
+  const ns = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_ns=([\w-]+)(?:;|$)/)?.[1] ?? "";
+  if (!custodyStores.has(ns)) custodyStores.set(ns, { body: null });
+  return custodyStores.get(ns);
+}
+function custodyOrder(custodyState) {
   const separated = custodyState.body !== null;
   return {
     ...CARD, ...DETAIL_EXTRA, ref: CUSTODY_REF, status: "ready", status_label: "Pronto", customer_name: "Rita Moraes",
@@ -1140,6 +1147,7 @@ const server = createServer((req, res) => {
     return json(res, 200, { sent: [...cancelState.entries()].map(([key, value]) => ({ key, reason_id: value.sent })) });
   }
   const custodyScenario = /(?:^|;\s*)e2e_custody=on(?:;|$)/.test(req.headers.cookie || "");
+  const custodyState = custodyScenario ? custodyStore(req) : null;
   if (custodyScenario && /\/e2e\/custody\/?(\?|$)/.test(url)) {
     if (req.method === "DELETE") custodyState.body = null;
     return json(res, 200, { body: custodyState.body });
@@ -1148,10 +1156,10 @@ const server = createServer((req, res) => {
     if (req.method !== "POST") return json(res, 200, { outcome: custodyState.body ? "applied" : "not_found" });
     return void readBody(req).then((body) => {
       custodyState.body = { change_out: body.change_out ?? null, equipment: body.equipment ?? [] };
-      json(res, 200, { outcome: "applied", order: custodyOrder() });
+      json(res, 200, { outcome: "applied", order: custodyOrder(custodyState) });
     });
   }
-  if (custodyScenario && new RegExp(`/orders/${CUSTODY_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: custodyOrder() });
+  if (custodyScenario && new RegExp(`/orders/${CUSTODY_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: custodyOrder(custodyState) });
   const rideCancelPost = url.match(/\/orders\/([A-Z0-9-]+)\/courier-cancel\/?(\?|$)/);
   if (cancelScenario && rideCancelPost) {
     const fixture = RIDE_FIXTURES.find((item) => item.stops.some(([ref]) => ref === rideCancelPost[1]));

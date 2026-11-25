@@ -327,6 +327,10 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
     const done = wrapper.emitted("resolveCustomer")![0]![0] as (saved: boolean) => void;
     done(false);
     await wrapper.vm.$nextTick();
+    // O botão da suíte trava durante o próprio clique (DEV-2026-094) e solta na volta
+    // seguinte; o que importa é que a nova tentativa fica livre logo depois.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wrapper.vm.$nextTick();
     expect(wrapper.emitted("update:open")).toBeUndefined();
     expect(buttonByText("Cadastrar cliente")!.disabled).toBe(false);
   });

@@ -135,6 +135,9 @@ describe("OperatorTable", () => {
     sortTotal.click();
     await nextTick();
     expect(firstCells()).toEqual(["H59", "H58", "H60"]);
+    // O botão da suíte trava durante o clique (DEV-2026-094) e solta na volta seguinte;
+    // um segundo toque humano nunca chega na mesma volta de microtarefas.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     sortTotal.click();
     await nextTick();
     expect(firstCells()).toEqual(["H60", "H58", "H59"]);

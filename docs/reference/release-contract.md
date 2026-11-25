@@ -218,3 +218,15 @@ configuração canônica que já existe (`RuleConfig`, por loja, no banco), nunc
 quem já administra `RuleConfig` no Admin; toda flag nasce `off` e declara dono,
 justificativa e `remove_after`. Se a R4 provar que `RuleConfig` não atende, o gap vira
 ADR antes de qualquer control plane novo.
+
+**O selo da equipe (DEV-2026-096).** Quem vê a versão candidata POR SER DA EQUIPE
+(coorte `internal`: a marca "É da equipe" no cliente ou a allow-list da regra) recebe no
+shell da loja o campo `team_preview` (`opted_out`, `message`, `features`, `action_label`),
+em linguagem de gente e sem código de experimento; o nome de cada novidade mora em
+`TEAM_PREVIEW_FEATURES` (`shopman/storefront/presentation/home.py`). Cliente comum,
+`pilot` e anônimo não recebem o campo. A loja mostra uma linha no rodapé e no topo da
+Conta com "Ver a versão de sempre": `POST /api/v1/storefront/experience/opt-out/` grava
+na sessão de servidor o pedido do padrão em todos os experimentos (motivo `opted_out`,
+antes da aderência, que fica intacta para a volta), até a pessoa sair; `DELETE` na mesma
+URL desfaz. A sacola aberta é remarcada na hora, então o pedido leva a versão realmente
+vista. Resposta com o selo é `private, no-store` mesmo com tudo no padrão.

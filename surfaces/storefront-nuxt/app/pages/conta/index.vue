@@ -112,6 +112,9 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
         <UiButton variant="ghost" size="sm" icon="lucide:log-out" class="shrink-0" @click="logoutOpen = true">Sair</UiButton>
       </header>
 
+      <!-- O selo da versão de teste da equipe (DEV-2026-096): só com `team_preview` no shell. -->
+      <TeamPreviewNotice placement="account" />
+
       <!-- Travessia de navegador: só aparece quando o browser embutido atrapalha uma pessoa
            já identificada. Acesso rápido fica opt-in em Segurança, não como convite no fluxo. -->
       <BrowserHandoffCard :identified="session.isAuthenticated.value" />

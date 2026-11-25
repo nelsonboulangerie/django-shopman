@@ -898,6 +898,23 @@ export interface StorefrontShellProjection {
    * Ausente ou vazio = todos os experimentos na versão padrão.
    */
   experience?: ExperienceProjection[]
+  /**
+   * O selo da versão de teste da equipe (DEV-2026-096). Só vem para quem vê, ou veria sem
+   * ter pedido a versão de sempre, alguma versão fora do padrão por ser da equipe. Cliente
+   * comum e anônimo: ausente.
+   */
+  team_preview?: TeamPreviewProjection
+}
+
+export interface TeamPreviewProjection {
+  /** A pessoa pediu a versão de sempre (vale até sair da conta ou voltar). */
+  opted_out: boolean
+  /** A frase pronta, em linguagem de gente. */
+  message: string
+  /** As novidades em teste, sem código de experimento. */
+  features: string[]
+  /** "Ver a versão de sempre" ou "Voltar à versão de teste". */
+  action_label: string
 }
 
 export interface ShellResponse {

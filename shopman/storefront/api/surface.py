@@ -451,25 +451,73 @@ class StorefrontShellView(ServerTimingMixin, APIView):
 
     def get(self, request):
         from shopman.shop.services import experience as experience_service
-        from shopman.storefront.presentation.home import STOREFRONT_SURFACE
+        from shopman.storefront.presentation.home import STOREFRONT_SURFACE, build_team_preview
 
         cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
         assignments = experience_service.resolve(request, STOREFRONT_SURFACE)
+        team_preview = build_team_preview(
+            experience_service.team_preview_refs(assignments),
+            opted_out=experience_service.is_opted_out(request),
+        )
         shell = build_shell(
             request=request,
             cart_has_items=cart.items_count > 0 and not cart.is_empty,
             experience=assignments,
+            team_preview=team_preview,
         )
+        shell_data = projection_data(shell)
+        if shell_data.get("team_preview") is None:
+            # Ausente, não ``null``: cliente comum e anônimo nem sabem que o selo existe.
+            shell_data.pop("team_preview", None)
         response = Response({
-            "shell": projection_data(shell),
+            "shell": shell_data,
             "cart": projection_data(cart),
         })
-        if experience_service.has_non_default(assignments):
+        if experience_service.has_non_default(assignments) or team_preview is not None:
             # X14: versão fora do padrão é de alguém. A borda ignora ``Vary``, então
             # o corpo nunca pode ser cacheável. Quem tem sessão nem chega à gêmea
             # pública (``carries_credentials`` recusa cookie), e a gêmea, sem
-            # cliente, só resolve o padrão.
+            # cliente, só resolve o padrão. O selo da equipe também é de alguém,
+            # mesmo quando a pessoa pediu a versão de sempre.
             response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
+
+
+class StorefrontExperienceOptOutView(APIView):
+    """POST/DELETE /api/v1/storefront/experience/opt-out/ — "Ver a versão de sempre" (DEV-2026-096).
+
+    POST: a sessão passa a ver o padrão em todos os experimentos, até a pessoa sair
+    (o logout descarta a sessão) ou desfazer. DELETE: desfaz ("Voltar à versão de
+    teste"). Só para cliente identificado; quem decide a versão segue sendo o
+    servidor (``shop.services.experience``), e a sacola aberta é remarcada na hora
+    com a versão que a pessoa passa a ver. A loja relê o shell depois.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    throttle_classes = []
+
+    def post(self, request):
+        return self._apply(request, opted_out=True)
+
+    def delete(self, request):
+        return self._apply(request, opted_out=False)
+
+    def _apply(self, request, *, opted_out: bool):
+        from shopman.shop.services import experience as experience_service
+        from shopman.storefront.cart import remark_experience
+        from shopman.storefront.identity import get_authenticated_customer
+
+        if not get_authenticated_customer(request):
+            response = Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        else:
+            if opted_out:
+                experience_service.opt_out(request)
+            else:
+                experience_service.opt_in(request)
+            remark_experience(request)
+            response = Response({"opted_out": opted_out})
+        response["Cache-Control"] = PRIVATE_NO_STORE
         return response
 
 

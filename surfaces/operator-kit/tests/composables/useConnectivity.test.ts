@@ -7,10 +7,12 @@ import { nextTick } from "vue";
 // O ref é criado DENTRO do factory (o vue já está pronto lá); o holder hoisted é só
 // um objeto simples (não pode instanciar ref antes dos imports).
 const net = vi.hoisted(() => ({ online: null as unknown as { value: boolean } }));
-vi.mock("@vueuse/core", async () => {
+vi.mock("@vueuse/core", async (importOriginal) => {
   const { ref } = await import("vue");
   net.online = ref(true);
-  return { useOnline: () => net.online };
+  // O resto da biblioteca segue real: o botão do Nuxt UI (pendente por padrão desde
+  // DEV-2026-094, carregado por plugin) usa outras funções dela.
+  return { ...(await importOriginal<typeof import("@vueuse/core")>()), useOnline: () => net.online };
 });
 // Lazy: o ref só existe depois que useConnectivity() importa @vueuse (roda o factory).
 const online = () => net.online;
