@@ -311,8 +311,10 @@ onBeforeUnmount(() => {
   will-change: transform;
 }
 
+/* Nasce já visível (um terço do segmento dentro da tela): o primeiro quadro depois do
+   toque precisa mostrar a barra, não um trilho vazio. */
 @keyframes navigation-route-bar {
-  from { transform: translateX(-100%); }
+  from { transform: translateX(-20%); }
   to { transform: translateX(250%); }
 }
 
