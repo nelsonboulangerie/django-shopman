@@ -86,6 +86,7 @@ As guardas das cláusulas pétreas (C2, C3, C5, C6, C7, C10, C11 e ADR-025) são
 | Teto de job cabe a espera declarada | check_workflow_budgets.py | make test-workflow-budgets |
 | PR declara o que deixou de fora, com issue `ficou-de-fora` por item | check_ficou_de_fora.py | CI ficou-de-fora (corpo do PR) |
 | Menu do catálogo monta acima do mínimo | check_menu_smoke.py | make test-framework |
+| Custo da suíte guardado: seed completo contado, quem semeia no shard certo, shards partidos completos e equilibrados (DEV-2026-098) | check_test_cost.py | make test-cost |
 
 ## 8. Deploy, runtime e prontidão
 
