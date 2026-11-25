@@ -4,15 +4,16 @@
   "A vigia agendada (.github/workflows/ci-time-watch.yml) mede a fila com scripts/ci_baseline.py e abre/comenta a issue",
   "'Orçamento de tempo da CI estourou' quando a mediana de um job ou do grupo passa do teto. Não reprova PR: relógio oscila.",
   "Calibrado em 25/11 pelo baseline (evidence/ci-dx-098/). Apertar é decisão; afrouxar é decisão escrita no PR, com o número.",
-  "jobs: padrão fnmatch sobre '<workflow> › <job>' → teto da execução p50 em minutos (started→completed, jobs verdes)."
+  "jobs: padrão fnmatch sobre '<workflow> › <job>' → teto da execução p50 em minutos (started→completed, jobs verdes).",
+  "25/11: seed-* e rest-* calibrados pelo run 45673961882 (shards partidos, grátis): seed 8,8/7,9 e rest 12,6/10,1 min, +10-25% de folga para a fila."
  ],
  "calibrated_at": "2026-11-25",
  "group_wall_p50_min": 30,
  "group_wall_p95_min": 80,
  "failed_checks_removals_per_merged_pr": 0.3,
  "jobs": {
-  "Runtime Gate › Backstage seed-*": 12,
-  "Runtime Gate › Backstage rest-*": 12,
+  "Runtime Gate › Backstage seed-*": 11,
+  "Runtime Gate › Backstage rest-*": 14,
   "Runtime Gate › Backstage heavy": 17,
   "Runtime Gate › Shop rest": 12,
   "Runtime Gate › Shop heavy": 10,
