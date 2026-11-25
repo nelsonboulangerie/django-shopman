@@ -166,14 +166,6 @@ CARDS = (
 )
 
 
-#: Os cartões que só passam com as palavras-chave da proposta (``keywords_proposal.json``, #3595):
-#: o nome que o cliente fala está longe demais do cardápio para a correção de escrita.
-NEEDS_PROPOSAL = {
-    "Quero 8 Madalena",  # Madeleine: "madalena"
-    "Queria fazer encomenda de 4 pães ( chalá / gergelim e 2 pct de hot-dog )",  # Challah: "chalá"
-}
-
-
 #: O que ainda falha, com a issue que carrega (vazio: nada).
 KNOWN_GAPS: dict[str, str] = {}
 
@@ -185,8 +177,10 @@ def _proposal() -> dict:
 
 
 @pytest.fixture
-def menu(surface, request):
-    proposal = _proposal() if request.node.callspec.params["keywords"] == "proposta" else {}
+def menu(surface):
+    """O cardápio com as palavras-chave do seed: o ``keywords_map`` e, por cima, a proposta
+    aprovada (``keywords_proposal.json``), que o seed grava como o ``--write`` gravou no ar."""
+    proposal = _proposal()
     for sku, name in MENU:
         product = _listed(sku, name, stock="10")
         if KEYWORDS.get(sku):
@@ -200,19 +194,14 @@ def menu(surface, request):
 
 def _cases():
     for card in CARDS:
-        for keywords in ("seed", "proposta"):
-            marks = (
-                [pytest.mark.xfail(strict=True, reason=KNOWN_GAPS[card[1]])] if card[1] in KNOWN_GAPS
-                else [pytest.mark.xfail(strict=True, reason="só com as palavras-chave da proposta")]
-                if keywords == "seed" and card[1] in NEEDS_PROPOSAL else []
-            )
-            yield pytest.param(*card, keywords, marks=marks, id=f"{keywords}-{card[1][:40]}")
+        marks = [pytest.mark.xfail(strict=True, reason=KNOWN_GAPS[card[1]])] if card[1] in KNOWN_GAPS else []
+        yield pytest.param(*card, marks=marks, id=card[1][:40])
 
 
 @override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS)
-@pytest.mark.parametrize(("source", "said", "reading", "shows", "not_found", "keywords"), list(_cases()))
+@pytest.mark.parametrize(("source", "said", "reading", "shows", "not_found"), list(_cases()))
 def test_the_product_written_as_the_customer_writes_is_found(conversation, outbox, menu, monkeypatch, source, said,
-                                                             reading, shows, not_found, keywords):
+                                                             reading, shows, not_found):
     from shopman.shop.tests.ai_support import configure_ai
 
     configure_ai("isolated-fixture", model="claude-sonnet-5")
