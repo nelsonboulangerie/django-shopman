@@ -23,9 +23,11 @@ import {
 } from '~/presentation/continuumCatalog'
 import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-import { initialMenuDay, isTodayChoice, menuDayBarLabel } from '~/presentation/menuDay'
+import { useElementSize } from '@vueuse/core'
+
+import { initialMenuDay, isTodayChoice, needsDayBeforeAdd, shortDayLabel, showsDayStep } from '~/presentation/menuDay'
 import type { CatalogStructureState } from '~/types/continuum'
-import type { CartDayChangeRefusal, CatalogResponse } from '~/types/shopman'
+import type { CartDayChangeRefusal, CatalogResponse, ProductMutationMeta, ProductOptionSelection } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
 const { openSearch } = useSearchOverlay()
@@ -46,8 +48,10 @@ const continuum = continuumEnabled
   : null
 const structureCatalog = computed(() => catalogFromStructureSnapshot(continuum?.data.value))
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-// B (OC-33 B1): o cardápio pergunta "Para quando?" antes da lista e lê o dia
-// escolhido (`?date=`). Hoje com data é o cardápio de sempre no servidor (X13).
+// B (OC-33 B1, direção E2 do dono, 25/11/2026): quem só olha não é interrompido. O
+// primeiro "+" com a casa fechada abre a folha "Quando"; com o dia escolhido, o
+// cardápio lê aquele dia (`?date=`; hoje com data é o de sempre no servidor, X13) e o
+// dia vira a etapa feita do checkout no topo da lista.
 const { is: menuExperienceIs } = useExperience('cardapio-dia-primeiro')
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const dayFirst = computed(() => menuExperienceIs('b'))
@@ -55,8 +59,6 @@ const dayFirst = computed(() => menuExperienceIs('b'))
 const chosenMenuDay = useChosenMenuDay()
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const menuDayRoute = useRoute()
-// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-const pickingMenuDay = ref(dayFirst.value && menuDayRoute.query.trocar === '1')
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 if (dayFirst.value && typeof menuDayRoute.query.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(menuDayRoute.query.dia)) {
   chosenMenuDay.value = menuDayRoute.query.dia
@@ -116,65 +118,78 @@ async function refresh () {
 requireContentOnSsr(error.value, !!catalog.value, 'Cardápio')
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-// O dia em que o cardápio abre: o escolhido agora, o guardado na aba, o da sacola
-// (ou hoje, com a sacola de hoje). Sem nenhum, a pergunta vem antes da lista.
-const { cart: menuCart } = useCartState()
+// O dia em que o cardápio abre: o da URL, o guardado na aba ou o da sacola. Sem
+// nenhum, o cardápio é o de sempre, e ninguém é interrompido.
+const { cart: menuCart, changeCartDay, setSkuQty, addLineWithOptions } = useCartState()
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const menuDays = computed(() => catalog.value?.days || null)
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 watch([dayFirst, menuDays], ([enabled, days]) => {
   if (!enabled || !days) return
-  const cartDay = menuCart.value.day?.date || (menuCart.value.is_empty ? '' : days.today)
-  const resolved = initialMenuDay(days, [chosenMenuDay.value, cartDay])
+  const resolved = initialMenuDay(days, [chosenMenuDay.value, menuCart.value.day?.date])
   if (resolved !== chosenMenuDay.value) chosenMenuDay.value = resolved
 }, { immediate: true })
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-// Dia que o servidor recusou (passou, a casa fechou): volta à pergunta.
+// Dia que o servidor recusou (passou, a casa fechou): volta ao cardápio de sempre.
 watch(canonicalError, failure => {
-  if (dayFirst.value && failure && chosenMenuDay.value) {
-    chosenMenuDay.value = ''
-    pickingMenuDay.value = true
-  }
+  if (dayFirst.value && failure && chosenMenuDay.value) chosenMenuDay.value = ''
 })
-// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-const showMenuDayPicker = computed(() => dayFirst.value && !!menuDays.value && (pickingMenuDay.value || !chosenMenuDay.value))
-// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-const menuDayBar = computed(() => (dayFirst.value && !showMenuDayPicker.value ? menuDayBarLabel(menuDays.value, chosenMenuDay.value) : ''))
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const menuOnDay = computed(() => dayFirst.value && !!chosenMenuDay.value && !isTodayChoice(menuDays.value, chosenMenuDay.value))
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-provideMenuDay({
-  date: computed(() => (dayFirst.value && !showMenuDayPicker.value ? chosenMenuDay.value : '')),
-  onDay: menuOnDay
-})
+const dayStepSummary = computed(() => (
+  dayFirst.value && showsDayStep(menuDays.value, chosenMenuDay.value) ? shortDayLabel(chosenMenuDay.value) : ''
+))
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-function settleMenuDay (value: string) {
-  chosenMenuDay.value = value
-  pickingMenuDay.value = false
-  dayChangeRefusal.value = null
-  dayChangeError.value = ''
-  const { trocar: _closedPicker, ...query } = menuDayRoute.query
-  void router.replace({ query: { ...query, dia: value } })
-}
-
+// A folha "Quando": no primeiro "+" (modo "add", com o item esperando) e no "Editar"
+// da etapa feita (modo "change": a sacola inteira muda de dia, ou nada muda).
+const daySheetOpen = ref(false)
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-// O "Trocar" com a sacola cheia muda a sacola INTEIRA de dia (X3), num comando só
-// do servidor (X4): ou tudo vai para o dia novo, ou nada muda. Sacola vazia não tem
-// o que mover: o primeiro "Adicionar" leva o dia.
-const { changeCartDay } = useCartState()
+const pendingAdd = ref<{ meta: ProductMutationMeta, qty: number, options?: ProductOptionSelection[] } | null>(null)
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const dayChangeRefusal = ref<CartDayChangeRefusal | null>(null)
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const dayChangeError = ref('')
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 const dayChanging = ref(false)
-// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-const cartDayNow = computed(() => (
-  menuCart.value.is_empty ? '' : (menuCart.value.day?.date || menuDays.value?.today || '')
-))
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+provideMenuDay({
+  date: computed(() => (dayFirst.value ? chosenMenuDay.value : '')),
+  onDay: menuOnDay,
+  ask: (meta, qty, options) => {
+    if (!dayFirst.value || !needsDayBeforeAdd(menuDays.value, chosenMenuDay.value)) return false
+    pendingAdd.value = { meta, qty, options }
+    openDaySheet()
+    return true
+  }
+})
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function openDaySheet () {
+  dayChangeRefusal.value = null
+  dayChangeError.value = ''
+  daySheetOpen.value = true
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// "Editar" na sacola leva a `/menu?trocar=1`: a folha abre com o dia da sacola marcado.
+if (dayFirst.value && menuDayRoute.query.trocar === '1') onMounted(openDaySheet)
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function settleMenuDay (value: string) {
+  chosenMenuDay.value = value
+  dayChangeRefusal.value = null
+  dayChangeError.value = ''
+  daySheetOpen.value = false
+  const { trocar: _closedSheet, ...query } = menuDayRoute.query
+  void router.replace({ query: { ...query, dia: value } })
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// Com a sacola cheia, trocar o dia é um comando só do servidor (X3, X4): a sacola
+// inteira vai para o dia novo, ou nada muda e o que não dá vem nomeado.
 async function moveCartTo (value: string, without: string[] = []) {
   dayChanging.value = true
   dayChangeError.value = ''
@@ -195,12 +210,20 @@ async function moveCartTo (value: string, without: string[] = []) {
 }
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-function pickMenuDay (value: string) {
-  if (cartDayNow.value && value !== cartDayNow.value) {
-    void moveCartTo(value)
+async function confirmDay (value: string) {
+  const cartDayNow = menuCart.value.is_empty ? '' : (menuCart.value.day?.date || menuDays.value?.today || '')
+  if (cartDayNow && value !== cartDayNow) {
+    await moveCartTo(value)
     return
   }
   settleMenuDay(value)
+  const pending = pendingAdd.value
+  pendingAdd.value = null
+  if (!pending) return
+  const meta = { ...pending.meta, date: value }
+  // O erro do Adicionar já tem a tela dele (a folha de substitutos, o aviso da sacola).
+  if (pending.options) void addLineWithOptions(meta, pending.qty, pending.options).catch(() => {})
+  else void setSkuQty(meta, pending.qty).catch(() => {})
 }
 
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
@@ -212,7 +235,40 @@ function proceedWithoutRefused () {
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
 function keepCartDay () {
   dayChangeRefusal.value = null
-  if (cartDayNow.value) settleMenuDay(cartDayNow.value)
+  daySheetOpen.value = false
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// A etapa feita some ao descer a lista e volta ao subir (não fica presa no topo).
+// Mostrar ou esconder a etapa muda a altura do cabeçalho, e o navegador compensa a
+// rolagem (scroll anchoring) com um evento de scroll que não é gesto da cliente: por um
+// instante depois de cada troca, a posição só é anotada, para a etapa não piscar de volta.
+const dayStepVisible = ref(true)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// A etapa fica logo abaixo da faixa de latão, fora dela (a faixa troca as cores da casa
+// pelas suas): o topo fixo dela é o fim da faixa, que muda de altura com a largura.
+const menuFilterbar = ref<HTMLElement | null>(null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const { height: menuFilterbarHeight } = useElementSize(menuFilterbar, undefined, { box: 'border-box' })
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+let lastScrollY = 0
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+let dayStepSettlingUntil = 0
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+if (import.meta.client) {
+  useEventListener(window, 'scroll', () => {
+    const y = window.scrollY
+    if (performance.now() < dayStepSettlingUntil) {
+      lastScrollY = y
+      return
+    }
+    if (Math.abs(y - lastScrollY) < 8) return
+    const visible = y < 80 || y < lastScrollY
+    lastScrollY = y
+    if (visible === dayStepVisible.value) return
+    dayStepVisible.value = visible
+    dayStepSettlingUntil = performance.now() + 250
+  }, { passive: true })
 }
 
 const route = useRoute()
@@ -639,7 +695,7 @@ useHead({
   <main class="min-w-0">
     <h1 class="sr-only">Cardápio</h1>
 
-    <section data-menu-filterbar class="shop-pillbar sticky top-16 z-30 bg-background shadow-sm">
+    <section ref="menuFilterbar" data-menu-filterbar class="shop-pillbar sticky top-16 z-30 bg-background shadow-sm">
       <div class="shop-container py-2">
         <div v-if="catalog" class="flex items-center gap-2">
           <UiButton
@@ -709,18 +765,28 @@ useHead({
           </UiTabs>
         </div>
 
-        <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
-        <p v-if="menuDayBar" class="mt-2 flex flex-wrap items-center gap-x-1 shop-body" data-menu-day-bar>
-          <Icon name="lucide:calendar-days" class="size-4 shrink-0" aria-hidden="true" />
-          <span class="font-semibold" data-decisive="availability">{{ menuDayBar }}</span>
-          <span aria-hidden="true">·</span>
-          <!-- Na barra de latão, o "Trocar" herda a cor do texto da barra (o vinho do link não passa no AA ali). -->
-          <UiButton variant="link" class="h-auto min-h-6 px-1 py-0 shop-body font-semibold text-current underline" data-menu-day-change @click="pickingMenuDay = true">Trocar</UiButton>
-        </p>
-
         <p class="sr-only" aria-live="polite">{{ menuFocusLabel }}</p>
       </div>
     </section>
+    <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+    <!-- O dia do pedido é a etapa feita do checkout, idêntica ("Quando", ✓ latão, "Editar"
+         com lápis), na largura toda e logo abaixo da faixa de latão. Fica fixa sob a faixa,
+         mas some ao descer a lista e volta ao subir. -->
+    <div
+      v-if="dayStepSummary"
+      v-show="dayStepVisible"
+      class="sticky z-20 bg-background shadow-sm"
+      :style="{ top: `calc(4rem + ${menuFilterbarHeight}px)` }"
+      data-menu-day-step
+    >
+      <div class="shop-container">
+        <CheckoutProgressSection title="Quando" state="done" icon="lucide:clock" @edit="openDaySheet">
+          <template #summary>
+            <span class="text-xl font-semibold text-foreground" data-decisive="availability">{{ dayStepSummary }}</span>
+          </template>
+        </CheckoutProgressSection>
+      </div>
+    </div>
 
     <div class="shop-section">
       <div class="shop-container shop-stack-block">
@@ -753,20 +819,20 @@ useHead({
           </UiAlert>
 
           <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
-          <MenuDayPicker
-            v-if="showMenuDayPicker && menuDays"
+          <MenuDaySheet
+            v-if="dayFirst && menuDays"
+            v-model:open="daySheetOpen"
             :days="menuDays"
-            :model-value="chosenMenuDay"
+            :chosen="chosenMenuDay"
             :refusal="dayChangeRefusal"
             :error="dayChangeError"
             :busy="dayChanging"
-            @pick="pickMenuDay"
+            @confirm="confirmDay"
             @proceed-without="proceedWithoutRefused"
             @keep="keepCartDay"
           />
 
-          <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
-          <section v-if="!showMenuDayPicker" data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
+          <section data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
             <!-- Mostrar só disponíveis: padrão da casa, chave do cliente. -->
             <div
               v-if="showAvailableOnlyToggle"

@@ -85,9 +85,11 @@ watch(keyboardInset, () => {
       :style="panelStyle"
       @focusin="onFocusIn"
     >
-      <!-- X sempre visível e bem posicionado (a primitiva renderia um botão vazio). -->
+      <!-- X sempre visível e bem posicionado (a primitiva renderia um botão vazio). O alvo
+           é de 40 px (WCAG 2.5.8): o ícone fica onde sempre esteve, e a área de toque cresce
+           em volta dele (a primitiva desenhava um botão de 16 px). -->
       <template #close>
-        <UiSheetX sr-text="Fechar" />
+        <UiSheetX sr-text="Fechar" class="-mt-3 -mr-3 flex size-10 items-center justify-center" />
       </template>
 
       <!-- Alça de arraste: affirma o idiom de sheet e dá acabamento mobile-native. -->

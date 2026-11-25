@@ -2,7 +2,7 @@
 import { cartBatchFloor, cartHoldBanner, cartReservationNotice, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reservationDeadlineMs } from '~/presentation/cart'
 import { cartLinePromise, cartReadyLine } from '~/presentation/promise'
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-import { cartDayLine } from '~/presentation/menuDay'
+import { cartDayItemLine, cartDayReadyLine, shortDayLabel } from '~/presentation/menuDay'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
@@ -108,15 +108,23 @@ function holdFor (line: CartItemProjection) {
 // das outras.
 const readyLine = computed(() => cartReadyLine(cart.value.items.filter(line => !isOptimisticLine(line))))
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-// B (OC-33 B1): a sacola de outro dia diz o dia no alto, com quando fica tudo
-// pronto e o gesto de trocar o dia (que volta à pergunta do cardápio).
+// B (OC-33 B1, direção E2): a sacola de outro dia diz o dia UMA vez, como a etapa
+// feita do checkout no topo ("Quando · qui, 26/11 · Editar"); o pedido diz "Tudo
+// pronto a partir das 15h"; a linha do item só traz a hora quando ela difere da do
+// pedido. "Editar" reabre a folha "Quando" no cardápio.
 const { is: cartExperienceIs } = useExperience('cardapio-dia-primeiro')
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-const dayLine = computed(() => (
-  cartExperienceIs('b') && !cart.value.is_empty
-    ? cartDayLine(cart.value.day, cart.value.items.filter(line => !isOptimisticLine(line)))
-    : null
+const datedItems = computed(() => cart.value.items.filter(line => !isOptimisticLine(line)))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayStep = computed(() => (
+  cartExperienceIs('b') && !cart.value.is_empty && cart.value.day ? shortDayLabel(cart.value.day.date) : ''
 ))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayReady = computed(() => (dayStep.value ? cartDayReadyLine(cart.value.day, datedItems.value) : ''))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function linePromise (line: CartItemProjection): string {
+  return dayStep.value ? cartDayItemLine(cart.value.day, datedItems.value, line) : cartLinePromise(line.promise)
+}
 
 // Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
 // responder; a trava é por linha (remover A não trava B). A chave é a `line_id`:
@@ -184,26 +192,24 @@ useSeoMeta({
         <UiButton variant="ghost" @click="reorderOutcome = null">Entendi</UiButton>
       </section>
 
+      <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+      <div v-if="dayStep" class="-mt-4" data-cart-day-line>
+        <CheckoutProgressSection title="Quando" state="done" icon="lucide:clock" @edit="navigateTo('/menu?trocar=1')">
+          <template #summary>
+            <span class="text-xl font-semibold text-foreground" data-decisive="availability">{{ dayStep }}</span>
+          </template>
+        </CheckoutProgressSection>
+      </div>
+
       <div>
         <h1 class="shop-title">Sua sacola</h1>
         <p v-if="!cart.is_empty" class="mt-2 shop-muted">
           {{ `${formatCount(cart.items_count, 'item', 'itens')} · ${cart.grand_total_display}` }}
         </p>
         <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
-        <p v-if="dayLine" class="mt-1 flex flex-wrap items-center gap-x-1 shop-body" data-cart-day-line>
-          <Icon name="lucide:calendar-days" class="size-4 shrink-0" aria-hidden="true" />
-          <span class="font-semibold" data-decisive="availability">{{ dayLine.day }}</span>
-          <template v-if="dayLine.ready">
-            <span aria-hidden="true">·</span>
-            <span data-decisive="availability">{{ dayLine.ready }}</span>
-          </template>
-          <span aria-hidden="true">·</span>
-          <UiButton variant="link" to="/menu?trocar=1" class="h-auto min-h-6 px-1 py-0 shop-body" data-cart-day-change>Trocar</UiButton>
-        </p>
-        <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
-        <p v-if="!cart.is_empty && readyLine && !dayLine" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
+        <p v-if="!cart.is_empty && (dayStep ? dayReady : readyLine)" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
           <Icon name="lucide:clock" class="mt-0.5 size-4 shrink-0" />
-          {{ readyLine }}
+          {{ dayStep ? dayReady : readyLine }}
         </p>
         <!-- Até quando a sacola guarda os itens (WP-L11): no alto, junto de quando o
              pedido fica pronto, porque as duas respondem "quando". Mesmo texto de
@@ -351,15 +357,16 @@ useSeoMeta({
                        produto, escrita pelo servidor. Só a de fornada aparece na
                        linha; pronto agora é o normal, e casa fechada é dito uma
                        vez no alto da sacola. -->
-                  <p v-if="cartLinePromise(line.promise)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise data-decisive="availability">
+                  <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+                  <p v-if="linePromise(line)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise data-decisive="availability">
                     <Icon name="lucide:clock" class="mt-px size-3.5 shrink-0" />
-                    {{ cartLinePromise(line.promise) }}
+                    {{ linePromise(line) }}
                   </p>
 
                   <template v-if="holdFor(line)">
-                    <div v-if="holdFor(line)!.kind === 'awaiting'" :class="cartLinePromise(line.promise) ? 'mt-1' : 'mt-2'" data-cart-line-awaiting>
+                    <div v-if="holdFor(line)!.kind === 'awaiting'" :class="linePromise(line) ? 'mt-1' : 'mt-2'" data-cart-line-awaiting>
                       <!-- O selo antigo só sobra quando a promessa não veio. -->
-                      <UiBadge v-if="!cartLinePromise(line.promise)" variant="outline" class="mb-1">
+                      <UiBadge v-if="!linePromise(line)" variant="outline" class="mb-1">
                         <Icon name="lucide:clock" class="mr-1 size-3.5" />
                         Lista de espera
                       </UiBadge>

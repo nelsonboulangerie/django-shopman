@@ -1,10 +1,10 @@
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-// OC-33 B1: "Para quando?" antes da lista, a sacola e o checkout já no dia. Quem
-// decide a versão é o servidor (shell `experience`); a página só muda a PERGUNTA
-// e a forma de dizer. A: idêntica ao main (sem pergunta, sem barra, sem dia no
-// Adicionar). B: pergunta o dia, lê o cardápio daquele dia (`?date=`), manda o dia
-// com o Adicionar, a sacola diz o dia e o checkout abre nele (X10, WCAG 3.3.7).
-// Disponibilidade, promessa e frase do dia vêm do servidor (X13).
+// OC-33 B1, direção E2 (dono, 25/11/2026): quem só olha não é interrompido; o
+// primeiro "+" com a casa fechada abre a folha "Quando" com o próximo dia marcado e o
+// verbo com o dia; depois, o dia é a etapa feita do checkout no topo; "Editar" reabre a
+// folha, e trocar o dia com item que não dá mostra o aviso item a item. A: idêntica ao
+// main. Quem decide a versão é o servidor (shell `experience`); disponibilidade,
+// promessa, dias e recusas vêm do servidor (X13).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
@@ -33,13 +33,16 @@ function withRealDates<T> (value: T): T {
 }
 
 const TODAY_CATALOG = withRealDates(catalogContractJson as unknown as CatalogProjection)
+// A mesma loja, às 19h: hoje já não tem horário (o servidor diz `today_open: false`).
+const CLOSED_CATALOG = { ...TODAY_CATALOG, days: { ...TODAY_CATALOG.days!, today_open: false } } as CatalogProjection
+let houseClosed = false
 const DAY_CATALOG = withRealDates(catalogDayContractJson as unknown as CatalogProjection)
 
 const catalogQueries: Array<Record<string, unknown>> = []
 registerEndpoint('/api/v1/storefront/catalog/', (event) => {
   const query = getQuery(event)
   catalogQueries.push(query)
-  return { catalog: query.date ? DAY_CATALOG : TODAY_CATALOG }
+  return { catalog: query.date ? DAY_CATALOG : (houseClosed ? CLOSED_CATALOG : TODAY_CATALOG) }
 })
 
 // O "Trocar" (PUT cart/day/): a primeira tentativa esbarra na Tabatière; com `without`, passa.
@@ -54,14 +57,24 @@ registerEndpoint('/api/v1/cart/day/', {
       setResponseStatus(event, 409)
       return {
         error_code: 'cart_day_change_refused',
-        title: 'Tabatière não está disponível para quinta, 26/11',
-        detail: 'Você pode seguir para quinta, 26/11 sem esse item, ou manter o dia que tinha.',
-        date: '2026-11-26',
-        date_label: 'quinta, 26/11',
+        title: 'Tabatière não está disponível para amanhã, quarta',
+        detail: 'Você pode seguir para amanhã, quarta sem esse item, ou manter o dia que tinha.',
+        date: '2026-11-25',
+        date_label: 'amanhã, quarta',
         items: [{ ref: 'TABAT', sku: 'TABAT', name: 'Tabatière', requested_qty: 1, available_qty: 0 }]
       }
     }
-    return { cart: { ...useState<CartProjection>('storefront-cart').value, day: { date: '2026-11-26', label: 'quinta, 26/11' } } }
+    return { cart: { ...useState<CartProjection>('storefront-cart').value, day: { date: '2026-11-25', label: 'amanhã, quarta' } } }
+  }
+})
+
+// O Adicionar do card (PUT cart/skus/<sku>/): guarda o corpo, para conferir o dia que foi junto.
+const addCalls: Array<Record<string, unknown>> = []
+registerEndpoint('/api/v1/cart/skus/PAO-CONTRATO/', {
+  method: 'PUT',
+  handler: async (event) => {
+    addCalls.push(await readBody(event))
+    return { cart: { ...useState<CartProjection>('storefront-cart').value, is_empty: false, day: { date: '2026-11-25', label: 'amanhã, quarta' } }, summary: {} }
   }
 })
 
@@ -75,13 +88,15 @@ function setShell (variant?: 'a' | 'b') {
 const mounted: Array<{ unmount: () => void }> = []
 
 async function openMenu (variant?: 'a' | 'b') {
+  // O `?dia=` que um teste anterior deixou na URL não pode escolher o dia do seguinte.
+  await useRouter().replace({ path: '/menu', query: {} })
   clearNuxtData()
   setShell(variant)
   useState('shopman-menu-day').value = ''
   catalogQueries.length = 0
   const page = await mountSuspended(MenuPage, { global: { stubs: { MenuFavoritesShelf: true } } })
   mounted.push(page)
-  await vi.waitFor(() => expect(page.find('[data-menu-day-picker], [data-menu-results]').exists()).toBe(true))
+  await vi.waitFor(() => expect(page.find('[data-menu-results]').exists()).toBe(true))
   await flushPromises()
   return page
 }
@@ -89,99 +104,115 @@ async function openMenu (variant?: 'a' | 'b') {
 afterEach(() => {
   while (mounted.length) mounted.pop()!.unmount()
   useState('shopman-menu-day').value = ''
+  houseClosed = false
   setShell()
 })
 
-describe('cardápio: "Para quando?" antes da lista (OC-33 B1)', () => {
-  it('A (padrão, sem experimento): a lista de sempre, sem pergunta, sem barra, sem data na leitura', async () => {
+// A folha é teleportada para o body (Reka): procura-se nela, não no componente.
+const sheet = () => document.querySelector<HTMLElement>('[data-menu-day-sheet]')
+const inSheet = (selector: string) => document.querySelector<HTMLElement>(`[data-menu-day-sheet] ${selector}`)
+
+function setCart (day: string | null) {
+  useState<CartProjection>('storefront-cart').value = {
+    ...(useState<CartProjection>('storefront-cart').value || {}),
+    is_empty: !day,
+    items: [],
+    day: day ? { date: day, label: '' } : null
+  } as CartProjection
+}
+
+describe('cardápio: o dia do pedido na direção E2 (OC-33 B1)', () => {
+  afterEach(() => setCart(null))
+
+  it('A (padrão, sem experimento): a lista de sempre, sem etapa, sem folha, sem data na leitura', async () => {
     const page = await openMenu()
-    expect(page.find('[data-menu-day-picker]').exists()).toBe(false)
-    expect(page.find('[data-menu-day-bar]').exists()).toBe(false)
-    expect(page.find('[data-menu-results]').exists()).toBe(true)
+    expect(page.find('[data-menu-day-step]').exists()).toBe(false)
+    expect(sheet()).toBeNull()
     expect(catalogQueries.every(query => !('date' in query))).toBe(true)
   })
 
   it('A explícita (fora da coorte) renderiza o mesmo que sem experimento', async () => {
-    const plain = (await openMenu()).find('main').html()
-    const explicitA = (await openMenu('a')).find('main').html()
+    // O ícone do Iconify chega quando chega (o primeiro render pode ter o <svg> vazio):
+    // a comparação é da página, não do relógio do ícone.
+    const withoutIconBodies = (html: string) => html.replace(/<svg\b[\s\S]*?<\/svg>/g, '<svg/>')
+    const plain = withoutIconBodies((await openMenu()).find('main').html())
+    const explicitA = withoutIconBodies((await openMenu('a')).find('main').html())
     expect(explicitA).toBe(plain)
   })
 
-  it('B sem dia escolhido: a pergunta vem antes da lista, com os dias do servidor', async () => {
+  it('B, só olhando: nenhuma pergunta de dia no topo enquanto a sacola não tem dia', async () => {
+    houseClosed = true
     const page = await openMenu('b')
-    const picker = page.find('[data-menu-day-picker]')
-    expect(picker.exists()).toBe(true)
-    expect(picker.text()).toContain('Para quando?')
-    expect(page.find('[data-menu-results]').exists()).toBe(false)
-    const options = page.findAll('[data-menu-day-option]').map(button => button.text())
-    expect(options[0]).toContain('Hoje')
-    expect(options[1]).toContain('Amanhã')
-    expect(page.find('[data-menu-day-other]').text()).toContain('Outro dia')
+    expect(page.find('[data-menu-day-step]').exists()).toBe(false)
+    expect(sheet()).toBeNull()
+    expect(page.find('[data-menu-results]').exists()).toBe(true)
   })
 
-  it('B: escolher amanhã lê o cardápio do dia, mostra a barra e a frase do dia nos itens', async () => {
+  it('B, casa fechada: o primeiro "+" abre "Quando" com amanhã marcado, e confirmar põe o item no dia', async () => {
+    houseClosed = true
+    addCalls.length = 0
     const page = await openMenu('b')
-    await page.find('[data-menu-day-option="2026-11-25"]').trigger('click')
-    await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
+    await page.find('button[aria-label="Adicionar Pão do Contrato"]').trigger('click')
+    await vi.waitFor(() => expect(sheet()).not.toBeNull())
+
+    expect(sheet()!.textContent).toContain('Quando')
+    expect(sheet()!.textContent).toContain('Hoje já encerramos.')
+    const tomorrow = inSheet('[data-menu-day-option="2026-11-25"]')!
+    expect(tomorrow.textContent).toContain('Amanhã')
+    expect(tomorrow.textContent).toContain('Quarta, 25/11')
+    expect(inSheet('#menu-day-2026-11-25')!.getAttribute('data-state')).toBe('checked')
+    expect(inSheet('[data-menu-day-other]')!.textContent).toContain('Outra data')
+    // Nada entrou ainda: a folha segura o gesto até a cliente confirmar o dia.
+    expect(addCalls).toHaveLength(0)
+    const confirm = inSheet('[data-menu-day-confirm]')!
+    expect(confirm.textContent!.trim()).toBe('Encomendar para amanhã')
+
+    confirm.click()
+    await vi.waitFor(() => expect(addCalls).toHaveLength(1))
+    expect(addCalls[0]).toEqual({ qty: 1, date: '2026-11-25' })
+    await vi.waitFor(() => expect(page.find('[data-menu-day-step]').exists()).toBe(true))
+    expect(page.find('[data-menu-day-step]').text()).toContain('Quando')
+    expect(page.find('[data-menu-day-step]').text()).toContain('qua, 25/11')
+    expect(page.find('[data-menu-day-step]').text()).toContain('Editar')
     await vi.waitFor(() => expect(catalogQueries.some(query => query.date === '2026-11-25')).toBe(true))
     await flushPromises()
-
-    expect(page.find('[data-menu-day-bar]').text()).toContain('Para amanhã, quarta')
-    expect(page.find('[data-menu-day-change]').text()).toBe('Trocar')
-    const text = page.find('[data-menu-results]').text()
-    // Pronto depois da abertura: a hora. Desde a abertura: nada. Esgotado: "Indisponível".
-    expect(text).toContain('A partir das 12h')
-    expect(text).not.toContain('Lista de espera')
-    expect(text).not.toContain('Disponível amanhã')
-    expect(text).toContain('Indisponível')
-
-    // Trocar volta à pergunta, com o dia marcado.
-    await page.find('[data-menu-day-change]').trigger('click')
-    await nextTick()
-    expect(page.find('[data-menu-day-picker]').exists()).toBe(true)
-    expect(page.find('[data-menu-day-option="2026-11-25"]').attributes('aria-pressed')).toBe('true')
   })
 
-  it('B: a sacola de outro dia abre o cardápio nesse dia, sem perguntar de novo', async () => {
-    useState<CartProjection>('storefront-cart').value = {
-      ...(useState<CartProjection>('storefront-cart').value || {}),
-      is_empty: false,
-      items: [],
-      day: { date: '2026-11-25', label: 'amanhã, quarta' }
-    } as CartProjection
+  it('B, casa aberta: o "+" põe na sacola de hoje, sem perguntar', async () => {
+    addCalls.length = 0
+    setCart(null)
     const page = await openMenu('b')
-    await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
-    expect(page.find('[data-menu-day-picker]').exists()).toBe(false)
-    useState<CartProjection>('storefront-cart').value = { ...useState<CartProjection>('storefront-cart').value, is_empty: true, day: null }
+    // A sacola desta página é vazia e sem dia (a de outro teste não vale aqui).
+    expect(page.find('[data-menu-day-step]').exists()).toBe(false)
+    await page.find('button[aria-label="Adicionar Pão do Contrato"]').trigger('click')
+    await vi.waitFor(() => expect(addCalls).toHaveLength(1))
+    expect(addCalls[0]).toEqual({ qty: 1 })
+    expect(sheet()).toBeNull()
   })
 
-  it('B, "Trocar" com a sacola cheia: o item que não dá é nomeado, e "Seguir sem esse item" leva o resto', async () => {
-    useState<CartProjection>('storefront-cart').value = {
-      ...(useState<CartProjection>('storefront-cart').value || {}),
-      is_empty: false,
-      items: [],
-      day: { date: '2026-11-25', label: 'amanhã, quarta' }
-    } as CartProjection
+  it('B, "Editar" com a sacola cheia: o item que não dá é nomeado na folha, e "Seguir sem esse item" leva o resto', async () => {
+    setCart('2026-11-26')
     dayCalls.length = 0
     const page = await openMenu('b')
-    await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
-    await page.find('[data-menu-day-change]').trigger('click')
+    await vi.waitFor(() => expect(page.find('[data-menu-day-step]').exists()).toBe(true))
+    expect(page.find('[data-menu-day-step]').text()).toContain('qui, 26/11')
+
+    await page.find('[data-menu-day-step] button').trigger('click')
+    await vi.waitFor(() => expect(sheet()).not.toBeNull())
+    inSheet('#menu-day-2026-11-25')!.click()
     await nextTick()
-    await page.find('[data-menu-day-option="2026-11-26"]').trigger('click')
+    inSheet('[data-menu-day-confirm]')!.click()
 
-    // A casa diz o que não dá, pelo nome, e nada mudou: a barra segue fora, a pergunta fica.
-    await vi.waitFor(() => expect(page.find('[data-menu-day-refusal]').exists()).toBe(true))
-    expect(page.find('[data-menu-day-refusal]').text()).toContain('Tabatière não está disponível para quinta, 26/11')
-    expect(dayCalls[0]).toEqual({ date: '2026-11-26', without: [] })
-    // Forma neutra: a casa não sabe o gênero de cada produto.
-    expect(page.find('[data-menu-day-refusal]').text()).toContain('sem esse item')
-    expect(page.find('[data-menu-day-proceed]').text()).toBe('Seguir sem esse item')
+    await vi.waitFor(() => expect(inSheet('[data-menu-day-refusal]')).not.toBeNull())
+    expect(dayCalls[0]).toEqual({ date: '2026-11-25', without: [] })
+    expect(inSheet('[data-menu-day-refusal]')!.textContent).toContain('Tabatière não está disponível para amanhã, quarta')
+    expect(inSheet('[data-menu-day-refusal]')!.textContent).toContain('sem esse item')
+    expect(inSheet('[data-menu-day-proceed]')!.textContent!.trim()).toBe('Seguir sem esse item')
+    expect(inSheet('[data-menu-day-keep]')!.textContent!.trim()).toBe('Manter o dia que tinha')
 
-    await page.find('[data-menu-day-proceed]').trigger('click')
-    await vi.waitFor(() => expect(page.find('[data-menu-day-bar]').exists()).toBe(true))
-    expect(dayCalls[1]).toEqual({ date: '2026-11-26', without: ['TABAT'] })
-    expect(page.find('[data-menu-day-bar]').text()).toContain('Para quinta, 26/11')
-    useState<CartProjection>('storefront-cart').value = { ...useState<CartProjection>('storefront-cart').value, is_empty: true, day: null }
+    inSheet('[data-menu-day-proceed]')!.click()
+    await vi.waitFor(() => expect(dayCalls[1]).toEqual({ date: '2026-11-25', without: ['TABAT'] }))
+    await vi.waitFor(() => expect(page.find('[data-menu-day-step]').text()).toContain('qua, 25/11'))
   })
 })
 
@@ -190,7 +221,7 @@ describe('o card manda o dia com o Adicionar (OC-33 B1)', () => {
 
   async function mountCard (day?: { date: string, onDay: boolean }) {
     const provide = day
-      ? { [MENU_DAY_KEY as symbol]: { date: computed(() => day.date), onDay: computed(() => day.onDay) } }
+      ? { [MENU_DAY_KEY as symbol]: { date: computed(() => day.date), onDay: computed(() => day.onDay), ask: () => false } }
       : {}
     const card = await mountSuspended(ProductListItem, {
       props: { item },
@@ -289,14 +320,19 @@ describe('sacola datada (OC-33 B1)', () => {
 
   beforeEach(() => { document.cookie = 'csrftoken=local-test' })
 
-  it('B: o alto da sacola diz o dia, quando fica tudo pronto e o gesto de trocar', async () => {
+  it('B: o dia uma vez só, como a etapa feita; o pedido diz quando fica pronto; a linha só traz a hora que difere', async () => {
     const page = await openCart('b')
-    const line = page.find('[data-cart-day-line]')
-    expect(line.exists()).toBe(true)
-    expect(line.text().replace(/\s*·\s*/g, ' · ').replace(/\s+/g, ' ')).toBe('Para quinta, 26/11 · Tudo pronto a partir das 11h · Trocar')
-    expect(page.find('[data-cart-day-change]').attributes('href')).toBe('/menu?trocar=1')
-    // Uma frase de "quando" só: a do pedido some sob a do dia.
-    expect(page.find('[data-cart-ready-line]').exists()).toBe(false)
+    const step = page.find('[data-cart-day-line]')
+    expect(step.exists()).toBe(true)
+    expect(step.find('[data-checkout-section-state="done"]').exists()).toBe(true)
+    expect(step.text()).toContain('Quando')
+    expect(step.text()).toContain('qui, 26/11')
+    expect(step.text()).toContain('Editar')
+    expect(page.find('[data-cart-ready-line]').text()).toBe('Tudo pronto a partir das 11h')
+    // O pão fica disponível antes do pedido inteiro; a Tabatière é a hora do pedido.
+    const promises = page.findAll('[data-cart-line-promise]').map(node => node.text())
+    expect(promises).toEqual(['Disponível a partir das 9h'])
+    expect(page.text()).not.toContain('Para quinta')
   })
 
   it('A: a sacola de sempre, com a frase do pedido e sem a linha do dia', async () => {
