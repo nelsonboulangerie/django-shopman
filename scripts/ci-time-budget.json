@@ -6,7 +6,8 @@
   "Calibrado em 25/11 pelo baseline (evidence/ci-dx-098/). Apertar é decisão; afrouxar é decisão escrita no PR, com o número.",
   "jobs: padrão fnmatch sobre '<workflow> › <job>' → teto da execução p50 em minutos (started→completed, jobs verdes).",
   "25/11: seed-* e rest-* calibrados pelo run 45673961882 (shards partidos, grátis): seed 8,8/7,9 e rest 12,6/10,1 min, +10-25% de folga para a fila.",
-  "25/11: Shop rest (12,3 min, acima do teto de 12 na 1ª leitura da vigia) partido em rest-1/rest-2; teto provisório 11, recalibrar com a fila."
+  "25/11: Shop rest (12,3 min, acima do teto de 12 na 1ª leitura da vigia) partido em rest-1/rest-2; teto provisório 11, recalibrar com a fila.",
+  "25/11: Backstage heavy (12,6 min) partido em heavy-1/heavy-2, teto provisório 11. runner_wait_p95_min: a espera por máquina no pico é o custo de partir demais (medido 10-19 min p95 em 24-25/11)."
  ],
  "calibrated_at": "2026-11-25",
  "group_wall_p50_min": 30,
@@ -15,7 +16,6 @@
  "jobs": {
   "Runtime Gate › Backstage seed-*": 11,
   "Runtime Gate › Backstage rest-*": 14,
-  "Runtime Gate › Backstage heavy": 17,
   "Runtime Gate › Shop heavy": 10,
   "Runtime Gate › Quality + deploy contract": 11,
   "Runtime Gate › PostgreSQL + Redis runtime stress gate": 13,
@@ -23,6 +23,8 @@
   "Surfaces Gate › purchase-nuxt": 14,
   "Surfaces Gate › Preview interno — kitchensink-nuxt": 14,
   "Surfaces Gate › orders-nuxt": 13,
-  "Runtime Gate › Shop rest-*": 11
- }
+  "Runtime Gate › Shop rest-*": 11,
+  "Runtime Gate › Backstage heavy-*": 11
+ },
+ "runner_wait_p95_min": 20
 }

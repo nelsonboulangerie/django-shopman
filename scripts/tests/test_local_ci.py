@@ -314,7 +314,12 @@ def test_partes_concordam_entre_makefile_matriz_e_coverage_gate():
     """Mudar o número de partes num lugar só deixaria shard sem rodar ou cobertura faltando."""
     seed_parts = int(check_test_cost.make_list("BACKSTAGE_SEED_PARTS")[0])
     rest_parts = int(check_test_cost.make_list("BACKSTAGE_REST_PARTS")[0])
-    expected = {f"seed-{k}" for k in range(1, seed_parts + 1)} | {f"rest-{k}" for k in range(1, rest_parts + 1)} | {"heavy"}
+    heavy_parts = int(check_test_cost.make_list("BACKSTAGE_HEAVY_PARTS")[0])
+    expected = (
+        {f"seed-{k}" for k in range(1, seed_parts + 1)}
+        | {f"rest-{k}" for k in range(1, rest_parts + 1)}
+        | {f"heavy-{k}" for k in range(1, heavy_parts + 1)}
+    )
     wf = yaml.safe_load((ROOT / ".github/workflows/runtime-gate.yml").read_text())
     assert set(wf["jobs"]["tests-backstage-shards"]["strategy"]["matrix"]["shard"]) == expected
     gate = next(s for s in wf["jobs"]["coverage-gate"]["steps"] if "COVERAGE_SHARDS" in (s.get("env") or {}))

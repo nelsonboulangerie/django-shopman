@@ -190,7 +190,12 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         for state in invalid_states:
-            with self.subTest(state=state):
+            # Rótulo em texto: sob xdist o pytest 9 serializa o relatório de
+            # CADA subteste (verde também) do worker para o controlador, e
+            # `datetime.date` não serializa — o teste "reprovava" sem asserção
+            # nenhuma falhar (#3637).
+            label = {k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in state.items()}
+            with self.subTest(state=label):
                 for field, value in state.items():
                     setattr(listing, field, value)
                 listing.save(update_fields=[*state])

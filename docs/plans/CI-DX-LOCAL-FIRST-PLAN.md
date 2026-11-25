@@ -277,3 +277,12 @@ pelo mesmo mecanismo (`SHOP_REST_PARTS := 2`), com partes de 682 s × 682 s pelo
 Coleta provada idêntica: 15.120 testes = 8.773 + 6.347, zero duplicata. A trava e o teste de
 consistência agora cobrem o shop (matriz `tests-shop-shards`, `COVERAGE_SHARDS`), e a vigia re-mede
 os pesos dos dois (`junit-*`).
+
+**Terceira aplicação:** com `seed`, `rest` e `shop rest` partidos, o `backstage heavy` virou o job
+mais longo do Runtime Gate (12,6 min). Partido em dois (`BACKSTAGE_HEAVY_PARTS := 2`), partes de
+647 s × 650 s, coleta 1.012 = 512 + 500. Antes de partir, foi preciso consertar a #3637: o
+teste do PDV "reprovava" sob xdist sem nenhuma asserção falhar, porque o pytest 9 serializa o
+relatório de cada subteste e um `datetime.date` no `subTest(...)` não serializa. Mudar a
+distribuição dos workers poderia levar esse vermelho para a fila. A vigia ganhou um teto de
+**espera por runner** (`runner_wait_p95_min`), porque cada shard a mais disputa os runners grátis no
+pico. É o custo escondido de partir demais, e agora ele também é vigiado.

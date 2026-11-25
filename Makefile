@@ -421,9 +421,19 @@ BACKSTAGE_HEAVY_TESTS := \
 	shopman/backstage/tests/test_seed_preparation_shelf_life.py \
 	shopman/backstage/tests/test_seed_sem_futuro.py
 
-test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (shard do CI)
+test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (todas as partes juntas)
 	@echo "── Backstage (arquivos pesados) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_HEAVY_TESTS) -q -n auto
+
+# 25/11 (DEV-2026-098): com seed/rest do backstage e rest do shop partidos, o
+# `heavy` virou o job mais longo do Runtime Gate (12,6 min, run 45688139461).
+# Mesmo mecanismo: partido por peso medido; a CI roda heavy-1..N.
+BACKSTAGE_HEAVY_PARTS := 2
+
+test-backstage-heavy-%: ## Backstage heavy, parte K de BACKSTAGE_HEAVY_PARTS (CI): make test-backstage-heavy-1
+	@echo "── Backstage (arquivos pesados) parte $*/$(BACKSTAGE_HEAVY_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_HEAVY_PARTS) $(BACKSTAGE_HEAVY_TESTS))" && test -n "$$files" && \
+		$(PYTHON) -m pytest $$files -q -n auto
 
 test-backstage-rest: ## Backstage — todo o resto (todas as partes juntas)
 	@echo "── Backstage (resto) ──"

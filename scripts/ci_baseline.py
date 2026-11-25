@@ -523,6 +523,19 @@ def check_budget(rep: dict, budget: dict) -> dict:
             checked.append(f"{name}: {value} min (teto {limit}, n={s['run']['n']})")
             if value is not None and value > limit:
                 violations.append(f"{name}: execução p50 {value} min, teto {limit} min (n={s['run']['n']})")
+    # Cada shard a mais é mais um job disputando os runners grátis no pico: a
+    # espera é o custo escondido de partir demais, e tem teto próprio.
+    limit = budget.get("runner_wait_p95_min")
+    if limit is not None and jobs:
+        waits = [(s["wait"]["p95_min"], name) for name, s in jobs.items() if s["wait"]["p95_min"] is not None]
+        if waits:
+            worst, name = max(waits)
+            checked.append(f"espera por runner p95 (pior job, {name}): {worst} min (teto {limit})")
+            if worst > limit:
+                violations.append(
+                    f"espera por runner p95 = {worst} min em {name}, teto {limit}: a fila está sem máquina no pico; "
+                    "antes de partir mais shards, reduza trabalho (preflight) ou junte shards"
+                )
     return {"violations": violations, "checked": checked, "calibrated_at": budget.get("calibrated_at")}
 
 
