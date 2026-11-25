@@ -136,6 +136,23 @@ def ready_window(
     return ReadyWindow(target=target, day=day, start=start, ready_at=ready_at)
 
 
+_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def day_label_for(day: date, *, today: date) -> str:
+    """O dia como a loja o diz: "hoje", "amanhã, terça", "quinta, 26/11".
+
+    Fonte única: a promessa da loja (``storefront/presentation/promise``) e a frase
+    da troca de dia da sacola (``policies.preorder_date``) dizem o dia daqui.
+    """
+    weekday = _WEEKDAYS[day.weekday()]
+    if day == today:
+        return "hoje"
+    if day == today + timedelta(days=1):
+        return f"amanhã, {weekday}"
+    return f"{weekday}, {day:%d/%m}"
+
+
 def opening_slot(day: date, *, now: datetime | None = None) -> time | None:
     """O primeiro horário que o checkout oferece em ``day``, ou ``None`` (dia sem horário).
 

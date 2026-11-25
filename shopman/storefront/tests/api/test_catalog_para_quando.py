@@ -350,3 +350,226 @@ def test_tirar_da_sacola_nao_depende_do_dia():
         assert resp.status_code == 200, resp.content[:400]
         [line] = resp.json()["cart"]["items"]
         assert line["qty"] == 1
+
+
+# ── o "Trocar": a sacola inteira muda de dia, ou nada muda (X3, X4) ─────
+
+FRIDAY = THURSDAY + timedelta(days=1)
+
+
+def _day(client, day, without=None):
+    body = {"date": day.isoformat()}
+    if without is not None:
+        body["without"] = without
+    return client.put("/api/v1/cart/day/", data=json.dumps(body), content_type="application/json")
+
+
+def _bag_on_thursday(client):
+    """Brioche e Tabatière na sacola da quinta; na sexta só há fornada de brioche."""
+    from shopman.stockman.models import Quant
+
+    Quant.objects.create(sku="BRIOCHE", position=None, target_date=FRIDAY, _quantity=Decimal(10))
+    assert _put(client, "BRIOCHE", qty=2, date=THURSDAY.isoformat()).status_code == 200
+    assert _put(client, "TABAT", qty=1, date=THURSDAY.isoformat()).status_code == 200
+
+
+def _live_hold_dates(session_key):
+    from shopman.stockman.models import Hold
+
+    return {
+        hold.target_date
+        for hold in Hold.objects.filter(metadata__reference=session_key, status__in=["pending", "confirmed"])
+        if hold.quant_id
+    }
+
+
+def _lines(session):
+    return {item["sku"]: int(float(item["qty"])) for item in session.items}
+
+
+def test_trocar_para_um_dia_em_que_um_item_nao_da_nomeia_o_item_e_nao_muda_nada():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+        before = _session()
+
+        resp = _day(client, FRIDAY)
+
+        assert resp.status_code == 409, resp.content[:400]
+        body = resp.json()
+        assert body["error_code"] == "cart_day_change_refused"
+        assert [item["name"] for item in body["items"]] == ["Tabatière"]
+        assert body["title"] == "Tabatière não está disponível para sexta, 20/11"
+        assert body["detail"] == "Você pode seguir para sexta, 20/11 sem esse item, ou manter o dia que tinha."
+        # Nada mudou: o dia, as reservas e as linhas são os de antes.
+        after = _session()
+        assert after.data["delivery_date"] == "2026-11-19"
+        assert _live_hold_dates(after.session_key) == {THURSDAY}
+        assert _lines(after) == _lines(before) == {"BRIOCHE": 2, "TABAT": 1}
+
+
+def test_seguir_sem_ele_tira_so_aquele_item_e_leva_o_resto_para_o_dia_novo():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+
+        resp = _day(client, FRIDAY, without=["TABAT"])
+
+        assert resp.status_code == 200, resp.content[:400]
+        session = _session()
+        assert _lines(session) == {"BRIOCHE": 2}
+        assert session.data["delivery_date"] == "2026-11-20"
+        assert _live_hold_dates(session.session_key) == {FRIDAY}
+        assert resp.json()["cart"]["day"] == {"date": "2026-11-20", "label": "sexta, 20/11"}
+
+
+def test_adicionar_depois_da_troca_nao_da_409():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+        assert _day(client, FRIDAY, without=["TABAT"]).status_code == 200
+
+        resp = _put(client, "GELEIA", qty=1, date=FRIDAY.isoformat())
+
+        assert resp.status_code == 200, resp.content[:400]
+        assert _live_hold_dates(_session().session_key) == {FRIDAY}
+
+
+def test_trocar_quando_tudo_da_move_a_sacola_inteira_com_efeito_unico():
+    from shopman.stockman.models import Quant
+
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+        Quant.objects.create(sku="TABAT", position=None, target_date=FRIDAY, _quantity=Decimal(10))
+
+        resp = _day(client, FRIDAY)
+
+        assert resp.status_code == 200, resp.content[:400]
+        session = _session()
+        assert _lines(session) == {"BRIOCHE": 2, "TABAT": 1}
+        assert _live_hold_dates(session.session_key) == {FRIDAY}
+        # X4: a mesma troca de novo deixa a sacola igual.
+        assert _day(client, FRIDAY).status_code == 200
+        again = _session()
+        assert _lines(again) == {"BRIOCHE": 2, "TABAT": 1}
+        assert _live_hold_dates(again.session_key) == {FRIDAY}
+
+
+def test_trocar_para_um_dia_que_a_casa_nao_atende_recusa_e_a_sacola_fica_intacta():
+    with _frozen(OPEN_AT_10):
+        _world()
+        client = Client()
+        _bag_on_thursday(client)
+
+        resp = _day(client, SUNDAY)
+
+        assert resp.status_code == 400
+        body = resp.json()
+        assert (body["field"], body["error_code"]) == ("date", "date_refused")
+        assert body["detail"] == "A casa não abre em 22/11/2026. Escolha outra data."
+        after = _session()
+        assert after.data["delivery_date"] == "2026-11-19"
+        assert _live_hold_dates(after.session_key) == {THURSDAY}
+        assert _lines(after) == {"BRIOCHE": 2, "TABAT": 1}
+
+
+def test_linha_de_lote_nunca_vai_para_outro_dia_e_seguir_sem_ela_leva_so_a_normal():
+    """A sobra de hoje não lastreia outro dia (dono, 18/11/2026), nem o preço do lote viaja.
+
+    A loja MONTA linha de lote: a reserva de hoje ancora no quant do lote, e
+    ``cart.add_item`` grava ``meta["batch_ref"]``; o desconto de lote sai dele. A
+    loja online só vende lote de grau bom (``QUALITY_OK_GRADE_REFS``), mas lote de
+    grau bom pode ter desconto (a validade curta do queijo, ADR-017 §7). Na troca
+    para amanhã essa linha é "não dá nesse dia", nomeada; a normal vai para
+    amanhã com o preço normal.
+    """
+    from shopman.offerman.models import Listing, ListingItem, Product
+    from shopman.stockman.models import Batch, Position, Quant
+
+    with _frozen(OPEN_AT_10):
+        _world()
+        listing = Listing.objects.get(ref="web")
+        lote = Product.objects.create(
+            sku="PAOLOTE", name="Pão do Lote", base_price_q=1000, is_published=True, is_sellable=True,
+            shelf_life_days=1,
+        )
+        ListingItem.objects.create(listing=listing, product=lote, price_q=1000)
+        Batch.objects.create(
+            sku="PAOLOTE", ref="L-HOJE", expiry_date=TUESDAY, quality_grade_ref="standard",
+            nonconformity_reason="Validade curta", nonconformity_percent=30,
+        )
+        Quant.objects.create(
+            sku="PAOLOTE", position=Position.objects.get(ref="vitrine"), batch="L-HOJE", _quantity=Decimal("5"),
+        )
+        # Amanhã há fornada do mesmo pão: mesmo assim a linha do LOTE não vai.
+        Quant.objects.create(sku="PAOLOTE", position=None, target_date=TUESDAY + timedelta(days=1), _quantity=Decimal(10))
+        client = Client()
+        first = _put(client, "PAOLOTE", qty=1)
+        assert first.status_code == 200, first.content[:600]
+        assert _put(client, "GELEIA", qty=1).status_code == 200
+        session = _session()
+        lot_line = next(item for item in session.items if item["sku"] == "PAOLOTE")
+        assert lot_line["meta"]["batch_ref"] == "L-HOJE"  # a loja monta, sim, a linha de lote
+        assert lot_line["unit_price_q"] == 700  # e o preço dela é o do lote (-30%)
+
+        wednesday = TUESDAY + timedelta(days=1)
+        resp = _day(client, wednesday)
+
+        assert resp.status_code == 409, resp.content[:400]
+        body = resp.json()
+        assert [(item["name"], item["ref"]) for item in body["items"]] == [("Pão do Lote", lot_line["line_id"])]
+        assert body["title"] == "Pão do Lote não está disponível para amanhã, quarta"
+        assert _live_hold_dates(_session().session_key) == {TUESDAY}
+
+        resp = _day(client, wednesday, without=[item["ref"] for item in body["items"]])
+
+        assert resp.status_code == 200, resp.content[:400]
+        after = _session()
+        assert _lines(after) == {"GELEIA": 1}
+        [geleia] = after.items
+        assert geleia["unit_price_q"] == 900  # o preço normal, sem nada do lote
+        assert not (geleia.get("meta") or {}).get("batch_ref")
+        assert _live_hold_dates(after.session_key) == {wednesday}
+
+
+def test_linha_que_so_guarda_o_lote_da_reserva_muda_de_dia_sem_ele():
+    """Lote sem desconto é só a identidade da reserva de hoje: a linha muda, o lote fica.
+
+    A linha não leva o ``batch_ref`` antigo para amanhã: se o lote de hoje ganhar
+    desconto no fechamento (o "Ontem"), ele nunca alcança a encomenda de amanhã.
+    """
+    from shopman.offerman.models import Listing, ListingItem, Product
+    from shopman.stockman.models import Batch, Position, Quant
+
+    with _frozen(OPEN_AT_10):
+        _world()
+        produto = Product.objects.create(
+            sku="PAOFORNO", name="Pão da Fornada", base_price_q=1000, is_published=True, is_sellable=True,
+            shelf_life_days=1,
+        )
+        ListingItem.objects.create(listing=Listing.objects.get(ref="web"), product=produto, price_q=1000)
+        Batch.objects.create(sku="PAOFORNO", ref="F-HOJE", expiry_date=TUESDAY, quality_grade_ref="standard")
+        Quant.objects.create(
+            sku="PAOFORNO", position=Position.objects.get(ref="vitrine"), batch="F-HOJE", _quantity=Decimal("5"),
+        )
+        wednesday = TUESDAY + timedelta(days=1)
+        Quant.objects.create(sku="PAOFORNO", position=None, target_date=wednesday, _quantity=Decimal(10))
+        client = Client()
+        assert _put(client, "PAOFORNO", qty=1).status_code == 200
+        [line] = _session().items
+        assert line["meta"]["batch_ref"] == "F-HOJE"
+        assert line["unit_price_q"] == 1000
+
+        resp = _day(client, wednesday)
+
+        assert resp.status_code == 200, resp.content[:400]
+        after = _session()
+        [moved] = after.items
+        assert not (moved.get("meta") or {}).get("batch_ref")
+        assert moved["unit_price_q"] == 1000
+        assert _live_hold_dates(after.session_key) == {wednesday}

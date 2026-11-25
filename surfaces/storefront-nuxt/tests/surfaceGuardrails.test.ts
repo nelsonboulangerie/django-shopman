@@ -947,7 +947,9 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain('data-cart-hold-banner')
     // O selo antigo só sobra quando a promessa não veio. O aviso de prioridade da
     // linha em espera é decisão do dono de 14/07/2026 e continua na sacola.
-    expect(cartPage).toContain('<UiBadge v-if="!cartLinePromise(line.promise)"')
+    // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+    // A linha da sacola datada (B) só traz a hora que difere da do pedido; em A, `linePromise` é o `cartLinePromise` de sempre.
+    expect(cartPage).toContain('<UiBadge v-if="!linePromise(line)"')
     expect(cartPage).toContain('cart.awaiting_confirmation_notice')
     // "Continuar comprando" uma vez por tela: embaixo da lista só no celular.
     expect(cartPage).toContain('md:hidden"\n              data-cart-continue-mobile')

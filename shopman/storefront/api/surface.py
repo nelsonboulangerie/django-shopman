@@ -54,10 +54,12 @@ from shopman.storefront.presentation.product_detail import build_product_recomme
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
     CartMutationDateRefused,
+    CartMutationDayChangeRefused,
     CartMutationNotFound,
     CartMutationOptionRefused,
     CartMutationUnavailable,
     add_line_with_options,
+    change_cart_day,
     set_line_qty,
     set_qty_by_sku,
 )
@@ -72,6 +74,7 @@ from .public_cache import (
 )
 from .serializers import (
     AddCartLineSerializer,
+    CartDaySerializer,
     CartLineNotesSerializer,
     DetailSerializer,
     SetSkuQtySerializer,
@@ -1561,6 +1564,65 @@ class CartLinesView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         return _cart_mutation_response(request, outcome)
+
+
+@extend_schema_view(
+    put=extend_schema(
+        tags=["cart"],
+        summary="Move the whole cart to another day (OC-33 B1, the 'Trocar')",
+        request=CartDaySerializer,
+        responses={
+            200: OpenApiResponse(description="A sacola inteira passou para o dia (ou não havia sacola)."),
+            400: OpenApiResponse(description="Dia que a casa não combina (error_code=date_refused); nada mudou."),
+            409: OpenApiResponse(
+                description=(
+                    "Item que não dá no dia novo (error_code=cart_day_change_refused), nomeado um a um; "
+                    "nada mudou. Reenviar com `without` (os SKUs) segue sem eles."
+                ),
+            ),
+        },
+    ),
+)
+class CartDayView(APIView):
+    """PUT /api/v1/cart/day/ — o "Trocar": a sacola inteira muda de dia, ou nada muda."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = CartDaySerializer
+    throttle_classes = []
+
+    def put(self, request):
+        limited = _cart_rate_limited(request, group="storefront-api-cart-day", method="PUT")
+        if limited is not None:
+            return limited
+        serializer = CartDaySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        chosen_date, refused = _chosen_cart_date(serializer.validated_data["date"])
+        if refused is not None:
+            return refused
+        try:
+            change_cart_day(
+                request,
+                chosen_date=chosen_date,
+                without_skus=[sku.strip() for sku in serializer.validated_data["without"]],
+            )
+        except CartMutationDateRefused as refused_date:
+            return _date_refused_response(refused_date.message)
+        except CartMutationDayChangeRefused as day_refused:
+            refusal = day_refused.refusal
+            return Response(
+                {
+                    "detail": refusal.detail,
+                    "title": refusal.title,
+                    "field": "date",
+                    "error_code": refusal.error_code,
+                    "date": refusal.day.isoformat(),
+                    "date_label": refusal.day_label,
+                    "items": refusal.items,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"cart": _cart_payload_after_mutation(request)})
 
 
 @extend_schema_view(

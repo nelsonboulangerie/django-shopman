@@ -113,6 +113,7 @@ NON_MIRROR = {
     "SetSkuQtySerializer",
     "CartLineNotesSerializer",
     "AddCartLineSerializer",
+    "CartDaySerializer",
     "CartLineOptionSerializer",
     "CheckoutSerializer",
     "CheckoutAddressLabelSerializer",

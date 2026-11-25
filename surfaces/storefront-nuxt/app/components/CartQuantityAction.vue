@@ -26,6 +26,8 @@ const emit = defineEmits<{
 }>()
 
 const { setSkuQty, isPending } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDay = injectMenuDay()
 const hydrated = ref(false)
 const actionRoot = ref<HTMLElement | null>(null)
 const pending = computed(() => isPending(props.meta.sku))
@@ -55,6 +57,9 @@ async function addOne () {
   }
   if (pending.value) return
   const nextQty = props.addTargetQty ?? 1
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // E2: com a casa fechada e a sacola sem dia, o primeiro "+" pergunta "Quando".
+  if (menuDay?.ask(props.meta, nextQty)) return
   const keepKeyboardFocus = import.meta.client && actionRoot.value?.contains(document.activeElement)
   // Em voo, o toque fica na aba: se a cliente sair da página antes da resposta, a
   // página nova o executa (#3171). O PUT é absoluto, então repetir não soma.

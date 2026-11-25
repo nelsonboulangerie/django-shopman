@@ -13,6 +13,15 @@ class SetSkuQtySerializer(serializers.Serializer):
     date = serializers.CharField(required=False, allow_blank=True, max_length=10)
 
 
+class CartDaySerializer(serializers.Serializer):
+    # O "Trocar" do dia (OC-33 B1): a sacola inteira passa para ``date``.
+    # ``without``: os SKUs com que a cliente aceitou seguir sem ("seguir sem ele").
+    date = serializers.CharField(max_length=10)
+    without = serializers.ListField(
+        child=serializers.CharField(max_length=64), required=False, default=list, max_length=99,
+    )
+
+
 class CartLineOptionSerializer(serializers.Serializer):
     # Escolha no produto: só o grupo e a opção, por ``ref``. Preço, nome e
     # insumo o servidor relê do catálogo (``shopman.shop.product_options``).

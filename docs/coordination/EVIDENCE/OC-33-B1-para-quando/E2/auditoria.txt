@@ -1,0 +1,21 @@
+[E2-1 pergunta] regioes=1 fontes=[14, 16] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[E2-1 pergunta] typographyAudit=nenhum
+[E2-1 pergunta] seta_visivel=False texto_legivel_sob_a_seta=nenhum
+[E2-1] acao='Encomendar para amanhã' descricao=True
+[E2-2a cardapio no dia] regioes=1 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[E2-2a cardapio no dia] typographyAudit=nenhum
+[E2-2a cardapio no dia] seta_visivel=False texto_legivel_sob_a_seta=nenhum
+[E2-2a] etapa=['Feito', 'Quando', 'qui,', '26/11', 'Editar']
+[E2-2b descendo] etapa_visivel=False
+[E2-2c subindo] etapa_visivel=True
+[E2-2c cardapio subindo] regioes=1 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[E2-2c cardapio subindo] typographyAudit=nenhum
+[E2-2c cardapio subindo] seta_visivel=False texto_legivel_sob_a_seta=nenhum
+[E2-3] pedido='Tudo pronto a partir das 15h' linhas=['Disponível a partir das 9h']
+[E2-3 sacola] regioes=2 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[E2-3 sacola] typographyAudit=nenhum
+[E2-3 sacola] seta_visivel=False texto_legivel_sob_a_seta=nenhum
+[E2-4] aviso='Baguette de Tradition não está disponível para sexta, 27/11\n\nVocê pode seguir para sexta, 27/11 sem esse item, ou manter o dia que tinha.\n\nSeguir sem esse item\nManter o dia que tinha'
+[E2-4 aviso] regioes=1 fontes=[14, 16] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[E2-4 aviso] typographyAudit=nenhum
+[E2-4 aviso] seta_visivel=False texto_legivel_sob_a_seta=nenhum

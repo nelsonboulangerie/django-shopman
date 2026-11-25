@@ -5,6 +5,8 @@ import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
 import { adjustmentLabel, quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+import { menuDayItemBadge } from '~/presentation/menuDay'
 
 const props = withDefaults(defineProps<{
   item: CatalogItemProjection
@@ -20,12 +22,17 @@ const props = withDefaults(defineProps<{
 })
 
 const { qtyForSku } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// No cardápio da variante B o card manda o dia escolhido com o Adicionar (OC-33 B1).
+const menuDay = injectMenuDay()
 const meta = computed<ProductMutationMeta>(() => ({
   sku: props.item.sku,
   name: props.item.name,
   price_q: props.item.quote.final_unit_price_q,
   price_display: quotePriceDisplay(props.item.quote),
-  image_url: props.item.image_url
+  image_url: props.item.image_url,
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  ...(menuDay?.date.value ? { date: menuDay.date.value } : {})
 }))
 const currentQty = computed(() => qtyForSku(props.item.sku))
 // Com escolhas, o "+" abre a folha e nunca vira pílula de quantidade; a contagem
@@ -36,6 +43,13 @@ const withOptions = computed(() => hasOptionGroups(props.item.option_groups))
 const now = useMinuteClock()
 const fomo = computed(() => fomoBadgeViews(props.item.fomo_badges, now.value))
 const badge = computed(() => {
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // No dia escolhido a frase é a do dia, já escrita pelo servidor: nada desde a
+  // abertura, "A partir das 11h" depois; indisponível é a etiqueta da foto.
+  if (menuDay?.onDay.value) {
+    const label = menuDayItemBadge(props.item)
+    return label ? { label, variant: 'outline' as const } : null
+  }
   const base = tileBadge(props.item)
   return base && props.item.availability === 'low_stock' && fomoCoversLowStock(props.item.fomo_badges) ? null : base
 })

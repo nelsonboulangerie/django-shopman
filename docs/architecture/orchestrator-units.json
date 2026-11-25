@@ -7546,6 +7546,11 @@
           "symbols": [
             "add_item",
             "_apply_chosen_date",
+            "change_cart_day",
+            "CartDayChangeRefused",
+            "_DayChangeRollback",
+            "_is_lot_line",
+            "_without_lot",
             "_cart_date",
             "_date_that_serves",
             "_catalog_product",
@@ -7566,6 +7571,7 @@
       ],
       "domains": [
         "offerman",
+        "orderman",
         "stockman"
       ],
       "ports": [
@@ -17350,6 +17356,8 @@
           "path": "shopman/shop/policies/preorder_date.py",
           "symbols": [
             "_lead_time_refusal",
+            "cart_day_change_refusal",
+            "cart_day_refusal",
             "chosen_day",
             "preorder_date_errors"
           ]

@@ -62,6 +62,7 @@ from .payment import OrderPaymentMockConfirmView
 from .shelf_events import storefront_shelf_events_view
 from .surface import (
     CartCouponView,
+    CartDayView,
     CartLineNotesView,
     CartLineQtyView,
     CartLinesView,
@@ -173,6 +174,7 @@ urlpatterns = [
     # Cart
     path("cart/skus/<str:sku>/", CartSkuQtyView.as_view(), name="api-cart-sku-qty"),
     path("cart/lines/", CartLinesView.as_view(), name="api-cart-lines"),
+    path("cart/day/", CartDayView.as_view(), name="api-cart-day"),
     path("cart/lines/<str:line_id>/", CartLineQtyView.as_view(), name="api-cart-line-qty"),
     path("cart/lines/<str:line_id>/notes/", CartLineNotesView.as_view(), name="api-cart-line-notes"),
     path("cart/coupon/", CartCouponView.as_view(), name="api-cart-coupon"),
