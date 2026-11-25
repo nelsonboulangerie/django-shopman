@@ -248,3 +248,25 @@ pago. Dividir `backstage seed` e `backstage rest` em mais shards (#3635) dá o g
 sem custo. Isso vale enquanto houver vaga no pico, e o preflight reduz a disputa por vaga.
 O seletor `CI_HEAVY_RUNNER` e o benchmark ficam para medir outro fornecedor ou o transbordo
 de pico, se um dia fizer sentido.
+
+## 10. Guardar as decisões de desempenho (dono, 25/11)
+
+> "A questão é NÃO DEIXAR que esse tipo de 'sacada' que teve se perca... daqui a pouco termos
+> shards, seeds e seja lá o que for que esteja dado de um jeito que o trabalho fique lento."
+
+Até aqui, as decisões de desempenho da suíte viviam em comentário do Makefile e eram refeitas
+**depois** do estrago: o shard `rest` foi rebalanceado à mão em 30/09 e em 06/11, as duas vezes
+depois de estourar o teto e tirar PR da fila. Agora há três camadas, no padrão das travas que o
+repositório já tem:
+
+| Camada | Onde | O que garante | Quando age |
+|---|---|---|---|
+| 1. Definição versionada | `scripts/ci-time-budget.json` (teto por job e do grupo), `scripts/test-shard-weights.json` (segundos por arquivo), `scripts/test-cost-baseline.json` (seed completo por arquivo), `BACKSTAGE_*_PARTS` no Makefile | a decisão tem número e endereço; mudar é diff num PR | sempre |
+| 2. Trava do PR (determinística) | `scripts/check_test_cost.py` no job Quality; `test_local_ci.py` | teste novo que chama o seed completo reprova (35 chamadas em 20 arquivos congeladas; crescer só com `--update` à vista do revisor); quem semeia no backstage mora no `seed`/`heavy`, nunca no `rest`; shards partidos cobrem cada arquivo uma vez e ficam ≤ 1,35x pelos pesos; peso de arquivo morto reprova; partes iguais no Makefile, na matriz e no Coverage Gate | todo PR |
+| 3. Vigia agendada | `.github/workflows/ci-time-watch.yml`, diária | mede a fila real (`ci_baseline.py --budget`) e re-mede os pesos com o junit da última fila verde; estourou → abre/comenta a issue "Orçamento de tempo da CI estourou" com os números e o comando (`make shard-weights run=<id>`); voltou → fecha | todo dia, sem reprovar PR (relógio oscila) |
+
+**Primeira aplicação:** `backstage seed` e `backstage rest` partidos em dois cada, por peso
+medido (`scripts/test_shards.py`, LPT determinístico). Coleta provada idêntica: `seed` 25 = 13 +
+12, `rest` 13.400 = soma das partes, zero duplicata. O piso do `seed` é
+`test_nelson_seed_operational.py`, 56% do shard sozinho. O próximo ganho ali é o que o Makefile já
+anotava: os testes que só **leem** o catálogo semeado dividirem um seed. A trava agora conta isso.

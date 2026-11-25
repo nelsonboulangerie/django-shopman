@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import json
 import statistics
 import subprocess
@@ -447,7 +448,16 @@ def main() -> int:
         help="só a comparação por rótulo de runner (benchmark com --run, ou fila em --since..--until)",
     )
     parser.add_argument("--run", type=int, help="id de um run do runner-benchmark.yml")
+    parser.add_argument(
+        "--events", default="merge_group,pull_request",
+        help="eventos medidos (a vigia usa só merge_group: cabe no limite do GITHUB_TOKEN)",
+    )
+    parser.add_argument(
+        "--budget", type=Path,
+        help="scripts/ci-time-budget.json: compara e sai com 3 se algum teto estourou",
+    )
     args = parser.parse_args()
+    events = [e for e in args.events.split(",") if e]
 
     cache = Cache(args.cache)
     if args.compare_runners:
@@ -472,6 +482,8 @@ def main() -> int:
             else f"desde {args.split} (leve no PR, pesado na fila)"
         )
         for event, label in (("merge_group", "queue"), ("pull_request", "pr")):
+            if event not in events:
+                continue
             runs = runs_for_day(cache, event, day, today)
             by_regime[regime][label].extend(runs)
             if event == "merge_group" and args.jobs_days and day >= jobs_from:
@@ -492,10 +504,60 @@ def main() -> int:
     if job_runs:
         rep["jobs_window"] = f"{jobs_from}..{args.until} (merge_group)"
         rep["jobs"] = analyse_jobs(cache, job_runs)
+    if args.budget:
+        rep["budget"] = check_budget(rep, json.loads(args.budget.read_text()))
     if args.json:
         args.json.write_text(json.dumps(rep, ensure_ascii=False, indent=2))
     print_report(rep)
+    if args.budget:
+        print_budget(rep["budget"])
+        return 3 if rep["budget"]["violations"] else 0
     return 0
+
+
+def check_budget(rep: dict, budget: dict) -> dict:
+    """Compara a medição com o orçamento versionado; devolve estouros e folgas."""
+    violations: list[str] = []
+    checked: list[str] = []
+    latest = rep["regimes"][sorted(rep["regimes"])[-1]]["queue"] if rep["regimes"] else None
+    if latest and latest["success_wall"]["n"]:
+        for key, label in (("p50_min", "group_wall_p50_min"), ("p95_min", "group_wall_p95_min")):
+            value, limit = latest["success_wall"][key], budget.get(label)
+            if limit is None:
+                continue
+            checked.append(f"relógio do grupo verde {key[:3]}: {value} min (teto {limit})")
+            if value > limit:
+                violations.append(f"relógio do grupo verde {key[:3]} = {value} min, teto {limit} min (n={latest['success_wall']['n']})")
+    merges = rep.get("merges")
+    limit = budget.get("failed_checks_removals_per_merged_pr")
+    if merges and merges["merged_via_queue"] and limit is not None:
+        rate = round(merges["removal_reasons"].get("failed_checks", 0) / merges["merged_via_queue"], 2)
+        checked.append(f"saídas por check reprovado por PR mergeado: {rate} (teto {limit})")
+        if rate > limit:
+            violations.append(f"saídas da fila por check reprovado = {rate} por PR mergeado, teto {limit}")
+    jobs = (rep.get("jobs") or {}).get("jobs", {})
+    for pattern, limit in budget.get("jobs", {}).items():
+        matched = [(name, s) for name, s in jobs.items() if fnmatch.fnmatch(name, pattern)]
+        if not matched:
+            checked.append(f"{pattern}: sem amostra nesta janela")
+            continue
+        for name, s in matched:
+            value = s["run"]["p50_min"]
+            checked.append(f"{name}: {value} min (teto {limit}, n={s['run']['n']})")
+            if value is not None and value > limit:
+                violations.append(f"{name}: execução p50 {value} min, teto {limit} min (n={s['run']['n']})")
+    return {"violations": violations, "checked": checked, "calibrated_at": budget.get("calibrated_at")}
+
+
+def print_budget(result: dict) -> None:
+    print(f"\n## Orçamento de tempo (scripts/ci-time-budget.json, calibrado em {result['calibrated_at']})\n")
+    if result["violations"]:
+        print("**Estourou:**\n")
+        for v in result["violations"]:
+            print(f"- ❌ {v}")
+        print()
+    for c in result["checked"]:
+        print(f"- {c}")
 
 
 if __name__ == "__main__":

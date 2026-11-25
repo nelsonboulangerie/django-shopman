@@ -241,3 +241,82 @@ def test_comparacao_de_runner_agrupa_o_benchmark_pelo_alvo(monkeypatch):
     row = rows[0]
     assert row["job"] == "test-backstage-rest" and row["reference"] == "ubuntu-latest"
     assert row["runners"]["ubicloud-standard-8"]["speedup"] == 2.0
+
+
+# ── Shards por peso e trava do custo (DEV-2026-098: "não deixar a sacada se perder") ──
+
+import check_test_cost  # noqa: E402
+import test_shards  # noqa: E402
+
+
+def test_particao_cobre_cada_arquivo_uma_vez_e_e_deterministica():
+    files = [f"t/test_{i:03d}.py" for i in range(40)]
+    weights = {f: float((i * 37) % 11 + 1) for i, f in enumerate(files)}
+    for n in (1, 2, 3, 5):
+        parts = test_shards.partition(files, n, weights)
+        flat = [f for p in parts for f in p]
+        assert sorted(flat) == files and len(flat) == len(set(flat))
+        assert parts == test_shards.partition(list(reversed(files)), n, weights)
+
+
+def test_particao_equilibra_pelo_peso_e_arquivo_novo_entra_com_a_mediana():
+    weights = {"a.py": 100.0, "b.py": 60.0, "c.py": 40.0}
+    parts = test_shards.partition(["a.py", "b.py", "c.py", "novo.py"], 2, weights)
+    loads = [sum(weights.get(f, 60.0) for f in p) for p in parts]
+    assert max(loads) - min(loads) <= 60.0
+    assert any("novo.py" in p for p in parts)
+
+
+def test_arquivo_listado_que_nao_existe_reprova_alto():
+    with pytest.raises(SystemExit, match="não existe"):
+        test_shards.expand(["shopman/backstage/tests/test_que_nao_existe.py"], [])
+
+
+def _cost(monkeypatch, tmp_path, calls, baseline, seed_list=(), heavy_list=()):
+    base = tmp_path / "baseline.json"
+    base.write_text(json.dumps({"seed_calls": baseline}))
+    monkeypatch.setattr(check_test_cost, "BASELINE", base)
+    monkeypatch.setattr(check_test_cost, "seed_calls", lambda: calls)
+    lists = {"BACKSTAGE_SEED_TESTS": list(seed_list), "BACKSTAGE_HEAVY_TESTS": list(heavy_list)}
+    monkeypatch.setattr(check_test_cost, "make_list", lambda var: lists[var])
+    monkeypatch.setattr(check_test_cost, "shard_specs", lambda: [])
+    monkeypatch.setattr(check_test_cost, "load_weights", lambda path: {})
+    monkeypatch.setattr(sys, "argv", ["check_test_cost.py"])
+    return check_test_cost.main()
+
+
+def test_trava_reprova_teste_novo_que_paga_o_seed_completo(monkeypatch, tmp_path, capsys):
+    f = "shopman/shop/tests/test_novo.py"
+    assert _cost(monkeypatch, tmp_path, {f: 1}, {}) == 1
+    out = capsys.readouterr().out
+    assert f in out and "--update" in out
+
+
+def test_trava_reprova_quem_semeia_no_rest_do_backstage(monkeypatch, tmp_path, capsys):
+    f = "shopman/backstage/tests/test_x.py"
+    assert _cost(monkeypatch, tmp_path, {f: 1}, {f: 1}) == 1
+    assert "BACKSTAGE_SEED_TESTS" in capsys.readouterr().out
+    assert _cost(monkeypatch, tmp_path, {f: 1}, {f: 1}, seed_list=[f]) == 0
+
+
+def test_trava_deixa_diminuir_e_pede_update(monkeypatch, tmp_path, capsys):
+    f = "shopman/shop/tests/test_y.py"
+    assert _cost(monkeypatch, tmp_path, {}, {f: 2}) == 0
+    assert "--update" in capsys.readouterr().out
+
+
+def test_trava_real_do_repositorio_passa():
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "check_test_cost.py")], cwd=ROOT, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_partes_concordam_entre_makefile_matriz_e_coverage_gate():
+    """Mudar o número de partes num lugar só deixaria shard sem rodar ou cobertura faltando."""
+    seed_parts = int(check_test_cost.make_list("BACKSTAGE_SEED_PARTS")[0])
+    rest_parts = int(check_test_cost.make_list("BACKSTAGE_REST_PARTS")[0])
+    expected = {f"seed-{k}" for k in range(1, seed_parts + 1)} | {f"rest-{k}" for k in range(1, rest_parts + 1)} | {"heavy"}
+    wf = yaml.safe_load((ROOT / ".github/workflows/runtime-gate.yml").read_text())
+    assert set(wf["jobs"]["tests-backstage-shards"]["strategy"]["matrix"]["shard"]) == expected
+    gate = next(s for s in wf["jobs"]["coverage-gate"]["steps"] if "COVERAGE_SHARDS" in (s.get("env") or {}))
+    listed = set(gate["env"]["COVERAGE_SHARDS"].split())
+    assert {f"backstage-{s}" for s in expected} <= listed

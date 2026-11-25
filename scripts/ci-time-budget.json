@@ -1,0 +1,26 @@
+{
+ "_leia": [
+  "Orçamento de tempo da fila (DEV-2026-098). Dono, 25/11/2026: 'NÃO DEIXAR que esse tipo de sacada se perca'.",
+  "A vigia agendada (.github/workflows/ci-time-watch.yml) mede a fila com scripts/ci_baseline.py e abre/comenta a issue",
+  "'Orçamento de tempo da CI estourou' quando a mediana de um job ou do grupo passa do teto. Não reprova PR: relógio oscila.",
+  "Calibrado em 25/11 pelo baseline (evidence/ci-dx-098/). Apertar é decisão; afrouxar é decisão escrita no PR, com o número.",
+  "jobs: padrão fnmatch sobre '<workflow> › <job>' → teto da execução p50 em minutos (started→completed, jobs verdes)."
+ ],
+ "calibrated_at": "2026-11-25",
+ "group_wall_p50_min": 30,
+ "group_wall_p95_min": 80,
+ "failed_checks_removals_per_merged_pr": 0.3,
+ "jobs": {
+  "Runtime Gate › Backstage seed-*": 12,
+  "Runtime Gate › Backstage rest-*": 12,
+  "Runtime Gate › Backstage heavy": 17,
+  "Runtime Gate › Shop rest": 12,
+  "Runtime Gate › Shop heavy": 10,
+  "Runtime Gate › Quality + deploy contract": 11,
+  "Runtime Gate › PostgreSQL + Redis runtime stress gate": 13,
+  "Surfaces Gate › pos-nuxt": 16,
+  "Surfaces Gate › purchase-nuxt": 14,
+  "Surfaces Gate › Preview interno — kitchensink-nuxt": 14,
+  "Surfaces Gate › orders-nuxt": 13
+ }
+}

@@ -331,9 +331,34 @@ BACKSTAGE_SEED_TESTS := \
 	shopman/backstage/tests/test_seed_flush_keeps_terminal_config.py \
 	shopman/backstage/tests/test_seed_forecast_history.py
 
-test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/3 do CI)
+test-backstage-seed: ## Backstage — só os testes que semeiam o banco (todas as partes juntas)
 	@echo "── Backstage (semeia o banco) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -q -n auto
+
+# ── seed e rest partidos por PESO MEDIDO (DEV-2026-098) ────────────────────
+# Benchmark de 25/11 (evidence/ci-dx-098/): com 8 vCPU o passo de teste do
+# `seed` acelerou 1,95x e o do `rest` 1,47x; os outros jobs quase nada. Dois
+# runners grátis de 4 vCPU somam os 8 de um pago: partir esses dois shards dá o
+# mesmo ganho sem custo. A CI roda `seed-1..N` e `rest-1..N` (matriz do
+# runtime-gate.yml); `test-backstage-seed`/`-rest` inteiros seguem para uso local.
+#
+# A partição é do `scripts/test_shards.py`: LPT guloso pelos segundos de
+# `scripts/test-shard-weights.json`, determinístico, união e disjunção por
+# construção, arquivo novo entra com o peso mediano, parte vazia é ERRO (pytest
+# sem argumento rodaria outra suíte). `scripts/check_test_cost.py` (`make
+# test-cost`) reprova shard desequilibrado (> 1,25x), peso de arquivo morto e
+# teste que chama o seed completo fora do `seed`/`heavy`. A vigia agendada
+# (ci-time-watch.yml) compara o relógio real com scripts/ci-time-budget.json.
+# Mudar o número de partes: aqui E na matriz do runtime-gate.yml e na lista do
+# Coverage Gate (scripts/tests/test_local_ci.py confere que os três concordam).
+BACKSTAGE_SEED_PARTS := 2
+BACKSTAGE_REST_PARTS := 2
+SHARD_SPLIT = python3 scripts/test_shards.py
+
+test-backstage-seed-%: ## Backstage seed, parte K de BACKSTAGE_SEED_PARTS (CI): make test-backstage-seed-1
+	@echo "── Backstage (semeia o banco) parte $*/$(BACKSTAGE_SEED_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_SEED_PARTS) $(BACKSTAGE_SEED_TESTS))" && test -n "$$files" && \
+		$(PYTHON) -m pytest $$files -q -n auto
 
 # ── Terceiro shard do backstage: os pesados do `rest` ─────────────────────
 # Em 06/11/2026 o `rest` estourou o teto de 30 min do step: o job 127686511444
@@ -380,13 +405,29 @@ BACKSTAGE_HEAVY_TESTS := \
 	shopman/backstage/tests/test_seed_preparation_shelf_life.py \
 	shopman/backstage/tests/test_seed_sem_futuro.py
 
-test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (shard 2/3 do CI)
+test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (shard do CI)
 	@echo "── Backstage (arquivos pesados) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_HEAVY_TESTS) -q -n auto
 
-test-backstage-rest: ## Backstage — todo o resto (shard 3/3 do CI)
+test-backstage-rest: ## Backstage — todo o resto (todas as partes juntas)
 	@echo "── Backstage (resto) ──"
 	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS))
+
+test-backstage-rest-%: ## Backstage rest, parte K de BACKSTAGE_REST_PARTS (CI): make test-backstage-rest-1
+	@echo "── Backstage (resto) parte $*/$(BACKSTAGE_REST_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_REST_PARTS) shopman/backstage/tests $(addprefix --exclude ,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS)))" && \
+		test -n "$$files" && $(PYTHON) -m pytest $$files -q -n auto
+
+test-cost: ## Gate: seed completo contado, quem semeia no shard certo, shards partidos completos e equilibrados
+	python3 scripts/check_test_cost.py
+
+shard-weights: ## Re-mede os pesos dos shards com o junit de uma fila verde: make shard-weights run=<id do Runtime Gate>
+	@test -n "$(run)" || (echo 'uso: make shard-weights run=<id de um run verde do Runtime Gate no merge_group>' >&2; exit 2)
+	@dir="$$(mktemp -d)" && gh run download $(run) --pattern 'junit-backstage-*' -D "$$dir" && \
+		python3 scripts/test_shards.py --measure "$$dir"/*/*.xml && python3 scripts/check_test_cost.py
+
+print-%: ## Imprime uma variável do Makefile (as travas leem as listas daqui: uma fonte só)
+	@echo $($*)
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
@@ -781,7 +822,7 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 # de testes da CI) isola o banco. A evidência é chaveada pelo hash da ÁRVORE
 # testada, e o `ready` só enfileira o HEAD cuja árvore tem preflight verde.
 # O que só a CI executa sai listado como remoto, nunca como verde.
-.PHONY: check-fast check-impact preflight ci-local ready ci-plan venv-sync ci-baseline
+.PHONY: check-fast check-impact preflight ci-local ready ci-plan venv-sync ci-baseline test-cost shard-weights
 
 check-fast: ## Iteração: pinos, origem dos imports, ruff e testes do que mudou (+ unit do app Nuxt tocado)
 	@python3 scripts/local_ci.py run fast
