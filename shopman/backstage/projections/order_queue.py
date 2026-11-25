@@ -47,6 +47,7 @@ from shopman.backstage.projections.order_attention import (
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
 from shopman.backstage.services.courier_reminder import REMINDER_STATUSES, CourierReminderProjection, courier_reminder
+from shopman.shop.policies import order_payment as order_payment_policy
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -610,6 +611,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # O pedido novo só espera o dinheiro online (Pix ou cartão que ainda não caiu):
+    # não pede ninguém até ele cair (DEV-2026-091). A mesma régua do aceite
+    # (``operator_orders.awaits_online_payment``).
+    awaits_online_payment: bool = False
     # O WhatsApp do cliente, SÓ no pedido que pede ação (a cobrança venceu, ou a
     # promessa está em risco) e só quando o pedido tem telefone que não é o relé do
     # iFood (decisão do dono, #2434, "1:b"): o cartão e a Tabela levam "Chamar no
@@ -2958,6 +2963,9 @@ def _build_card(
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
         can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=batch_state),
+        awaits_online_payment=order_payment_policy.awaits_online_payment(
+            order, payment_reads=payment_reads, channel_config=channel_config,
+        ),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         next_status=next_status if undo_block_allows_advance(order) else "",
         undo=_undo_projection(order),

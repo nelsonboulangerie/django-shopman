@@ -282,12 +282,26 @@ _WEB_PAYS_AT_ORDER = {
 }
 
 
+def _paid_pix(order: Order) -> Order:
+    """O Pix caiu: é ele que abre o prazo de aceite (``_on_paid``), e só com ele o
+    pedido pede alguém (DEV-2026-091: sem dinheiro, nada a aceitar)."""
+    from shopman.payman import PaymentService
+
+    intent = PaymentService.create_intent(order_ref=order.ref, amount_q=order.total_q, method="pix")
+    order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+    order.save(update_fields=["data", "updated_at"])
+    PaymentService.authorize(intent.ref, gateway_id=f"gw-{order.ref}")
+    PaymentService.capture(intent.ref)
+    order.refresh_from_db()
+    return order
+
+
 def _accept_deadline_order(ref: str, *, delivery_date=None) -> Order:
     from shopman.shop.config import ChannelConfig
     from shopman.shop.lifecycle import _schedule_confirmation_timeout
 
     Channel.objects.filter(ref="web").update(config=_WEB_PAYS_AT_ORDER)
-    order = _order(ref, payment={"method": "pix"})
+    order = _paid_pix(_order(ref, payment={"method": "pix"}))
     if delivery_date is not None:
         order.data["delivery_date"] = delivery_date.isoformat()
         order.save(update_fields=["data"])
@@ -325,7 +339,7 @@ def test_relogio_da_encomenda_conta_60_minutos(operator):
 def test_pix_pago_aos_7_minutos_nao_nasce_atrasado(operator):
     """A meta conta do prazo agendado, não da criação: o prazo acabou de começar."""
     Channel.objects.filter(ref="web").update(config=_WEB_PAYS_AT_ORDER)
-    order = _order("ATT-PIX7", payment={"method": "pix"})
+    order = _paid_pix(_order("ATT-PIX7", payment={"method": "pix"}))
     Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(minutes=7))
     order.refresh_from_db()
     from shopman.shop.config import ChannelConfig

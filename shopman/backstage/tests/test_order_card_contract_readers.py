@@ -128,6 +128,8 @@ CARD_FIELD_READERS: dict[str, str] = {
     "ready_eta_iso": GESTOR + "presentation/boardStrip.ts",
     "courier_reminder": GESTOR + "components/OrderCard.vue",
     "payment_lapsed": GESTOR + "presentation/queue.ts",
+    # O pedido novo que só espera o dinheiro online não pede ninguém (DEV-2026-091).
+    "awaits_online_payment": "shopman/backstage/projections/order_attention.py",
     "customer_whatsapp_url": GESTOR + "components/OrderCard.vue",
     "advance_block_waits": GESTOR + "presentation/orderPromise.ts",
     "promise": GESTOR + "presentation/orderPromise.ts",

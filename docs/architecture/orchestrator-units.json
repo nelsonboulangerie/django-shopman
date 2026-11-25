@@ -4898,7 +4898,8 @@
             "PaymentMethodRule",
             "conversation_payment_methods",
             "payment_refusal",
-            "sole_payment_method"
+            "sole_payment_method",
+            "awaits_online_payment"
           ]
         }
       ],
