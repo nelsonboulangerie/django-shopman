@@ -38,7 +38,8 @@
         "preorders-week-768x1024-light.png"
       ],
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual", "geometry": "test:geometry", "browser": "test:e2e" }
+      "capabilities": { "pwa": true, "visual": "test:visual", "geometry": "test:geometry", "browser": "test:e2e" },
+      "concurrentPhases": ["geometry", "browser"]
     },
     "kds": {
       "dir": "kds-nuxt",

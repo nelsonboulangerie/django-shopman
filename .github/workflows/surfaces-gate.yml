@@ -332,18 +332,31 @@ jobs:
         if: matrix.visual && !matrix.browser_suite
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" visual
 
+      # DEV-2026-098: fases que o app declara em `concurrentPhases` (contracts.json)
+      # rodam JUNTAS — cada uma com o próprio mock, app, portas e outputDir, o que o
+      # `surface_contract.mjs validate` prova antes. O `pos-nuxt` é o caminho crítico do
+      # Surfaces Gate (14,6 min, geometria 6,2 + navegador 3,9 em série). Os passos
+      # individuais abaixo pulam o que já rodou aqui; nenhuma fase deixa de rodar.
+      - name: Contratos de navegador ao mesmo tempo (concurrentPhases)
+        if: matrix.concurrent != ''
+        env:
+          MARKETING_E2E_MANAGED: "1"
+          MARKETING_E2E_USERNAME: operadora-e2e
+          MARKETING_E2E_PASSWORD: senha-sintetica-ci
+        run: node ../../scripts/surface_contract.mjs run-many "${{ matrix.id }}" ${{ matrix.concurrent }}
+
       - name: Geometry contract
-        if: matrix.geometry
+        if: matrix.geometry && !contains(matrix.concurrent, 'geometry')
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" geometry
 
       - name: Functional browser contract
-        if: matrix.browser && !matrix.browser_suite
+        if: matrix.browser && !matrix.browser_suite && !contains(matrix.concurrent, 'browser')
         env:
           MARKETING_E2E_MANAGED: "1"
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" browser
 
       - name: Accessibility contract
-        if: matrix.a11y && !matrix.browser_suite
+        if: matrix.a11y && !matrix.browser_suite && !contains(matrix.concurrent, 'a11y')
         env:
           MARKETING_E2E_MANAGED: "1"
           MARKETING_E2E_USERNAME: operadora-e2e
@@ -359,7 +372,7 @@ jobs:
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" browserSuite
 
       - name: Security contract
-        if: matrix.security
+        if: matrix.security && !contains(matrix.concurrent, 'security')
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" security
 
       - name: Upload canonical browser evidence

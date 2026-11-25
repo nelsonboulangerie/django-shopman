@@ -75,6 +75,8 @@ jobs:
   python-shards:
     name: ${{ matrix.target }} · ${{ matrix.runner }} · ${{ matrix.rep }}
     needs: plan
+    # `vars.CI_BENCH_ONLY=pos-nuxt` mede só o PDV (sem ocupar runner com os shards).
+    if: vars.CI_BENCH_ONLY != 'pos-nuxt'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     strategy:
@@ -151,10 +153,18 @@ jobs:
             node ../../scripts/install_playwright_browsers.mjs "$(jq -r .browser_engines <<<"$entry")" \
               $([ "$(jq -r .browser_with_deps <<<"$entry")" = "true" ] && echo --with-deps)
           fi
+          # Como a fila: o que o contrato declara em concurrentPhases roda junto.
+          concurrent="$(jq -r .concurrent <<<"$entry")"
           start=$SECONDS
           for phase in $phases; do
+            case " $concurrent " in *" $phase "*) continue ;; esac
             t=$SECONDS
             node ../../scripts/surface_contract.mjs run pos "$phase"
             echo "pos-nuxt $phase em ${{ matrix.runner }}: $((SECONDS - t)) s" | tee -a "$GITHUB_STEP_SUMMARY"
           done
+          if [ -n "$concurrent" ]; then
+            t=$SECONDS
+            node ../../scripts/surface_contract.mjs run-many pos $concurrent
+            echo "pos-nuxt [$concurrent] juntas em ${{ matrix.runner }}: $((SECONDS - t)) s" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           echo "pos-nuxt (fases) em ${{ matrix.runner }}: $((SECONDS - start)) s" | tee -a "$GITHUB_STEP_SUMMARY"

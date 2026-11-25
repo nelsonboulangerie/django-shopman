@@ -316,7 +316,18 @@ def surface_steps(
             if e.get("install_layer") and e["dir"] != "operator-kit":
                 npm_ci("operator-kit")
             npm_ci(e["dir"])
+        concurrent = (e.get("concurrent") or "").split()
+        together = [p for p in phases if p in concurrent]
+        if len(together) >= 2:
+            # Como a fila (concurrentPhases no contracts.json): juntas, num passo só.
+            steps.append(Step(
+                f"{e['dir']} › {' + '.join(together)} (juntas)",
+                f"node ../../scripts/surface_contract.mjs run-many {shlex.quote(e['id'])} {' '.join(together)}",
+                cwd=f"surfaces/{e['dir']}", slot="browser", origin="surfaces-gate.yml#quality (concurrentPhases)",
+            ))
         for phase in phases:
+            if len(together) >= 2 and phase in together:
+                continue
             enabled = {
                 "unit": True, "lint": True, "typecheck": True,
                 "component": e.get("component"),

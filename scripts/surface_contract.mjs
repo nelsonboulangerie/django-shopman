@@ -65,6 +65,7 @@ function validate() {
       if (!/\bnuxt\s+build\b/.test(visual) && id !== "operator-kit")
         errors.push(`${id}: gate visual não constrói artefato de produção`);
     }
+    errors.push(...validateConcurrent(id, surface, scripts));
     const signatures = surface.signatureViews ?? [];
     if (signatures.length > contract.policy.maxSignatureViews)
       errors.push(`${id}: ${signatures.length} assinaturas excedem o teto ${contract.policy.maxSignatureViews}`);
@@ -82,6 +83,62 @@ function validate() {
     errors.push(`workflow condiciona por nome: ${match[0]}`);
   if (errors.length) fail(errors);
   console.log(`[surface-contract] ${entries.length} superfícies válidas; visual sempre usa build de produção`);
+}
+
+// ── Fases de navegador AO MESMO TEMPO (DEV-2026-098) ─────────────────────
+// Medido em 25/11/2026: o `pos-nuxt` é o caminho crítico do Surfaces Gate (14,6 min),
+// com geometria (6,2) e navegador (3,9) uma depois da outra. Cada uma sobe o PRÓPRIO
+// mock e o PRÓPRIO app, em portas próprias: podem correr juntas. O app declara
+// `concurrentPhases`, e a declaração só vale se for segura por construção:
+//   * toda fase é capability com script próprio (e de navegador);
+//   * as portas padrão dos configs do Playwright não se repetem entre as fases;
+//   * os `outputDir` não se repetem nem se aninham (o Playwright LIMPA o seu ao começar).
+// Fase sem config legível, ou config sem porta declarada, reprova: segurança
+// que não se prova não se declara.
+const BROWSER_PHASES = new Set(["geometry", "browser", "a11y", "security"]);
+
+function playwrightConfigFor(dir, script) {
+  const match = /playwright\s+test(?:.*?\s-c\s+(\S+))?/.exec(script ?? "");
+  if (!match) return null;
+  return resolve(root, "surfaces", dir, match[1] ?? "playwright.config.ts");
+}
+
+function concurrencyFootprint(dir, script) {
+  const path = playwrightConfigFor(dir, script);
+  if (!path) return null;
+  let text;
+  try { text = readFileSync(path, "utf8"); } catch { return null; }
+  const code = text.replace(/^\s*\/\/.*$/gm, "");
+  const ports = [...code.matchAll(/\|\|\s*(\d{4,5})\b/g)].map((m) => m[1]);
+  const out = /outputDir:\s*["'`]([^"'`]+)["'`]/.exec(code)?.[1] ?? "test-results";
+  return { ports, outputDir: out.replace(/^\.\//, "").replace(/\/$/, "") };
+}
+
+function validateConcurrent(id, surface, scripts) {
+  const phases = surface.concurrentPhases;
+  if (!phases) return [];
+  const errors = [];
+  if (!Array.isArray(phases) || phases.length < 2) return [`${id}: concurrentPhases precisa de duas fases ou mais`];
+  const seen = [];
+  for (const phase of phases) {
+    const script = surface.capabilities?.[phase];
+    if (!BROWSER_PHASES.has(phase)) { errors.push(`${id}: concurrentPhases só aceita fases de navegador (${phase})`); continue; }
+    if (typeof script !== "string") { errors.push(`${id}: concurrentPhases ${phase} sem capability com script`); continue; }
+    const footprint = concurrencyFootprint(surface.dir, scripts[script]);
+    if (!footprint || footprint.ports.length === 0) {
+      errors.push(`${id}: concurrentPhases ${phase}: não consigo provar as portas do config do Playwright`);
+      continue;
+    }
+    for (const other of seen) {
+      const shared = footprint.ports.filter((p) => other.ports.includes(p));
+      if (shared.length) errors.push(`${id}: ${phase} e ${other.phase} disputam a porta ${shared.join(", ")}`);
+      const a = footprint.outputDir, b = other.outputDir;
+      if (a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`))
+        errors.push(`${id}: ${phase} (${a}) e ${other.phase} (${b}) dividem/aninham outputDir; o Playwright limpa o seu ao começar`);
+    }
+    seen.push({ phase, ...footprint });
+  }
+  return errors;
 }
 
 function matrix(kind) {
@@ -114,8 +171,24 @@ function matrix(kind) {
       browser_engines: surface.browserEngines ?? "chromium",
       browser_with_deps: Boolean(surface.browserWithDeps),
     }))
-    .map((entry) => (kind === "quality" ? scoped(entry) : entry));
+    .map((entry) => (kind === "quality" ? scoped(entry) : entry))
+    .map((entry) => (kind === "quality" ? withConcurrent(entry) : entry));
   process.stdout.write(JSON.stringify({ include }));
+}
+
+// `concurrent`: as fases declaradas em `concurrentPhases` que ESTA entrada da
+// matriz vai rodar (no PR leve, nenhuma). O workflow pula os passos individuais
+// dessas fases e roda `run-many` com elas; string vazia = tudo como sempre.
+function withConcurrent(entry) {
+  const declared = contract.surfaces[entry.id]?.concurrentPhases ?? [];
+  const enabled = {
+    geometry: entry.geometry,
+    browser: entry.browser && !entry.browser_suite,
+    a11y: entry.a11y && !entry.browser_suite,
+    security: entry.security,
+  };
+  const phases = entry.skip ? [] : declared.filter((phase) => enabled[phase]);
+  return { ...entry, concurrent: phases.length >= 2 ? phases.join(" ") : "" };
 }
 
 // Escopo da CI (docs/reference/ci-escopo.md). A matriz `quality` sai SEMPRE com
@@ -179,9 +252,71 @@ function run(id, phase) {
   process.exit(result.status ?? 1);
 }
 
+// As fases declaradas em `concurrentPhases`, ao mesmo tempo. Cada linha sai com
+// o prefixo da fase; reprova se QUALQUER uma reprovar, e diz quais.
+async function runMany(id, phases) {
+  const { spawn } = await import("node:child_process");
+  const surface = contract.surfaces[id];
+  if (!surface) fail([`app desconhecido: ${id}`]);
+  const declared = new Set(surface.concurrentPhases ?? []);
+  const stray = phases.filter((phase) => !declared.has(phase));
+  if (stray.length) fail([`${id}: ${stray.join(", ")} fora de concurrentPhases (só o declarado e validado roda junto)`]);
+  const started = Date.now();
+  // Largada escalonada, na ordem declarada: a fase seguinte só começa quando a
+  // anterior já tem o PRIMEIRO teste resolvido. Medido em 25/11: largando juntas,
+  // o `nuxt build` de uma disputou CPU com a compilação a frio do `nuxt dev` da
+  // outra, e o primeiro teste da geometria estourou 120 s. O primeiro teste é o
+  // que paga a compilação; depois dele a disputa é só de regime.
+  const FIRST_RESULT = /^\s*(✓|✘|ok|x|-)\s+\d+\s/;
+  const STAGGER_LIMIT_MS = 240_000;
+  const launch = (phase) => {
+    let markFirst;
+    const firstResult = new Promise((resolveFirst) => { markFirst = resolveFirst; });
+    const finished = new Promise((done) => {
+      const script = surface.capabilities?.[phase];
+      const child = spawn("npm", ["run", script], {
+        cwd: resolve(root, "surfaces", surface.dir),
+        env: { ...process.env, ...(surface.environment?.[phase] ?? {}) },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const tag = `[${phase}] `;
+      for (const stream of [child.stdout, child.stderr]) {
+        let rest = "";
+        stream.on("data", (chunk) => {
+          const lines = (rest + chunk).split("\n");
+          rest = lines.pop();
+          for (const line of lines) {
+            if (FIRST_RESULT.test(line)) markFirst();
+            process.stdout.write(tag + line + "\n");
+          }
+        });
+        stream.on("end", () => { if (rest) process.stdout.write(tag + rest + "\n"); });
+      }
+      child.on("close", (code) => {
+        markFirst();
+        done({ phase, code: code ?? 1, seconds: Math.round((Date.now() - started) / 1000) });
+      });
+    });
+    return { firstResult, finished };
+  };
+  const running = [];
+  for (const [i, phase] of phases.entries()) {
+    if (i > 0) {
+      const previous = running[i - 1].firstResult;
+      await Promise.race([previous, new Promise((r) => setTimeout(r, STAGGER_LIMIT_MS))]);
+      console.log(`[surface-contract] ${id}: ${phase} larga aos ${Math.round((Date.now() - started) / 1000)}s`);
+    }
+    running.push(launch(phase));
+  }
+  const results = await Promise.all(running.map((r) => r.finished));
+  for (const r of results) console.log(`[surface-contract] ${id} ${r.phase}: ${r.code === 0 ? "verde" : `REPROVOU (${r.code})`} em ${r.seconds}s`);
+  process.exit(results.some((r) => r.code !== 0) ? 1 : 0);
+}
+
 const [command, ...args] = process.argv.slice(2);
 if (command === "validate") validate();
 else if (command === "matrix" && args[0] === "browsers") browsers();
 else if (command === "matrix") matrix(args[0] ?? "quality");
 else if (command === "run") run(args[0], args[1]);
-else fail(["uso: surface_contract.mjs validate | matrix quality|pwa|audit|visual-pinned | run <id> <phase>"]);
+else if (command === "run-many") runMany(args[0], args.slice(1));
+else fail(["uso: surface_contract.mjs validate | matrix quality|pwa|audit|visual-pinned | run <id> <phase> | run-many <id> <phase...>"]);
