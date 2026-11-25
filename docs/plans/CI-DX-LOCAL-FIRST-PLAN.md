@@ -230,3 +230,21 @@ nunca PR de fork). Os seis jobs não usam segredo.
 de Actions que já existe. Na Ubicloud: a conta, o app da Ubicloud instalado só neste
 repositório e o teto de gasto lá. Depois disso, a coordenação dispara o benchmark e traz a
 tabela.
+
+### 9.2 Resultado do benchmark (25/11, run 45666175682, `evidence/ci-dx-098/benchmark-linux-8core-2026-11-25.md`)
+
+Com 8 vCPU, a mediana dos 6 jobs foi **1,20x**, abaixo da regra de 1,4x: **sem piloto pago
+ao vivo.** O que os números mostram, job a job:
+
+- **Escalam com núcleos:** `backstage seed` 1,81x (teste 1,95x) e `backstage rest` 1,44x
+  (teste 1,47x). São suítes `-n auto` limitadas por CPU.
+- **Quase nada:** `pos-nuxt` 1,01x (navegador, não CPU), `shop rest` 1,07x,
+  `backstage heavy` 1,14x.
+- **O relógio do grupo mal mudaria:** o Surfaces Gate termina por último em 63% dos grupos
+  verdes e o `pos-nuxt` não acelera. Pagar encurtaria só o Runtime Gate.
+
+**A mesma aceleração sai de graça:** dois runners grátis de 4 vCPU somam os 8 vCPU de um
+pago. Dividir `backstage seed` e `backstage rest` em mais shards (#3635) dá o ganho medido
+sem custo. Isso vale enquanto houver vaga no pico, e o preflight reduz a disputa por vaga.
+O seletor `CI_HEAVY_RUNNER` e o benchmark ficam para medir outro fornecedor ou o transbordo
+de pico, se um dia fizer sentido.
