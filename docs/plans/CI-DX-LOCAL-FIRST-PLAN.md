@@ -22,7 +22,7 @@ sendo o único portão do `main`. Nenhum gate afrouxado, nenhuma despesa nova.
 ## 2. Baseline da fila e do PR
 
 Reproduzível: `make ci-baseline since=2026-10-26 until=2026-11-25` (`scripts/ci_baseline.py`,
-só leitura, cache fora do git). Números desta rodada na seção 6.
+só leitura, cache fora do git). Números desta rodada na seção 6; relatório bruto em `evidence/ci-dx-098/`.
 
 ## 3. O que foi implementado (este PR)
 
@@ -86,6 +86,72 @@ editar hooks sozinho). Trecho:
 Sem ele, a regra vale pelo `make ready` e pelo texto do `CLAUDE.md`, como hoje vale o
 "auto só com o local verde".
 
-## 6. Números
+## 6. Números (medidos em 25/11/2026)
 
-(preenchido na seção seguinte pela rodada desta data)
+Janela 26/10–25/11, `make ci-baseline since=2026-10-26 until=2026-11-25`. "Grupo" é um
+`gh-readonly-queue/main/pr-N-<base>`; o relógio vai do primeiro gate criado ao último
+terminado. Antes/depois é o corte da decisão "leve no PR, pesado na fila" (17/11).
+
+**Fila (`merge_group`)**
+
+| | antes de 17/11 | desde 17/11 |
+|---|---:|---:|
+| grupos | 427 | 1.382 |
+| grupos verdes | 339 | 686 |
+| grupos reprovados | 71 (17%) | 671 (49%) |
+| relógio do grupo verde p50 / p95 | 25,5 / 71,2 min | 26,2 / 74,4 min |
+| último gate a terminar (verde) | Runtime 223 · Surfaces 115 | **Surfaces 433** · Runtime 247 |
+| Surfaces Gate p50 na fila | 19,0 min | 27,2 min |
+| Runtime Gate p50 na fila | 23,9 min | 23,5 min |
+
+Nos grupos reprovados desde 17/11, o workflow que reprovou: Runtime 470, Surfaces 359,
+Security 295, Omotenashi 117, Operator Groups 85, Production Contract 85, Ficou de fora 82
+(um grupo pode reprovar em mais de um). A taxa de 49% mistura causas que o baseline não
+separa: o estouro do orçamento do `linux-4core` em 18–19/11, que travou jobs, e o volume
+três vezes maior. Medido, não atribuído.
+
+**PR: entrada na fila → merge** (desde 17/11): 618 PRs mergeados pela fila; p50 **79,8 min**,
+p95 **736 min**. **199 PRs (32%) saíram da fila sem entrar** ao menos uma vez, 0,73 saída
+por PR mergeado: `failed_checks` 166, `manual` 162, `invalid_merge_commit` 82,
+`merge_conflict` 30, `checks_timed_out` 13. Cada saída custa um ciclo inteiro (~26 min) e
+refaz os grupos de trás.
+
+**Jobs da fila** (24–25/11, 145 grupos, todos em `ubuntu-latest`): os mais longos em
+execução p50 são `Backstage rest` 18,6 min, `Backstage heavy` 15,5, `pos-nuxt` 13,8,
+`Backstage seed` 13,4, `kitchensink` 11,6, `purchase-nuxt` 11,3. Espera por runner: p50
+≤ 0,8 min, **p95 10–19 min** (picos de concorrência). O Surfaces Gate leva 27 min com o
+job mais longo em 14: o resto é a cadeia escopo → contrato → matriz e a espera.
+
+**Minutos (novembro, este repositório):** Linux 725.046 min (US$ 4.350 brutos, US$ 0
+líquidos), macOS 34.878 min (US$ 2.162 brutos, 0 líquidos), `linux-4core` 16.872 min
+(**US$ 184,46 líquidos**, a única despesa, já desligada).
+
+**Local (esta máquina, 8 núcleos/8 GB):** `check-fast` ≈ 4 s de passos (≈ 9 s de relógio
+com o hash da árvore); `check-impact` num diff de infraestrutura (o pior caso: escopo
+inteiro) 627 s, 33 passos verdes; o passo local mais lento é a governança documental
+(153 s, quase todo `test_check_orchestrator_units`). Prova de isolamento: duas worktrees ao
+mesmo tempo, uma com `format_money` quebrado — `make test-utils` passou numa (exit 0) e
+reprovou na outra (exit 2, `test_money_field.py`), e a trava fez uma esperar a vaga da
+outra; o `check-fast` da quebrada reprovou em 1,5 s.
+
+## 7. Metas (calibradas pelo baseline; medir de novo em 09/12)
+
+| Indicador | Hoje | Meta |
+|---|---:|---:|
+| Saídas da fila por `failed_checks` por PR mergeado | 166/618 = 0,27 | ≤ 0,10 |
+| Entrada na fila → merge, p50 / p95 | 80 / 736 min | ≤ 45 / ≤ 180 min |
+| Relógio do grupo verde p50 | 26 min | ≤ 20 min (WP de redução, #3635) |
+| `check-fast` p50 | ≈ 9 s | ≤ 60 s |
+| `preflight` de diff estreito, p50 | a medir em PRs reais | ≤ 5 min |
+| Gasto pago | US$ 0 hoje | US$ 0 sem decisão do dono |
+| Garantias | 29 checks, cobertura 75%, suíte inteira na árvore candidata | idênticas |
+
+## 8. Próximas frentes (issues `ficou-de-fora`)
+
+- #3632 — `quality` roda `test_local_ci.py`; paridade workflow↔local num lugar só.
+- #3633 — registrar o hook de promoção (decisão do dono).
+- #3635 — reduzir o caminho crítico com estes números: rebalancear os shards do backstage
+  (`rest` 18,6 × `seed` 13,4 min), encurtar a cadeia do Surfaces Gate, o
+  `test_check_orchestrator_units`.
+- #3636 — fila: as 162 saídas `manual` e 82 `invalid_merge_commit` (pilhas), parâmetros
+  da fila (5 builds, 1–10 PRs, 120 min) contra o baseline.

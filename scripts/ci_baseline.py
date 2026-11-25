@@ -191,6 +191,7 @@ def analyse_queue(runs: list[dict]) -> dict:
     wall: list[float] = []
     critical = Counter()
     outcome = Counter()
+    failed_by = Counter()
     per_workflow: dict[str, list[float]] = defaultdict(list)
     for runs_of_group in groups.values():
         gate = [r for r in runs_of_group if r["name"] in GATE_WORKFLOWS]
@@ -205,6 +206,9 @@ def analyse_queue(runs: list[dict]) -> dict:
             critical[last["name"]] += 1
         elif "failure" in conclusions:
             outcome["failure"] += 1
+            for r in gate:
+                if r["conclusion"] == "failure":
+                    failed_by[r["name"]] += 1
         else:
             outcome["cancelled/other"] += 1
         for r in runs_of_group:
@@ -217,6 +221,7 @@ def analyse_queue(runs: list[dict]) -> dict:
         "outcome": dict(outcome),
         "success_wall": summary(wall),
         "critical_path_last_to_finish": dict(critical.most_common()),
+        "failed_groups_by_workflow": dict(failed_by.most_common()),
         "per_workflow_success": {k: summary(v) for k, v in sorted(per_workflow.items())},
     }
 
@@ -282,7 +287,13 @@ def analyse_merges(since: dt.date, until: dt.date) -> dict:
                 continue
             events = pr["timelineItems"]["nodes"]
             adds = [ts(e["createdAt"]) for e in events if e["__typename"] == "AddedToMergeQueueEvent"]
-            rems = [e for e in events if e["__typename"] == "RemovedFromMergeQueueEvent"]
+            # A saída por merge também é um RemovedFromMergeQueueEvent; só conta
+            # como "voltou" o que não foi o próprio merge.
+            rems = [
+                e for e in events
+                if e["__typename"] == "RemovedFromMergeQueueEvent"
+                and (e.get("reason") or "").lower() not in {"merged", "already_merged"}
+            ]
             if not adds:
                 continue
             total += 1
@@ -298,6 +309,7 @@ def analyse_merges(since: dt.date, until: dt.date) -> dict:
         "merged_via_queue": total,
         "first_enqueue_to_merge": summary(entered_to_merge),
         "prs_removed_at_least_once": prs_with_reentry,
+        "removals_per_merged_pr": round(sum(removals.values()) / total, 2) if total else None,
         "removal_reasons": dict(removals.most_common()),
     }
 
@@ -339,7 +351,8 @@ def print_report(rep: dict) -> None:
             f"relógio do grupo verde p50 {q['success_wall']['p50_min']} min, "
             f"p95 {q['success_wall']['p95_min']} min (n={q['success_wall']['n']})"
         )
-        print(f"Último a terminar (caminho crítico): {q['critical_path_last_to_finish']}\n")
+        print(f"Último a terminar (caminho crítico): {q['critical_path_last_to_finish']}")
+        print(f"Grupos reprovados, por workflow que reprovou: {q['failed_groups_by_workflow']}\n")
         print("| workflow (fila, sucesso) | n | p50 min | p95 min |\n|---|---:|---:|---:|")
         for name, s in q["per_workflow_success"].items():
             print(f"| {name} | {s['n']} | {s['p50_min']} | {s['p95_min']} |")
@@ -353,7 +366,8 @@ def print_report(rep: dict) -> None:
         print(
             f"{m['merged_via_queue']} PRs mergeados pela fila · 1ª entrada→merge "
             f"p50 {m['first_enqueue_to_merge']['p50_min']} min, p95 {m['first_enqueue_to_merge']['p95_min']} min · "
-            f"{m['prs_removed_at_least_once']} saíram da fila ao menos 1x · motivos {m['removal_reasons']}\n"
+            f"{m['prs_removed_at_least_once']} saíram da fila sem entrar ao menos 1x "
+            f"({m['removals_per_merged_pr']} saídas por PR mergeado) · motivos {m['removal_reasons']}\n"
         )
     j = rep.get("jobs")
     if j:

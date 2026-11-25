@@ -1,0 +1,1037 @@
+{
+  "generated_at": "2026-11-25T15:15:02+00:00",
+  "window": "2026-10-26..2026-11-25",
+  "regimes": {
+    "antes de 2026-11-17 (tudo no PR e na fila)": {
+      "queue": {
+        "groups": 427,
+        "outcome": {
+          "success": 339,
+          "failure": 71,
+          "cancelled/other": 17
+        },
+        "success_wall": {
+          "n": 339,
+          "p50_min": 25.5,
+          "p95_min": 71.2,
+          "mean_min": 31.2
+        },
+        "critical_path_last_to_finish": {
+          "Runtime Gate": 223,
+          "Surfaces Gate": 115,
+          "Operator Groups Gate": 1
+        },
+        "failed_groups_by_workflow": {
+          "Surfaces Gate": 45,
+          "Security Gate": 23,
+          "Runtime Gate": 19,
+          "Omotenashi Gate": 17,
+          "Production Contract": 15
+        },
+        "per_workflow_success": {
+          "Ficou de fora": {
+            "n": 71,
+            "p50_min": 1.0,
+            "p95_min": 20.5,
+            "mean_min": 4.9
+          },
+          "Omotenashi Gate": {
+            "n": 411,
+            "p50_min": 13.6,
+            "p95_min": 24.9,
+            "mean_min": 14.7
+          },
+          "Operator Groups Gate": {
+            "n": 433,
+            "p50_min": 2.1,
+            "p95_min": 24.8,
+            "mean_min": 6.3
+          },
+          "Production Contract": {
+            "n": 421,
+            "p50_min": 2.7,
+            "p95_min": 13.4,
+            "mean_min": 4.4
+          },
+          "Runtime Gate": {
+            "n": 401,
+            "p50_min": 23.9,
+            "p95_min": 48.0,
+            "mean_min": 26.6
+          },
+          "Security Gate": {
+            "n": 409,
+            "p50_min": 5.9,
+            "p95_min": 25.7,
+            "mean_min": 9.4
+          },
+          "Surfaces Gate": {
+            "n": 375,
+            "p50_min": 19.0,
+            "p95_min": 71.2,
+            "mean_min": 26.5
+          }
+        }
+      },
+      "pr": {
+        "per_workflow_success": {
+          "Ficou de fora": {
+            "n": 215,
+            "p50_min": 0.2,
+            "p95_min": 16.2,
+            "mean_min": 4.0
+          },
+          "Omotenashi Gate": {
+            "n": 715,
+            "p50_min": 13.4,
+            "p95_min": 26.3,
+            "mean_min": 14.5
+          },
+          "Operator Groups Gate": {
+            "n": 823,
+            "p50_min": 2.2,
+            "p95_min": 32.8,
+            "mean_min": 7.0
+          },
+          "Production Contract": {
+            "n": 815,
+            "p50_min": 2.6,
+            "p95_min": 13.5,
+            "mean_min": 4.1
+          },
+          "Runtime Gate": {
+            "n": 485,
+            "p50_min": 24.4,
+            "p95_min": 54.2,
+            "mean_min": 28.5
+          },
+          "Security Gate": {
+            "n": 824,
+            "p50_min": 2.5,
+            "p95_min": 32.2,
+            "mean_min": 6.9
+          },
+          "Surfaces Gate": {
+            "n": 519,
+            "p50_min": 18.7,
+            "p95_min": 71.4,
+            "mean_min": 44.3
+          },
+          "Wheel Sovereignty": {
+            "n": 68,
+            "p50_min": 6.2,
+            "p95_min": 18.9,
+            "mean_min": 7.3
+          }
+        },
+        "outcome": {
+          "Ficou de fora": {
+            "success": 215,
+            "failure": 11,
+            "cancelled": 68
+          },
+          "Omotenashi Gate": {
+            "success": 715,
+            "failure": 30,
+            "cancelled": 161
+          },
+          "Operator Groups Gate": {
+            "success": 823,
+            "cancelled": 82,
+            "failure": 1
+          },
+          "Production Contract": {
+            "success": 815,
+            "failure": 25,
+            "cancelled": 66
+          },
+          "Runtime Gate": {
+            "success": 485,
+            "failure": 160,
+            "cancelled": 261
+          },
+          "Security Gate": {
+            "success": 824,
+            "cancelled": 80,
+            "failure": 1,
+            "startup_failure": 2
+          },
+          "Surfaces Gate": {
+            "failure": 155,
+            "success": 519,
+            "cancelled": 233
+          },
+          "Wheel Sovereignty": {
+            "success": 68,
+            "cancelled": 10
+          }
+        }
+      }
+    },
+    "desde 2026-11-17 (leve no PR, pesado na fila)": {
+      "queue": {
+        "groups": 1382,
+        "outcome": {
+          "success": 686,
+          "failure": 671,
+          "cancelled/other": 25
+        },
+        "success_wall": {
+          "n": 686,
+          "p50_min": 26.2,
+          "p95_min": 74.4,
+          "mean_min": 32.8
+        },
+        "critical_path_last_to_finish": {
+          "Surfaces Gate": 433,
+          "Runtime Gate": 248,
+          "Omotenashi Gate": 5
+        },
+        "failed_groups_by_workflow": {
+          "Runtime Gate": 470,
+          "Surfaces Gate": 359,
+          "Security Gate": 295,
+          "Omotenashi Gate": 117,
+          "Operator Groups Gate": 85,
+          "Production Contract": 85,
+          "Ficou de fora": 82
+        },
+        "per_workflow_success": {
+          "Ficou de fora": {
+            "n": 1354,
+            "p50_min": 0.8,
+            "p95_min": 12.7,
+            "mean_min": 3.2
+          },
+          "Omotenashi Gate": {
+            "n": 1314,
+            "p50_min": 14.8,
+            "p95_min": 32.8,
+            "mean_min": 17.0
+          },
+          "Operator Groups Gate": {
+            "n": 1339,
+            "p50_min": 3.8,
+            "p95_min": 31.4,
+            "mean_min": 8.1
+          },
+          "Production Contract": {
+            "n": 1349,
+            "p50_min": 4.3,
+            "p95_min": 24.2,
+            "mean_min": 8.0
+          },
+          "Runtime Gate": {
+            "n": 949,
+            "p50_min": 23.5,
+            "p95_min": 50.4,
+            "mean_min": 27.0
+          },
+          "Security Gate": {
+            "n": 1128,
+            "p50_min": 9.3,
+            "p95_min": 39.2,
+            "mean_min": 14.4
+          },
+          "Surfaces Gate": {
+            "n": 1042,
+            "p50_min": 27.1,
+            "p95_min": 72.1,
+            "mean_min": 31.8
+          }
+        }
+      },
+      "pr": {
+        "per_workflow_success": {
+          "Cache do Playwright no main": {
+            "n": 1,
+            "p50_min": 7.1,
+            "p95_min": 7.1,
+            "mean_min": 7.1
+          },
+          "Cache do main (Playwright e npm)": {
+            "n": 1,
+            "p50_min": 25.3,
+            "p95_min": 25.3,
+            "mean_min": 25.3
+          },
+          "Ficou de fora": {
+            "n": 1682,
+            "p50_min": 0.8,
+            "p95_min": 19.7,
+            "mean_min": 4.8
+          },
+          "Omotenashi Gate": {
+            "n": 1360,
+            "p50_min": 7.3,
+            "p95_min": 35.0,
+            "mean_min": 13.0
+          },
+          "Operator Groups Gate": {
+            "n": 1399,
+            "p50_min": 3.7,
+            "p95_min": 45.6,
+            "mean_min": 11.6
+          },
+          "Production Contract": {
+            "n": 1405,
+            "p50_min": 3.9,
+            "p95_min": 26.0,
+            "mean_min": 9.3
+          },
+          "Retratos presos ao macOS": {
+            "n": 192,
+            "p50_min": 4.5,
+            "p95_min": 13.1,
+            "mean_min": 7.5
+          },
+          "Runtime Gate": {
+            "n": 1114,
+            "p50_min": 11.1,
+            "p95_min": 58.4,
+            "mean_min": 19.3
+          },
+          "Security Gate": {
+            "n": 1370,
+            "p50_min": 5.5,
+            "p95_min": 50.6,
+            "mean_min": 14.2
+          },
+          "Surfaces Gate": {
+            "n": 1234,
+            "p50_min": 8.9,
+            "p95_min": 86.2,
+            "mean_min": 21.3
+          },
+          "Wheel Sovereignty": {
+            "n": 138,
+            "p50_min": 6.1,
+            "p95_min": 19.9,
+            "mean_min": 13.1
+          }
+        },
+        "outcome": {
+          "Cache do Playwright no main": {
+            "success": 1
+          },
+          "Cache do main (Playwright e npm)": {
+            "success": 1
+          },
+          "Ficou de fora": {
+            "success": 1682,
+            "cancelled": 372,
+            "failure": 30
+          },
+          "Omotenashi Gate": {
+            "success": 1360,
+            "cancelled": 139,
+            "failure": 19
+          },
+          "Operator Groups Gate": {
+            "success": 1399,
+            "cancelled": 113,
+            "failure": 6
+          },
+          "Production Contract": {
+            "success": 1405,
+            "cancelled": 97,
+            "failure": 16
+          },
+          "Retratos presos ao macOS": {
+            "success": 192,
+            "cancelled": 19,
+            "failure": 2
+          },
+          "Runtime Gate": {
+            "success": 1114,
+            "failure": 190,
+            "cancelled": 214
+          },
+          "Security Gate": {
+            "success": 1370,
+            "cancelled": 141,
+            "failure": 7
+          },
+          "Surfaces Gate": {
+            "success": 1234,
+            "failure": 110,
+            "cancelled": 174
+          },
+          "Wheel Sovereignty": {
+            "success": 138,
+            "cancelled": 9
+          }
+        }
+      }
+    }
+  },
+  "billing": [
+    {
+      "sku": "Actions Linux",
+      "minutes": 725244.0,
+      "gross": 4351.46,
+      "net": 0.0
+    },
+    {
+      "sku": "Actions Linux 4-core",
+      "minutes": 16872.0,
+      "gross": 202.46,
+      "net": 184.46
+    },
+    {
+      "sku": "Actions macOS 3-core",
+      "minutes": 34878.0,
+      "gross": 2162.44,
+      "net": 0.0
+    },
+    {
+      "sku": "Actions storage",
+      "minutes": 52657.96,
+      "gross": 17.69,
+      "net": 0.0
+    }
+  ],
+  "merges": {
+    "merged_via_queue": 618,
+    "first_enqueue_to_merge": {
+      "n": 618,
+      "p50_min": 79.8,
+      "p95_min": 736.1,
+      "mean_min": 194.2
+    },
+    "prs_removed_at_least_once": 199,
+    "removals_per_merged_pr": 0.73,
+    "removal_reasons": {
+      "failed_checks": 166,
+      "manual": 162,
+      "invalid_merge_commit": 82,
+      "merge_conflict": 30,
+      "checks_timed_out": 13,
+      "branch_protection_failure": 1
+    }
+  },
+  "jobs_window": "2026-11-24..2026-11-25 (merge_group)",
+  "jobs": {
+    "jobs": {
+      "Runtime Gate › Backstage rest": {
+        "wait": {
+          "n": 138,
+          "p50_min": 0.1,
+          "p95_min": 11.1,
+          "mean_min": 2.0
+        },
+        "run": {
+          "n": 138,
+          "p50_min": 18.6,
+          "p95_min": 21.2,
+          "mean_min": 17.9
+        }
+      },
+      "Runtime Gate › Backstage heavy": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 10.3,
+          "mean_min": 1.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 15.2,
+          "p95_min": 18.0,
+          "mean_min": 15.1
+        }
+      },
+      "Surfaces Gate › pos-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.5,
+          "p95_min": 15.4,
+          "mean_min": 3.6
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 13.8,
+          "p95_min": 15.7,
+          "mean_min": 13.4
+        }
+      },
+      "Runtime Gate › Backstage seed": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 12.3,
+          "mean_min": 2.1
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 13.4,
+          "p95_min": 17.1,
+          "mean_min": 13.8
+        }
+      },
+      "Surfaces Gate › Preview interno — kitchensink-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.3,
+          "p95_min": 17.3,
+          "mean_min": 3.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 11.5,
+          "p95_min": 13.2,
+          "mean_min": 11.1
+        }
+      },
+      "Surfaces Gate › purchase-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 19.1,
+          "mean_min": 3.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 11.3,
+          "p95_min": 12.7,
+          "mean_min": 11.4
+        }
+      },
+      "Runtime Gate › PostgreSQL + Redis runtime stress gate": {
+        "wait": {
+          "n": 127,
+          "p50_min": 0.1,
+          "p95_min": 4.7,
+          "mean_min": 1.0
+        },
+        "run": {
+          "n": 127,
+          "p50_min": 10.7,
+          "p95_min": 12.5,
+          "mean_min": 10.1
+        }
+      },
+      "Surfaces Gate › orders-nuxt": {
+        "wait": {
+          "n": 144,
+          "p50_min": 0.6,
+          "p95_min": 15.1,
+          "mean_min": 3.6
+        },
+        "run": {
+          "n": 144,
+          "p50_min": 10.3,
+          "p95_min": 11.4,
+          "mean_min": 10.0
+        }
+      },
+      "Runtime Gate › Shop rest": {
+        "wait": {
+          "n": 128,
+          "p50_min": 0.1,
+          "p95_min": 5.7,
+          "mean_min": 1.1
+        },
+        "run": {
+          "n": 128,
+          "p50_min": 10.3,
+          "p95_min": 12.6,
+          "mean_min": 10.4
+        }
+      },
+      "Runtime Gate › Quality + deploy contract": {
+        "wait": {
+          "n": 142,
+          "p50_min": 0.1,
+          "p95_min": 9.9,
+          "mean_min": 1.6
+        },
+        "run": {
+          "n": 142,
+          "p50_min": 8.5,
+          "p95_min": 10.3,
+          "mean_min": 8.4
+        }
+      },
+      "Runtime Gate › Shop heavy": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 10.3,
+          "mean_min": 1.8
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 7.7,
+          "p95_min": 9.9,
+          "mean_min": 7.9
+        }
+      },
+      "Runtime Gate › Testes (test-storefront)": {
+        "wait": {
+          "n": 143,
+          "p50_min": 0.1,
+          "p95_min": 10.8,
+          "mean_min": 2.1
+        },
+        "run": {
+          "n": 143,
+          "p50_min": 7.0,
+          "p95_min": 9.6,
+          "mean_min": 7.2
+        }
+      },
+      "Surfaces Gate › production-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.2,
+          "p95_min": 17.4,
+          "mean_min": 3.8
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 6.1,
+          "p95_min": 7.0,
+          "mean_min": 6.1
+        }
+      },
+      "Surfaces Gate › PWA — orders": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 15.7,
+          "mean_min": 3.3
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 5.5,
+          "p95_min": 6.8,
+          "mean_min": 5.6
+        }
+      },
+      "Surfaces Gate › operator-kit": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 14.8,
+          "mean_min": 3.5
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 5.3,
+          "p95_min": 6.6,
+          "mean_min": 5.4
+        }
+      },
+      "Surfaces Gate › bi-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.2,
+          "p95_min": 18.2,
+          "mean_min": 3.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 4.3,
+          "p95_min": 4.8,
+          "mean_min": 4.2
+        }
+      },
+      "Surfaces Gate › marketing-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.7,
+          "p95_min": 17.4,
+          "mean_min": 3.8
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 4.0,
+          "p95_min": 4.4,
+          "mean_min": 4.0
+        }
+      },
+      "Surfaces Gate › kds-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 17.2,
+          "mean_min": 3.7
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 3.9,
+          "p95_min": 4.4,
+          "mean_min": 3.9
+        }
+      },
+      "Runtime Gate › Testes (test-cores)": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 11.4,
+          "mean_min": 2.2
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 3.8,
+          "p95_min": 4.5,
+          "mean_min": 3.7
+        }
+      },
+      "Runtime Gate › Admin/Unfold gate": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 10.1,
+          "mean_min": 2.0
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 3.6,
+          "p95_min": 4.1,
+          "mean_min": 3.5
+        }
+      },
+      "Surfaces Gate › PWA — pos": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 13.9,
+          "mean_min": 3.2
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 3.2,
+          "p95_min": 3.6,
+          "mean_min": 3.1
+        }
+      },
+      "Surfaces Gate › PWA — production": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 13.9,
+          "mean_min": 2.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.9,
+          "p95_min": 3.4,
+          "mean_min": 2.9
+        }
+      },
+      "Surfaces Gate › PWA — marketing": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 13.7,
+          "mean_min": 3.1
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.9,
+          "p95_min": 3.3,
+          "mean_min": 2.8
+        }
+      },
+      "Surfaces Gate › PWA — bi": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.3,
+          "p95_min": 14.3,
+          "mean_min": 3.1
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.8,
+          "p95_min": 3.1,
+          "mean_min": 2.7
+        }
+      },
+      "Surfaces Gate › PWA — kds": {
+        "wait": {
+          "n": 145,
+          "p50_min": 0.1,
+          "p95_min": 13.8,
+          "mean_min": 3.0
+        },
+        "run": {
+          "n": 145,
+          "p50_min": 2.7,
+          "p95_min": 3.2,
+          "mean_min": 2.7
+        }
+      },
+      "Runtime Gate › Docker deploy image": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 10.8,
+          "mean_min": 1.8
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.7,
+          "p95_min": 3.0,
+          "mean_min": 2.6
+        }
+      },
+      "Surfaces Gate › PWA — hub": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 14.7,
+          "mean_min": 3.0
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.6,
+          "p95_min": 3.0,
+          "mean_min": 2.6
+        }
+      },
+      "Surfaces Gate › PWA — purchase": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 14.1,
+          "mean_min": 3.0
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.4,
+          "p95_min": 2.6,
+          "mean_min": 2.3
+        }
+      },
+      "Surfaces Gate › storefront-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 18.2,
+          "mean_min": 3.7
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 2.0,
+          "p95_min": 2.7,
+          "mean_min": 2.2
+        }
+      },
+      "Runtime Gate › Testes (test-counter-agent)": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 11.4,
+          "mean_min": 2.2
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 1.8,
+          "p95_min": 2.1,
+          "mean_min": 1.8
+        }
+      },
+      "Surfaces Gate › PWA — storefront": {
+        "wait": {
+          "n": 145,
+          "p50_min": 0.1,
+          "p95_min": 12.5,
+          "mean_min": 2.7
+        },
+        "run": {
+          "n": 145,
+          "p50_min": 1.7,
+          "p95_min": 5.2,
+          "mean_min": 1.9
+        }
+      },
+      "Surfaces Gate › hub-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 18.3,
+          "mean_min": 3.5
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 1.0,
+          "p95_min": 1.2,
+          "mean_min": 1.0
+        }
+      },
+      "Runtime Gate › Coverage Gate": {
+        "wait": {
+          "n": 120,
+          "p50_min": 0.1,
+          "p95_min": 3.5,
+          "mean_min": 0.5
+        },
+        "run": {
+          "n": 120,
+          "p50_min": 0.7,
+          "p95_min": 0.8,
+          "mean_min": 0.7
+        }
+      },
+      "Surfaces Gate › PWA — status": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 16.3,
+          "mean_min": 3.4
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.6,
+          "p95_min": 0.7,
+          "mean_min": 0.6
+        }
+      },
+      "Surfaces Gate › status-nuxt": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.6,
+          "p95_min": 19.2,
+          "mean_min": 4.0
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.6,
+          "p95_min": 0.7,
+          "mean_min": 0.6
+        }
+      },
+      "Runtime Gate › Gate da meia-correção": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 9.6,
+          "mean_min": 1.6
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.3,
+          "p95_min": 0.5,
+          "mean_min": 0.3
+        }
+      },
+      "Surfaces Gate › Versões das superfícies": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 5.7,
+          "mean_min": 0.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.2,
+          "p95_min": 0.5,
+          "mean_min": 0.3
+        }
+      },
+      "Surfaces Gate › Supply chain — operator-kit": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 10.0,
+          "mean_min": 1.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.2,
+          "p95_min": 0.4,
+          "mean_min": 0.2
+        }
+      },
+      "Surfaces Gate › Supply chain — marketing": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 9.0,
+          "mean_min": 1.8
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.2,
+          "p95_min": 0.4,
+          "mean_min": 0.2
+        }
+      },
+      "Surfaces Gate › Contrato canônico das superfícies": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 5.0,
+          "mean_min": 0.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.2,
+          "p95_min": 0.3,
+          "mean_min": 0.2
+        }
+      },
+      "Runtime Gate › Escopo do PR": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 9.9,
+          "mean_min": 1.7
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 0.2,
+          "mean_min": 0.1
+        }
+      },
+      "Surfaces Gate › Escopo do PR": {
+        "wait": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 4.2,
+          "mean_min": 0.9
+        },
+        "run": {
+          "n": 146,
+          "p50_min": 0.1,
+          "p95_min": 0.2,
+          "mean_min": 0.1
+        }
+      },
+      "Runtime Gate › Testes (test-shop)": {
+        "wait": {
+          "n": 128,
+          "p50_min": 0.1,
+          "p95_min": 5.4,
+          "mean_min": 0.8
+        },
+        "run": {
+          "n": 128,
+          "p50_min": 0.1,
+          "p95_min": 0.1,
+          "mean_min": 0.1
+        }
+      },
+      "Runtime Gate › Testes (test-backstage)": {
+        "wait": {
+          "n": 138,
+          "p50_min": 0.1,
+          "p95_min": 5.8,
+          "mean_min": 1.0
+        },
+        "run": {
+          "n": 138,
+          "p50_min": 0.1,
+          "p95_min": 0.1,
+          "mean_min": 0.1
+        }
+      }
+    },
+    "runner_labels": {
+      "ubuntu-latest": 6316
+    }
+  }
+}
