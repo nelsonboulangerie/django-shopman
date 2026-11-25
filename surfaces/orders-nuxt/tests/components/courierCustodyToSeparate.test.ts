@@ -83,4 +83,34 @@ describe("Separar de novo (corrida retomada)", () => {
       expect(machine.get("[data-courier-separate-go]").text()).toBe("Separar a maquininha Azul");
     } finally { change.unmount(); machine.unmount(); }
   });
+
+  // #3623: o SSE e o poll releem o pedido e trazem um objeto novo com o mesmo conteúdo.
+  // Vigiar a identidade dele fechava o formulário aberto e apagava o troco digitado.
+  it("a releitura do pedido com o mesmo conteúdo não fecha o formulário nem apaga o troco", async () => {
+    const w = mountPanel({ change_out_suggested_q: 2600, needs_machine: true });
+    try {
+      await w.get("[data-courier-separate]").trigger("click");
+      const field = w.get("[data-courier-separate-change]");
+      const input = (field.element.tagName === "INPUT" ? field.element : field.get("input").element) as HTMLInputElement;
+      await (field.element.tagName === "INPUT" ? field : field.get("input")).setValue("30,00");
+
+      await w.setProps({ courier: { ...courier, custody_to_separate: { change_out_suggested_q: 2600, needs_machine: true } } });
+
+      expect(w.find("[data-courier-separate-form]").exists()).toBe(true);
+      expect(input.value).toBe("30,00");
+    } finally { w.unmount(); }
+  });
+
+  it("quando o que falta separar muda, o formulário recomeça com o valor novo", async () => {
+    const w = mountPanel({ change_out_suggested_q: 2600, needs_machine: true });
+    try {
+      await w.get("[data-courier-separate]").trigger("click");
+
+      await w.setProps({ courier: { ...courier, custody_to_separate: { change_out_suggested_q: 1500, needs_machine: true } } });
+
+      expect(w.find("[data-courier-separate-form]").exists()).toBe(false);
+      await w.get("[data-courier-separate]").trigger("click");
+      expect(w.get("[data-courier-separate-go]").text()).toBe("Separar R$ 15,00 e a maquininha Azul");
+    } finally { w.unmount(); }
+  });
 });
