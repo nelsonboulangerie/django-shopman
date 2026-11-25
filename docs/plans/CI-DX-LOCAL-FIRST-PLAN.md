@@ -36,7 +36,7 @@ só leitura, cache fora do git). Números desta rodada na seção 6; relatório 
 | Evidência | `~/Library/Caches/shopman-local-ci/evidence/<tree>.json` | chave = hash da árvore testada (inclui o não commitado; índice temporário, sem stash). Depois do commit, `HEAD^{tree}` bate; um byte a mais invalida. Rodada em que a árvore mudou no meio vira `stale`. Visível a todas as worktrees: a coordenação enfileira PR de outra sessão se aquela sessão provou. |
 | Trava de máquina | `flock` em `…/locks/` | `cpu`: N vagas (`min(núcleos/4, RAM/4)`), `-n` por vaga via `PYTEST_XDIST_AUTO_NUM_WORKERS`; `browser`: 1 (portas); `venv`: 1. |
 | Isolamento | ambiente do executor | `DATABASE_URL=''`/`REDIS_URL=''` → SQLite em memória por worker, como o job de testes da CI; um `.env` com Postgres não junta mais duas worktrees no mesmo `test_shopman`. |
-| Hook de promoção | `scripts/preflight_merge_guard.py` | `PreToolUse` que barra `gh pr merge` sem evidência verde da árvore do HEAD do PR; saída declarada `SHOPMAN_SEM_PREFLIGHT="motivo"` (registrada em `overrides.jsonl`); `SHOPMAN_PREFLIGHT_GUARD=off` desliga; falha de infraestrutura deixa passar. **Não registrado**: ver seção 5. |
+| Hook de promoção | `scripts/preflight_merge_guard.py` | `PreToolUse` que barra `gh pr merge` sem evidência verde da árvore do HEAD do PR; saída declarada `SHOPMAN_SEM_PREFLIGHT="motivo"` (registrada em `overrides.jsonl`); `SHOPMAN_PREFLIGHT_GUARD=off` desliga; falha de infraestrutura deixa passar. Registrado em `.claude/settings.json` (dono, 25/11: "Sim, registre"). |
 | Makefile | `PYTHON`, `PYTHONPATH` | worktree usa a `.venv` da raiz (nunca o `python` global) com a worktree à frente; no checkout principal e na CI, idêntico ao de antes. |
 | Textos | `CLAUDE.md`, `ci-escopo.md`, `inflight.sh`, `esteira-stop-hook.sh` | o caminho ensinado passa a ser `make preflight` → `make ready pr=<N>`. |
 
@@ -59,11 +59,11 @@ CodeQL, e os passos que dependem do evento (`${{ }}`).
 - **Preflight não substitui nada**: o `merge_group` continua rodando a suíte inteira na
   árvore candidata.
 
-## 5. Decisão pendente do dono
+## 5. Hook de promoção (registrado)
 
-O hook de promoção precisa ser registrado em `.claude/settings.json` (afeta toda sessão
-do Claude Code neste repositório; o classificador de permissões não deixa um agente
-editar hooks sozinho). Trecho:
+Registrado em `.claude/settings.json` com a palavra do dono (25/11, "Sim, registre"); vale
+para toda sessão do Claude Code aberta numa árvore que já tenha este commit. Trecho
+(`if/else`, não `&& ||`: com `||`, o exit 2 do hook virava 0 e nada seria barrado):
 
 ```json
 "hooks": {
@@ -73,7 +73,7 @@ editar hooks sozinho). Trecho:
       "hooks": [
         {
           "type": "command",
-          "command": "f=\"$CLAUDE_PROJECT_DIR/scripts/preflight_merge_guard.py\"; [ -r \"$f\" ] && python3 \"$f\" || exit 0",
+          "command": "f=\"$CLAUDE_PROJECT_DIR/scripts/preflight_merge_guard.py\"; if [ -r \"$f\" ]; then python3 \"$f\"; else exit 0; fi",
           "timeout": 30,
           "statusMessage": "gh pr merge: conferindo o preflight do HEAD"
         }
@@ -83,8 +83,9 @@ editar hooks sozinho). Trecho:
 }
 ```
 
-Sem ele, a regra vale pelo `make ready` e pelo texto do `CLAUDE.md`, como hoje vale o
-"auto só com o local verde".
+Prova com o comando registrado, pelo shell: comando comum passa (0); `gh pr merge` sem
+evidência é barrado (2) com a instrução; com `SHOPMAN_SEM_PREFLIGHT="motivo"` passa e
+registra; com preflight verde da árvore passa; `SHOPMAN_PREFLIGHT_GUARD=off` desliga.
 
 ## 6. Números (medidos em 25/11/2026)
 
@@ -157,7 +158,6 @@ evidência, como deve. Diff estreito (um app, um pacote) não chama os dois shar
 ## 8. Próximas frentes (issues `ficou-de-fora`)
 
 - #3632 — `quality` roda `test_local_ci.py`; paridade workflow↔local num lugar só.
-- #3633 — registrar o hook de promoção (decisão do dono).
 - #3635 — reduzir o caminho crítico com estes números: rebalancear os shards do backstage
   (`rest` 18,6 × `seed` 13,4 min), encurtar a cadeia do Surfaces Gate, o
   `test_check_orchestrator_units`.
