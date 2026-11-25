@@ -219,3 +219,25 @@ def test_hook_falha_aberto_sem_gh(evidence_home, monkeypatch):
 
     monkeypatch.setattr(guard, "gh", boom)
     assert guard.decide("gh pr merge 7 --auto")[0]
+
+
+def test_comparacao_de_runner_agrupa_o_benchmark_pelo_alvo(monkeypatch):
+    def run(i, name):
+        return {"id": i, "name": name, "status": "completed"}
+
+    jobs = {
+        1: [
+            {"name": "test-backstage-rest · ubuntu-latest · 1", "conclusion": "success", "labels": ["ubuntu-latest"],
+             "started_at": "2026-11-25T10:00:00Z", "completed_at": "2026-11-25T10:14:00Z"},
+            {"name": "test-backstage-rest · ubicloud-standard-8 · 1", "conclusion": "success", "labels": ["ubicloud-standard-8"],
+             "started_at": "2026-11-25T10:00:00Z", "completed_at": "2026-11-25T10:07:00Z"},
+            {"name": "test-shop-rest · ubuntu-latest · 1", "conclusion": "failure", "labels": ["ubuntu-latest"],
+             "started_at": "2026-11-25T10:00:00Z", "completed_at": "2026-11-25T10:09:00Z"},
+        ]
+    }
+    monkeypatch.setattr(ci_baseline, "jobs_for_run", lambda cache, rid: jobs[rid])
+    rows = ci_baseline.compare_runners(None, [run(1, "Benchmark de runner")])
+    assert len(rows) == 1  # job vermelho e job em um runner só não entram
+    row = rows[0]
+    assert row["job"] == "test-backstage-rest" and row["reference"] == "ubuntu-latest"
+    assert row["runners"]["ubicloud-standard-8"]["speedup"] == 2.0

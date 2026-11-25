@@ -334,6 +334,54 @@ def billing(month: dt.date) -> list[dict]:
     ]
 
 
+def runner_label(job: dict) -> str:
+    labels = job.get("labels") or []
+    return ",".join(labels) or "?"
+
+
+def compare_runners(cache: Cache, runs: list[dict], workflows: set[str] | None = None) -> list[dict]:
+    """Execução p50 de cada job por rótulo de runner (verdes só).
+
+    Serve ao benchmark (``runner-benchmark.yml``: o nome do job é
+    ``<alvo> · <runner> · <rep>``, agrupado pelo ``<alvo>``) e ao piloto vivo
+    na fila (mesmo job em runners diferentes). O primeiro rótulo em ordem de
+    mediana maior é a referência da coluna ``aceleração``.
+    """
+    dur: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    for r in runs:
+        if r["status"] != "completed" or (workflows and r["name"] not in workflows):
+            continue
+        for j in jobs_for_run(cache, r["id"]):
+            if j["conclusion"] != "success" or not j["started_at"]:
+                continue
+            name = j["name"].split(" · ")[0]
+            key = name if r["name"] == "Benchmark de runner" else f'{r["name"]} › {name}'
+            dur[key][runner_label(j)].append((ts(j["completed_at"]) - ts(j["started_at"])).total_seconds())
+    rows = []
+    for job, by_label in dur.items():
+        if len(by_label) < 2:
+            continue
+        stats = {lab: (len(v), statistics.median(v)) for lab, v in by_label.items()}
+        base_label = "ubuntu-latest" if "ubuntu-latest" in stats else max(stats, key=lambda k: stats[k][1])
+        base = stats[base_label][1]
+        rows.append({
+            "job": job,
+            "runners": {lab: {"n": n, "p50_min": round(m / 60, 1), "speedup": round(base / m, 2)} for lab, (n, m) in stats.items()},
+            "reference": base_label,
+        })
+    return sorted(rows, key=lambda r: -r["runners"][r["reference"]]["p50_min"])
+
+
+def print_runner_comparison(rows: list[dict]) -> None:
+    if not rows:
+        print("Nenhum job verde em dois runners diferentes nesta seleção.")
+        return
+    print("| job | runner | n | execução p50 (min) | aceleração |\n|---|---|---:|---:|---:|")
+    for row in rows:
+        for lab, st in sorted(row["runners"].items(), key=lambda kv: kv[0] != row["reference"]):
+            print(f"| {row['job']} | {lab} | {st['n']} | {st['p50_min']} | {st['speedup']}x |")
+
+
 def days(since: dt.date, until: dt.date):
     d = since
     while d <= until:
@@ -394,9 +442,26 @@ def main() -> int:
     parser.add_argument("--no-merges", action="store_true")
     parser.add_argument("--cache", type=Path, default=Path(".ci-baseline"))
     parser.add_argument("--json", type=Path)
+    parser.add_argument(
+        "--compare-runners", action="store_true",
+        help="só a comparação por rótulo de runner (benchmark com --run, ou fila em --since..--until)",
+    )
+    parser.add_argument("--run", type=int, help="id de um run do runner-benchmark.yml")
     args = parser.parse_args()
 
     cache = Cache(args.cache)
+    if args.compare_runners:
+        if args.run:
+            runs = [gh_json(f"repos/{REPO}/actions/runs/{args.run}")]
+            workflows = None
+        else:
+            runs = [r for day in days(args.since, args.until) for r in runs_for_day(cache, "merge_group", day, today)]
+            workflows = {"Runtime Gate", "Surfaces Gate"}
+        rows = compare_runners(cache, runs, workflows)
+        if args.json:
+            args.json.write_text(json.dumps(rows, ensure_ascii=False, indent=2))
+        print_runner_comparison(rows)
+        return 0
     by_regime: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     job_runs: list[dict] = []
     jobs_from = args.until - dt.timedelta(days=max(args.jobs_days - 1, 0))

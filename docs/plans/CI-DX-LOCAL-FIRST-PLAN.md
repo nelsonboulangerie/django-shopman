@@ -187,3 +187,46 @@ Em ordem de custo:
    com núcleos. Em fornecedor como Ubicloud o minuto sai ~1/3 do preço do GitHub. Que
    8 vCPU acelerem esses testes é **hipótese, não medida**: o piloto mede no mesmo SHA, com
    teto aprovado pelo dono, e só fica o que baixar o relógio por menos.
+
+### 9.1 Piloto barato, preparado e desligado (dono, 25/11: "Sim, prepare")
+
+Duas peças, as duas sem efeito até alguém ligar:
+
+| Peça | Onde | Liga com | Efeito desligada |
+|---|---|---|---|
+| Benchmark no mesmo commit | `.github/workflows/runner-benchmark.yml` | `gh workflow run runner-benchmark.yml -f runner=<rótulo> -f reps=3` (depois de entrar no `main`), ou push em `ci-bench/**` com `vars.CI_BENCH_RUNNER` | nenhum: não roda em PR nem na fila e só lê cache |
+| Seletor só dos 6 jobs, só na fila | `runtime-gate.yml` (shards do backstage e do shop) e `surfaces-gate.yml` (`app-quality`) | `vars.CI_HEAVY_RUNNER=<rótulo>` e `vars.CI_HEAVY_SURFACES=["pos-nuxt"]` | runner de sempre (`CI_LINUX_RUNNER` ou `ubuntu-latest`) |
+
+Comparação dos dois: `python3 scripts/ci_baseline.py --compare-runners --run <id>` (benchmark)
+ou `--since … --until …` (fila ao vivo), por rótulo de runner. Com os dados de 18–19/11 ela
+reproduz a tabela de 25/11 (`Backstage rest` 13,7 × 13,8 min).
+
+**Etapa 1, benchmark (estimado, não medido):** 6 jobs × 3 repetições × ~12 min ≈ 216 min no
+candidato. Em 8 vCPU: ~US$ 4,75 no GitHub (`linux-8core`, US$ 0,022/min) ou ~US$ 1,75 na
+Ubicloud (US$ 0,008/min, preço publicado consultado pelo plano A). Teto proposto: **US$ 10**.
+
+**Regra de decisão:** o piloto ao vivo só acontece se o benchmark mostrar **≥ 1,4x** na
+mediana dos 6 jobs. Abaixo disso, não se paga por velocidade: o caminho é o grátis (preflight
+e shards, #3635).
+
+**Etapa 2, piloto ao vivo (só se a etapa 1 passar):** por grupo da fila os 6 jobs somam
+~79 min em 4 vCPU; a 1,6x seriam ~50 min pagos, cerca de US$ 0,40 por grupo na Ubicloud ou
+US$ 1,10 no GitHub (estimado). Com o volume de hoje (~150 grupos/dia, metade reprovando),
+isso daria ~US$ 60/dia na Ubicloud; o preflight reduz o número de grupos. Teto proposto:
+**US$ 50 por 2 dias**. Fica só se o relógio do grupo verde p50 cair ≥ 3 min (hoje 26,2) e o
+custo por PR mergeado couber no teto mensal que o dono definir. O Surfaces Gate termina por
+último em 63% dos grupos verdes por causa da cadeia e da espera, não só do `pos-nuxt`: o
+ganho real pode ser menor que a aceleração do job.
+
+**Desligar:** apagar `CI_HEAVY_RUNNER` (efeito no próximo job, sem commit). Para não repetir
+o 21/11, a concorrência máxima do runner pago precisa comportar ~30 jobs (6 jobs × 5 grupos
+simultâneos da fila).
+
+**Segurança:** só código já aprovado roda ali (fila e disparo manual/push de branch da casa;
+nunca PR de fork). Os seis jobs não usam segredo.
+
+**O que depende do dono:** escolher o fornecedor e criar o runner. No GitHub: um runner
+`linux-8core` em org Settings › Actions › Runners, concorrência ≥ 30, dentro do orçamento
+de Actions que já existe. Na Ubicloud: a conta, o app da Ubicloud instalado só neste
+repositório e o teto de gasto lá. Depois disso, a coordenação dispara o benchmark e traz a
+tabela.

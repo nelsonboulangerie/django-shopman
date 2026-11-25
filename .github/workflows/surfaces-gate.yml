@@ -185,7 +185,9 @@ jobs:
     if: ${{ !cancelled() && needs.surface-contract.result == 'success' }}
     # Linux com trabalho vai para o runner maior (CI_LINUX_RUNNER); macOS e a
     # entrada `skip` (verde em segundos) ficam no runner que o contrato dá.
-    runs-on: ${{ (matrix.runner == 'ubuntu-latest' && !matrix.skip) && (vars.CI_LINUX_RUNNER || 'ubuntu-latest') || matrix.runner }}
+    # Piloto DEV-2026-098 (§9 do plano): na fila, os apps listados em `CI_HEAVY_SURFACES`
+    # (JSON, ex. ["pos-nuxt"]) vão para `CI_HEAVY_RUNNER`. Sem as variáveis, nada muda.
+    runs-on: ${{ (matrix.runner == 'ubuntu-latest' && !matrix.skip) && ((github.event_name == 'merge_group' && vars.CI_HEAVY_RUNNER && contains(fromJSON(vars.CI_HEAVY_SURFACES || '[]'), matrix.dir)) && vars.CI_HEAVY_RUNNER || vars.CI_LINUX_RUNNER || 'ubuntu-latest') || matrix.runner }}
     timeout-minutes: 45
 
     strategy:
