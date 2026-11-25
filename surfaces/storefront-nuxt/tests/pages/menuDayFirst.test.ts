@@ -112,6 +112,19 @@ afterEach(() => {
 const sheet = () => document.querySelector<HTMLElement>('[data-menu-day-sheet]')
 const inSheet = (selector: string) => document.querySelector<HTMLElement>(`[data-menu-day-sheet] ${selector}`)
 
+// Um caso só acaba quando nada da sacola está em voo. O Adicionar é uma fila
+// (`useCartState`): a resposta do PUT pousa na sacola depois do clique, e a troca de
+// `?dia=` passa pelo middleware `cart-settle`, que espera essa fila e relê a sacola antes
+// de a rota mudar. Um caso que termina antes disso deixa a resposta pousar DEPOIS do
+// `afterEach`, e o caso seguinte abre com a sacola datada: o dia vaza e a etapa aparece
+// onde não devia (o "B, casa aberta" da CI, 25/11/2026).
+async function cartAtRest (day?: string) {
+  if (day) await vi.waitFor(() => expect(useRouter().currentRoute.value.query.dia).toBe(day))
+  const { hasPendingMutations } = useCartState()
+  await vi.waitFor(() => expect(hasPendingMutations.value).toBe(false))
+  await flushPromises()
+}
+
 function setCart (day: string | null) {
   useState<CartProjection>('storefront-cart').value = {
     ...(useState<CartProjection>('storefront-cart').value || {}),
@@ -175,7 +188,7 @@ describe('cardápio: o dia do pedido na direção E2 (OC-33 B1)', () => {
     expect(page.find('[data-menu-day-step]').text()).toContain('qua, 25/11')
     expect(page.find('[data-menu-day-step]').text()).toContain('Editar')
     await vi.waitFor(() => expect(catalogQueries.some(query => query.date === '2026-11-25')).toBe(true))
-    await flushPromises()
+    await cartAtRest('2026-11-25')
   })
 
   it('B, casa aberta: o "+" põe na sacola de hoje, sem perguntar', async () => {
@@ -188,6 +201,7 @@ describe('cardápio: o dia do pedido na direção E2 (OC-33 B1)', () => {
     await vi.waitFor(() => expect(addCalls).toHaveLength(1))
     expect(addCalls[0]).toEqual({ qty: 1 })
     expect(sheet()).toBeNull()
+    await cartAtRest()
   })
 
   it('B, "Editar" com a sacola cheia: o item que não dá é nomeado na folha, e "Seguir sem esse item" leva o resto', async () => {
@@ -213,6 +227,7 @@ describe('cardápio: o dia do pedido na direção E2 (OC-33 B1)', () => {
     inSheet('[data-menu-day-proceed]')!.click()
     await vi.waitFor(() => expect(dayCalls[1]).toEqual({ date: '2026-11-25', without: ['TABAT'] }))
     await vi.waitFor(() => expect(page.find('[data-menu-day-step]').text()).toContain('qua, 25/11'))
+    await cartAtRest('2026-11-25')
   })
 })
 

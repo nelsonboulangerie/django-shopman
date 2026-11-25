@@ -97,7 +97,10 @@ useLiveRevalidate(
   data,
   // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
   () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include', query: menuQuery.value }),
-  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS }
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // A releitura que saiu com um dia e volta depois de a cliente escolher outro é
+  // descartada: o cardápio de quinta não pode cobrir a escolha de sexta.
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS, scope: () => menuQuery.value?.date || '' }
 )
 
 const catalog = computed(() => data.value?.catalog || structureCatalog.value || null)
