@@ -57,7 +57,7 @@ async function switchVersion () {
     <UiButton
       variant="link"
       data-team-preview-action
-      class="ml-1 h-auto p-0 align-baseline text-[length:inherit] font-semibold text-current underline"
+      class="h-auto p-0 align-baseline text-[length:inherit] font-semibold text-current underline"
       :disabled="switching"
       @click="switchVersion"
     >
