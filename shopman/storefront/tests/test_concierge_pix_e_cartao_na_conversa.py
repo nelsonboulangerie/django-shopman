@@ -125,7 +125,9 @@ def test_n11_pix_again_later_returns_the_code_not_a_link(shop):
     # X3 também para os comandos: cancelar é instrução de conversa, nunca endereço de API.
     assert not any("/api/" in text for text in again), again
     assert any(line.startswith("Posso ") and "cancelar, se quiser." in line for line in lines), again
-    assert f"Acompanhar: /pedido/{order.ref}/" in again[0].splitlines()[-1], again
+    from shopman.shop.services import order_view_link
+
+    assert f"Acompanhar: {order_view_link.path_for(order)}" in again[0].splitlines()[-1], again
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1, "consultar não cria outra cobrança"
 
 

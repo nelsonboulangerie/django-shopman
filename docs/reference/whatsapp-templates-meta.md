@@ -96,14 +96,25 @@ acompanha. **Todo template novo nasce com `www.`.**
 (`storefront_links.path_order_tracking`). Acompanhar e pagar são a MESMA tela: o Pix e o
 cartão vivem inline no acompanhamento (PAYMENT-TRACKING-MERGE). Não há tela de pagamento.
 
-**3. O aviso de pedido não leva credencial nenhuma.** Desde a decisão D5 do dono
-(23/11/2026, OC-01), `tracking_url`, `payment_url` e `reorder_url` são os links COMUNS do
-pedido (`/pedido/{ref}` e `/conta/pedidos`), em todo canal: mensagem se encaminha, e um link
-que entrasse na conta entregaria a conta a quem recebesse o encaminhamento. No celular do
-próprio cliente a loja reconhece a sessão ou o dispositivo confiável e abre direto.
+**3. O aviso de pedido não leva credencial de login nem de conta.** Desde a decisão D5 do
+dono (23/11/2026, OC-01), em todo canal: mensagem se encaminha, e um link que entrasse na
+conta entregaria a conta a quem recebesse o encaminhamento.
+
+**Atualização de 25/11/2026 (DEV-2026-093).** O link comum (`/pedido/{ref}`) abria no
+navegador embutido do WhatsApp, que não tem a sessão do site, e o cliente que acabara de
+entrar pelo WhatsApp tinha de entrar de novo. O dono: "Tem que ter uma forma de resolver
+isso!!!". A Coordenação decidiu por ele: o aviso leva a **capacidade do pedido**,
+`/pedido/{ref}~{selo}` (`shop/services/order_view_link.py`), um HMAC do `SECRET_KEY` sobre o
+ref e a revisão do link (`Order.data.view_link_rev`). Ela abre AQUELE pedido e nada mais: não
+loga, não abre conta, sacola, histórico nem tempo real; paga, fala com a loja e confirma o
+recebimento; cancelar, avaliar e pedir de novo pedem a entrada; o endereço sai abreviado.
+Vale com o pedido aberto e mais 7 dias depois de concluído ou cancelado, e revogar é trocar a
+revisão. `tracking_url` e `payment_url` levam o link com o selo; `reorder_url` é
+`/conta/pedidos`, sem nada.
 
 A trava do ManyChat continua por desenho: `notification_manychat._safe_field_value` recusa
-gravar link de acesso pessoal (qualquer valor com `?t=`) como campo personalizado, porque o
+gravar link de acesso pessoal (qualquer valor com `?t=`, como `/a?t=`) como campo
+personalizado; a capacidade do pedido não é link de acesso e passa, porque o
 token passaria a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
 marketing. Hoje só o `action_url` de campanha carrega link pessoal, e a gêmea pública
 `<nome>_public` informada pelo emissor é o que sai no lugar dele.
@@ -117,17 +128,23 @@ https://www.nelsonboulangerie.com.br/pedido/{{1}}
 ```
 
 A variável `{{1}}` do botão mapeia para o campo personalizado **`order_ref`** — não para
-`tracking_url`. Assim nenhuma URL precisa virar campo personalizado, e o token não tem por
-onde vazar nem por acidente.
+`tracking_url`. Assim nenhuma URL precisa virar campo personalizado.
 
-Quem clica sem sessão no aparelho **não bate num 404**: `/pedido/{ref}` é fechado por sessão
-(`customer_orders.request_can_access_order`), e a loja responde com "Ele pode estar em outra
-conta ou em outro aparelho — entre com seu telefone" e um botão **Entrar** que volta para o
-mesmo pedido (`storefront-nuxt/app/presentation/orderAccess.ts`). O link é honesto e se
-recupera sozinho. O preço é um toque a mais; o troco é nenhum segredo fora de casa.
+**Desde 25/11/2026 (DEV-2026-093) o VALOR que o adapter grava em `order_ref` é
+`{ref}~{selo}`** (a chave `order_link_ref` do contexto, ver
+`notification_manychat._shareable_context`). O prefixo do botão aprovado na Meta não muda,
+então **nenhum modelo precisa ser re-submetido**: `https://www.nelsonboulangerie.com.br/pedido/{{1}}`
+vira `/pedido/WEB-261125-A17~<selo>`, e a página troca o selo pelo acesso àquele pedido
+(`POST /api/v1/tracking/{ref}/access/`) e limpa a URL. O campo `order_ref` só vai em botão,
+nunca no corpo, então nenhum texto muda.
 
-Os canais que interpolam o texto na hora — SMS e e-mail — **seguem recebendo o magic link**.
-Eles não gravam nada em lugar nenhum.
+Quem abre `/pedido/{ref}` SEM selo e sem sessão continua vendo "Ele pode estar em outra
+conta ou em outro aparelho, entre com seu telefone" e o botão **Entrar** que volta para o
+mesmo pedido (`storefront-nuxt/app/presentation/orderAccess.ts`).
+
+SMS e e-mail levam o mesmo link com o selo. Nenhum canal recebe link de entrada (`/a?t=`)
+em aviso de pedido desde a OC-01; a trava é
+`storefront/tests/security/test_aviso_de_pedido_sem_credencial.py`.
 
 ---
 
@@ -877,7 +894,7 @@ nome**, senão a variável sai em branco e nada falha.
 |---|---|---|
 | Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_encomenda_confirmada`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco; a variante da encomenda nasceu sem) |
 | Pedido, no corpo | `order_ref_short` | todos os de pedido (o final do ref: `A17`) |
-| Ref do pedido | `order_ref` | **todo botão de URL** — nunca no corpo |
+| Ref do pedido | `order_ref` (valor `{ref}~{selo}` desde 25/11/2026, DEV-2026-093) | **todo botão de URL** — nunca no corpo |
 | Total | **`order_total_display`** (nome atual no código; conferir no ManyChat) | `pedido_confirmado`, `pedido_encomenda_confirmada`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |

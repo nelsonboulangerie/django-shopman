@@ -1159,6 +1159,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_LIVE_BADGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_LOGIN_INVITE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_MENU_CTA": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

@@ -90,6 +90,7 @@ from .surface import (
 from .telemetry import AddressEventView, ClientErrorView, ClientPwaUpdateView
 from .tracking import (
     OrderCancelView,
+    OrderCapabilityAccessView,
     OrderConfirmReceiptView,
     OrderContactRequestView,
     OrderPaymentCheckView,
@@ -216,6 +217,9 @@ urlpatterns = [
     path("catalog/collections/", CollectionListView.as_view(), name="api-catalog-collections"),
     # Tracking
     path("tracking/<str:ref>/", OrderTrackingView.as_view(), name="api-tracking"),
+    # O link do aviso (``/pedido/<ref>~<selo>``): a página troca o selo aqui antes de
+    # ler o pedido. Sem login e sem conta: só este pedido (DEV-2026-093).
+    path("tracking/<str:ref>/access/", OrderCapabilityAccessView.as_view(), name="api-tracking-access"),
     # Realtime — push instantâneo do acompanhamento (canal ``order-<ref>``).
     # order_events_view autoriza só o dono/staff (mesmo gate do ShopmanChannelManager)
     # e devolve 404 aos demais, então o EventSource do convidado falha limpo e o

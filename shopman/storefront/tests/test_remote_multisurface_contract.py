@@ -358,7 +358,7 @@ def test_manychat_conversation_api_is_thin_projection_adapter():
 
     assert 'path("orders/<str:ref>/conversation/"' in urls
     assert "OrderConversationView" in urls
-    assert "build_order_conversation(order, channel_ref=channel_ref)" in api
+    assert "build_order_conversation(order, channel_ref=channel_ref, access_mode=access_mode)" in api
     assert "RemoteConversationSerializer(projection_data(projection))" in api
     assert "RemoteConversationSerializer" in serializer
     remote_conversation_serializer = serializer.split("class RemoteConversationSerializer", 1)[1].split(

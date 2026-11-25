@@ -127,16 +127,20 @@ def test_email_e_whatsapp_recebem_as_mesmas_chaves_que_o_sms():
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
-def test_tracking_url_e_sempre_o_link_comum_do_pedido():
-    """Link comum é o link do aviso (OC-01), com ou sem cliente identificado."""
-    context = _build_context(_order(), {"order_ref": "ORD-1"}, "order_received")
-    assert context["tracking_url"] == "https://loja.test/pedido/ORD-1"
+def test_tracking_url_e_sempre_o_link_do_pedido_com_a_capacidade():
+    """O link do aviso é o do pedido com a capacidade dele (OC-01, DEV-2026-093),
+    com ou sem cliente identificado; nunca um link de entrada."""
+    from shopman.shop.services import order_view_link
 
-    identified = _build_context(
-        _order(uuid="6f9619ff-8b86-d011-b42d-00c04fc964ff"), {"order_ref": "ORD-1"}, "order_received"
-    )
-    assert identified["tracking_url"] == "https://loja.test/pedido/ORD-1"
-    assert identified["payment_url"] == "https://loja.test/pedido/ORD-1"
+    order = _order()
+    context = _build_context(order, {"order_ref": "ORD-1"}, "order_received")
+    assert context["tracking_url"] == f"https://loja.test/pedido/{order_view_link.link_ref(order)}"
+
+    order = _order(uuid="6f9619ff-8b86-d011-b42d-00c04fc964ff")
+    identified = _build_context(order, {"order_ref": "ORD-1"}, "order_received")
+    assert identified["tracking_url"] == f"https://loja.test/pedido/{order_view_link.link_ref(order)}"
+    assert identified["payment_url"] == identified["tracking_url"]
+    assert "?t=" not in identified["tracking_url"]
 
 
 def test_derive_context_e_idempotente():

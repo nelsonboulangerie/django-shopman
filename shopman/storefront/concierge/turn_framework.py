@@ -213,10 +213,14 @@ def money_text(value) -> str:
 
 
 def track_text(value) -> str:
-    """Onde acompanhar o pedido: a página dele no site, determinística a partir do número (nenhum fato novo)."""
-    from .tools import _storefront_base_url
+    """Onde acompanhar o pedido: a página dele no site, a partir do número (nenhum fato novo).
 
-    return f"{_storefront_base_url()}/pedido/{value}/"
+    Leva a capacidade do pedido (``/pedido/<ref>~<selo>``, DEV-2026-093): abre no
+    navegador do WhatsApp sem pedir a entrada de novo.
+    """
+    from .tools import _order_page_path_for_ref, _storefront_base_url
+
+    return f"{_storefront_base_url()}{_order_page_path_for_ref(str(value))}"
 
 
 def method_text(value) -> str:

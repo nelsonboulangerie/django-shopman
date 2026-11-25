@@ -30,6 +30,16 @@ CONCLUDED_STATUSES = frozenset({"delivered", "completed"})
 DEFAULT_CHANNEL_REF = "web"
 ORDER_ACCESS_SESSION_KEY = "shopman_order_access_refs"
 MAX_SESSION_ORDER_ACCESS_REFS = 20
+#: Os pedidos que ESTE navegador abriu só pelo link do aviso (capacidade de pedido,
+#: ``order_view_link``), com a revisão do link no momento da troca: ``{ref: rev}``.
+#: Lista separada de propósito: acesso por capacidade não é o acesso de quem fez o
+#: pedido neste navegador, e não pode virar ele (DEV-2026-093).
+ORDER_CAPABILITY_SESSION_KEY = "shopman_order_capability_refs"
+
+#: Os dois modos de acesso a um pedido. ``full``: staff, o navegador do checkout ou a
+#: conta dona do pedido. ``capability``: só o link do aviso.
+ACCESS_FULL = "full"
+ACCESS_CAPABILITY = "capability"
 
 
 def get_order(ref: str):
@@ -59,9 +69,22 @@ def find_order(ref: str):
     return Order.objects.filter(ref=ref).first()
 
 
-def grant_order_access(request, order_ref: str) -> None:
-    """Bind an order ref to the current browser session after checkout/access-link."""
+def grant_order_access(request, order_ref: str, *, via_capability: bool = False, link_rev: int = 0) -> None:
+    """Bind an order ref to the current browser session after checkout/access-link.
+
+    ``via_capability``: o acesso veio SÓ do link do aviso (``order_view_link``). Vai
+    para a lista separada, com a revisão do link, e nunca para a lista de quem fez o
+    pedido neste navegador. Não loga, não cria usuário: é uma linha na sessão anônima.
+    """
     if not order_ref or not hasattr(request, "session"):
+        return
+    if via_capability:
+        granted = dict(request.session.get(ORDER_CAPABILITY_SESSION_KEY) or {})
+        granted.pop(str(order_ref), None)
+        granted[str(order_ref)] = int(link_rev)
+        # O mais antigo sai primeiro (dict mantém a ordem de inserção).
+        request.session[ORDER_CAPABILITY_SESSION_KEY] = dict(list(granted.items())[-MAX_SESSION_ORDER_ACCESS_REFS:])
+        request.session.modified = True
         return
     refs = [
         str(ref)
@@ -76,13 +99,57 @@ def grant_order_access(request, order_ref: str) -> None:
 
 
 def request_can_access_order(request, order) -> bool:
-    """Return True for staff, same checkout session, or matching customer identity."""
+    """Return True for staff, same checkout session, matching customer, or the order link."""
+    return order_access_mode(request, order) is not None
+
+
+def order_access_mode(request, order) -> str | None:
+    """Como este pedido abre para esta requisição: ``full``, ``capability`` ou ``None``.
+
+    ``full`` vence sempre: quem fez o pedido neste navegador, a conta dona dele ou o
+    staff. ``capability`` é só o link do aviso, revalidado a cada pedido (revogar ou
+    passar da validade fecha na hora, mesmo para quem já tinha trocado o selo).
+    """
     user = getattr(request, "user", None)
     if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
+        return ACCESS_FULL
     if _session_can_access_order(request, order.ref):
-        return True
-    return customer_can_access_order(getattr(request, "customer", None), order)
+        return ACCESS_FULL
+    if customer_can_access_order(getattr(request, "customer", None), order):
+        return ACCESS_FULL
+    if _capability_session_can_access_order(request, order):
+        return ACCESS_CAPABILITY
+    return None
+
+
+def get_accessible_order_with_mode(request, ref: str):
+    """``(pedido, modo)`` quando esta requisição pode ver o pedido; senão ``Http404``."""
+    order = get_order(ref)
+    mode = order_access_mode(request, order)
+    if mode is not None:
+        return order, mode
+    logger.warning(
+        "customer_order_access_denied order=%s user=%s",
+        order.ref,
+        getattr(getattr(request, "user", None), "pk", None),
+    )
+    raise Http404
+
+
+def grant_order_capability(request, ref: str, cap: str) -> bool:
+    """Troca o selo do link do aviso por acesso deste navegador a ESTE pedido.
+
+    Selo inválido, adulterado, vencido, revogado ou de outro pedido: ``False``, sem
+    dizer qual (a API responde o mesmo 404 de pedido inexistente). Nunca loga ninguém.
+    """
+    from shopman.shop.services import order_view_link
+
+    order = find_order(str(ref or ""))
+    if order is None or not order_view_link.verify(order, cap):
+        logger.warning("customer_order_capability_refused order=%s", ref)
+        return False
+    grant_order_access(request, order.ref, via_capability=True, link_rev=order_view_link.link_rev(order))
+    return True
 
 
 def user_can_access_order(user, order) -> bool:
@@ -729,6 +796,21 @@ def _session_can_access_order(request, order_ref: str) -> bool:
     }
 
 
+def _capability_session_can_access_order(request, order) -> bool:
+    if not hasattr(request, "session"):
+        return False
+    granted = request.session.get(ORDER_CAPABILITY_SESSION_KEY) or {}
+    if not isinstance(granted, dict) or str(order.ref) not in granted:
+        return False
+    from shopman.shop.services import order_view_link
+
+    try:
+        rev = int(granted[str(order.ref)])
+    except (TypeError, ValueError):
+        return False
+    return rev == order_view_link.link_rev(order) and order_view_link.is_within_validity(order)
+
+
 def _customer_identity_from_info(customer_info) -> tuple[str | None, str | None]:
     customer_ref = None
     try:
@@ -840,7 +922,10 @@ def _price_q(product, *, channel_ref: str, qty=1) -> int:
 __all__ = [
     "ACTIVE_STATUSES",
     "CONCLUDED_STATUSES",
+    "ACCESS_CAPABILITY",
+    "ACCESS_FULL",
     "ORDER_ACCESS_SESSION_KEY",
+    "ORDER_CAPABILITY_SESSION_KEY",
     "active_order_count_for_customer",
     "active_order_count_for_phone",
     "add_reorder_items",
@@ -851,6 +936,9 @@ __all__ = [
     "customer_identity_filter",
     "ensure_payment_intent",
     "get_accessible_order",
+    "get_accessible_order_with_mode",
+    "grant_order_capability",
+    "order_access_mode",
     "find_order",
     "get_order",
     "get_payment_status",

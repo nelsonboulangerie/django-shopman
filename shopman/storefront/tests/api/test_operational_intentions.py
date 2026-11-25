@@ -56,7 +56,7 @@ def test_new_reorder_intent_changes_real_cart(client):
     OrderItem.objects.create(
         order=o, line_id="1", sku="PAO-FRANCES", name="Pao", qty=1, unit_price_q=100, line_total_q=100
     )
-    with patch("shopman.storefront.services.orders.get_accessible_order", return_value=o):
+    with patch("shopman.storefront.services.orders.get_accessible_order_with_mode", return_value=(o, "full")):
         one = client.post(
             f"/api/v1/orders/{o.ref}/reorder/",
             {"mode": "append"},
@@ -380,7 +380,7 @@ def test_replace_replay_keeps_the_target_cart_and_does_not_reapply(client):
     )
     client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 2}, content_type="application/json")
     cart_key = client.session["cart_session_key"]
-    with patch("shopman.storefront.services.orders.get_accessible_order", return_value=order):
+    with patch("shopman.storefront.services.orders.get_accessible_order_with_mode", return_value=(order, "full")):
         first = client.post(
             f"/api/v1/orders/{order.ref}/reorder/",
             {"mode": "replace"},
@@ -454,7 +454,7 @@ def test_partial_infrastructure_failure_rolls_back_bundle_without_losing_previou
         return original(*args, **kwargs)
 
     with (
-        patch("shopman.storefront.services.orders.get_accessible_order", return_value=order),
+        patch("shopman.storefront.services.orders.get_accessible_order_with_mode", return_value=(order, "full")),
         patch.object(CartService, "add_item", side_effect=failing_add),
         pytest.raises(RuntimeError),
     ):

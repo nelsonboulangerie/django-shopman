@@ -507,6 +507,12 @@ class TrackingGiftSerializer(serializers.Serializer):
     message = serializers.CharField(allow_blank=True)
 
 
+class TrackingLoginInviteSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    cta_label = serializers.CharField()
+    href = serializers.CharField()
+
+
 class OrderTrackingSerializer(serializers.Serializer):
     convenience_pending = serializers.ListField(child=serializers.CharField(), required=False)
     ref = serializers.CharField()
@@ -576,6 +582,8 @@ class OrderTrackingSerializer(serializers.Serializer):
     tax_id_display = serializers.CharField(allow_blank=True, required=False)
     customer_notes = serializers.CharField(allow_blank=True, required=False)
     delivery_address = serializers.CharField(allow_blank=True, required=False)
+    access_mode = serializers.CharField(required=False, default="full")
+    login_invite = TrackingLoginInviteSerializer(allow_null=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()

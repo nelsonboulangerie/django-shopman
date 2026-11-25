@@ -669,7 +669,16 @@ def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
     "customer_ref", "customer_uuid", "hold_ids", "management_url",
+    # Não é campo do ManyChat: é o VALOR que o campo `order_ref` leva (ver abaixo).
+    "order_link_ref",
 })
+
+#: O campo do botão aprovado na Meta (`/pedido/{{1}}`) e a chave do contexto com o
+#: valor que ele leva: o ref com a capacidade do pedido, `<ref>~<selo>` (DEV-2026-093).
+#: O campo `order_ref` só vai em botão, nunca no corpo, então trocar o valor dele não
+#: muda texto nenhum e não pede re-submeter modelo.
+_ORDER_BUTTON_FIELD = "order_ref"
+_ORDER_BUTTON_VALUE_KEY = "order_link_ref"
 
 #: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser
 #: substituído pelo link COMUM (ver `_safe_field_value`). Elas mesmas nunca viajam.
@@ -688,9 +697,10 @@ def _safe_field_value(name: str, value, ctx: dict):
 
     ⚠️ O link de campanha (`action_url`) carrega um LINK DE ACESSO PESSOAL: o despacho o
     cunha por destinatário, ele vale horas e cria sessão de cliente identificado. Os
-    links do aviso de pedido (`tracking_url`, `payment_url`, `reorder_url`) são os
-    COMUNS do pedido, sem credencial (decisão D5 do dono, OC-01), e passam por aqui
-    intactos. Como campo personalizado, um token passa a viver em texto claro no perfil
+    links do aviso de pedido (`tracking_url`, `payment_url`) levam só a capacidade do
+    pedido (`/pedido/<ref>~<selo>`, DEV-2026-093), que não é credencial de login nem de
+    conta: abre aquele pedido e nada mais. Passam por aqui intactos; o `reorder_url` é
+    o histórico da conta, sem nada. Como campo personalizado, um token passa a viver em texto claro no perfil
     do cliente dentro de uma ferramenta SaaS de marketing — legível por qualquer pessoa
     com acesso à conta, e utilizável enquanto o cliente não clicar.
 
@@ -724,14 +734,17 @@ def _shareable_context(ctx: dict) -> dict:
     metade das saídas não é filtro.
     """
     shareable: dict[str, str] = {}
-    for name, value in (ctx or {}).items():
+    ctx = dict(ctx or {})
+    if ctx.get(_ORDER_BUTTON_VALUE_KEY) and ctx.get(_ORDER_BUTTON_FIELD):
+        ctx[_ORDER_BUTTON_FIELD] = ctx[_ORDER_BUTTON_VALUE_KEY]
+    for name, value in ctx.items():
         if (
             name in _FIELD_DENYLIST
             or name.endswith(_PUBLIC_SUFFIX)
             or not isinstance(value, (str, int, float))
         ):
             continue
-        safe = _safe_field_value(name, value, ctx or {})
+        safe = _safe_field_value(name, value, ctx)
         if safe is None:
             continue
         text = str(safe).strip()

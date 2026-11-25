@@ -48,8 +48,13 @@ def build_order_conversation(
     *,
     channel_ref: str | None = None,
     is_debug: bool = False,
+    access_mode: str = "full",
 ) -> RemoteConversationProjection:
-    """Build a conversation projection from canonical order projections."""
+    """Build a conversation projection from canonical order projections.
+
+    ``access_mode="capability"``: aberto só pelo link do aviso (DEV-2026-093); as
+    ações que pedem a entrada saem, como na tela do acompanhamento.
+    """
 
     interaction = InteractionContext.from_order(
         order,
@@ -58,14 +63,18 @@ def build_order_conversation(
     )
     resolved_channel_ref = interaction.channel_ref or "web"
     policy = resolve_channel_policy(resolved_channel_ref)
-    tracking = order_tracking.build_tracking(order, is_debug=is_debug)
+    tracking = order_tracking.build_tracking(order, is_debug=is_debug, access_mode=access_mode)
     promise = tracking.promise
     # Uma verdade: o pagamento é um degrau do próprio acompanhamento. Quando a
     # bola é do cliente pagar, a "fonte" continua a se chamar payment (para a
     # superfície conversacional saber destacar), mas o link é o do acompanhamento.
     has_payment_action = _has_payment_action(promise)
     source_projection = "payment" if has_payment_action else "tracking"
-    tracking_url = f"/pedido/{order.ref}/"
+    # O link da conversa é o do aviso: abre ESTE pedido sem pedir a entrada de novo,
+    # e não abre a conta (capacidade de pedido, DEV-2026-093).
+    from shopman.shop.services import order_view_link
+
+    tracking_url = order_view_link.path_for(order)
     payment_url = tracking_url if has_payment_action else None
     tracking_actions = _actions(getattr(tracking, "actions", ()))
 

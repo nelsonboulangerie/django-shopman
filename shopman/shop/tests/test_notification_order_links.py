@@ -1,10 +1,10 @@
-"""Os links que o aviso de pedido leva: os COMUNS do pedido, sem credencial (OC-01).
+"""Os links que o aviso de pedido leva: sem credencial de login (OC-01), com a capacidade do pedido.
 
-Decisão D5 do dono (23/11/2026): o aviso leva ``/pedido/<ref>``, nunca um link de
-entrada (``/a?t=<token>``). Mensagem se encaminha, e um link que entrasse na conta
-entregaria a conta a quem recebesse o encaminhamento. Quem é o dono abre direto no
-próprio celular (sessão ou dispositivo confiável); em outro dispositivo, a loja pede
-a entrada e volta para o mesmo pedido.
+Decisão D5 do dono (23/11/2026): o aviso nunca leva link de entrada (``/a?t=<token>``).
+Mensagem se encaminha, e um link que entrasse na conta entregaria a conta a quem
+recebesse o encaminhamento. Atualização de 25/11/2026 (DEV-2026-093): o aviso leva
+``/pedido/<ref>~<selo>``, a capacidade DESTE pedido, que abre o pedido no navegador do
+WhatsApp sem pedir a entrada de novo e não abre a conta (``order_view_link``).
 
 A prova de ponta a ponta (texto renderizado de todo aviso, encaminhado, dono,
 outro dispositivo) mora em
@@ -17,6 +17,12 @@ from unittest.mock import MagicMock, patch
 from uuid import UUID
 
 CUSTOMER_UUID = UUID("12345678-1234-5678-1234-567812345678")
+
+
+def _link(order) -> str:
+    from shopman.shop.services import order_view_link
+
+    return f"https://shop.test/pedido/{order_view_link.link_ref(order)}"
 
 
 def _order(*, ref: str = "ORD-001", customer: dict | None = None, payment: dict | None = None):
@@ -34,7 +40,7 @@ def _order(*, ref: str = "ORD-001", customer: dict | None = None, payment: dict 
 
 
 class TestNotificationContextLinks:
-    def test_cliente_identificado_recebe_o_link_comum_e_nada_e_cunhado(self, settings):
+    def test_cliente_identificado_recebe_o_link_do_pedido_e_nada_e_cunhado(self, settings):
         """O pedido com ``customer.uuid`` era o que cunhava link de entrada. Não cunha mais."""
         settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.test"
         from shopman.shop.services.notification import _build_context
@@ -44,8 +50,8 @@ class TestNotificationContextLinks:
             ctx = _build_context(order, {"order_ref": "ORD-001"}, "order_accepted")
 
         assert not create.called, "aviso de pedido não cunha link de entrada"
-        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-001"
-        assert ctx["payment_url"] == "https://shop.test/pedido/ORD-001"
+        assert ctx["tracking_url"] == _link(order)
+        assert ctx["payment_url"] == _link(order)
         assert ctx["reorder_url"] == "https://shop.test/conta/pedidos"
 
     def test_pedido_sem_cliente_identificado_recebe_os_mesmos_links(self, settings):
@@ -55,12 +61,14 @@ class TestNotificationContextLinks:
 
         order = _order(ref="ORD-002", customer={"name": "Bob"})
         ctx = _build_context(order, {"order_ref": "ORD-002"}, "order_accepted")
-        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-002"
-        assert ctx["payment_url"] == "https://shop.test/pedido/ORD-002"
+        assert ctx["tracking_url"] == _link(order)
+        assert ctx["payment_url"] == _link(order)
         assert ctx["reorder_url"] == "https://shop.test/conta/pedidos"
 
-        ctx = _build_context(_order(ref="ORD-003"), {}, "order_accepted")
-        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-003"
+        order = _order(ref="ORD-003")
+        ctx = _build_context(order, {}, "order_accepted")
+        assert ctx["tracking_url"] == _link(order)
+        assert "~" in ctx["tracking_url"]
 
     def test_pagar_e_a_tela_do_pedido_e_o_pix_vai_no_texto(self, settings):
         settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.test"
@@ -72,10 +80,10 @@ class TestNotificationContextLinks:
             payment={"method": "pix", "copy_paste": "000201PIX", "checkout_url": ""},
         )
         ctx = _build_context(order, {"order_ref": "ORD-PIX"}, "payment_requested")
-        assert ctx["payment_url"] == "https://shop.test/pedido/ORD-PIX"
+        assert ctx["payment_url"] == _link(order)
         assert ctx["pix_suffix"] == " Código PIX: 000201PIX"
 
-    def test_uuid_torto_no_pedido_ainda_entrega_o_link_comum(self, settings):
+    def test_uuid_torto_no_pedido_ainda_entrega_o_link_do_pedido(self, settings):
         """Garantia herdada do antigo bloco de link de entrada: dado torto no pedido nunca
         vira ``{tracking_url}`` cru na tela do cliente. Agora o uuid nem é lido."""
         settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.test"
@@ -83,8 +91,8 @@ class TestNotificationContextLinks:
 
         order = _order(ref="ORD-TORTO", customer={"uuid": "nao-e-um-uuid", "name": "Ana"})
         ctx = _build_context(order, {"order_ref": "ORD-TORTO"}, "order_received")
-        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-TORTO"
-        assert ctx["payment_url"] == "https://shop.test/pedido/ORD-TORTO"
+        assert ctx["tracking_url"] == _link(order)
+        assert ctx["payment_url"] == _link(order)
         assert ctx["reorder_url"] == "https://shop.test/conta/pedidos"
 
     def test_cofre_de_token_fora_do_ar_nao_afeta_o_aviso(self, settings):
@@ -101,8 +109,8 @@ class TestNotificationContextLinks:
             ctx = _build_context(order, {"order_ref": "ORD-COFRE"}, "order_received")
 
         assert not create.called
-        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-COFRE"
-        assert ctx["payment_url"] == "https://shop.test/pedido/ORD-COFRE"
+        assert ctx["tracking_url"] == _link(order)
+        assert ctx["payment_url"] == _link(order)
 
     def test_nao_ha_gemea_publica_dos_links_do_pedido(self, settings):
         """O link do aviso JÁ é o comum: não existe chave ``<nome>_public`` para ele."""

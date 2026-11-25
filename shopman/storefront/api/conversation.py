@@ -68,11 +68,11 @@ class OrderConversationView(APIView):
             return _rate_limited_response()
 
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response({"detail": "Pedido não encontrado."}, status=404)
 
         channel_ref = str(request.query_params.get("channel_ref") or order.channel_ref or "whatsapp").strip()
-        projection = build_order_conversation(order, channel_ref=channel_ref)
+        projection = build_order_conversation(order, channel_ref=channel_ref, access_mode=access_mode)
         serializer = RemoteConversationSerializer(projection_data(projection))
         return Response(serializer.data)

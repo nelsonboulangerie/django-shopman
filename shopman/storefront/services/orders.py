@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from shopman.shop.services import customer_orders
 
+ACCESS_FULL = customer_orders.ACCESS_FULL
+ACCESS_CAPABILITY = customer_orders.ACCESS_CAPABILITY
+
 
 def get_order(ref: str):
     return customer_orders.get_order(ref)
@@ -15,6 +18,14 @@ def get_accessible_order(request, ref: str):
 
 def grant_order_access(request, order_ref: str) -> None:
     customer_orders.grant_order_access(request, order_ref)
+
+
+def get_accessible_order_with_mode(request, ref: str):
+    return customer_orders.get_accessible_order_with_mode(request, ref)
+
+
+def grant_order_capability(request, ref: str, cap: str) -> bool:
+    return customer_orders.grant_order_capability(request, ref, cap)
 
 
 def customer_can_access_order(customer_info, order) -> bool:
