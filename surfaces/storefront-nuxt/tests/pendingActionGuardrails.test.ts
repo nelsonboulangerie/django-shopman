@@ -162,7 +162,7 @@ describe('clique nunca inerte (loja)', () => {
   })
 
   it('a raiz está ligada: UiButton pendente por padrão, barra de rota, link marcado e quadro antes da troca', () => {
-    const button = read('app/components/ui/Button.vue')
+    const button = read('app/components/Ui/Button.vue')
     expect(button).toContain('autoPending.value = true')
     expect(button).toMatch(/:aria-busy="busy \|\| undefined"/)
     expect(read('app/app.vue')).toContain('<NavigationFeedback />')
