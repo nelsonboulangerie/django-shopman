@@ -45,6 +45,51 @@ describe("OperatorLoadingFeedback", () => {
     expect(mounted.get("[role=\"status\"]").text()).toContain("Carregando…");
   });
 
+  // DEV-2026-094: a espera começa no início da navegação (antes do middleware) e o
+  // link tocado fica marcado no mesmo instante, até a página chegar.
+  it("começa no page:loading:start e marca o link tocado até o fim", async () => {
+    mounted = await mountSuspended(OperatorLoadingFeedback);
+    const nuxtApp = useNuxtApp();
+    const link = document.createElement("a");
+    link.href = "/outra-tela";
+    link.addEventListener("click", (event) => event.preventDefault());
+    document.body.append(link);
+    vi.useFakeTimers();
+
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    expect(link.getAttribute("aria-busy")).toBe("true");
+    expect(link.hasAttribute("data-navigation-pending")).toBe(true);
+
+    await nuxtApp.callHook("page:loading:start");
+    vi.advanceTimersByTime(200);
+    advanceToNextPaint();
+    await nextTick();
+    expect(mounted.find("[data-operator-loading-overlay]").exists()).toBe(true);
+
+    await nuxtApp.callHook("page:loading:end");
+    vi.advanceTimersByTime(400);
+    await nextTick();
+    expect(mounted.find("[data-operator-loading-overlay]").exists()).toBe(false);
+    expect(link.hasAttribute("aria-busy")).toBe(false);
+    expect(link.hasAttribute("data-navigation-pending")).toBe(false);
+  });
+
+  it("o atalho para outro app começa a espera no toque", async () => {
+    mounted = await mountSuspended(OperatorLoadingFeedback);
+    const link = document.createElement("a");
+    link.href = "https://pdv.exemplo.test/";
+    link.addEventListener("click", (event) => event.preventDefault());
+    document.body.append(link);
+    vi.useFakeTimers();
+
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    expect(link.getAttribute("aria-busy")).toBe("true");
+    vi.advanceTimersByTime(200);
+    advanceToNextPaint();
+    await nextTick();
+    expect(mounted.find("[data-operator-loading-overlay]").exists()).toBe(true);
+  });
+
   it("não mostra nada numa navegação que termina em até 200ms", async () => {
     mounted = await mountSuspended(OperatorLoadingFeedback);
     const nuxtApp = useNuxtApp();
