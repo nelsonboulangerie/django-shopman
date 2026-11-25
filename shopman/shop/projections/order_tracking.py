@@ -354,6 +354,18 @@ class TrackingData:
     tax_id: str = ""
     customer_notes: str = ""
     delivery_address: str = ""
+    # Como esta tela foi aberta (DEV-2026-093): ``full`` (quem fez o pedido, a conta
+    # dona, staff) ou ``capability`` (só o link do aviso). Na capacidade, o endereço
+    # sai abreviado e as ações que pedem entrada saem da lista; ``login_required_for``
+    # diz quais saíram, para a tela convidar a entrar no lugar delas.
+    access_mode: str = "full"
+    login_required_for: tuple[str, ...] = ()
+
+
+#: O que o link do aviso NÃO faz sem entrar (DEV-2026-093): cancelar, pedir de novo,
+#: avaliar e confirmar a vaga da fila. Pagar, falar com a loja e confirmar o
+#: recebimento continuam. A API recusa as mesmas no servidor (``tracking.py``).
+CAPABILITY_WITHHELD_ACTIONS = ("cancel_order", "reorder", "rate_order")
 
 
 @dataclass(frozen=True)
@@ -406,8 +418,57 @@ def as_customer_sees(order):
     return held
 
 
-def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
-    """Build the full tracking data projection for an order."""
+def build_tracking(order, *, is_debug: bool = False, access_mode: str = "full") -> TrackingData:
+    """Build the full tracking data projection for an order.
+
+    ``access_mode="capability"`` (aberto só pelo link do aviso, DEV-2026-093): o
+    endereço de entrega sai abreviado (rua e bairro) e cancelar, pedir de novo e
+    avaliar saem das ações. Decidido aqui, no servidor; a tela só desenha.
+    """
+    data = _build_tracking(order, is_debug=is_debug)
+    if access_mode != customer_orders.ACCESS_CAPABILITY:
+        return data
+    return _as_capability_view(order, data)
+
+
+def _as_capability_view(order, data: TrackingData) -> TrackingData:
+    withheld = [action.ref for action in data.actions if action.ref in CAPABILITY_WITHHELD_ACTIONS]
+    withheld += [
+        action.ref for action in data.promise.actions
+        if action.ref in CAPABILITY_WITHHELD_ACTIONS and action.ref not in withheld
+    ]
+    if data.waitlist_state == "confirming":
+        withheld.append("waitlist_confirm")
+    return replace(
+        data,
+        actions=tuple(a for a in data.actions if a.ref not in CAPABILITY_WITHHELD_ACTIONS),
+        promise=replace(
+            data.promise,
+            actions=tuple(a for a in data.promise.actions if a.ref not in CAPABILITY_WITHHELD_ACTIONS),
+        ),
+        delivery_address=abbreviated_delivery_address(order) if data.delivery_address else "",
+        access_mode=customer_orders.ACCESS_CAPABILITY,
+        login_required_for=tuple(withheld),
+    )
+
+
+def abbreviated_delivery_address(order) -> str:
+    """Rua e bairro, sem número nem complemento: o que a tela aberta pelo link mostra.
+
+    Só do endereço estruturado: o texto livre não separa o número com segurança, e
+    sem estrutura a tela não mostra endereço nenhum (o "Entrega" continua).
+    """
+    structured = (order.data or {}).get("delivery_address_structured") or {}
+    if not isinstance(structured, dict):
+        return ""
+    parts = [
+        str(structured.get("route") or "").strip(),
+        str(structured.get("neighborhood") or "").strip(),
+    ]
+    return ", ".join(part for part in parts if part)
+
+
+def _build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     from shopman.shop.services import order_composition
 
     order = as_customer_sees(order)

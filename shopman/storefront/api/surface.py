@@ -835,13 +835,19 @@ class OrderReorderView(APIView):
             )
 
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Exception:
             logger.debug("surface.post degraded; using fallback", exc_info=True)
             return Response({"detail": "Pedido não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # O link do aviso vê o pedido, mas não mexe na sacola (DEV-2026-093).
+        if access_mode != order_service.ACCESS_FULL:
+            from .tracking import login_required_response
+
+            return login_required_response(order.ref, "reorder")
 
         mode = (request.data.get("mode") if hasattr(request, "data") else None) or ""
         mode = str(mode).strip().lower()

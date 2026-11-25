@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from shopman.shop.projections.types import Action
-from shopman.shop.services import conversation
+from shopman.shop.services import conversation, order_view_link
 
 
 def _channel_policy(**overrides):
@@ -53,7 +53,7 @@ def test_conversation_uses_tracking_promise_without_creating_order_status(monkey
             priority="danger",
         ),),
     )
-    monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False: tracking)
+    monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False, access_mode="full": tracking)
     monkeypatch.setattr(conversation, "resolve_channel_policy", lambda channel_ref: _channel_policy())
 
     projection = conversation.build_order_conversation(order)
@@ -64,7 +64,9 @@ def test_conversation_uses_tracking_promise_without_creating_order_status(monkey
     assert projection.actions[0].ref == "cancel_order"
     assert projection.actions[0].kind == "mutation"
     assert projection.items_summary == ("2x Croissant",)
-    assert projection.tracking_url == "/pedido/ORD-CHAT-1/"
+    # O link da conversa leva a capacidade do pedido (DEV-2026-093).
+    assert projection.tracking_url == order_view_link.path_for(order)
+    assert projection.tracking_url.startswith("/pedido/ORD-CHAT-1~")
     assert projection.payment_url is None
 
 
@@ -102,7 +104,7 @@ def test_conversation_marks_payment_when_promise_carries_customer_payment_action
             priority="danger",
         ),),
     )
-    monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False: tracking)
+    monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False, access_mode="full": tracking)
     monkeypatch.setattr(
         conversation,
         "resolve_channel_policy",
@@ -117,7 +119,7 @@ def test_conversation_marks_payment_when_promise_carries_customer_payment_action
     assert projection.actions[0].ref == "copy_pix"
     assert projection.actions[1].ref == "cancel_order"
     # O link do pagamento agora é o do acompanhamento — sem rota /pagamento.
-    assert projection.payment_url == "/pedido/ORD-CHAT-2/"
+    assert projection.payment_url == order_view_link.path_for(order)
     assert projection.requires_payment_gate is True
 
 
@@ -137,7 +139,7 @@ def test_conversation_respects_channel_policy_cancel_gate(monkeypatch):
             priority="danger",
         ),),
     )
-    monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False: tracking)
+    monkeypatch.setattr(conversation.order_tracking, "build_tracking", lambda order, is_debug=False, access_mode="full": tracking)
     monkeypatch.setattr(
         conversation,
         "resolve_channel_policy",

@@ -569,7 +569,10 @@ def test_place_order_creates_the_order_and_sends_the_pix_apart(ctx, conversation
     recovered = tools.place_order(ctx, token, "pix", "")
     assert recovered["payment"]["pix_code_prepared_separately"] is True
     assert ctx.extra_replies == [order.data["payment"]["copy_paste"]]
-    assert placed["tracking_url"].endswith(f"/pedido/{order.ref}/")
+    from shopman.shop.services import order_view_link
+
+    # O link da Nice abre o pedido no navegador do WhatsApp sem pedir a entrada (DEV-2026-093).
+    assert placed["tracking_url"].endswith(order_view_link.path_for(order))
 
     conversation.refresh_from_db()
     assert conversation.session_key == "" and conversation.quote["token"] == token

@@ -341,6 +341,20 @@ class TrackingDiscountLineProjection:
 
 
 @dataclass(frozen=True)
+class TrackingLoginInviteProjection:
+    """O convite para entrar no lugar do que o link do aviso não faz (DEV-2026-093).
+
+    A tela aberta só pelo link vê o pedido, paga, fala com a loja e confirma o
+    recebimento. Cancelar, avaliar e pedir de novo pedem a entrada: no lugar desses
+    botões, a frase diz o que falta e o botão leva a ``/entrar`` e volta ao pedido.
+    """
+
+    message: str
+    cta_label: str
+    href: str
+
+
+@dataclass(frozen=True)
 class TrackingGiftProjection:
     """O presente como o cliente informou: para quem e o bilhete."""
 
@@ -423,6 +437,11 @@ class OrderTrackingProjection:
     tax_id_display: str = ""
     customer_notes: str = ""
     delivery_address: str = ""
+    # ``full`` ou ``capability`` (aberto só pelo link do aviso). Na capacidade, o
+    # endereço já vem abreviado e o convite para entrar ocupa o lugar das ações que
+    # pedem a entrada (DEV-2026-093).
+    access_mode: str = "full"
+    login_invite: TrackingLoginInviteProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -443,11 +462,14 @@ class OrderTrackingStatusProjection:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def build_order_tracking(order) -> OrderTrackingProjection:
-    """Build the full tracking page projection for an Order."""
+def build_order_tracking(order, *, access_mode: str = "full") -> OrderTrackingProjection:
+    """Build the full tracking page projection for an Order.
+
+    ``access_mode="capability"``: aberto só pelo link do aviso (DEV-2026-093).
+    """
     from django.conf import settings
 
-    return present_tracking(build_tracking(order, is_debug=settings.DEBUG))
+    return present_tracking(build_tracking(order, is_debug=settings.DEBUG, access_mode=access_mode))
 
 
 def build_order_tracking_status(order) -> OrderTrackingStatusProjection:
@@ -566,6 +588,35 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         tax_id_display=_masked_tax_id(data.tax_id),
         customer_notes=data.customer_notes,
         delivery_address=data.delivery_address,
+        access_mode=data.access_mode,
+        login_invite=_login_invite(data, copy=copy),
+    )
+
+
+#: O gesto de cada ação retida, como a frase do convite o diz.
+_LOGIN_INVITE_GESTURES = {
+    "cancel_order": "cancelar o pedido",
+    "rate_order": "avaliar",
+    "reorder": "pedir de novo",
+    "waitlist_confirm": "confirmar a vaga",
+}
+
+
+def _login_invite(data: TrackingData, *, copy: CopyCatalog) -> TrackingLoginInviteProjection | None:
+    """O convite para entrar, só quando o link do aviso reteve alguma ação."""
+    gestures = [_LOGIN_INVITE_GESTURES[ref] for ref in data.login_required_for if ref in _LOGIN_INVITE_GESTURES]
+    if not gestures:
+        return None
+    joined = gestures[0] if len(gestures) == 1 else ", ".join(gestures[:-1]) + " ou " + gestures[-1]
+    template = copy.message("TRACKING_LOGIN_INVITE", "Para {gestures}, entre com seu telefone.")
+    try:
+        message = template.format(gestures=joined)
+    except (KeyError, IndexError, ValueError):
+        message = f"Para {joined}, entre com seu telefone."
+    return TrackingLoginInviteProjection(
+        message=message,
+        cta_label=copy.title("TRACKING_LOGIN_INVITE", "Entrar com meu telefone"),
+        href=f"/entrar?{urlencode({'next': f'/pedido/{data.order_ref}'})}",
     )
 
 

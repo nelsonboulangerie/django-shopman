@@ -1448,6 +1448,11 @@ export interface TrackingResponse {
   tax_id_display?: string
   customer_notes?: string
   delivery_address?: string
+  // Como a tela foi aberta (DEV-2026-093): `full` ou `capability` (só o link do
+  // aviso). Na capacidade o servidor já abreviou o endereço e tirou cancelar,
+  // avaliar e pedir de novo; `login_invite` é o convite que ocupa o lugar deles.
+  access_mode?: 'full' | 'capability'
+  login_invite?: { message: string, cta_label: string, href: string } | null
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string

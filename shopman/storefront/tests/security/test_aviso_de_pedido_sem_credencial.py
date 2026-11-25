@@ -1,12 +1,19 @@
-"""OC-01 · aviso de pedido não carrega credencial (decisão D5 do dono, invariante X6).
+"""OC-01 · aviso de pedido não carrega credencial de login (decisão D5 do dono, invariante X6).
 
 Antes, todo aviso de pedido de cliente identificado levava um link de entrada
 (``/a?t=<token>``) cunhado com ``source="manychat"``. Trocado, ele dava identidade
 forte e confiança de dispositivo por 180 dias: um aviso encaminhado e aberto a tempo
-entregava a conta. Agora o aviso leva o link COMUM do pedido (``/pedido/<ref>``):
+entregava a conta.
 
-- o texto renderizado de TODO aviso de pedido, em todo canal, não tem token;
-- quem recebe o aviso encaminhado não abre a conta nem o pedido;
+Atualização de 25/11/2026 (DEV-2026-093): o link COMUM obrigava quem tocava no aviso
+dentro do WhatsApp a entrar de novo ("Tem que ter uma forma de resolver isso!!!", o
+dono). O aviso passa a levar a CAPACIDADE DO PEDIDO (``/pedido/<ref>~<selo>``), que
+abre aquele pedido e nada mais. O espírito fica: aviso NUNCA leva credencial de login
+ou de conta.
+
+- o texto renderizado de TODO aviso de pedido, em todo canal, não tem ``/a?t=`` nem
+  token na query, e não cunha ``AccessLink``; o único selo é o do próprio pedido;
+- quem recebe o aviso encaminhado vê aquele pedido, mas não entra na conta;
 - o dono, no próprio celular (sessão ou dispositivo confiável), abre direto;
 - em outro dispositivo, a entrada pelo WhatsApp volta para o mesmo pedido, e o link
   que o PRÓPRIO cliente pediu continua confiando no dispositivo como antes.
@@ -26,6 +33,7 @@ from shopman.orderman.models import Order
 from shopman.shop.adapters import notification_email, notification_manychat, notification_sms
 from shopman.shop.adapters._notification_templates import derive_context, render_message, render_template
 from shopman.shop.services import notification as notification_service
+from shopman.shop.services import order_view_link
 from shopman.storefront.tests.identity_fakes import proven
 
 from .conftest import login_as_customer
@@ -42,6 +50,9 @@ _ORDER_EVENT_PREFIXES = ("order_", "payment_", "waitlist_", "preorder_", "loyalt
 
 #: Qualquer forma de link de entrada: a rota ``/a?t=`` e o token na query.
 _CREDENCIAL = re.compile(r"/a\?t=|[?&]t=")
+
+#: Todo link de pedido que um aviso leva: ``/pedido/<segmento>``.
+_LINK_DE_PEDIDO = re.compile(r"/pedido/([^\s/?#\"'<>)]+)")
 
 WA_SETTINGS = {"number": "554333231997", "ttl_seconds": 600}
 ACCESS_SETTINGS = {
@@ -145,29 +156,48 @@ def test_todo_aviso_de_pedido_renderizado_nao_carrega_credencial(pedido):
     assert not com_credencial, f"aviso com link de entrada (token): {com_credencial}"
     assert not AccessLink.objects.exists(), "montar aviso de pedido não cunha link de entrada"
 
+    # O único selo que um aviso leva é a capacidade DESTE pedido, nada além dela.
+    esperado = order_view_link.link_ref(pedido)
+    segmentos = {seg for texto in textos.values() for seg in _LINK_DE_PEDIDO.findall(texto)}
+    assert segmentos, "a varredura tem de achar links de pedido"
+    assert segmentos == {esperado}, f"link de pedido fora da capacidade do pedido: {segmentos - {esperado}}"
 
-def test_links_do_aviso_sao_os_comuns_do_pedido(pedido):
+
+def test_links_do_aviso_levam_so_a_capacidade_do_pedido(pedido):
     contexto = notification_service._build_context(pedido, {"order_ref": REF}, "order_ready")
+    link = f"{LOJA}/pedido/{order_view_link.link_ref(pedido)}"
 
-    assert contexto["tracking_url"] == f"{LOJA}/pedido/{REF}"
-    assert contexto["payment_url"] == f"{LOJA}/pedido/{REF}"
+    assert contexto["tracking_url"] == link
+    assert contexto["payment_url"] == link
+    assert contexto["order_link_ref"] == order_view_link.link_ref(pedido)
     assert contexto["reorder_url"] == f"{LOJA}/conta/pedidos"
 
 
-# ── Encaminhado: quem recebe não abre conta nem pedido ───────────────────────
+# ── Encaminhado: quem recebe vê o pedido, não a conta ────────────────────────
 
 
-def test_aviso_encaminhado_nao_abre_conta_nem_pedido(pedido, attacker):
+def test_aviso_encaminhado_abre_o_pedido_mas_nao_a_conta(pedido, attacker):
     contexto = notification_service._build_context(pedido, {"order_ref": REF}, "payment_requested")
     for chave in ("tracking_url", "payment_url", "reorder_url"):
         assert not _CREDENCIAL.search(contexto[chave]), chave
-    assert not AccessLink.objects.exists(), "não há token nenhum para o encaminhado trocar"
+    assert not AccessLink.objects.exists(), "não há token de entrada nenhum para o encaminhado trocar"
 
-    # O link comum abre `/pedido/<ref>`, que pergunta ao Django por estes endpoints.
+    # Sem o selo, o pedido não abre.
     assert attacker.get(f"/api/v1/tracking/{REF}/").status_code == 404
     assert attacker.get(f"/api/v1/payment/{REF}/").status_code == 404
+
+    # Com o selo do aviso, abre ESTE pedido, aberto só pela capacidade.
+    _, cap = order_view_link.split_link_ref(contexto["order_link_ref"])
+    troca = attacker.post(f"/api/v1/tracking/{REF}/access/", data={"cap": cap}, content_type="application/json")
+    assert troca.status_code == 200
+    leitura = attacker.get(f"/api/v1/tracking/{REF}/")
+    assert leitura.status_code == 200
+    assert leitura.json()["access_mode"] == "capability"
+
+    # E não entra na conta.
     sessao = attacker.get("/api/v1/auth/session/").json()
     assert sessao["is_authenticated"] is False
+    assert attacker.get("/api/v1/account/orders/").status_code in {401, 403}
 
 
 # ── Dono no próprio celular: abre direto ─────────────────────────────────────

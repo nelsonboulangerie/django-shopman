@@ -122,6 +122,27 @@ def _storefront_ref() -> str:
     return settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 
 
+def _order_page_path(order) -> str:
+    """A página do pedido com a capacidade dele (``/pedido/<ref>~<selo>``, DEV-2026-093).
+
+    O link que a Nice manda abre o pedido no navegador do WhatsApp sem pedir a entrada
+    de novo; não abre a conta nem outro pedido.
+    """
+    from shopman.shop.services import order_view_link
+
+    return order_view_link.path_for(order)
+
+
+def _order_page_path_for_ref(ref: str) -> str:
+    """Idem, a partir do número; pedido que não existe fica com a página comum."""
+    from shopman.shop.services.customer_orders import find_order
+
+    order = find_order(str(ref or ""))
+    if order is None:
+        return f"/pedido/{ref}/"
+    return _order_page_path(order)
+
+
 def _storefront_base_url() -> str:
     return (getattr(settings, "SHOPMAN_STOREFRONT_BASE_URL", "") or "").rstrip("/")
 
@@ -1865,7 +1886,7 @@ def _placed_result(ctx, order_ref, payment_method, *, replayed=False):
         "outcome": "already_applied" if replayed else ("partial" if pending else "applied"),
         "order_ref": order.ref, "resource_ref": order.ref, "status": order.status,
         "total": _money(order.total_q), "items_count": order.items.count(),
-        "tracking_url": f"{_storefront_base_url()}/pedido/{order.ref}/",
+        "tracking_url": f"{_storefront_base_url()}{_order_page_path(order)}",
         "pending_effects": ["payment_setup"] if pending else [],
         "payment": {"method": payment_method, "pix_code_prepared_separately": bool(pix_code),
             "checkout_url": str(payment.get("checkout_url") or ""),
@@ -2320,6 +2341,7 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
         # Só a sacola viaja com a autoridade de sacola; um acesso à conta, nunca.
         return _error("authority_unavailable", "O atendimento automático está pausado. Suas escolhas foram preservadas.")
     path = WEB_DESTINATIONS[destination]
+    public_path = path
     if destination == "order":
         if not order_ref:
             available = order_status(ctx)
@@ -2331,8 +2353,13 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
             return selected
         if not selected.get("orders"):
             return _error("not_found", "Não encontrei esse pedido para este acesso.")
-        path = f"/pedido/{selected['orders'][0]['order_ref']}/"
-    public_url = f"{_storefront_base_url()}{path}"
+        selected_ref = selected['orders'][0]['order_ref']
+        path = f"/pedido/{selected_ref}/"
+        # Sem a entrada, o link leva a capacidade do pedido (DEV-2026-093): abre o
+        # pedido no navegador do WhatsApp e mais nada. Com a entrada, o link de acesso
+        # já entra na conta e volta ao pedido pelo caminho limpo.
+        public_path = _order_page_path_for_ref(selected_ref)
+    public_url = f"{_storefront_base_url()}{public_path}"
     info = _auth_customer_info(ctx)
     if info is None:
         return {"ok": True, "url": public_url, "logged_in": False, "cart_carried": False,

@@ -965,6 +965,17 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # O pedido aberto só pelo link do aviso (DEV-2026-093): o convite para entrar no
+    # lugar de cancelar, avaliar e pedir de novo. ``{gestures}`` é a lista do que
+    # pede a entrada ("cancelar o pedido ou avaliar"); o título é o botão.
+    "TRACKING_LOGIN_INVITE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Entrar com meu telefone",
+                message="Para {gestures}, entre com seu telefone.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_UPDATED_NOW": {
         WILDCARD: {WILDCARD: CopyEntry(title="Atualizado agora")},
     },

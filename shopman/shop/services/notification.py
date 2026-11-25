@@ -928,18 +928,25 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # que anuncia saldo sem dizer onde vê-lo é promessa sem porta.
     context["account_url"] = storefront_links.account_url()
 
-    # Os links do aviso são os COMUNS do pedido, sem credencial nenhuma (decisão D5 do
-    # dono, OC-01). Mensagem se encaminha: um link que entrasse na conta entregaria a
-    # conta a quem recebesse o encaminhamento. No celular do próprio cliente a loja já
-    # reconhece a sessão ou o dispositivo confiável e abre direto; em outro dispositivo,
-    # `/pedido/<ref>` mostra "entre com seu telefone" e volta para o mesmo pedido depois
-    # da entrada (`storefront-nuxt/app/presentation/orderAccess.ts`).
+    # Os links do aviso não levam credencial de login nem de conta (decisão D5 do dono,
+    # OC-01): mensagem se encaminha, e um link que entrasse na conta entregaria a conta
+    # a quem recebesse o encaminhamento. Desde 25/11/2026 (DEV-2026-093, atualização da
+    # D5/X6) o link leva a CAPACIDADE DO PEDIDO (`/pedido/<ref>~<selo>`,
+    # `order_view_link`): abre este pedido no navegador embutido do WhatsApp sem pedir
+    # a entrada de novo, e não abre conta, sacola, histórico nem outro pedido. Cancelar,
+    # avaliar e pedir de novo continuam pedindo a entrada.
     #
     # Acompanhar e pagar são a MESMA tela (PAYMENT-TRACKING-MERGE: o Pix e o cartão
     # vivem inline no acompanhamento, e o código Pix já vai no próprio texto do aviso).
     # Pedir de novo é o histórico da conta, o mesmo destino do botão fixo do template
     # aprovado no WhatsApp.
-    tracking_url = storefront_links.order_tracking_url(order.ref)
+    from shopman.shop.services import order_view_link
+
+    tracking_url = order_view_link.url_for(order)
+    # O valor do botão aprovado na Meta (`/pedido/{{1}}`): o ref com o selo, no mesmo
+    # segmento. O ManyChat grava ESTE valor no campo `order_ref` (que só vai em botão,
+    # nunca no corpo), sem re-submeter modelo nenhum.
+    context["order_link_ref"] = order_view_link.link_ref(order)
     context["tracking_url"] = tracking_url
     context["payment_url"] = tracking_url
     context["reorder_url"] = storefront_links.storefront_url(storefront_links.path_order_history())

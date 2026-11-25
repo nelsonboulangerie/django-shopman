@@ -19,6 +19,7 @@ import {
 } from '~/presentation/orderTracking'
 import { countdownPct, deadlineCountdown, isCountdownUrgent, remainingPhrase, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
+import { openOrderLink, splitOrderLinkParam } from '~/presentation/orderLink'
 import { isHostedCheckout, showsPaymentBlock } from '~/presentation/payment'
 import {
   canShareNatively,
@@ -28,10 +29,23 @@ import {
 import { takeCardHandoff } from '~/utils/cardHandoff'
 import { takeJustPlaced } from '~/utils/justPlaced'
 
+// A página é a mesma com ou sem o selo do link do aviso (`/pedido/<ref>~<selo>`):
+// trocar para a URL limpa não remonta a tela.
+definePageMeta({
+  key: route => `pedido-${String(route.params.ref || '').split('~')[0]}`
+})
+
 const route = useRoute()
+const router = useRouter()
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const orderRef = computed(() => String(route.params.ref || ''))
+// O parâmetro pode trazer o selo do link do aviso (DEV-2026-093); o pedido é o ref.
+const orderRef = computed(() => splitOrderLinkParam(String(route.params.ref || '')).ref)
+// Chegou pelo link do aviso: a leitura espera a troca do selo, que só acontece no
+// navegador (o cookie da sessão nasce lá). Sem isso, o servidor leria o pedido sem
+// acesso e a tela piscaria "Não encontramos este pedido" antes de abrir.
+const arrivedWithCapability = Boolean(splitOrderLinkParam(String(route.params.ref || '')).capability)
+const capabilityExchanging = ref(arrivedWithCapability)
 // Ref esmaecido no prefixo (canal/data) + cauda em destaque (o que o cliente usa).
 const refParts = computed(() => orderRefParts(orderRef.value))
 // "Conversar com a loja" já abre com o contexto do pedido — o cliente não precisa
@@ -56,13 +70,19 @@ const { performAction: performReorderAction, conflict, pending: reorderPending }
 // who can actually see this order.
 const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 
-const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
+const { data, pending, error, refresh, execute } = await useFetch<TrackingResponse>(
   () => apiPath(`/api/v1/tracking/${encodeURIComponent(orderRef.value)}/`),
-  { credentials: 'include', headers: requestHeaders, lazy: true }
+  {
+    credentials: 'include',
+    headers: requestHeaders,
+    lazy: true,
+    server: !arrivedWithCapability,
+    immediate: !arrivedWithCapability
+  }
 )
 // Só a primeira carga avisa a espera: refresh em segundo plano (SSE, poll) não
-// é espera do cliente.
-const firstLoadPending = computed(() => showsTrackingSkeleton(pending.value, Boolean(data.value)))
+// é espera do cliente. A troca do selo do link do aviso também é espera.
+const firstLoadPending = computed(() => capabilityExchanging.value || showsTrackingSkeleton(pending.value, Boolean(data.value)))
 usePageContentPending(firstLoadPending)
 
 const tracking = computed(() => data.value || null)
@@ -70,6 +90,10 @@ const errorView = computed(() => orderAccessErrorView((error.value as { statusCo
 const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${orderRef.value}`)}`)
 // Com o prazo de pagar vencido, cancelar à mão não tem mais o que fazer: o
 // pedido está sendo cancelado pelo prazo.
+// Aberto só pelo link do aviso: cancelar, avaliar e pedir de novo pedem a entrada.
+// O servidor já as tirou da lista e manda o convite que ocupa o lugar delas.
+const loginInvite = computed(() => tracking.value?.login_invite || null)
+const openedByOrderLink = computed(() => tracking.value?.access_mode === 'capability')
 const cancelAction = computed(() => paymentLapsed.value
   ? null
   : tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
@@ -149,7 +173,7 @@ const sideActionsPrimary = computed(() => trackingSideActionsPrimary({
 }))
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || cancellationContact.value || showReorderAction.value || showSupportAction.value ||
+  (cancelAction.value || loginInvite.value || cancellationContact.value || showReorderAction.value || showSupportAction.value ||
     shareHref.value || tracking.value?.pickup_info?.directions_url)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
@@ -293,10 +317,23 @@ const summaryRows = computed(() => {
 
 let tick: ReturnType<typeof setInterval> | null = null
 let poll: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
+onMounted(async () => {
   mounted.value = true
   clientNow.value = Date.now()
   tick = setInterval(() => { clientNow.value = Date.now() }, 1000)
+  if (arrivedWithCapability) {
+    await openOrderLink(String(route.params.ref || ''), {
+      exchange: async (ref, cap) => $fetch(apiPath(`/api/v1/tracking/${encodeURIComponent(ref)}/access/`), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        credentials: 'include',
+        body: { cap }
+      }),
+      replace: path => router.replace(path)
+    })
+    capabilityExchanging.value = false
+    await execute()
+  }
   void checkPayment()
   poll = setInterval(() => {
     if (tracking.value?.is_active) void refresh()
@@ -601,7 +638,7 @@ useSeoMeta({
         <!-- Yoin: fechamento do pedido. Some assim que o cliente volta. -->
         <!-- Skeleton que espelha o layout real (painel de status + abas), não um
              bloco único que não conta o que está por vir. -->
-        <div v-if="showsTrackingSkeleton(pending, Boolean(tracking))" class="shop-stack-block">
+        <div v-if="firstLoadPending" class="shop-stack-block">
           <UiSkeleton class="h-40 rounded-lg" />
           <div class="flex gap-6">
             <UiSkeleton class="h-6 w-20 rounded" />
@@ -706,7 +743,16 @@ useSeoMeta({
                   <p v-if="waitlistDeadlineLeft" class="tabular-nums font-semibold" aria-live="polite">
                     {{ waitlistDeadlineLeft }}
                   </p>
+                  <!-- Aberto só pelo link do aviso, confirmar a vaga pede a entrada. -->
                   <UiButton
+                    v-if="openedByOrderLink && loginInvite"
+                    :to="loginInvite.href"
+                    icon="lucide:log-in"
+                  >
+                    {{ loginInvite.cta_label }}
+                  </UiButton>
+                  <UiButton
+                    v-else
                     :disabled="waitlistPending"
                     :loading="waitlistPending"
                     @click="confirmWaitlistSlot"
@@ -1086,6 +1132,18 @@ useSeoMeta({
             <UiButton v-if="mounted && shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
               {{ tracking.share_cta }}
             </UiButton>
+            <!-- Aberto só pelo link do aviso: no lugar de cancelar (e de avaliar e
+                 pedir de novo), o convite para entrar, que volta a este pedido. -->
+            <div
+              v-if="loginInvite"
+              class="space-y-2 rounded-lg border border-border p-4"
+              data-login-invite
+            >
+              <p class="text-sm text-muted-foreground">{{ loginInvite.message }}</p>
+              <UiButton :to="loginInvite.href" variant="secondary" icon="lucide:log-in" class="w-full">
+                {{ loginInvite.cta_label }}
+              </UiButton>
+            </div>
             <UiAlertDialog v-if="cancelAction">
               <UiAlertDialogTrigger as-child>
                 <UiButton variant="destructive" class="w-full">{{ tracking.copy.cancel_cta }}</UiButton>

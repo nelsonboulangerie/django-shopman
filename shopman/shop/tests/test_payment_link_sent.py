@@ -154,7 +154,11 @@ def test_build_context_exporta_checkout_url_distinto_do_payment_url():
     context = _build_context(_order(), {"order_ref": "PDV-260925-A47"}, "payment_link_sent")
 
     assert context["checkout_url"] == CHECKOUT_URL
-    assert context["payment_url"] == "https://loja.test/pedido/PDV-260925-A47", "o acompanhamento segue sendo outro link"
+    from shopman.shop.services import order_view_link
+
+    # O acompanhamento é outro link: o do pedido, com a capacidade dele (DEV-2026-093).
+    assert context["payment_url"] == f"https://loja.test/pedido/{order_view_link.link_ref(_order())}"
+    assert context["payment_url"] != CHECKOUT_URL
 
 
 @override_settings(SHOPMAN_STOREFRONT_BASE_URL="https://loja.test")
@@ -578,7 +582,8 @@ def test_os_cinco_campos_chegam_ao_manychat(manychat_calls):
 
     fields = _fields(manychat_calls)
     assert MANYCHAT_FIELDS <= set(fields), MANYCHAT_FIELDS - set(fields)
-    assert fields["order_ref"] == "PDV-260925-A47"
+    # O botão `/pedido/{{1}}` leva o ref com a capacidade do pedido (DEV-2026-093).
+    assert fields["order_ref"].startswith("PDV-260925-A47~")
     assert fields["order_ref_short"] == "A47"
     assert fields["customer_name"] == "Joyce"
     assert fields["customer_name_greeting"] == ", Joyce"
