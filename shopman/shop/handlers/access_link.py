@@ -65,7 +65,7 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
     if metadata.get("released") and revoke_ref:
         # O login começou no site de um COMPUTADOR: a liberação da aba de lá está
         # esperando, e o botão da mensagem, que nomeia o navegador, é o que a solta.
-        # Ver `AccessLinkCreateView._release_origin` e `access.pop_site_release`.
+        # Ver `doorman.services.site_context.release_origin` e `access.pop_site_release`.
         from shopman.shop.services import access as access_service
         from shopman.shop.services import storefront_links
 

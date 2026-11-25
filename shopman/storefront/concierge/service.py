@@ -483,6 +483,8 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
                 # agenda o turno das mensagens sem resposta, esta inclusive).
                 verification.mark_returned(conversation.pk)
                 return IntakeResult(conversation.pk, message.pk, True, "returned")
+            if _login_while_with_team(conversation, binding, message):
+                return IntakeResult(conversation.pk, message.pk, False, "login")
             _wrote_while_with_team(conversation, binding)
         return IntakeResult(conversation.pk, message.pk, False, "handoff")
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
@@ -1032,6 +1034,29 @@ FRAMEWORK_HANDOFF_REASONS = {
 }
 
 
+def _login_while_with_team(conversation, binding, message) -> bool:
+    """Com a conversa na equipe, o pedido de entrada no site ainda é atendido pela casa.
+
+    A entrada não é conversa: a equipe não precisa fazer nada e a pessoa não pode ficar
+    sem entrar. Só a entrada que saiu (``""``) fecha aqui; a que não saiu segue para a
+    equipe como qualquer mensagem, que é quem fala com a pessoa enquanto a conversa é dela.
+    """
+    from . import login_door
+
+    if not login_door.is_login(message.text or ""):
+        return False
+    try:
+        sent = login_door.answer(conversation, binding, message.text or "") == ""
+    except Exception:
+        logger.exception("concierge.login_door.with_team_failed conversation=%s", conversation.pk)
+        return False
+    if sent:
+        ConversationMessage.objects.filter(pk=message.pk, consumed_by__isnull=True).update(
+            consumed_by=conversation.turn_fence
+        )
+    return sent
+
+
 def _cart_arrival(conversation, binding, turn_text: str):
     """A resposta da casa quando a mensagem traz a sacola da loja (OC-16); ``None`` se não traz."""
     from . import cart_arrival
@@ -1125,19 +1150,26 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
             # Cancelamento que o cliente poderia fazer pelo site: a Concierge
             # pergunta e cancela. Fora da janela, a triagem manda para a equipe (R4).
             concierge_answers = "self_cancel"
-        with meter.stage("triage"):
-            decision = triage_module.decide(
-                turn_text,
-                context=triage_module.context_for(conversation),
-                previous=previous_triage,
-                message_ids=ids,
-                commercial_authority=bool(conversation._commercial_authority),
-                contender=metrics.triage_contender_for(meter, triage_client),
-                channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
-                concierge_answers=concierge_answers,
-            )
-        meter.triage_source = decision.source
-        triage_module.record(conversation, inbound, decision)
+        from . import login_door
+
+        # O pedido de entrada no site não é conversa (dono, 25/11/2026): não passa pela
+        # triagem, que o lia como "falar com uma pessoa", e é atendido abaixo, sem modelo.
+        login_message = login_door.is_login(turn_text)
+        decision = None
+        if not login_message:
+            with meter.stage("triage"):
+                decision = triage_module.decide(
+                    turn_text,
+                    context=triage_module.context_for(conversation),
+                    previous=previous_triage,
+                    message_ids=ids,
+                    commercial_authority=bool(conversation._commercial_authority),
+                    contender=metrics.triage_contender_for(meter, triage_client),
+                    channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
+                    concierge_answers=concierge_answers,
+                )
+            meter.triage_source = decision.source
+            triage_module.record(conversation, inbound, decision)
         result.triage = decision
         from . import intents as intents_module
 
@@ -1170,6 +1202,23 @@ def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, inten
                 reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
             )
             result.fallback = "turn_limit"
+        elif login_message:
+            login = login_door.answer(conversation, binding, turn_text)
+            if not login:
+                # A entrada saiu pela casa (a mensagem do link de acesso, com o botão): a Nice
+                # não responde por cima. O turno só consome a mensagem, como o do motor.
+                meter.layer = metrics.LAYER_CONTEXT
+                with transaction.atomic():
+                    Conversation.objects.select_for_update().get(pk=conversation.pk)
+                    assert_turn_authority(conversation, for_mutation=False)
+                    ConversationMessage.objects.filter(
+                        pk__in=ids, binding=binding, consumed_by__isnull=True
+                    ).update(consumed_by=conversation.turn_fence)
+                    Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=0)
+                result.processed_message_ids = ids
+                result.replies = []
+                return result
+            outcome = TurnOutcome(reply_text=login, layer=metrics.LAYER_CONTEXT)
         elif (arrival := _cart_arrival(conversation, binding, turn_text)) is not None:
             # A sacola da loja pelo código NB de "Continuar pelo WhatsApp" (OC-16): o
             # aceite é do serviço de transferência, e a frase é da casa, sem modelo.
