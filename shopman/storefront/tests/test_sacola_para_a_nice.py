@@ -319,11 +319,16 @@ def test_with_a_cart_in_the_conversation_the_items_join_it_and_the_same_item_sum
 
 
 def test_the_login_message_and_order_refs_are_not_this_door(conversation, outbox, bridge):
+    from shopman.doorman.models import AccessLink
     from shopman.doorman.services.link_state import pop_state, store_state
 
     code = store_state({"cart_session_key": "abc"})
     _turn(conversation, f"Olá! Quero entrar no site da Nelson Boulangerie (ref. {code})")
-    assert pop_state(code) == {"cart_session_key": "abc"}  # o login segue com o estado dele
+    # A mensagem de entrada é da porta do login (``login_door``, 25/11/2026): o estado vai
+    # inteiro para o link de acesso, e esta porta, a da sacola, não o toca.
+    assert pop_state(code) is None
+    assert AccessLink.objects.get().metadata["cart_session_key"] == "abc"
+    assert outbox.sent == []
 
     reply = _turn(conversation, "Cadê o pedido NB-261003-M63?")
     assert "sacola do site" not in reply

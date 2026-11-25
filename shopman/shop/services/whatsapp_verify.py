@@ -138,7 +138,7 @@ def start_access_link(
 
     state: dict = {}
     # A sessão que apertou o botão, só quando ela é um COMPUTADOR: a mensagem deixa a
-    # liberação esperando por ela (``AccessLinkCreateView._release_origin``) e o botão
+    # liberação esperando por ela (``doorman.services.site_context.release_origin``) e o botão
     # "Liberar o Chrome no Windows" a solta. Impressão digital, nunca a chave. No
     # celular não há origem a liberar: a entrada acontece no navegador que o botão
     # "Voltar à loja" abrir (``site_return``), nunca noutra aba.
