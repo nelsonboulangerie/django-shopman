@@ -1902,12 +1902,16 @@ Contrato:
   trava a B), para o estado que outra peça da tela precisa ler e para o `<button>`
   nativo. Desligar o automático (`:loading-auto="false"`) só com motivo, na lista da
   trava.
-- **Navegação também responde no toque**: o `OperatorAppRoot` monta a barra de rota
-  (`NuxtLoadingIndicator`, sem limiar, na cor da casa) e o `OperatorLoadingFeedback`
-  marca o link tocado (`aria-busy` + `data-navigation-pending`, esmaecido pelo
-  `operator-base.css`) e começa a espera no `page:loading:start`, antes do middleware.
-  O atalho que abre outro app (origem diferente) ganha a marca, a barra e o modal no
-  toque: no PWA não há barra do navegador para dizer que a página está vindo.
+- **Navegação também responde no toque**: o `OperatorLoadingFeedback` (montado pelo
+  `OperatorAppRoot`) começa a espera no `page:loading:start`, antes do middleware, com
+  uma barra de rota indeterminada no topo (só `transform`, sem fade: o compositor a
+  mantém andando mesmo com a thread presa), e marca o link tocado (`aria-busy` +
+  `data-navigation-pending`, esmaecido pelo `operator-base.css`). O atalho que abre
+  outro app (origem diferente) ganha a marca, a barra e o modal no toque: no PWA não
+  há barra do navegador para dizer que a página está vindo.
+- **Pinta antes de trabalhar**: `app/plugins/navigationPaintsFirst.client.ts` faz a
+  troca de página esperar um quadro pintado (teto de 50 ms). Sem isso, a montagem da
+  tela nova prendia a thread (~380 ms medidos no Compras) e nenhum sinal chegava à tela.
 - A trava `tests/guardrails.pendingAction.test.ts` varre a layer e os apps de operador
   do `registry.json`: botão com `@click` numa função `async` do próprio componente
   precisa declarar o pendente (`:loading`, `:aria-busy` ou `:disabled` no mesmo

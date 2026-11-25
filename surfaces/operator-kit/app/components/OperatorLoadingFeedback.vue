@@ -14,9 +14,12 @@
 //
 // Clique nunca inerte (DEV-2026-094): o LINK tocado fica marcado no mesmo instante
 // (`aria-busy` + `data-navigation-pending`, que a suíte desenha esmaecido e com cursor
-// de progresso) até a página chegar. Abaixo dos 200 ms a barra de rota
-// (`NuxtLoadingIndicator`, no `OperatorAppRoot`) e essa marca são o sinal; acima, o
-// modal. O atalho para OUTRO app (a Central abre o PDV, o Gestor abre a Cozinha) é
+// de progresso) até a página chegar, e a barra de rota corre no topo desde o toque.
+// Abaixo dos 200 ms, a marca e a barra são o sinal; acima, o modal. A barra é
+// indeterminada e anda só por `transform`: o compositor a mantém andando mesmo
+// quando a troca de página prende a thread principal (medido: ~380 ms numa troca de
+// seção do Compras), e ela não tem fade de entrada. O `NuxtLoadingIndicator` não
+// serve: entra com fade de 0,4 s e nasce com largura zero. O atalho para OUTRO app (a Central abre o PDV, o Gestor abre a Cozinha) é
 // navegação de documento: o PWA não tem barra do navegador, então a marca, a barra e
 // o modal são o único sinal de que o toque chegou.
 const WAIT_THRESHOLD_MS = 200
@@ -40,7 +43,6 @@ let watchdogTimer: ReturnType<typeof setTimeout> | null = null
 let revealFrame: number | null = null
 let visibleSince = 0
 let pendingLink: HTMLAnchorElement | null = null
-const loadingIndicator = useLoadingIndicator()
 
 function markLink (link: HTMLAnchorElement) {
   clearLink()
@@ -171,13 +173,13 @@ function navigationIntent (event: MouseEvent) {
   ) return
 
   markLink(link)
-  if (destination.origin !== current.origin) {
-    loadingIndicator.start({ force: true })
-    begin()
-  }
+  if (destination.origin !== current.origin) begin()
 }
 
-const removeLoadingStart = nuxtApp.hook("page:loading:start", () => begin())
+// Na hidratação o roteador também chama o hook; ali não há toque a responder.
+const removeLoadingStart = nuxtApp.hook("page:loading:start", () => {
+  if (!nuxtApp.isHydrating) begin()
+})
 const removeLoadingEnd = nuxtApp.hook("page:loading:end", finish)
 const removePageStart = nuxtApp.hook("page:start", () => begin())
 const removePageFinish = nuxtApp.hook("page:finish", finish)
@@ -190,7 +192,6 @@ const removeRouterAfterEach = router.afterEach((_to, _from, failure) => {
 
 // Voltando do bfcache (o operador abriu outro app e voltou), nada fica marcado.
 function pageShown () {
-  loadingIndicator.clear()
   forceFinish()
 }
 
@@ -214,6 +215,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div v-if="active" class="operator-route-bar" data-operator-route-bar aria-hidden="true">
+    <span />
+  </div>
+
   <Transition
     enter-active-class="transition-opacity duration-150 ease-out"
     enter-from-class="opacity-0"
@@ -254,12 +259,44 @@ onBeforeUnmount(() => {
   animation: operator-loading-spin .82s linear infinite;
 }
 
+/* Barra de rota: segmento que corre da esquerda para a direita, sem fade de entrada.
+   Só `transform` anima, para o compositor seguir com ela durante tarefa longa. */
+.operator-route-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 101;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--ui-primary) 22%, transparent);
+}
+
+.operator-route-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--ui-primary);
+  animation: operator-route-bar 1.1s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes operator-route-bar {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
 @keyframes operator-loading-spin {
   to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .operator-loading-spinner {
+    animation: none;
+  }
+
+  /* Sem movimento, a barra fica cheia e parada: continua dizendo "carregando". */
+  .operator-route-bar > span {
+    width: 100%;
     animation: none;
   }
 }

@@ -294,15 +294,19 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
     expect(found.sort()).toEqual(Object.keys(ALLOWED_OPT_OUT).sort());
   });
 
-  it("a raiz está ligada: botão pendente por padrão, barra de rota e link marcado", () => {
+  it("a raiz está ligada: botão pendente por padrão, barra de rota, link marcado e quadro antes da troca", () => {
     const plugin = readFileSync(join(kitDir, "app/plugins/buttonPendingByDefault.ts"), "utf8");
     expect(plugin).toContain("option.default = true");
     const root = readFileSync(join(kitDir, "app/components/OperatorAppRoot.vue"), "utf8");
-    expect(root).toMatch(/<NuxtLoadingIndicator[^>]*:throttle="0"/);
     expect(root).toContain("<OperatorLoadingFeedback />");
     const feedback = readFileSync(join(kitDir, "app/components/OperatorLoadingFeedback.vue"), "utf8");
     expect(feedback).toContain('"page:loading:start"');
     expect(feedback).toContain("data-navigation-pending");
+    // A barra anda só por `transform` (o compositor a mantém viva em tarefa longa).
+    expect(feedback).toContain("data-operator-route-bar");
+    expect(feedback).toMatch(/@keyframes operator-route-bar \{\s*from \{ transform/);
+    const paints = readFileSync(join(kitDir, "app/plugins/navigationPaintsFirst.client.ts"), "utf8");
+    expect(paints).toContain("await nextPaint()");
     const css = readFileSync(join(kitDir, "app/assets/css/operator-base.css"), "utf8");
     expect(css).toContain("a[data-navigation-pending]");
     // Todo app da suíte monta o OperatorAppRoot: é por ele que a barra chega.

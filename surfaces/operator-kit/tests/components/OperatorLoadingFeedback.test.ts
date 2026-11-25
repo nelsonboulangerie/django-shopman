@@ -61,6 +61,9 @@ describe("OperatorLoadingFeedback", () => {
     expect(link.hasAttribute("data-navigation-pending")).toBe(true);
 
     await nuxtApp.callHook("page:loading:start");
+    await nextTick();
+    // A barra de rota entra no início da navegação, sem limiar.
+    expect(mounted.find("[data-operator-route-bar]").exists()).toBe(true);
     vi.advanceTimersByTime(200);
     advanceToNextPaint();
     await nextTick();
@@ -72,6 +75,7 @@ describe("OperatorLoadingFeedback", () => {
     expect(mounted.find("[data-operator-loading-overlay]").exists()).toBe(false);
     expect(link.hasAttribute("aria-busy")).toBe(false);
     expect(link.hasAttribute("data-navigation-pending")).toBe(false);
+    expect(mounted.find("[data-operator-route-bar]").exists()).toBe(false);
   });
 
   it("o atalho para outro app começa a espera no toque", async () => {
