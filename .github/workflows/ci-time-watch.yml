@@ -63,12 +63,12 @@ jobs:
       # Pesos frescos do junit da última fila verde: se o equilíbrio dos shards
       # partidos passou do limite, a trava do PR (check_test_cost) vai reprovar
       # quem tocar nos pesos — melhor avisar antes, com o comando pronto.
-      - name: Pesos dos shards com o junit da última fila verde
+      - name: Pesos dos shards (backstage e shop) com o junit da última fila verde
         id: weights
         run: |
           run_id="$(gh run list --workflow runtime-gate.yml --event merge_group --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          if [ -z "$run_id" ] || ! gh run download "$run_id" --pattern 'junit-backstage-*' -D junit; then
+          if [ -z "$run_id" ] || ! gh run download "$run_id" --pattern 'junit-*' -D junit; then
             echo "Sem junit dos shards na última fila verde ($run_id)." >> "$GITHUB_STEP_SUMMARY"
             echo "drift=false" >> "$GITHUB_OUTPUT"
             exit 0

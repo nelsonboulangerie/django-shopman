@@ -275,13 +275,29 @@ SHOP_HEAVY_TESTS := \
 	shopman/shop/tests/test_setup_operators.py \
 	shopman/shop/tests/test_suggestion_stress.py
 
-test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard 1/2 do CI)
+test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard do CI)
 	@echo "── Shop (arquivos pesados) ──"
 	$(PYTHON) -m pytest $(SHOP_HEAVY_TESTS) -q -n auto
 
-test-shop-rest: ## Shop — todo o resto (shard 2/2 do CI)
+test-shop-rest: ## Shop — todo o resto (todas as partes juntas)
 	@echo "── Shop (resto) ──"
 	$(PYTHON) -m pytest shopman/shop/tests -q -n auto $(addprefix --ignore=,$(SHOP_HEAVY_TESTS))
+
+# ── shop rest partido por PESO MEDIDO (DEV-2026-098) ───────────────────────
+# Com o backstage partido (seed/rest), a vigia de tempo apontou na primeira
+# leitura (25/11) o `Shop rest` como o novo patamar do Runtime Gate: 12,3 min
+# p50 na fila, acima do teto de 12 de scripts/ci-time-budget.json. Mesmo
+# mecanismo do backstage, logo abaixo: scripts/test_shards.py parte o `rest`
+# pelos pesos de scripts/test-shard-weights.json (recursivo: o shop tem testes
+# em subpastas). A CI roda `rest-1..N`; o `test-shop-rest` inteiro segue local.
+# Mudar o número de partes: aqui E na matriz `tests-shop-shards` do
+# runtime-gate.yml E no COVERAGE_SHARDS do Coverage Gate (teste confere).
+SHOP_REST_PARTS := 2
+
+test-shop-rest-%: ## Shop rest, parte K de SHOP_REST_PARTS (CI): make test-shop-rest-1
+	@echo "── Shop (resto) parte $*/$(SHOP_REST_PARTS) ──"
+	@files="$$(python3 scripts/test_shards.py --part $*/$(SHOP_REST_PARTS) shopman/shop/tests $(addprefix --exclude ,$(SHOP_HEAVY_TESTS)))" && \
+		test -n "$$files" && $(PYTHON) -m pytest $$files -q -n auto
 
 test-storefront: ## Loja (API headless)
 	@echo "── Storefront ──"
@@ -423,7 +439,7 @@ test-cost: ## Gate: seed completo contado, quem semeia no shard certo, shards pa
 
 shard-weights: ## Re-mede os pesos dos shards com o junit de uma fila verde: make shard-weights run=<id do Runtime Gate>
 	@test -n "$(run)" || (echo 'uso: make shard-weights run=<id de um run verde do Runtime Gate no merge_group>' >&2; exit 2)
-	@dir="$$(mktemp -d)" && gh run download $(run) --pattern 'junit-backstage-*' -D "$$dir" && \
+	@dir="$$(mktemp -d)" && gh run download $(run) --pattern 'junit-*' -D "$$dir" && \
 		python3 scripts/test_shards.py --measure "$$dir"/*/*.xml && python3 scripts/check_test_cost.py
 
 print-%: ## Imprime uma variável do Makefile (as travas leem as listas daqui: uma fonte só)

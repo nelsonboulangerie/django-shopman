@@ -320,3 +320,9 @@ def test_partes_concordam_entre_makefile_matriz_e_coverage_gate():
     gate = next(s for s in wf["jobs"]["coverage-gate"]["steps"] if "COVERAGE_SHARDS" in (s.get("env") or {}))
     listed = set(gate["env"]["COVERAGE_SHARDS"].split())
     assert {f"backstage-{s}" for s in expected} <= listed
+    shop_parts = int(check_test_cost.make_list("SHOP_REST_PARTS")[0])
+    shop = {f"rest-{k}" for k in range(1, shop_parts + 1)} | {"heavy"}
+    assert set(wf["jobs"]["tests-shop-shards"]["strategy"]["matrix"]["shard"]) == shop
+    assert {f"shop-{s}" for s in shop} <= listed
+    # nada além dos shards que existem: cobertura velha esperada travaria o gate
+    assert listed == {"test-storefront"} | {f"backstage-{s}" for s in expected} | {f"shop-{s}" for s in shop}

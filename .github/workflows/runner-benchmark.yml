@@ -82,7 +82,7 @@ jobs:
       matrix:
         runner: ${{ fromJSON(needs.plan.outputs.runners) }}
         rep: ${{ fromJSON(needs.plan.outputs.reps) }}
-        target: [test-backstage-rest-1, test-backstage-rest-2, test-backstage-heavy, test-backstage-seed-1, test-backstage-seed-2, test-shop-rest, test-shop-heavy]
+        target: [test-backstage-rest-1, test-backstage-rest-2, test-backstage-heavy, test-backstage-seed-1, test-backstage-seed-2, test-shop-rest-1, test-shop-rest-2, test-shop-heavy]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

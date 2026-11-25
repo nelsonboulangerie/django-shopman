@@ -270,3 +270,10 @@ medido (`scripts/test_shards.py`, LPT determinístico). Coleta provada idêntica
 12, `rest` 13.400 = soma das partes, zero duplicata. O piso do `seed` é
 `test_nelson_seed_operational.py`, 56% do shard sozinho. O próximo ganho ali é o que o Makefile já
 anotava: os testes que só **leem** o catálogo semeado dividirem um seed. A trava agora conta isso.
+
+**Segunda aplicação (mesmo dia):** a vigia, na primeira leitura, apontou `Shop rest` em 12,3 min
+p50 na fila, acima do teto de 12; depois do backstage, ele era o patamar do Runtime Gate. Partido
+pelo mesmo mecanismo (`SHOP_REST_PARTS := 2`), com partes de 682 s × 682 s pelos pesos medidos.
+Coleta provada idêntica: 15.120 testes = 8.773 + 6.347, zero duplicata. A trava e o teste de
+consistência agora cobrem o shop (matriz `tests-shop-shards`, `COVERAGE_SHARDS`), e a vigia re-mede
+os pesos dos dois (`junit-*`).

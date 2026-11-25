@@ -93,6 +93,7 @@ def shard_specs() -> list[tuple[str, list[str], list[str], int]]:
     return [
         ("backstage-seed", seed, [], int(make_list("BACKSTAGE_SEED_PARTS")[0])),
         ("backstage-rest", [BACKSTAGE_TESTS], seed + heavy, int(make_list("BACKSTAGE_REST_PARTS")[0])),
+        ("shop-rest", ["shopman/shop/tests"], make_list("SHOP_HEAVY_TESTS"), int(make_list("SHOP_REST_PARTS")[0])),
     ]
 
 

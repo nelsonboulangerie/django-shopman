@@ -597,7 +597,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [heavy, rest]
+        # 25/11 (DEV-2026-098): `rest` partido por peso medido, como o do
+        # backstage; partes em SHOP_REST_PARTS no Makefile.
+        shard: [heavy, rest-1, rest-2]
 
     steps:
       - name: Checkout
@@ -619,7 +621,7 @@ jobs:
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.shop-${{ matrix.shard }}
-          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0 --junitxml=junit-shop-${{ matrix.shard }}.xml
         run: make test-shop-${{ matrix.shard }}
 
       - name: Publicar cobertura do shard
@@ -629,6 +631,16 @@ jobs:
           path: .coverage.shop-${{ matrix.shard }}
           include-hidden-files: true
           if-no-files-found: error
+
+      - name: Publicar tempos do shard (junit)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-shop-${{ matrix.shard }}
+          path: junit-shop-${{ matrix.shard }}.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
   # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
   # trocar o contexto obrigatório antes.
@@ -685,7 +697,7 @@ jobs:
         run: python -m pip install 'coverage[toml]>=7.6,<8.0'
 
       # Os shards pelo NOME, não pela contagem: shard faltando é dito qual.
-      # storefront + backstage (seed-1, seed-2, heavy, rest-1, rest-2) + shop (heavy, rest)
+      # storefront + backstage (seed-1, seed-2, heavy, rest-1, rest-2) + shop (heavy, rest-1, rest-2)
       - name: Baixar todos os shards
         uses: actions/download-artifact@v8
         with:
@@ -698,7 +710,7 @@ jobs:
           COVERAGE_SHARDS: >-
             test-storefront
             backstage-seed-1 backstage-seed-2 backstage-heavy backstage-rest-1 backstage-rest-2
-            shop-heavy shop-rest
+            shop-heavy shop-rest-1 shop-rest-2
         run: |
           for shard in $COVERAGE_SHARDS; do
             test -f "coverage-data/.coverage.$shard" || { echo "::error::falta a cobertura do shard $shard"; exit 1; }
