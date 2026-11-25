@@ -49,6 +49,8 @@ CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_delivery_addres
                           "grant_discount"})
 #: As ações que podem cair na sacola nova da conversa (as outras pedem sacola com item).
 NEW_CART_ACTIONS = frozenset({"change_cart", "set_fulfillment", "set_payment"})
+#: O uso único da concessão do motor no registro (ADR-050, emenda de 24/11): a chave é a concessão.
+ENGINE_GRANT_SCOPE = "concierge.engine_grant"
 #: O que o comando ``set_fulfillment`` aceita: só o que o cliente disse.
 FULFILLMENT_FIELDS = frozenset({"date", "mode", "time"})
 _CLOCK = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
@@ -61,6 +63,8 @@ ORDER_REFUSALS = {
     "quote_stale": ErrorCode.TERMS_CHANGED,
     "revision_conflict": ErrorCode.REVISION_CONFLICT,
     "confirmation_required": ErrorCode.CONFIRMATION_REQUIRED,
+    # A concessão do motor já usada num registro (ADR-050, emenda de 24/11): vale uma vez só.
+    "confirmation_used": ErrorCode.AUTHORITY_REVOKED,
     "intent_conflict": ErrorCode.IDEMPOTENCY_CONFLICT,
     "in_progress": ErrorCode.EFFECT_PENDING,
     "no_cart": ErrorCode.FACT_UNAVAILABLE,
@@ -141,7 +145,22 @@ class ConciergeEffectSite:
         if session is None:
             raise PortError(ErrorCode.OBJECT_FORBIDDEN, "sacola que não é a da conversa")
         terms_ref = str((current.quote or {}).get("token") or "") or None if command.action == "commit_order" else None
-        return Reading(ownership_epoch=epoch, versions={target: session.rev}, terms_ref=terms_ref)
+        rev = self._repriced_rev(session) if command.action == "commit_order" else session.rev
+        return Reading(ownership_epoch=epoch, versions={target: rev}, terms_ref=terms_ref)
+
+    def _repriced_rev(self, session) -> int:
+        """A revisão dos termos no registro: a sacola é repreçada AGORA (o Happy Hour acabou, o lote, o cupom
+        venceu, sem ninguém mexer nela), antes da guarda. Total igual: os termos que o cliente viu, a revisão da
+        oferta. Total diferente: a revisão nova, e a guarda do Core recusa o "sim"; o repreço fica gravado (a trava
+        é fora da transação do efeito), e o motor diz o total novo (coordenação, 24/11)."""
+        from shopman.shop.conversational.commerce_read import terms_total
+        from shopman.shop.services import cart as cart_service
+
+        before = terms_total(session)
+        fresh = cart_service.reprice(session_key=session.session_key, channel_ref=self.tool_context.channel_ref)
+        if fresh is None or terms_total(fresh) == before:
+            return session.rev
+        return fresh.rev
 
     def apply(self, ctx: TrustedContext, command: ActionCommand) -> Done:
         from .service import TurnRevoked
@@ -382,12 +401,42 @@ class ConciergeEffectSite:
             token, method = str(review["quote_token"]), str(review.get("payment_method") or "")
         if not isinstance(token, str) or not token or not isinstance(method, str) or not isinstance(notes, str):
             return Done(False, refusal=ErrorCode.INVALID_CONTENT.value)
-        result = tools.place_order(self.tool_context, token, method, notes)
+        if not parameters:
+            result = self._place_by_engine(command, token, method, notes)
+        else:
+            result = tools.place_order(self.tool_context, token, method, notes)
         if result.get("ok") and result.get("order_ref"):
             order = str(result["order_ref"])
             return Done(True, domain_refs={"effect": order, "order": order})
         code = ORDER_REFUSALS.get(str(result.get("code") or ""), ErrorCode.PROVIDER_UNAVAILABLE)
         return Done(False, refusal=code.value)
+
+    def _place_by_engine(self, command: ActionCommand, token: str, method: str, notes: str) -> dict:
+        """O registro pelo "sim" do motor (ADR-050, emenda de 24/11): a casa aceita a confirmação do motor no lugar
+        do código, presa à revisão feita neste efeito. A concessão vale UMA vez: o registro é uma mutação única pela
+        concessão; o mesmo comando repete o resultado, e outro comando com a mesma concessão é recusado."""
+        from shopman.shop.services import remote_mutations
+
+        from . import tools
+
+        grant = str(getattr(command, "grant_id", "") or "")
+        if not grant:
+            return {"ok": False, "code": "confirmation_required"}
+        proof = tools.EngineConfirmation(pk=getattr(self.tool_context.conversation, "_inbound_max_id", None),
+                                         grant_id=grant, quote_token=token)
+
+        def place() -> tuple[dict, int]:
+            with tools.engine_confirmed(proof):
+                placed = tools.place_order(self.tool_context, token, method, notes)
+            return placed, 200 if placed.get("ok") else 409
+
+        try:
+            used = remote_mutations.run_idempotent_mutation(
+                scope=ENGINE_GRANT_SCOPE, key=grant, execute=place,
+                fingerprint=remote_mutations.fingerprint({"command": command.command_id}))
+        except remote_mutations.RemoteMutationConflict:
+            return {"ok": False, "code": "confirmation_used"}
+        return dict(used.response_body)
 
     def _grant_discount(self, command: ActionCommand) -> Done:
         from . import discount

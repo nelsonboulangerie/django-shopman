@@ -3118,7 +3118,8 @@
             "logger",
             "parse_saved_address_ref",
             "saved_address_digest",
-            "saved_address_ref"
+            "saved_address_ref",
+            "terms_total"
           ]
         }
       ]

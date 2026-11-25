@@ -115,7 +115,10 @@ def test_the_engine_yes_places_the_order_by_a_fresh_house_review(site, monkeypat
     monkeypatch.setattr(tools, "place_order",
                         lambda ctx, token, method, notes: placed.append((token, method)) or
                         {"ok": True, "order_ref": "ORD-9"})
-    done = site.apply(CTX, command("commit_order"))
+    # O comando do motor sempre leva a concessão do "sim" (a prova que a casa aceita no lugar do código, ADR-050).
+    yes = command("commit_order")
+    yes.grant_id, yes.command_id = "grant-9", "cmd-9"
+    done = site.apply(CTX, yes)
     assert done.applied and placed == [("tok-9", "pix")]
     assert dict(done.domain_refs) == {"effect": "ORD-9", "order": "ORD-9"}
 

@@ -31,6 +31,9 @@ import json
 import logging
 import re
 import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_type
 from datetime import timedelta
@@ -1557,6 +1560,35 @@ def _code_confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
+@dataclass(frozen=True)
+class EngineConfirmation:
+    """A confirmação do motor no lugar do código (ADR-050, emenda de 24/11/2026).
+
+    O "sim" ao "Posso registrar?" do motor (aprovado pelo dono em 23/11) é preso pelo motor aos termos que o
+    cliente viu: a concessão, o hash dos termos, a revisão da sacola e a época de posse, que a guarda do Core
+    confere dentro do sítio de efeito. ``quote_token`` é a revisão da casa feita NESSE efeito, depois da guarda.
+    ``pk``: a mensagem do cliente que confirmou, para o recibo do pedido (como a do código).
+    """
+
+    pk: int | None
+    grant_id: str
+    quote_token: str
+
+
+#: A confirmação do motor só existe enquanto o sítio de efeito do motor executa o registro
+#: (``effect_site._commit_order``, ``engine_confirmed``). Fora dele, a guarda do ADR-050 fica como está.
+_ENGINE_CONFIRMATION: ContextVar[EngineConfirmation | None] = ContextVar("concierge_engine_confirmation", default=None)
+
+
+@contextmanager
+def engine_confirmed(proof: EngineConfirmation) -> Iterator[None]:
+    token = _ENGINE_CONFIRMATION.set(proof)
+    try:
+        yield
+    finally:
+        _ENGINE_CONFIRMATION.reset(token)
+
+
 def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_notes: str = "") -> dict:
     """Compra autorizada por revisão oferecida; recibo e efeito local compartilham commit."""
     from shopman.orderman.models import Order, Session
@@ -1617,6 +1649,11 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     else:
         # Sem identificador de mensagem (ADR-050): só o código deste orçamento confirma.
         confirmation = _code_confirmation(ctx, quote_token)
+    if confirmation is None:
+        # O "sim" do motor (emenda de 24/11): só dentro do sítio de efeito dele, e só para a revisão feita nele.
+        proof = _ENGINE_CONFIRMATION.get()
+        if proof is not None and proof.quote_token == quote_token:
+            confirmation = proof
     if confirmation is None:
         return _error("confirmation_required", "Confira o resumo enviado e confirme o pedido em uma nova mensagem.")
     if quote.get("phone") != current.phone or quote.get("customer_ref") != current.customer_ref:
