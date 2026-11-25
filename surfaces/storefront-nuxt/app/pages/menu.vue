@@ -64,7 +64,14 @@ if (dayFirst.value && typeof menuDayRoute.query.dia === 'string' && /^\d{4}-\d{2
   chosenMenuDay.value = menuDayRoute.query.dia
 }
 // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-const menuQuery = computed((): Record<string, string> => (dayFirst.value && chosenMenuDay.value ? { date: chosenMenuDay.value } : {}))
+// Sem dia, a query é `undefined`, nunca `{}`: o servidor já começou a ler o cardápio
+// antes do shell chegar (`server/plugins/ssrRead.ts`), e o `reuseSsrRead` só reaproveita
+// essa leitura quando a página não manda query. Um `{}` é "query" para ele, e o SSR fazia
+// um segundo GET do cardápio (o contrato `tests/ssr/ssrRead.test.mjs`). Na A, a leitura
+// fica idêntica à do main: sem query, a mesma chave no servidor e no cliente.
+const menuQuery = computed((): Record<string, string> | undefined => (
+  dayFirst.value && chosenMenuDay.value ? { date: chosenMenuDay.value } : undefined
+))
 // Se o snapshot falhar ou estiver desligado, o SSR volta integralmente ao menu
 // canônico. Com snapshot utilizável, preço/estoque/sessão convergem no cliente.
 const canonicalOnServer = import.meta.server && (!continuumEnabled || !structureCatalog.value)
@@ -76,7 +83,9 @@ const {
 } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include',
   // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
-  query: menuQuery,
+  // No servidor, resolvida uma vez antes da leitura (nada muda a query depois no SSR);
+  // no cliente, o dia escolhido segue reativo.
+  query: import.meta.server ? menuQuery.value : menuQuery,
   $fetch: useStorefrontPageFetch(),
   server: canonicalOnServer,
   lazy: import.meta.client || !canonicalOnServer
