@@ -30,3 +30,22 @@ Run [45688139461](https://github.com/nelsonboulangerie/django-shopman/actions/ru
 | shop rest-1 | 7,5 |
 
 `shop rest` 10,2–12,7 → 7,5 / 8,1 min. O job mais longo do Runtime Gate passou a ser o `backstage heavy` (12,6), e o do grupo, o `pos-nuxt` (Surfaces Gate). Próximos candidatos: partir o `heavy` pelo mesmo mecanismo e encurtar a cadeia do Surfaces Gate (#3635).
+
+## Com o `backstage heavy` também partido
+
+Run [45697517315](https://github.com/nelsonboulangerie/django-shopman/actions/runs/45697517315), `ubuntu-latest`, 2 repetições, 20/20 verdes:
+
+| job | min (p50) |
+|---|---:|
+| pos-nuxt (Surfaces Gate) | 13,8 |
+| backstage rest-2 | 11,6 |
+| shop heavy | 10,3 |
+| backstage heavy-2 | 10,0 |
+| backstage seed-1 | 9,3 |
+| backstage seed-2 | 8,9 |
+| backstage rest-1 | 8,8 |
+| shop rest-1 | 7,3 |
+| shop rest-2 | 6,3 |
+| backstage heavy-1 | 6,0 |
+
+Job mais longo do Runtime Gate: **17,6 → 11,6 min** ao longo do dia, sem custo. O `heavy` partiu 6,0 × 10,0 na CI contra 647 × 650 s nos pesos locais: o peso relativo de alguns arquivos é outro no runner da CI. É o caso que a vigia corrige, re-medindo os pesos pelo junit da fila (`make shard-weights run=<id>`). Este run saiu mais lento em geral que os anteriores (seed 9,3 contra 7,7): n=2, oscilação entre horários.
