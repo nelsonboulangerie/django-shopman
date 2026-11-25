@@ -247,12 +247,28 @@ def test_avaliar_e_pedir_de_novo_so_com_a_capacidade_recusam(channel, dona):
     assert "customer_rating" not in concluido.data
 
 
-def test_confirmar_a_vaga_da_fila_so_com_a_capacidade_recusa(pedido):
+@pytest.mark.channels("web")
+def test_confirmar_a_vaga_da_fila_funciona_so_com_a_capacidade():
+    """O aviso de vaga aberta leva a este passo: com o selo do aviso, sem login, a vaga
+    é confirmada (#3616). Confirmar só ajuda o dono do pedido, como pagar o Pix."""
+    from decimal import Decimal
+
+    from shopman.shop.services import waitlist
+    from shopman.storefront.tests.web.test_waitlist_tracking import SKU, _fermata_order, _materialize
+
+    order = _fermata_order("WEB-261125-W93")
+    _materialize(order)
+    waitlist.open_window(SKU, qty_available=Decimal("5"))
+    order.refresh_from_db()
+
     cliente = Client()
-    _abre_pelo_link(cliente, pedido)
-    resposta = _post(cliente, f"/api/v1/orders/{pedido.ref}/waitlist-confirm/")
-    assert resposta.status_code == 403
-    assert resposta.json()["error_code"] == "login_required"
+    _abre_pelo_link(cliente, order)
+    resposta = _post(cliente, f"/api/v1/orders/{order.ref}/waitlist-confirm/")
+
+    assert resposta.status_code == 200, resposta.content[:300]
+    order.refresh_from_db()
+    assert waitlist.state_for(order) == waitlist.CONFIRMED
+    assert "_auth_user_id" not in cliente.session, "confirmar a vaga não pode logar ninguém"
 
 
 def test_a_tela_aberta_pelo_link_nao_oferece_cancelar_e_convida_a_entrar(pedido):

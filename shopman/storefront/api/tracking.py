@@ -593,9 +593,6 @@ class OrderWaitlistConfirmView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if access_mode != order_service.ACCESS_FULL:
-            return login_required_response(order.ref, "waitlist_confirm")
-
         key = remote_mutations.idempotency_key_from_request(
             request,
             fallback=f"waitlist-confirm:{ref}",
