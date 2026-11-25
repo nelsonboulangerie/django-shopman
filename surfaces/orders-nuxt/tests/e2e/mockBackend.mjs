@@ -686,6 +686,33 @@ function f4aDeliveries() {
   };
 }
 
+function awaitingPaymentCard(paid) {
+  return {
+    ...CARD,
+    ref: "WEB-20261125-0012",
+    status: "new",
+    status_label: "Novo",
+    customer_name: "Ana",
+    items_summary: "1× Bolo de cenoura · 2× Croissant",
+    items_count: 3,
+    total_display: "R$ 48,70",
+    created_at_iso: new Date(Date.now() - 2 * 60_000).toISOString(),
+    payment_method: "pix",
+    payment_method_label: "Pix",
+    payment_status: paid ? "captured" : "pending",
+    payment_pending: !paid,
+    can_confirm: paid,
+    can_advance: false,
+    next_status: "accepted",
+    actions: [],
+    awaits_online_payment: !paid,
+    attention: paid ? "confirm" : "",
+    attention_since_iso: paid ? new Date().toISOString() : "",
+    goal_minutes: paid ? 5 : 0,
+    goal_label: paid ? "meta 5 min" : "",
+  };
+}
+
 function queueCard(ref) {
   return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
 }
@@ -1058,6 +1085,16 @@ const server = createServer((req, res) => {
       ridePosts.push(body);
       json(res, 200, { outcome: "applied", refs: body.refs, directive_id: ridePosts.length, status: "queued",
         ride_number: body.ride_number ?? null, ride_letter: "" });
+    });
+  }
+  // DEV-2026-091 (cookie `e2e_payment=awaiting`): um pedido novo que só espera o Pix
+  // cair. Sem `attention` e com `awaits_online_payment`: fica fora da Fila e da coluna
+  // Novos, recolhido na faixa "Aguardando pagamento". Com `e2e_payment=paid`, o mesmo
+  // pedido com o Pix caído: sobe para a Fila e para os Novos pedindo o aceite.
+  const paymentScenario = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_payment=(awaiting|paid)(?:;|$)/)?.[1] ?? "";
+  if (paymentScenario && /\/orders\/?(\?|$)/.test(url)) {
+    return json(res, 200, {
+      queue: { ...QUEUE.queue, intake: [awaitingPaymentCard(paymentScenario === "paid")], total_count: QUEUE.queue.total_count + 1 },
     });
   }
   const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";

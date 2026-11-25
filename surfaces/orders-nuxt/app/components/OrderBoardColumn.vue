@@ -8,6 +8,7 @@ import { exitGesture, exitRows, swipeHint, zoneEmptyText } from "~/presentation/
 import type { OrderCardProjection } from "~/types/orders";
 import type { DeliveryRideProjection } from "~/generated/ordersContract";
 import { withHouseRides, type HouseGesture } from "~/presentation/houseCouriers";
+import { awaitingPayment } from "~/presentation/queue";
 
 const props = withDefaults(
   defineProps<{
@@ -79,6 +80,8 @@ function commitExit(card: OrderCardProjection) {
 // Prontos em "A coletar" e "Saiu para entrega"; as outras colunas, sem partes.
 // A corrida da casa entra no lugar do primeiro pedido dela (forma E), e os outros saem.
 const band = computed(() => (props.zone.key === "expedition" ? props.waitingBand : null));
+// Novos: o pedido que só espera o Pix ou o cartão fica recolhido no fim (DEV-2026-091).
+const awaiting = computed(() => awaitingPayment(props.zone.awaiting ?? [], props.nowMs));
 const rows = computed(() =>
   props.zone.key === "expedition"
     ? withHouseRides(exitRows(props.cards), props.houseRides).map((row) =>
@@ -290,6 +293,9 @@ const hint = computed(() =>
       >
         <Icon name="lucide:hand" class="size-4" />{{ hint }}
       </p>
+    </div>
+    <div v-if="awaiting.length" class="shrink-0" :class="phone ? undefined : 'px-2 pb-2'">
+      <AwaitingPaymentBand :rows="awaiting" :can-open="canOpen" />
     </div>
   </section>
 </template>

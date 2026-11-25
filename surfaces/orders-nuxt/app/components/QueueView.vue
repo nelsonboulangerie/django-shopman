@@ -36,6 +36,7 @@ import {
   undoLine,
 } from "~/presentation/board";
 import {
+  awaitingPayment,
   inProgress,
   QUEUE_FOCUS,
   QUEUE_SORT_OPTIONS,
@@ -112,6 +113,9 @@ const rest = computed(() =>
     : { hidden: 0, moving: 0, text: "" },
 );
 const working = computed(() => workingOrders(props.cards, props.nowMs));
+// O pedido que só espera o Pix ou o cartão (DEV-2026-091): fora da Fila, numa faixa
+// recolhida no fim, sem som e sem contar como pendência.
+const awaiting = computed(() => awaitingPayment(props.cards, props.nowMs));
 // Lembrete temporário de chamar o entregador: a entrega da casa em preparo há X min
 // sem entregador chamado não pede "fato humano" à Fila, mas cobra aqui, no topo,
 // um aviso por pedido, com o gesto e o "Dispensar".
@@ -820,6 +824,9 @@ function riskLeads(item: { card: OrderCardProjection }): boolean {
         data-queue-rest
         @click="emit('scope', 'all')"
       />
+
+      <!-- Aguardando pagamento (DEV-2026-091): recolhido no fim, sem som e sem contar. -->
+      <AwaitingPaymentBand :rows="awaiting" :can-open="canOpen" />
     </section>
 
     <!-- a coluna de consciência: o agregado, o que o sistema fez e os interruptores -->
