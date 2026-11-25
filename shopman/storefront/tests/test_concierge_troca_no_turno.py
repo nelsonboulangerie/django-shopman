@@ -96,6 +96,22 @@ def test_an_interrupted_turn_sends_nothing_through_the_engine(conversation, outb
 # ── #3410: o turno com efeito pelo motor no ar, pelo serviço de verdade ─────────────────────────
 
 DECIDED = "2026-11-23T00:00:00.000000Z"
+
+
+def _wednesday():
+    """A próxima quarta-feira com pelo menos dois dias de folga: o dia do pedido sempre no futuro e
+    sempre o mesmo dia da semana (a casa tem janela de entrega na quarta). Data fixa vira bomba-relógio:
+    "2026-11-25" quebrou o main no próprio dia 25."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    day = timezone.localdate() + timedelta(days=2)
+    return day + timedelta(days=(2 - day.weekday()) % 7)
+
+
+def _wednesday_label():
+    return f"quarta-feira, {_wednesday():%d/%m}"
 PIX = {"act": "choose_payment", "span": "pix", "product": "", "qty": 0, "change": "", "day": "", "mode": "",
        "time": "", "payment": "pix"}
 OFFER_TEAM = "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?"
@@ -351,7 +367,7 @@ def test_the_order_through_the_engine_sends_the_pix_apart_like_today(order_on_ai
     # A sacola já com o pão (como depois do "quero 1 pão francês"): o teste é do fechamento e do Pix.
     Session.objects.create(session_key="sess-pix", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "pickup", "delivery_date": "2026-11-25",
+                           data={"fulfillment_type": "pickup", "delivery_date": _wednesday().isoformat(),
                                  "delivery_time_slot": "slot-15"})
     order_on_air.session_key = "sess-pix"
     order_on_air.save(update_fields=["session_key"])
@@ -410,7 +426,7 @@ def _saved_flow(conversation, monkeypatch, script, saved, *, said_in_order=None,
     monkeypatch.setattr(tools, "set_fulfillment", house_writes)
     Session.objects.create(session_key="sess-salvo", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25",
+                           data={"fulfillment_type": "delivery", "delivery_date": _wednesday().isoformat(),
                                  "delivery_time_slot": "slot-15", "payment": {"method": "pix"}})
     conversation.session_key = "sess-salvo"
     conversation.save(update_fields=["session_key"])
@@ -433,7 +449,7 @@ def test_the_saved_address_is_offered_with_today_phrase_and_yes_takes_it(order_o
     assert outbox.sent[0] == saved_offer(saved) == "Entregamos no endereço do seu cadastro, Rua do Cadastro, 10 - Centro?"
     assert written and written[0].get("saved_address_pk") == 7  # o "sim" grava O endereço oferecido, pelo id
     # O "sim" volta ao resumo, com o endereço do cadastro na linha da entrega, pronto para o "sim" do pedido.
-    assert "Entrega: quarta-feira, 25/11, a partir das 15h\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
+    assert f"Entrega: {_wednesday_label()}, a partir das 15h\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
     assert outbox.sent[1].endswith("Posso registrar?")
 
 
@@ -894,7 +910,7 @@ def test_the_delivery_summary_says_the_fee_and_the_address_and_the_total_has_the
                                 match_value="Centro", fee_q=800, is_active=True)
     Session.objects.create(session_key="sess-fee", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25"})
+                           data={"fulfillment_type": "delivery", "delivery_date": _wednesday().isoformat()})
     order_on_air.session_key = "sess-fee"
     order_on_air.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -1084,7 +1100,7 @@ def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it
     shop.save()
     Session.objects.create(session_key="sess-win", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25"})
+                           data={"fulfillment_type": "delivery", "delivery_date": _wednesday().isoformat()})
     order_on_air.session_key = "sess-win"
     order_on_air.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -1098,5 +1114,5 @@ def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it
     options = window.split("? ", 1)[1]
     assert options[0].isupper() and options.endswith(".") and "A partir" not in options[1:]
     assert pay.startswith("Como você prefere pagar?")
-    assert re.search(r"Entrega: quarta-feira, 25/11, .*15h", summary) and summary.endswith("Posso registrar?")
+    assert re.search(rf"Entrega: {_wednesday_label()}, .*15h", summary) and summary.endswith("Posso registrar?")
     assert Session.objects.get(session_key="sess-win").data["delivery_time_slot"]
