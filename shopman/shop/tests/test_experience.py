@@ -492,3 +492,54 @@ def test_expired_rule_can_still_be_switched_off():
     rule.enabled = False
     rule.save()
     assert RuleConfig.objects.get(pk=rule.pk).enabled is False
+
+
+# ── "Ver a versão de sempre" (DEV-2026-096) ──────────────────────────────
+
+
+def test_opt_out_resolves_the_default_and_keeps_the_stickiness_for_the_way_back():
+    customer = _customer("CLI-OPT")
+    _rule(cohorts={"internal": [customer.ref], "pilot": []})
+    session = SessionStore()
+    request = _request(customer, session)
+    experience.remember(request, customer.ref)
+    assert session[experience.SESSION_KEY] == {"para-quando": {"variant": "b", "generation": 1}}
+
+    experience.opt_out(request)
+    (assignment,) = experience.resolve(request, SURFACE)
+    assert (assignment.variant, assignment.reason, assignment.team) == ("a", experience.REASON_OPTED_OUT, True)
+    assert experience.order_mark(request, SURFACE) == {"para-quando": {"variant": "a", "generation": 1}}
+    # A aderência fica intacta, e o login no meio do pedido não grava o padrão por cima.
+    experience.remember(request, customer.ref)
+    assert session[experience.SESSION_KEY] == {"para-quando": {"variant": "b", "generation": 1}}
+
+    experience.opt_in(request)
+    (assignment,) = experience.resolve(request, SURFACE)
+    assert (assignment.variant, assignment.reason, assignment.team) == ("b", experience.REASON_SESSION, True)
+
+
+def test_team_flag_is_only_for_the_internal_cohort():
+    team = _customer("CLI-TEAM")
+    pilot = _customer("CLI-PILOT")
+    common = _customer("CLI-COMMON")
+    _rule(cohorts={"internal": [team.ref], "pilot": [pilot.ref]})
+
+    def flag(customer):
+        (assignment,) = experience.resolve(_request(customer), SURFACE)
+        return assignment.team
+
+    assert flag(team) is True
+    assert flag(pilot) is False
+    assert flag(common) is False
+    assert flag(None) is False
+    assert experience.team_preview_refs(experience.resolve(_request(team), SURFACE)) == ("para-quando",)
+
+
+def test_opt_out_of_a_common_customer_changes_nothing():
+    customer = _customer("CLI-COMUM")
+    _rule()
+    request = _request(customer)
+    experience.opt_out(request)
+    (assignment,) = experience.resolve(request, SURFACE)
+    assert assignment.variant == "a"
+    assert assignment.team is False

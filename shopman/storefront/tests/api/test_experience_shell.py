@@ -77,6 +77,8 @@ def _customer_client(ref: str = "CLI-EXP", *, customer: Customer | None = None) 
 def _without_experience(body: dict) -> dict:
     shell = dict(body["shell"])
     shell.pop("experience")
+    # O selo da equipe (DEV-2026-096) é apresentação de quem está na coorte, e só dela.
+    shell.pop("team_preview", None)
     return {**body, "shell": shell}
 
 
@@ -231,3 +233,156 @@ def test_kill_switch_removes_the_experiment_from_the_shell():
     rule.save()
 
     assert client.get(PRIVATE_SHELL).json()["shell"]["experience"] == []
+
+
+# ── selo da versão de teste da equipe (DEV-2026-096) ─────────────────────────
+
+OPT_OUT = "/api/v1/storefront/experience/opt-out/"
+
+
+def _team_customer(username: str = "fran", ref: str = "CLI-FRAN") -> Customer:
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.models import Group
+
+    from shopman.shop.services.experience import TEAM_OPERATOR_KEY
+
+    operator = get_user_model().objects.create_user(username=username, is_staff=True)
+    operator.groups.add(Group.objects.get_or_create(name="Caixa")[0])
+    return Customer.objects.create(
+        ref=ref, first_name="Fran", phone="+5543999990089", metadata={TEAM_OPERATOR_KEY: operator.pk}
+    )
+
+
+def _three_experiments() -> None:
+    for ref in ("cardapio-dia-primeiro", "home-recompra-no-topo", "duvida-no-ponto"):
+        RuleConfig.objects.create(
+            ref=f"experience.{ref}",
+            rule_path=EXPERIENCE_RULE_PATH,
+            label=ref,
+            params={
+                "ref": ref,
+                "surface": "storefront",
+                "variants": ["a", "b"],
+                "default": "a",
+                "cohorts": {"internal": []},
+                "allocation": {"b": 0},
+                "owner": "Engenharia",
+                "hypothesis": "Hipótese do teste.",
+                "remove_after": (timezone.localdate() + timedelta(days=30)).isoformat(),
+            },
+        )
+
+
+def test_team_member_gets_the_seal_in_plain_words():
+    _seed_surface()
+    client, _ = _customer_client(customer=_team_customer())
+    _three_experiments()
+
+    response = client.get(PRIVATE_SHELL)
+    seal = response.json()["shell"]["team_preview"]
+
+    assert seal == {
+        "opted_out": False,
+        "message": (
+            "Você está vendo a versão de teste da equipe: escolher o dia antes de montar a "
+            "sacola, dúvidas respondidas na sacola e repetir o último pedido no topo do início."
+        ),
+        "features": [
+            "escolher o dia antes de montar a sacola",
+            "dúvidas respondidas na sacola",
+            "repetir o último pedido no topo do início",
+        ],
+        "action_label": "Ver a versão de sempre",
+    }
+    assert response["Cache-Control"] == "private, no-store"
+    # Sem códigos: nem ref de experimento nem letra de variante no selo.
+    for code in ("cardapio-dia-primeiro", "home-recompra-no-topo", "duvida-no-ponto", "B1", "B2"):
+        assert code not in str(seal)
+
+
+def test_allow_list_of_the_internal_cohort_also_gets_the_seal():
+    _seed_surface()
+    client, customer = _customer_client()
+    _experiment(internal=[customer.ref])
+
+    seal = client.get(PRIVATE_SHELL).json()["shell"]["team_preview"]
+
+    assert seal["features"] == ["uma novidade em teste"]
+    assert seal["opted_out"] is False
+
+
+def test_common_customer_and_anonymous_never_get_the_field():
+    _seed_surface()
+    client, _ = _customer_client()
+    _experiment(internal=["OUTRO-CLIENTE"])
+
+    assert "team_preview" not in client.get(PRIVATE_SHELL).json()["shell"]
+    assert "team_preview" not in Client().get(PRIVATE_SHELL).json()["shell"]
+    assert "team_preview" not in Client().get(PUBLIC_SHELL).json()["shell"]
+
+
+def test_pilot_is_not_the_team_and_gets_no_seal():
+    _seed_surface()
+    client, customer = _customer_client()
+    rule = _experiment(internal=[])
+    rule.params = {**rule.params, "cohorts": {"internal": [], "pilot": [customer.ref]}}
+    rule.save()
+
+    shell = client.get(PRIVATE_SHELL).json()["shell"]
+
+    assert shell["experience"] == [{"ref": "para-quando", "variant": "b"}]
+    assert "team_preview" not in shell
+
+
+def test_see_the_usual_version_then_back_to_the_test_version():
+    from shopman.shop.services.experience import OPT_OUT_KEY
+
+    _seed_surface()
+    client, _ = _customer_client(customer=_team_customer())
+    _three_experiments()
+    assert all(item["variant"] == "b" for item in client.get(PRIVATE_SHELL).json()["shell"]["experience"])
+
+    opted = client.post(OPT_OUT)
+    assert opted.status_code == 200
+    assert opted.json() == {"opted_out": True}
+    assert opted["Cache-Control"] == "private, no-store"
+    assert client.session[OPT_OUT_KEY] is True
+
+    usual = client.get(PRIVATE_SHELL)
+    shell = usual.json()["shell"]
+    assert all(item["variant"] == "a" for item in shell["experience"])
+    assert shell["team_preview"]["opted_out"] is True
+    assert shell["team_preview"]["action_label"] == "Voltar à versão de teste"
+    assert shell["team_preview"]["message"] == (
+        "Você está vendo a versão de sempre, sem as novidades em teste da equipe."
+    )
+    # Tudo no padrão, e ainda assim é de alguém: o selo não vai para cache nenhum.
+    assert usual["Cache-Control"] == "private, no-store"
+
+    back = client.delete(OPT_OUT)
+    assert back.json() == {"opted_out": False}
+    shell = client.get(PRIVATE_SHELL).json()["shell"]
+    assert all(item["variant"] == "b" for item in shell["experience"])
+    assert shell["team_preview"]["opted_out"] is False
+    assert OPT_OUT_KEY not in client.session
+
+
+def test_opt_out_lasts_until_logout():
+    from shopman.shop.services.experience import OPT_OUT_KEY
+
+    _seed_surface()
+    client, _ = _customer_client(customer=_team_customer())
+    _three_experiments()
+    client.post(OPT_OUT)
+    assert client.session[OPT_OUT_KEY] is True
+
+    client.post("/api/v1/auth/logout/")
+
+    assert OPT_OUT_KEY not in client.session
+
+
+def test_opt_out_needs_an_identified_customer():
+    _seed_surface()
+    response = Client().post(OPT_OUT)
+    assert response.status_code == 401
+    assert response["Cache-Control"] == "private, no-store"

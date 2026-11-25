@@ -263,6 +263,62 @@ class ExperienceProjection:
     variant: str
 
 
+#: O nome de gente de cada novidade em teste, por ``ref`` do experimento (o selo da
+#: equipe, DEV-2026-096). Mora aqui, junto da loja que desenha as versões: experimento
+#: novo já chega com código, e o nome entra no mesmo PR. Sem nome, a frase genérica.
+TEAM_PREVIEW_FEATURES = {
+    "cardapio-dia-primeiro": "escolher o dia antes de montar a sacola",
+    "home-recompra-no-topo": "repetir o último pedido no topo do início",
+    "duvida-no-ponto": "dúvidas respondidas na sacola",
+}
+TEAM_PREVIEW_UNNAMED_FEATURE = "uma novidade em teste"
+
+
+@dataclass(frozen=True)
+class TeamPreviewProjection:
+    """O selo da versão de teste da equipe (DEV-2026-096).
+
+    Só existe para quem vê (ou veria, sem ter pedido a versão de sempre) alguma
+    versão fora do padrão POR SER DA EQUIPE. Sem códigos de experimento nem de
+    variante: a frase e a lista em linguagem de gente, e o rótulo do gesto que troca.
+    """
+
+    opted_out: bool
+    message: str
+    features: tuple[str, ...]
+    action_label: str
+
+
+def _join_pt(items: tuple[str, ...]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} e {items[-1]}"
+
+
+def build_team_preview(refs, *, opted_out: bool) -> TeamPreviewProjection | None:
+    """O selo, a partir dos experimentos em que a pessoa é da equipe. Sem nenhum, ``None``."""
+    features: list[str] = []
+    for ref in refs or ():
+        label = TEAM_PREVIEW_FEATURES.get(ref, TEAM_PREVIEW_UNNAMED_FEATURE)
+        if label not in features:
+            features.append(label)
+    if not features:
+        return None
+    if opted_out:
+        return TeamPreviewProjection(
+            opted_out=True,
+            message="Você está vendo a versão de sempre, sem as novidades em teste da equipe.",
+            features=tuple(features),
+            action_label="Voltar à versão de teste",
+        )
+    return TeamPreviewProjection(
+        opted_out=False,
+        message=f"Você está vendo a versão de teste da equipe: {_join_pt(tuple(features))}.",
+        features=tuple(features),
+        action_label="Ver a versão de sempre",
+    )
+
+
 @dataclass(frozen=True)
 class StorefrontShellProjection:
     """Projeção global leve, sem catálogo nem histórico de pedidos.
@@ -285,6 +341,9 @@ class StorefrontShellProjection:
     # release fixou, a ordem é estável (por ref) e o item pode ganhar campo sem
     # mudar o tipo do valor. Experimento desligado não aparece: ausente = padrão.
     experience: tuple[ExperienceProjection, ...] = ()
+    # O selo da equipe. ``None`` sai do JSON (a view tira a chave): cliente comum e
+    # anônimo nunca recebem o campo.
+    team_preview: TeamPreviewProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -315,6 +374,7 @@ def build_shell(
     *,
     cart_has_items: bool | None = None,
     experience=None,
+    team_preview: TeamPreviewProjection | None = None,
 ) -> StorefrontShellProjection:
     """Build only the state shared by every storefront route.
 
@@ -429,6 +489,7 @@ def build_shell(
         experience=tuple(
             ExperienceProjection(ref=a.ref, variant=a.variant) for a in (experience or ())
         ),
+        team_preview=team_preview,
     )
 
 

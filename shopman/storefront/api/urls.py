@@ -74,6 +74,7 @@ from .surface import (
     StorefrontCartView,
     StorefrontCatalogView,
     StorefrontCheckoutView,
+    StorefrontExperienceOptOutView,
     StorefrontHomeView,
     StorefrontLegalView,
     StorefrontMenuView,
@@ -116,6 +117,11 @@ urlpatterns = [
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
     path("storefront/shell/", StorefrontShellView.as_view(), name="api-storefront-shell"),
+    path(
+        "storefront/experience/opt-out/",
+        StorefrontExperienceOptOutView.as_view(),
+        name="api-storefront-experience-opt-out",
+    ),
     path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
     path("storefront/legal/", StorefrontLegalView.as_view(), name="api-storefront-legal"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),

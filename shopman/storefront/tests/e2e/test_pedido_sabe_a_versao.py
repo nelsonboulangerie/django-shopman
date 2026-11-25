@@ -215,3 +215,22 @@ def test_a_marca_sobrevive_ao_commit_repetido(client):
     assert Order.objects.get(ref=first["order_ref"]).data["experience"] == {
         REF: {"variant": "b", "generation": 1}
     }
+
+
+def test_ver_a_versao_de_sempre_remarca_a_sacola_e_o_pedido_diz_a_vista(client):
+    """DEV-2026-096: a marca segue a versão realmente vista, nos dois sentidos."""
+    _seed()
+    customer = J.make_customer(ref="CLI-VERSAO-SEMPRE")
+    _experiment(internal=[customer.ref])
+    J.authenticate(client, customer)
+    J.set_cart_qty(client, SKU, 1)
+    assert _cart_session(client).data["experience"] == {REF: {"variant": "b", "generation": 1}}
+
+    assert client.post("/api/v1/storefront/experience/opt-out/").status_code == 200
+    assert _cart_session(client).data["experience"] == {REF: {"variant": "a", "generation": 1}}
+
+    assert client.delete("/api/v1/storefront/experience/opt-out/").status_code == 200
+    assert _cart_session(client).data["experience"] == {REF: {"variant": "b", "generation": 1}}
+
+    client.post("/api/v1/storefront/experience/opt-out/")
+    assert _order(client).data["experience"] == {REF: {"variant": "a", "generation": 1}}

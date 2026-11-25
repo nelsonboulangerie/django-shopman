@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-096",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "há algum jeito de o dono saber em qual versão está (um selo discreto só para a coorte interna, tipo \"versão B\")?",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "-",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}

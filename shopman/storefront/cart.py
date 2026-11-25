@@ -570,3 +570,16 @@ def reprice_cart_on_login(sender, request=None, user=None, **kwargs) -> None:
         session.get("cart_session_key"),
         customer_ref=(getattr(customer, "ref", "") or "").strip() or None,
     )
+
+
+def remark_experience(request: HttpRequest) -> None:
+    """A sacola aberta passa a dizer a versão que a pessoa vê a partir de agora.
+
+    Chamado por "Ver a versão de sempre" e pela volta (DEV-2026-096), que são
+    comandos: sem isto, quem troca de versão e finaliza sem mexer na sacola levaria
+    ao pedido a versão de antes. Sem sacola, nada.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    CartService._mark_experience(request, session.get("cart_session_key"))
