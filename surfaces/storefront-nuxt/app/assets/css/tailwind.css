@@ -900,5 +900,6 @@
 a[data-navigation-pending] {
   cursor: progress;
   opacity: 0.6;
-  transition: opacity 120ms ease-out;
+  /* Sem transição: a marca precisa pintar no primeiro quadro depois do toque. */
+  transition: none;
 }

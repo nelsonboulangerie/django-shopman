@@ -161,14 +161,17 @@ describe('clique nunca inerte (loja)', () => {
     expect(discardedAsyncClicks(`${script}<template><UiButton @click="save({ a: 1 })" /></template>`)).toEqual([])
   })
 
-  it('a raiz está ligada: UiButton pendente por padrão, barra de rota e link marcado', () => {
+  it('a raiz está ligada: UiButton pendente por padrão, barra de rota, link marcado e quadro antes da troca', () => {
     const button = read('app/components/ui/Button.vue')
     expect(button).toContain('autoPending.value = true')
     expect(button).toMatch(/:aria-busy="busy \|\| undefined"/)
-    const app = read('app/app.vue')
-    expect(app).toMatch(/<NuxtLoadingIndicator[^>]*:throttle="0"/)
+    expect(read('app/app.vue')).toContain('<NavigationFeedback />')
     const feedback = read('app/components/NavigationFeedback.vue')
     expect(feedback).toContain('markLink(link)')
+    // A barra anda só por `transform` (o compositor a mantém viva em tarefa longa).
+    expect(feedback).toContain('data-navigation-route-bar')
+    expect(feedback).toMatch(/@keyframes navigation-route-bar \{\s*from \{ transform/)
+    expect(read('app/plugins/navigationPaintsFirst.client.ts')).toContain('await nextPaint()')
     expect(read('app/assets/css/tailwind.css')).toContain('a[data-navigation-pending]')
   })
 

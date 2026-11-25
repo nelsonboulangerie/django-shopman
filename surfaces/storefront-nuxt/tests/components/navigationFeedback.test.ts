@@ -134,6 +134,9 @@ describe('NavigationFeedback', () => {
     link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
     expect(link.getAttribute('aria-busy')).toBe('true')
     expect(link.hasAttribute('data-navigation-pending')).toBe(true)
+    await nextTick()
+    // A barra de rota entra no toque, sem limiar.
+    expect(wrapper.find('[data-navigation-route-bar]').exists()).toBe(true)
 
     await nuxtApp.callHook('page:finish')
     expect(link.hasAttribute('aria-busy')).toBe(false)
