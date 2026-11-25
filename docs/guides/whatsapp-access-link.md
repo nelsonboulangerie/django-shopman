@@ -37,6 +37,23 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
    (`cart_session_key`) + redireciona (`metadata.next`).
 ```
 
+### O destino fica também com o navegador que começou (DEV-2026-092)
+
+A referência `NB-XxXx` é de uso único. A mesma mensagem processada duas vezes (a
+cliente reenviou, o External Request repetiu), o texto que não chega ao External
+Request ou a referência vencida deixam o link da resposta só com o `next: "/menu"` do
+ManyChat. O botão abre a loja numa aba nova do MESMO navegador: a sacola estava lá (o
+cookie é o mesmo), o destino não, e quem tocou em Finalizar caía no cardápio.
+
+Por isso o `/start` guarda o destino também na sessão Django do navegador
+(`shopman:login-destination`, `{path, until}`, com o prazo da referência,
+`access.remember_login_destination`). Na troca de um link que é resposta do WhatsApp
+(`source=manychat`), sem pedido e sem o contexto da referência
+(`access.link_carries_site_context`), vale o destino guardado, e o aviso de "sacola que
+não veio" não sai quando a sacola está neste navegador. Navegador que não começou a
+entrar segue o link, como antes. Prova ponta a ponta: jornada J16
+(`surfaces/storefront-nuxt/tests/journeys/j16-finalizar-depois-de-entrar.spec.ts`).
+
 ### A aba de origem entra sozinha (26/09/2026)
 
 A queixa dos testadores que chegavam pelo site era a volta: "vai pro WhatsApp, envia uma

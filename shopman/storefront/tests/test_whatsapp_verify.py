@@ -203,3 +203,142 @@ def test_a_frase_humana_ainda_carrega_o_codigo(client: Client):
     assert contains_code(body["message"])
     assert extract_code(body["message"]) == body["code"]
     assert "quero entrar no site" in body["message"].lower()  # a palavra-chave do flow
+
+
+# ── DEV-2026-092: quem tocou em Finalizar volta a Finalizar ─────────────────────
+#
+# A fala do dono: a cliente tocou em Finalizar, entrou pelo WhatsApp e precisou tocar em
+# Finalizar de novo. A referência NB-… é de uso único: a mesma mensagem processada duas
+# vezes (ou sem o texto, ou vencida) deixa o link da resposta só com o "/menu" do
+# ManyChat. O botão abre a loja numa aba nova do MESMO navegador, e ali o destino que o
+# navegador guardou ao começar a entrar vale.
+
+
+def _create_twice(customer: Customer, message: str) -> dict:
+    payload = {"customer_id": str(customer.uuid), "access_code": message, "next": "/menu"}
+    key = ACCESS_SETTINGS["ACCESS_LINK_API_KEY"]
+    first = _post_json(Client(), "/api/auth/access/create/", payload, HTTP_X_API_KEY=key)
+    assert first.status_code == 200, first.content
+    second = _post_json(Client(), "/api/auth/access/create/", payload, HTTP_X_API_KEY=key)
+    assert second.status_code == 200, second.content
+    link = second.json()
+    # A segunda resposta vai sem o contexto do site: é o caso do dono.
+    assert link["handoff_expired"] is True
+    assert link["has_cart_context"] is False
+    return link
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS, DOORMAN=ACCESS_SETTINGS)
+def test_link_sem_o_contexto_do_site_volta_a_finalizar_no_navegador_que_comecou(client: Client):
+    customer = _customer()
+    sku, _cart_key = _add_to_cart(client)
+    start = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"}).json()
+    link = _create_twice(customer, start["message"])
+
+    # O botão abre a loja numa aba nova do mesmo navegador: o mesmo cookie.
+    exchange = _post_json(client, "/api/v1/auth/access/", {"token": link["token"]})
+
+    assert exchange.status_code == 200, exchange.content
+    body = exchange.json()
+    assert body["redirect"] == "/finalizar"
+    # A sacola está aqui; dizer que ela não veio seria mentir.
+    assert "handoff_expired" not in body
+    assert "notice" not in body
+    cart = client.get("/api/v1/storefront/cart/").json()["cart"]
+    assert cart["items_count"] == 1
+    assert cart["items"][0]["sku"] == sku
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS, DOORMAN=ACCESS_SETTINGS)
+def test_navegador_que_nao_comecou_a_entrar_segue_o_link(client: Client):
+    customer = _customer()
+    _add_to_cart(client)
+    start = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"}).json()
+    link = _create_twice(customer, start["message"])
+
+    other_browser = Client()
+    body = _post_json(other_browser, "/api/v1/auth/access/", {"token": link["token"]}).json()
+
+    # Sem tentativa guardada neste navegador, vale o destino do link, e o aviso de
+    # sacola que ficou para trás continua dizendo a verdade.
+    assert body["redirect"] == "/menu"
+    assert body["handoff_expired"] is True
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS, DOORMAN=ACCESS_SETTINGS)
+def test_destino_que_veio_com_a_referencia_ganha_do_guardado(client: Client):
+    customer = _customer()
+    _add_to_cart(client)
+    start = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"}).json()
+    # Depois, o mesmo navegador recomeça a entrar por outro caminho (sem destino).
+    session = client.session
+    session["shopman:login-destination"] = {"path": "/conta", "until": 9_999_999_999}
+    session.save()
+    create = _post_json(
+        Client(),
+        "/api/auth/access/create/",
+        {"customer_id": str(customer.uuid), "access_code": start["message"], "next": "/menu"},
+        HTTP_X_API_KEY=ACCESS_SETTINGS["ACCESS_LINK_API_KEY"],
+    )
+    link = create.json()
+    assert link["has_cart_context"] is True
+
+    body = _post_json(client, "/api/v1/auth/access/", {"token": link["token"]}).json()
+
+    assert body["redirect"] == "/finalizar"
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS, DOORMAN=ACCESS_SETTINGS)
+def test_link_que_nao_e_resposta_do_whatsapp_nao_usa_o_destino_guardado(client: Client):
+    customer = _customer()
+    _add_to_cart(client)
+    _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"})
+    # Link de campanha (nós empurramos): o destino é o do link.
+    create = _post_json(
+        Client(),
+        "/api/auth/access/create/",
+        {"customer_id": str(customer.uuid), "source": "internal", "next": "/menu"},
+        HTTP_X_API_KEY=ACCESS_SETTINGS["ACCESS_LINK_API_KEY"],
+    )
+    assert create.status_code == 200, create.content
+
+    body = _post_json(client, "/api/v1/auth/access/", {"token": create.json()["token"]}).json()
+
+    assert body["redirect"] == "/menu"
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
+@pytest.mark.parametrize(
+    "next_path",
+    ["/finalizar", "https://evil.example/finalizar", "//evil.example", "/entrar?next=/finalizar", "/a?t=x", ""],
+)
+def test_start_so_guarda_destino_interno_com_sentido(client: Client, next_path: str):
+    # Sem sacola, Finalizar não é destino; fora da loja e a própria entrada, nunca.
+    _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": next_path})
+
+    assert "shopman:login-destination" not in client.session
+
+
+@override_settings(SHOPMAN_WA_VERIFY=WA_SETTINGS)
+def test_start_guarda_o_destino_e_o_ultimo_gesto_vale(client: Client):
+    _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/produto/PAO"})
+    assert client.session["shopman:login-destination"]["path"] == "/produto/PAO"
+
+    _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": ""})
+    assert "shopman:login-destination" not in client.session
+
+
+def test_destino_guardado_vence_com_o_prazo_da_referencia(rf):
+    from django.contrib.sessions.backends.db import SessionStore
+
+    from shopman.shop.services import access as access_service
+
+    request = rf.get("/")
+    request.session = SessionStore()
+    access_service.remember_login_destination(request, "/finalizar")
+    assert access_service.pop_login_destination(request) == "/finalizar"
+    # Uso único.
+    assert access_service.pop_login_destination(request) == ""
+
+    request.session[access_service.LOGIN_DESTINATION_SESSION_KEY] = {"path": "/finalizar", "until": 1}
+    assert access_service.pop_login_destination(request) == ""
