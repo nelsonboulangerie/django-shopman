@@ -19,6 +19,8 @@ O que se prova:
 - documento com sessão é privado em qualquer rota, inclusive na versão padrão; o
   anônimo segue cacheável (#3474);
 - o login gravou a aderência na sessão do servidor (``shopman_experience``);
+- a primeira página depois do login já monta com a versão de quem entrou, sem
+  recarregar (#3572: ela saía com a do anônimo até a releitura do shell voltar);
 - parâmetro de URL não troca a versão de ninguém.
 
 Não há tela B (isso é o OC-33, depois da aprovação L2): o consumidor da versão no
@@ -56,6 +58,18 @@ async (path) => {
   const body = await response.json()
   const items = (body && body.shell && body.shell.experience) || []
   return { status: response.status, cacheControl: response.headers.get('cache-control') || '', items }
+}
+"""
+
+
+# O shell que as páginas leem (``useNuxtData('shopman-shell')``), no instante da
+# leitura: não busca nada, só mostra o que a loja tem em mãos para montar a tela.
+_CLIENT_SHELL = """
+() => {
+  const nuxt = document.querySelector('#__nuxt').__vue_app__.config.globalProperties.$nuxt
+  const entry = nuxt._asyncData['shopman-shell']
+  const shell = entry ? entry.data.value : nuxt.payload.data['shopman-shell']
+  return (shell && shell.shell && shell.shell.experience) || []
 }
 """
 
@@ -177,6 +191,12 @@ class TestExperienceDecidedByTheServer:
         self, page, store_base_url, django_db_blocker
     ):
         _sign_in_by_sms(page, store_base_url, COHORT_CUSTOMER_PHONE)
+
+        # #3572: no instante em que a primeira página depois do login chega, sem
+        # recarregar, a loja já tem o shell de quem entrou.
+        assert _variant(page.evaluate(_CLIENT_SHELL)) == "b", (
+            "a primeira página depois do login chegou com a versão do anônimo"
+        )
 
         # O login (comando) gravou a aderência; o GET do shell só lê.
         assert _session_experience(django_db_blocker, page.context)[EXPERIMENT_REF] == {

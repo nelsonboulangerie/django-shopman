@@ -90,6 +90,10 @@ const {
   onFocusIn: onCheckoutFocusIn,
   onFocusOut: onCheckoutFocusOut
 } = useMobileFormViewport(checkoutRoot)
+// O card da ação só flutua enquanto deixa a página à vista (#3573): com a fonte do
+// sistema a 200 % ele desce para o fim do formulário, depois da dica "tem mais abaixo".
+const actionDock = ref<HTMLElement | null>(null)
+const actionDockFloats = useActionDockFit(actionDock)
 // DDD padrão da loja (config admin) — assumido quando o cliente digita telefone
 // sem DDD, para o número nunca virar "(55) …" nem falhar a validação por isso.
 // O checkout carrega o DDD padrão direto (crítico p/ normalizar telefone mesmo
@@ -2666,9 +2670,11 @@ useSeoMeta({
                lateral assume e o card volta ao fim do fluxo. -->
           <div
             v-show="!keyboardActive"
+            ref="actionDock"
             class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:sticky md:bottom-4 lg:static"
+            :class="{ 'shop-action-dock--in-flow': !actionDockFloats }"
             data-checkout-action-card
-            data-focus-obstruction
+            :data-focus-obstruction="actionDockFloats ? '' : undefined"
           >
             <!-- A linha do total abre o resumo. Era um botão "Resumo" próprio na
                  barra invisível; aqui ela é o toque, e o ícone de nota diz isso.

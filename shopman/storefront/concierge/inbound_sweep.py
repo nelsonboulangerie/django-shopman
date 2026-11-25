@@ -18,6 +18,14 @@ Limites (coordenação, 21/11/2026):
 
 A entrada reingerida passa pelo mesmo ``service.receive_inbound`` do webhook, com a hora
 que o ManyChat diz que o cliente escreveu, e o turno é agendado como sempre.
+
+**WhatsApp (medido em 24/11/2026):** no ``getInfo`` de um contato do WhatsApp, o
+``last_interaction`` é o do Messenger, velho (``2024-06-11``), e ``whatsapp_interaction`` vem
+vazio. A varredura pulava toda entrada como velha: estava cega para o WhatsApp, e a mensagem
+do dono perdida no deploy das 20h10Z não voltou. Sem hora confiável do provedor, a entrada
+perdida é a última fala do ManyChat que **difere da última que temos**, com a nossa última
+ainda dentro da janela; a hora dela fica a nossa última (o piso: nunca alarga a janela). A
+chave (contato, nossa última, texto) segura a reentrega a uma vez.
 """
 
 from __future__ import annotations
@@ -60,6 +68,18 @@ def _key(subject: str, at: datetime, text: str) -> str:
     return hashlib.sha256(f"{subject}|{at.isoformat()}|{text}".encode()).hexdigest()[:24]
 
 
+def _whatsapp(info: dict) -> bool:
+    """Contato do WhatsApp no ``getInfo``: o ``last_interaction`` dele não é a hora da fala no WhatsApp."""
+    return "whatsapp_interaction" in info or bool(info.get("whatsapp_phone"))
+
+
+def _latest_text(binding) -> str:
+    from shopman.shop.models import ConversationMessage
+
+    return str(ConversationMessage.objects.filter(binding=binding, kind=ConversationMessage.Kind.INBOUND)
+               .order_by("-pk").values_list("text", flat=True).first() or "").strip()
+
+
 def candidates(limit: int = MAX_PER_ROUND) -> list:
     """Os vínculos a conferir nesta rodada: os conferidos há mais tempo primeiro."""
     from shopman.shop.models import Conversation, ConversationBinding
@@ -88,7 +108,7 @@ def _mark(conversation, **values) -> None:
     Conversation.objects.filter(pk=conversation.pk).update(flags=flags)
 
 
-def _event(binding, text: str, written_at: datetime):
+def _event(binding, text: str, written_at: datetime, *, assurance: str = "provider_api"):
     """O mesmo evento que o webhook monta, com a hora que o ManyChat diz que o cliente escreveu."""
     from . import transport
     from .contracts import InboundEvent, TransportScope
@@ -120,7 +140,7 @@ def _event(binding, text: str, written_at: datetime):
         received_at=timezone.now(),
         event_identity_assurance="unavailable",
         occurred_at=written_at,
-        occurred_at_assurance="provider_api",
+        occurred_at_assurance=assurance,
         correlation_ref="inbound_sweep",
         authentication_assurance=authentication,
         payload_hash=hashlib.sha256(
@@ -144,10 +164,21 @@ def sweep(*, now: datetime | None = None, limit: int = MAX_PER_ROUND) -> dict[st
         try:
             info = _subscriber_info(binding.subject) or {}
             text = str(info.get("last_input_text") or "").strip()
-            written_at = _parse(info.get("last_interaction"))
             _mark(conversation, checked_at=now.isoformat())
             ours = binding.last_inbound_at
-            if not text or written_at is None or now - written_at > WINDOW or (ours and written_at <= ours + SKEW):
+            assurance = "provider_api"
+            if _whatsapp(info):
+                written_at = _parse(info.get("whatsapp_interaction"))
+                if written_at is None:
+                    # Sem a hora do WhatsApp: a fala que difere da nossa última, com a nossa última na janela.
+                    if not text or ours is None or now - ours > WINDOW or text == _latest_text(binding):
+                        counts["skipped"] += 1
+                        continue
+                    written_at, assurance = ours, "lower_bound"
+            else:
+                written_at = _parse(info.get("last_interaction"))
+            if not text or written_at is None or now - written_at > WINDOW or (
+                    assurance == "provider_api" and ours and written_at <= ours + SKEW):
                 counts["skipped"] += 1
                 continue
             key = _key(binding.subject, written_at, text)
@@ -157,7 +188,7 @@ def sweep(*, now: datetime | None = None, limit: int = MAX_PER_ROUND) -> dict[st
             if already:
                 counts["skipped"] += 1
                 continue
-            event = _event(binding, text, written_at)
+            event = _event(binding, text, written_at, assurance=assurance)
             if event is None:
                 counts["skipped"] += 1
                 continue

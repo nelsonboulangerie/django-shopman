@@ -67,7 +67,11 @@ async function expectReadable (page: Page, testInfo: TestInfo, route: string, op
     await layoutSettled(page)
     const zoomed = await page.evaluate(auditTypographyInPage, { zoomed: true })
     await page.evaluate(() => { document.documentElement.style.fontSize = '' })
-    expect(zoomed.findings, `${route} a ${width} px com a fonte a 200 %: decisivo ou ação sumiu, saiu da tela ou foi cortado`).toEqual([])
+    expect(zoomed.findings, `${route} a ${width} px com a fonte a 200 %: decisivo ou ação sumiu, saiu da tela ou foi cortado, ou o cartão fixo da base cobre a página`).toEqual([])
+    // Exceção a 200 % só a declarada, com a issue que a tira: o cartão de Adicionar do
+    // produto ainda cobre a página (#3590); o da sacola e o do finalizar já não (#3573).
+    expect(zoomed.exceptions.map(e => e.exception).filter(e => e !== 'cartao-do-produto-3590'), `${route} a ${width} px com a fonte a 200 %: exceção não declarada`).toEqual([])
+    if (zoomed.exceptions.length) testInfo.annotations.push({ type: 'exceção a 200 % (#3590)', description: `${route} ${width} px: ${[...new Set(zoomed.exceptions.map(e => `${e.text} ${e.share}`))].join(', ')}` })
   }
   await page.setViewportSize(original)
   await layoutSettled(page)

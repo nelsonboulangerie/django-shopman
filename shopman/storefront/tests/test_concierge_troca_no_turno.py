@@ -96,6 +96,22 @@ def test_an_interrupted_turn_sends_nothing_through_the_engine(conversation, outb
 # ── #3410: o turno com efeito pelo motor no ar, pelo serviço de verdade ─────────────────────────
 
 DECIDED = "2026-11-23T00:00:00.000000Z"
+
+
+def _wednesday():
+    """A próxima quarta-feira com pelo menos dois dias de folga: o dia do pedido sempre no futuro e
+    sempre o mesmo dia da semana (a casa tem janela de entrega na quarta). Data fixa vira bomba-relógio:
+    "2026-11-25" quebrou o main no próprio dia 25."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    day = timezone.localdate() + timedelta(days=2)
+    return day + timedelta(days=(2 - day.weekday()) % 7)
+
+
+def _wednesday_label():
+    return f"quarta-feira, {_wednesday():%d/%m}"
 PIX = {"act": "choose_payment", "span": "pix", "product": "", "qty": 0, "change": "", "day": "", "mode": "",
        "time": "", "payment": "pix"}
 OFFER_TEAM = "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?"
@@ -351,7 +367,7 @@ def test_the_order_through_the_engine_sends_the_pix_apart_like_today(order_on_ai
     # A sacola já com o pão (como depois do "quero 1 pão francês"): o teste é do fechamento e do Pix.
     Session.objects.create(session_key="sess-pix", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "pickup", "delivery_date": "2026-11-25",
+                           data={"fulfillment_type": "pickup", "delivery_date": _wednesday().isoformat(),
                                  "delivery_time_slot": "slot-15"})
     order_on_air.session_key = "sess-pix"
     order_on_air.save(update_fields=["session_key"])
@@ -410,7 +426,7 @@ def _saved_flow(conversation, monkeypatch, script, saved, *, said_in_order=None,
     monkeypatch.setattr(tools, "set_fulfillment", house_writes)
     Session.objects.create(session_key="sess-salvo", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25",
+                           data={"fulfillment_type": "delivery", "delivery_date": _wednesday().isoformat(),
                                  "delivery_time_slot": "slot-15", "payment": {"method": "pix"}})
     conversation.session_key = "sess-salvo"
     conversation.save(update_fields=["session_key"])
@@ -433,7 +449,7 @@ def test_the_saved_address_is_offered_with_today_phrase_and_yes_takes_it(order_o
     assert outbox.sent[0] == saved_offer(saved) == "Entregamos no endereço do seu cadastro, Rua do Cadastro, 10 - Centro?"
     assert written and written[0].get("saved_address_pk") == 7  # o "sim" grava O endereço oferecido, pelo id
     # O "sim" volta ao resumo, com o endereço do cadastro na linha da entrega, pronto para o "sim" do pedido.
-    assert "Entrega: quarta-feira, 25/11, a partir das 15h\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
+    assert f"Entrega: {_wednesday_label()}, a partir das 15h\nRua do Cadastro, 10 - Centro\n" in outbox.sent[1]
     assert outbox.sent[1].endswith("Posso registrar?")
 
 
@@ -894,7 +910,7 @@ def test_the_delivery_summary_says_the_fee_and_the_address_and_the_total_has_the
                                 match_value="Centro", fee_q=800, is_active=True)
     Session.objects.create(session_key="sess-fee", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25"})
+                           data={"fulfillment_type": "delivery", "delivery_date": _wednesday().isoformat()})
     order_on_air.session_key = "sess-fee"
     order_on_air.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -905,6 +921,147 @@ def test_the_delivery_summary_says_the_fee_and_the_address_and_the_total_has_the
     assert "Total: R$ 8,90" in summary, summary  # R$ 0,90 do pão e R$ 8,00 da entrega
     assert "\nRua das Flores, 120 - Centro\n" in summary and "\nEntrega: R$ 8,00\n" in summary, summary
     assert summary.endswith("Posso registrar?")
+
+
+def _engine_order(order_on_air, monkeypatch, script, said, *, session_items=None, data=None, between=None):
+    """A conversa pelo motor com o registro de VERDADE da casa (``tools.place_order``, sem substituto)."""
+    from shopman.orderman.models import Session
+
+    from shopman.storefront.concierge import model_reader
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    shop = Shop.load()
+    shop.conversational_live_inform = True
+    shop.save()
+    Session.objects.create(session_key="sess-engine-order", channel_ref="whatsapp",
+                           items=session_items or [{"sku": SKU, "qty": 2, "unit_price_q": 90, "line_total_q": 180}],
+                           data=data or {})
+    order_on_air.session_key = "sess-engine-order"
+    order_on_air.save(update_fields=["session_key"])
+    for index, text in enumerate(said):
+        if between is not None and index == len(said) - 1:
+            between()
+        _receive(order_on_air, text, f"engine-order-{index}")
+        service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+
+
+PICKUP_SCRIPT = {"pode fechar": [{"act": "place_order"}], "amanhã": [{"act": "choose_fulfillment", "day": "tomorrow"}],
+                 "vou retirar": [{"act": "choose_fulfillment", "mode": "pickup"}],
+                 "às 16h": [{"act": "choose_fulfillment", "time": "16:00"}],
+                 "pix": [{"act": "choose_payment", "payment": "pix"}], "sim": [{"act": "affirm"}]}
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_engine_yes_places_a_pickup_order_in_the_house(order_on_air, outbox, monkeypatch,
+                                                          django_capture_on_commit_callbacks):
+    """ADR-050, emenda de 24/11: o "sim" ao "Posso registrar?" registra o pedido pela casa, sem o código. Antes,
+    a casa recusava (confirmation_required) e a Nice dizia "Isso eu não consigo fazer por aqui"."""
+    from shopman.orderman.models import Order
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS), django_capture_on_commit_callbacks(execute=True):
+        _engine_order(order_on_air, monkeypatch, PICKUP_SCRIPT,
+                      ["pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "sim"])
+    order = Order.objects.get()
+    assert order.total_q == 180 and not order.items.filter(sku="__DELIVERY_FEE__").exists()
+    assert outbox.sent[-1].startswith(f"Pedido {order.ref} registrado.")
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_yes_without_the_offer_places_nothing(order_on_air, outbox, monkeypatch):
+    """O "sim" solto, sem o "Posso registrar?" no ar, não tem concessão: nenhum pedido nasce."""
+    from shopman.orderman.models import Order
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _engine_order(order_on_air, monkeypatch, PICKUP_SCRIPT, ["sim"])
+    assert not Order.objects.exists()
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_cart_changed_after_the_offer_refuses_the_yes_and_offers_again(order_on_air, outbox, monkeypatch):
+    """A sacola mudou depois do "Posso registrar?" (pelo site, por exemplo): o "sim" não registra os termos velhos
+    nem os novos, que o cliente não viu; a Nice diz o total novo para ele conferir."""
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.services import sessions as session_service
+
+    def change_cart():  # a mudança canônica da sacola (a do site e a do PDV), que sobe a revisão
+        line = Session.objects.get(session_key="sess-engine-order").items[0]
+        session_service.modify_session(session_key="sess-engine-order", channel_ref="whatsapp",
+                                       ops=[{"op": "set_qty", "line_id": line["line_id"], "qty": 3}])
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _engine_order(order_on_air, monkeypatch, PICKUP_SCRIPT,
+                      ["pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "sim"], between=change_cart)
+    assert not Order.objects.exists()
+    # A frase aprovada do total que mudou (``present_terms.changed``): o cliente confere de novo antes de confirmar.
+    assert outbox.sent[-1] == "O total mudou; agora é R$ 2,70. Confira antes de confirmar.", outbox.sent[-1]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_a_price_change_after_the_offer_refuses_the_yes(order_on_air, outbox, monkeypatch):
+    """Coordenação (24/11): o preço muda depois do "Posso registrar?" sem ninguém mexer na sacola (o Happy Hour
+    acabou, o lote, o cupom vencido). A revisão da casa no registro repreça; o "sim" não pode registrar o total
+    novo, que o cliente não viu: recusa e diz o total novo."""
+    from shopman.offerman.models import ListingItem
+    from shopman.orderman.models import Order
+
+    from shopman.storefront.tests.test_concierge_engine import SKU
+
+    def reprice():  # o preço do canal muda; a sacola, não
+        ListingItem.objects.filter(product__sku=SKU).update(price_q=120)
+
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        _engine_order(order_on_air, monkeypatch, PICKUP_SCRIPT,
+                      ["pode fechar", "amanhã", "vou retirar", "às 16h", "pix", "sim"], between=reprice)
+    assert not Order.objects.exists(), Order.objects.values_list("total_q", flat=True)
+    assert outbox.sent[-1] == "O total mudou; agora é R$ 2,40. Confira antes de confirmar.", outbox.sent[-1]
+
+
+@pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
+def test_the_order_placed_in_the_conversation_with_delivery_counts_the_fee_once(order_on_air, outbox, monkeypatch,
+                                                                                django_capture_on_commit_callbacks):
+    """Coordenação (24/11), depois de o ensaio no ar achar a taxa contada duas vezes NO RESUMO: o pedido GRAVADO pela
+    conversa, com zona de entrega de verdade, é itens mais UMA taxa, com uma linha de taxa só. Pelo serviço de
+    verdade: o fechamento, o "sim" e o registro da casa (``tools.place_order``); só a geocodificação é de teste."""
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.models import DeliveryZone
+    from shopman.storefront.concierge import address, model_reader
+    from shopman.storefront.tests.test_concierge_authority import _located
+    from shopman.storefront.tests.test_concierge_engine import SKU, _tomorrow
+
+    script = {"pode fechar": [{"act": "place_order"}], "às 15h": [{"act": "choose_fulfillment", "time": "15:00"}],
+              "pix": [{"act": "choose_payment", "payment": "pix"}], "sim": [{"act": "affirm"}],
+              "[endereço omitido], Centro": [{"act": "give_address"}]}
+    real = type(model_reader.NiceReader())
+    monkeypatch.setattr(model_reader, "NiceReader",
+                        lambda: real(client=_ScriptedAI(script), model="m", gate=lambda t: ""))
+    monkeypatch.setattr(address, "saved_addresses", lambda ref: [])
+    monkeypatch.setattr("shopman.shop.services.geocoding.forward_geocode_structured",
+                        lambda text: _located("Rua das Flores", "120", "86010-000"))
+    shop = Shop.load()
+    shop.conversational_live_inform = True
+    shop.save()
+    DeliveryZone.objects.create(shop=shop, name="Centro", zone_type=DeliveryZone.ZONE_TYPE_CEP_PREFIX,
+                                match_value="860", fee_q=800, is_active=True)
+    Session.objects.create(session_key="sess-fee-order", channel_ref="whatsapp",
+                           items=[{"sku": SKU, "qty": 2, "unit_price_q": 90, "line_total_q": 180}],
+                           data={"fulfillment_type": "delivery", "delivery_date": _tomorrow()})
+    order_on_air.session_key = "sess-fee-order"
+    order_on_air.save(update_fields=["session_key"])
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS), django_capture_on_commit_callbacks(execute=True):
+        for index, said in enumerate(["pode fechar", "Rua das Flores 120, Centro", "sem complemento", "às 15h", "pix",
+                                      "sim"]):
+            _receive(order_on_air, said, f"fee-order-{index}")
+            service.run_turn(order_on_air.pk, _binding(order_on_air).pk)
+    assert Order.objects.exists(), " ||| ".join(outbox.sent)  # o "sim" registrou
+    order = Order.objects.get()
+    assert order.total_q == 180 + 800, (order.total_q, outbox.sent)  # dois pães e UMA taxa
+    assert order.items.filter(sku="__DELIVERY_FEE__").count() == 1
+    assert order.data["payment"]["amount_q"] == 980
 
 
 @pytest.mark.django_db(transaction=True)  # o executor é a transação de fora (commerce_execute)
@@ -943,7 +1100,7 @@ def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it
     shop.save()
     Session.objects.create(session_key="sess-win", channel_ref="whatsapp",
                            items=[{"sku": SKU, "qty": 1, "unit_price_q": 90, "line_total_q": 90}],
-                           data={"fulfillment_type": "delivery", "delivery_date": "2026-11-25"})
+                           data={"fulfillment_type": "delivery", "delivery_date": _wednesday().isoformat()})
     order_on_air.session_key = "sess-win"
     order_on_air.save(update_fields=["session_key"])
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -957,5 +1114,5 @@ def test_the_delivery_asks_the_window_after_the_address_and_the_summary_shows_it
     options = window.split("? ", 1)[1]
     assert options[0].isupper() and options.endswith(".") and "A partir" not in options[1:]
     assert pay.startswith("Como você prefere pagar?")
-    assert re.search(r"Entrega: quarta-feira, 25/11, .*15h", summary) and summary.endswith("Posso registrar?")
+    assert re.search(rf"Entrega: {_wednesday_label()}, .*15h", summary) and summary.endswith("Posso registrar?")
     assert Session.objects.get(session_key="sess-win").data["delivery_time_slot"]

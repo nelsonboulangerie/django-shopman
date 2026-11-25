@@ -68,6 +68,14 @@ export default defineNuxtConfig({
         weights: [400, 500, 600, 700],
         styles: ["normal"],
       },
+      // A grotesca condensada de painel do Letreiro (escolha do dono), nos pesos
+      // das palhetas (500) e do título (600).
+      {
+        name: "Oswald",
+        provider: "google",
+        weights: [500, 600],
+        styles: ["normal"],
+      },
     ],
   },
 

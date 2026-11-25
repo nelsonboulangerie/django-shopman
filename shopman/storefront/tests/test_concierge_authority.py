@@ -478,3 +478,31 @@ def test_review_invalid_notes_do_not_mutate_draft(ctx):
     assert not tools.review_order(ctx, "pix", "x" * 301)["ok"]
     session.refresh_from_db()
     assert session.data == before
+
+
+def test_the_engine_grant_places_once_and_another_command_with_it_is_refused(ctx, django_capture_on_commit_callbacks):
+    """ADR-050, emenda de 24/11: a confirmação do motor vale UMA vez. O mesmo comando repete o resultado (o mesmo
+    pedido); outro comando com a mesma concessão é recusado antes de chegar à casa, e nenhum pedido novo nasce."""
+    from types import SimpleNamespace
+
+    from shopman.storefront.concierge.effect_site import ConciergeEffectSite
+
+    quote = _pickup_ready(ctx)
+    site = ConciergeEffectSite(ctx)
+    first = SimpleNamespace(grant_id="grant-1", command_id="cmd-1")
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = site._place_by_engine(first, quote["quote_token"], "pix", "")
+    assert placed["ok"], placed
+    again = site._place_by_engine(first, quote["quote_token"], "pix", "")  # reenvio do mesmo comando
+    assert again["order_ref"] == placed["order_ref"]
+    reused = site._place_by_engine(SimpleNamespace(grant_id="grant-1", command_id="cmd-2"), quote["quote_token"],
+                                   "pix", "")
+    assert reused == {"ok": False, "code": "confirmation_used"}
+    assert Order.objects.count() == 1
+
+
+def test_without_the_engine_proof_the_house_still_asks_for_the_code(ctx):
+    """Fora do sítio de efeito do motor, nada muda: o registro sem a confirmação do código é recusado (ADR-050)."""
+    quote = _pickup_ready(ctx)
+    refused = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert refused["error"] == "confirmation_required" and not Order.objects.exists()

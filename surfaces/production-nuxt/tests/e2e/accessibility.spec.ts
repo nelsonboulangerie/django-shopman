@@ -245,7 +245,7 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.install({ time: new Date("2026-09-14T12:00:00-03:00") });
   await page.goto("/board");
-  await expect(page.getByRole("heading", { name: "Lotes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produção do dia" })).toBeVisible();
   expect(
     await page.evaluate(
       () => matchMedia("(prefers-reduced-motion: reduce)").matches,

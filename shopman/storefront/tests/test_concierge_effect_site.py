@@ -121,12 +121,13 @@ def test_change_cart_without_item_or_whole_quantity_is_invalid_content(site, mon
 
 
 def test_lock_reads_epoch_version_and_terms_of_the_conversation(site):
+    offered = Session.objects.get(session_key="sess-1").rev
     with transaction.atomic():
         reading = site.lock(CTX, command("commit_order", "sess-1"))
         discount = site.lock(CTX, command("grant_discount", "sess-1"))
-    rev = Session.objects.get(session_key="sess-1").rev
-    # A época é a do episódio, lida no livro (0), nunca a cerca do turno da casa (7) nem a do comando.
-    assert (reading.ownership_epoch, reading.versions, reading.terms_ref) == (0, {"sess-1": rev}, "tok-1")
+    # A época é a do episódio, lida no livro (0), nunca a cerca do turno da casa (7) nem a do comando. No registro, a
+    # sacola é repreçada (a revisão gravada sobe), e o total igual mantém a revisão da oferta.
+    assert (reading.ownership_epoch, reading.versions, reading.terms_ref) == (0, {"sess-1": offered}, "tok-1")
     assert discount.terms_ref is None  # termos só no fechamento do pedido
 
 

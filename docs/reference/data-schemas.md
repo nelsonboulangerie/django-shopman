@@ -326,8 +326,10 @@ valid_until, pending?, listed?, focus?, order?, last_change?, parts?, closing?}`
 gravou (gravação na mesma transação da resposta; turno revogado não grava); `at` e `valid_until` são ISO
 8601. `valid_until` é o fim do PRÓXIMO dia de funcionamento depois do dia de `at`, pelo calendário da
 casa (`business_calendar`): vale para `listed`, `focus` e `last_change`. `pending` é a pergunta que a
-casa deixou no ar, `{kind, options?, token?, order_ref?, item?, sku?, qty?, add?, total_q?, day?}`, com `kind` em `offer_team`
-(busca sem resultado: "Posso chamar a equipe."), `choose` (lista com mais de um item), `confirm_order`
+casa deixou no ar, `{kind, options?, groups?, token?, order_ref?, item?, sku?, qty?, add?, total_q?, day?}`, com `kind` em `offer_team`
+(busca sem resultado: "Posso chamar a equipe."), `choose` (lista com mais de um item), `choose_each` (duas ou
+mais coisas pedidas no mesmo turno, cada uma com mais de um item, #3597: `groups` = `[{asked, qty, options}]`
+na ordem do pedido, `asked` = o que o cliente escreveu; a resposta que escolhe só parte deixa o resto no ar), `confirm_order`
 (resumo pronto; `token` = `quote_token`, vale enquanto for o de `Conversation.quote`), `ask_address`
 (`offer=true` quando é a oferta do endereço do cadastro), `ask_date` e `ask_fulfillment` (o dia e o
 recebimento do fechamento na conversa, WP-13), `ask_payment` (formas do canal, sem dinheiro),

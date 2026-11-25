@@ -12,8 +12,9 @@ const props = withDefaults(
     align?: "left" | "right";
     pulse?: number; // incrementar re-gira as palhetas até o MESMO valor —
     // o tique periódico dos painéis reais (mais honesto que piscar).
+    upper?: boolean; // a hora da casa guarda o "h" minúsculo ("6h42")
   }>(),
-  { chars: 0, align: "left", pulse: 0 },
+  { chars: 0, align: "left", pulse: 0, upper: true },
 );
 
 const FLAP_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -39,7 +40,7 @@ function later(fn: () => void, ms: number) {
 }
 
 function targetChars(): string[] {
-  const raw = (props.value ?? "").toUpperCase();
+  const raw = props.upper ? (props.value ?? "").toUpperCase() : (props.value ?? "");
   const width = props.chars || raw.length || 1;
   const clipped = raw.slice(0, width);
   const pad = " ".repeat(Math.max(0, width - clipped.length));
@@ -156,6 +157,9 @@ if (!import.meta.client) {
   width: 0.78em;
   height: 1.18em;
   border-radius: 0.09em;
+  /* A palheta recorta a própria letra, como a física: glifo largo (M, W) ou o
+     caractere de passagem da cascata nunca invade a célula vizinha. */
+  overflow: hidden;
   background: linear-gradient(180deg, #3a2a1f 0%, #2b1d16 48%, #1e140e 52%, #2a1c14 100%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 60%);
   font-variant-numeric: tabular-nums;

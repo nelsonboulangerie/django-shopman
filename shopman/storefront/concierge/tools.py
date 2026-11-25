@@ -31,6 +31,9 @@ import json
 import logging
 import re
 import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_type
 from datetime import timedelta
@@ -85,6 +88,9 @@ class ToolContext:
     #: Texto humano deste turno, capturado pelo servidor. Uma consulta refinada
     #: por quem chama pode refiná-lo, nunca apagar uma parte da pergunta original.
     customer_text: str = ""
+    #: A fala como o cliente escreveu, quando ``customer_text`` é a busca já corrigida
+    #: ("campagne" para "pão champagne"). Só desempata nomes, nunca acha item sozinha.
+    spoken_text: str = ""
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
@@ -254,6 +260,7 @@ def _item_payload(item) -> dict:
         "promotion": (str(adjustment.badge_label or adjustment.label) if adjustment else ""),
         "unit": item.unit_weight_label or "",
         "collection": item.category or "",
+        "keywords": list(item.tags or ()),
     }
 
 
@@ -559,6 +566,36 @@ _MENU_OVERVIEW_TERMS = frozenset(
 )
 
 
+#: Como se escreve o que se ouve: "campanha" é "campagne" (o "gn" francês é o nosso "nh"),
+#: "ciabata" é "ciabatta", "capuccino" é "cappuccino", "tradição" é "tradition". A chave
+#: compara o som, não a letra.
+_SOUND_RULES = (("tion", "sao"), ("cao", "sao"), ("gn", "nh"), ("ph", "f"), ("th", "t"), ("ch", "x"), ("sh", "x"),
+                ("y", "i"), ("w", "v"), ("qu", "k"), ("c", "k"))
+
+#: A palavra francesa do cardápio que o cliente diz em português: "pão au chocolat" (observação,
+#: 19/11/2026) é o "Pain au Chocolat".
+_SPOKEN_AS = {"pain": "pao"}
+
+
+def sound_key(word: str) -> str:
+    key = _fold(word)
+    for written, spoken in _SOUND_RULES:
+        key = key.replace(written, spoken)
+    key = re.sub(r"(.)\1+", r"\1", key)  # letra dobrada soa como uma: "baguette", "ciabatta"
+    key = re.sub(r"s$", "", key)  # o plural: "croassants" pede o croissant
+    return re.sub(r"[eao]$", "", key)  # a vogal final some na fala: "campagne" e "campanha"
+
+
+def heard(word: str) -> str:
+    """A palavra (dobrada, sem acento) como se ouve: sem o plural e, de cinco letras para cima,
+    pela chave do som ("baguete" e "baguette" são a mesma). Palavra curta fica no radical: no
+    som, "pão" e "pá" seriam uma só."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    stem = word_stem(_SPOKEN_AS.get(word, word))
+    return sound_key(stem) if len(stem) >= 5 else stem
+
+
 def _public_search_terms(query: str) -> tuple[str, ...]:
     """Meaningful normalized words from a natural customer question."""
     return tuple(
@@ -611,6 +648,9 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     items = list(catalog.items) if catalog is not None else []
     if needle and items:
         terms = _public_search_terms(needle)
+        said_terms = {heard(word) for word in re.findall(r"[a-z0-9]+", _fold(ctx.spoken_text or ""))} | {
+            heard(term) for term in terms
+        }
         ranked_items = []
         for index, item in enumerate(items):
             haystack = _fold(
@@ -618,17 +658,28 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
                     [item.name, item.short_description or "", item.category or "", " ".join(item.search_terms or ())]
                 )
             )
-            haystack_terms = {word_stem(word) for word in re.findall(r"[a-z0-9]+", haystack)}
-            score = sum(1 for term in terms if word_stem(term) in haystack_terms)
+            # Como se ouve: "baguete" acha a "Baguette", "pão" acha o "Pain".
+            haystack_terms = {heard(word) for word in re.findall(r"[a-z0-9]+", haystack)}
+            score = sum(1 for term in terms if heard(term) in haystack_terms)
             name = _fold(item.name)
             score += 4 if name and name in needle else 0
+            # No empate, o nome vence a palavra-chave: "croissant" é o Croissant antes do Pain
+            # au Chocolat, que leva "croissant" só nas palavras-chave.
+            name_terms = {heard(word) for word in re.findall(r"[a-z0-9]+", name)}
+            named = sum(1 for term in terms if heard(term) in name_terms)
+            # Ainda empatados: o nome que a fala inteira mais cita. "pão champagne" busca só
+            # "campagne", e o "pão" da fala é o "Pain" do Pain de Campagne.
+            said = len(name_terms & said_terms)
+            # E ainda: o que não é variante. "campagne" põe o Pain de Campagne antes do Campagne
+            # Redondo e do de passas, que levam no nome uma palavra que o cliente não disse.
+            extra = len({heard(word) for word in _public_search_terms(name)} - said_terms - {heard("pao")})
             if score:
-                ranked_items.append((-score, index, item))
-        ranked_items.sort(key=lambda row: (row[0], 0 if row[2].can_add_to_cart else 1, row[1]))
+                ranked_items.append((-score, -named, -said, extra, index, item))
+        ranked_items.sort(key=lambda row: (row[0], row[1], row[2], row[3], 0 if row[5].can_add_to_cart else 1, row[4]))
         if ranked_items:
             best_score = -ranked_items[0][0]
             threshold = max(1, best_score - 1)
-            items = [item for score, _, item in ranked_items if -score >= threshold]
+            items = [item for score, _named, _said, _extra, _, item in ranked_items if -score >= threshold]
         else:
             items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
@@ -1509,6 +1560,35 @@ def _code_confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
+@dataclass(frozen=True)
+class EngineConfirmation:
+    """A confirmação do motor no lugar do código (ADR-050, emenda de 24/11/2026).
+
+    O "sim" ao "Posso registrar?" do motor (aprovado pelo dono em 23/11) é preso pelo motor aos termos que o
+    cliente viu: a concessão, o hash dos termos, a revisão da sacola e a época de posse, que a guarda do Core
+    confere dentro do sítio de efeito. ``quote_token`` é a revisão da casa feita NESSE efeito, depois da guarda.
+    ``pk``: a mensagem do cliente que confirmou, para o recibo do pedido (como a do código).
+    """
+
+    pk: int | None
+    grant_id: str
+    quote_token: str
+
+
+#: A confirmação do motor só existe enquanto o sítio de efeito do motor executa o registro
+#: (``effect_site._commit_order``, ``engine_confirmed``). Fora dele, a guarda do ADR-050 fica como está.
+_ENGINE_CONFIRMATION: ContextVar[EngineConfirmation | None] = ContextVar("concierge_engine_confirmation", default=None)
+
+
+@contextmanager
+def engine_confirmed(proof: EngineConfirmation) -> Iterator[None]:
+    token = _ENGINE_CONFIRMATION.set(proof)
+    try:
+        yield
+    finally:
+        _ENGINE_CONFIRMATION.reset(token)
+
+
 def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_notes: str = "") -> dict:
     """Compra autorizada por revisão oferecida; recibo e efeito local compartilham commit."""
     from shopman.orderman.models import Order, Session
@@ -1569,6 +1649,11 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     else:
         # Sem identificador de mensagem (ADR-050): só o código deste orçamento confirma.
         confirmation = _code_confirmation(ctx, quote_token)
+    if confirmation is None:
+        # O "sim" do motor (emenda de 24/11): só dentro do sítio de efeito dele, e só para a revisão feita nele.
+        proof = _ENGINE_CONFIRMATION.get()
+        if proof is not None and proof.quote_token == quote_token:
+            confirmation = proof
     if confirmation is None:
         return _error("confirmation_required", "Confira o resumo enviado e confirme o pedido em uma nova mensagem.")
     if quote.get("phone") != current.phone or quote.get("customer_ref") != current.customer_ref:

@@ -160,6 +160,25 @@ export function auditTypographyInPage (opts = {}) {
   }
 
   if (zoomed) {
+    // O cartão de ação preso na base (`.shop-action-dock`) deixa a página à vista: entre o
+    // cabeçalho fixo e ele sobra pelo menos 45 % da tela (#3573; a regra e o porquê do
+    // número em app/presentation/actionDock.ts, repetidos aqui porque esta função roda
+    // sozinha dentro da página). Com a fonte a 200 % o cartão da sacola tomava, com a
+    // navegação, 426 de 812 px, e o item, o preço e "Remover" ficavam atrás dele.
+    const header = document.querySelector('.shop-header-bar')
+    for (const dock of document.querySelectorAll('.shop-action-dock')) {
+      if (!visible(dock) || getComputedStyle(dock).position !== 'fixed') continue
+      const free = dock.getBoundingClientRect().top - (header ? header.offsetHeight : 0)
+      const share = Math.round(free / window.innerHeight * 100) / 100
+      if (share >= 0.45) continue
+      const row = { kind: 'dock', text: label(dock).slice(0, 40), share, rule: 'cartão fixo na base cobre a página com fonte 200 %' }
+      // Defeito conhecido com issue aberta para sair (`data-x11-exception="<nome>-<issue>"`):
+      // vai para as exceções, à vista, como as de contraste.
+      const exception = dock.getAttribute('data-x11-exception')
+      if (exception) exceptions.push({ ...row, exception })
+      else findings.push(row)
+    }
+
     const vw = document.documentElement.clientWidth
     const ctas = document.querySelectorAll('[data-decisive], button, a[role="button"], a[data-slot="button"], [data-cta]')
     for (const el of ctas) {

@@ -23,6 +23,10 @@ const continueAction = computed(() => cart.value.actions.find(action => action.r
 const checkoutTarget = computed(() => checkoutAction.value?.href || '/finalizar')
 const checkoutDisabled = computed(() => !checkoutAction.value?.enabled)
 const checkoutReason = computed(() => checkoutAction.value?.reason || '')
+// O cartão do total só flutua enquanto deixa a página à vista (#3573): com a fonte do
+// sistema a 200 % ele desce para o fim do conteúdo.
+const actionDock = ref<HTMLElement | null>(null)
+const actionDockFloats = useActionDockFit(actionDock)
 // EXPERIMENT(duvida-no-ponto) remove_after 2027-02-20
 const duvidaNoPonto = useExperience('duvida-no-ponto')
 
@@ -512,8 +516,10 @@ useSeoMeta({
 
       <div
         v-if="!cart.is_empty"
+        ref="actionDock"
         class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
-        data-focus-obstruction
+        :class="{ 'shop-action-dock--in-flow': !actionDockFloats }"
+        :data-focus-obstruction="actionDockFloats ? '' : undefined"
       >
         <div class="flex flex-wrap items-baseline justify-between gap-x-3">
           <p class="shop-body text-ink-foreground/80">Total do pedido</p>
