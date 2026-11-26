@@ -1,4 +1,8 @@
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
+import { unmountMounted } from "./mountedWrappers";
+
+// Cada teste desmonta o que montou; o porquê e a medição estão em `mountedWrappers.ts`.
+afterEach(unmountMounted);
 
 // happy-dom/Node 25 exposes a localStorage shell that throws without a backing
 // file. Component tests exercise browser flows, so give each test an isolated,
