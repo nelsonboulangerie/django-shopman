@@ -268,15 +268,21 @@ describe("Preparação — preview e identificação", () => {
 
     // A falta mora sob o nome, visível em qualquer largura; o saldo fica na coluna.
     const farinha = wrapper.get('[data-sku="FARINHA"] [data-column="name"]');
-    expect(farinha.get("[data-prep-shortage]").text()).toBe("Faltam 300 g");
+    expect(farinha.get("[data-prep-shortage]").text()).toBe("Faltam 300\u00a0g");
     const pedir = farinha.get("[data-prep-purchase]");
     expect(pedir.text()).toContain("Pedir no Compras");
     expect(pedir.attributes("href")).toBe("https://compras.example/");
-    expect(wrapper.get('[data-sku="FARINHA"] [data-column="available"]').text()).toBe("700 g");
+    expect(wrapper.get('[data-sku="FARINHA"] [data-column="available"]').text()).toBe("700\u00a0g");
+
+    // No celular o saldo vira a segunda linha da quantidade (a coluna é de apoio, #3656).
+    const inline = wrapper.get('[data-sku="FARINHA"] [data-column="quantity"] [data-prep-available-inline]');
+    expect(inline.text()).toBe("Saldo 700\u00a0g");
+    expect(inline.classes()).toContain("sm:hidden");
 
     const massa = wrapper.get('[data-sku="MASSA-BASE"]');
     expect(massa.find("[data-prep-shortage]").exists()).toBe(false);
     expect(massa.get('[data-column="available"]').text()).toBe("");
+    expect(massa.find("[data-prep-available-inline]").exists()).toBe(false);
   });
 
   it("sem o Compras, a falta continua dita e o atalho não aparece", async () => {
@@ -287,7 +293,7 @@ describe("Preparação — preview e identificação", () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
     await openInsumos(wrapper);
 
-    expect(wrapper.get("[data-prep-shortage]").text()).toBe("Faltam 300 g");
+    expect(wrapper.get("[data-prep-shortage]").text()).toBe("Faltam 300\u00a0g");
     expect(wrapper.find("[data-prep-purchase]").exists()).toBe(false);
   });
 
@@ -325,7 +331,7 @@ describe("Preparação — preview e identificação", () => {
     const header = wrapper.find("article header");
 
     expect(header.text()).toContain("Massa Croissant");
-    expect(header.text()).toContain("MASSA-BASE · Peso total 2.000 g");
+    expect(header.text()).toContain("MASSA-BASE · Peso total 2.000\u00a0g");
     expect(header.text()).not.toContain("12 un. · MASSA-BASE");
   });
 
@@ -338,7 +344,7 @@ describe("Preparação — preview e identificação", () => {
       .get('button[aria-label="Abrir etiquetas de pesagem de Massa Croissant"]')
       .trigger("click");
     expect(wrapper.get('[data-testid="print-preview"]').attributes("data-weights")).toBe(
-      "1.000 g|700 g",
+      "1.000\u00a0g|700\u00a0g",
     );
   });
 
@@ -348,7 +354,7 @@ describe("Preparação — preview e identificação", () => {
 
     expect(firstIngredient.text()).toContain("Farinha");
     expect(firstIngredient.text()).toContain("FARINHA");
-    expect(firstIngredient.text()).toContain("1.000 g");
+    expect(firstIngredient.text()).toContain("1.000\u00a0g");
     expect(firstIngredient.text()).not.toContain("1 kg");
     expect(wrapper.text()).toContain(
       "Alvos arredondados para cima · balança 2 g",

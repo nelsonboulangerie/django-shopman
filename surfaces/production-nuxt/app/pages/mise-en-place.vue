@@ -20,6 +20,7 @@ import {
 } from "../../../operator-kit/app/presentation/dates";
 import {
   operationalTargetDisplay,
+  keepNumberWithUnit,
   projectedQuantityDisplay,
   stockFacts,
   weighingLabels,
@@ -136,7 +137,11 @@ const PREP_CHECKBOX_UI = { base: "after:size-11" };
 const lineColumns = computed(() => [
   { id: "name", header: "Insumo", enableHiding: false },
   { id: "quantity", header: "Quantidade", meta: NUM },
-  ...(projection.value?.has_stock_readings ? [{ id: "available", header: "Saldo", meta: NUM }] : []),
+  // No celular a coluna de saldo sai (coluna de apoio) e o saldo vira a segunda linha
+  // da quantidade: com número e unidade presos (#3656) ela não cabe ao lado.
+  ...(projection.value?.has_stock_readings
+    ? [{ id: "available", header: "Saldo", meta: { ...NUM, supporting: true } }]
+    : []),
 ]);
 
 // Dois artefatos de impressão, papéis distintos:
@@ -396,7 +401,7 @@ function refreshAll() {
               <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do servidor quando
                    o fator é aproximado; aqui só se mostra. -->
               <span v-if="row.original.annotation" class="block text-xs text-muted-foreground">{{
-                row.original.annotation
+                keepNumberWithUnit(row.original.annotation)
               }}</span>
               <!-- Os gramas a mais são margem, e a linha diz por quê: número que cresceu
                    sozinho não entra nesta lista. O texto do motivo vem pronto do servidor. -->
@@ -404,7 +409,14 @@ function refreshAll() {
                 v-if="row.original.margin_display"
                 class="block text-xs text-muted-foreground"
                 :title="row.original.margin_reason"
-                >{{ row.original.margin_display }}</span
+                >{{ keepNumberWithUnit(row.original.margin_display) }}</span
+              >
+              <span
+                v-if="projection?.has_stock_readings && stockFacts(row.original).available"
+                class="block text-xs sm:hidden"
+                :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'"
+                data-prep-available-inline
+                >Saldo {{ stockFacts(row.original).available }}</span
               >
             </template>
             <template #available-cell="{ row }">

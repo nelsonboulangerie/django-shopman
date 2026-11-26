@@ -16,19 +16,28 @@ function parseLocalizedNumber(raw: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Espaço não separável: o número e a unidade andam juntos ("7200 g", nunca "7200 / g"). */
+const NBSP = "\u00a0";
+const NUMBER_THEN_UNIT = /(\d)[ \t]+(?=[^\d\s])/g;
+
+/** Prende cada número à palavra que vem logo depois dele ("7200 g", "≈ 0,132 litros"). */
+export function keepNumberWithUnit(text: string | null | undefined): string {
+  return (text ?? "").replace(NUMBER_THEN_UNIT, `$1${NBSP}`);
+}
+
 /**
  * Formatação apenas. Não converte para gramas, não aplica ceiling e não
  * calcula tolerância: o número operacional pertence ao projection do servidor.
+ * O número e a unidade saem presos (#3656): a quantidade quebra inteira, ou não quebra.
  */
 export function projectedQuantityDisplay(display: string): string {
   const match = KG_DISPLAY.exec(display);
-  if (!match) return display;
-  const kilograms = parseLocalizedNumber(match[1] ?? "");
-  if (kilograms === null) return display;
+  const kilograms = match ? parseLocalizedNumber(match[1] ?? "") : null;
+  if (kilograms === null) return keepNumberWithUnit(display);
   return `${new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
-  }).format(kilograms)} kg`;
+  }).format(kilograms)}${NBSP}kg`;
 }
 
 /** `target_display` já vem operacional; quantity é somente fallback transitório. */
@@ -53,7 +62,7 @@ export function blindLabelsFromPrintDocument(
         ingredient.target_display,
         ingredient.quantity_display,
       ),
-      annotation: ingredient.annotation || "",
+      annotation: keepNumberWithUnit(ingredient.annotation),
       date: ticket.made_display || document.selected_date,
       key: `${ticket.ticket_ref}-${ingredient.sku}-${ticketIndex}-${ingredientIndex}`,
     })),
@@ -109,7 +118,7 @@ export function weighingRows(ticket: WeighingRowsTicket): WeighingRow[] {
     sku: ing.sku,
     name: ing.name,
     target: operationalTargetDisplay(ing.target_display, ing.quantity_display),
-    annotation: ing.annotation,
+    annotation: keepNumberWithUnit(ing.annotation),
     quantity: ing.quantity_display,
   }));
 }
