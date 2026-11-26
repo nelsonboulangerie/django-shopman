@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de CONVENÇÃO: identificador é em inglês (CLAUDE.md), com três
 // exceções que são regra e não julgamento — `cpf`/`cnpj`/`cep`, **prosa**
@@ -59,7 +60,7 @@ function stripNoise(text: string): string {
 
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".nuxt" || entry === ".output") continue;
+    if (isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (full.endsWith(".ts") || full.endsWith(".vue")) found.push(full);

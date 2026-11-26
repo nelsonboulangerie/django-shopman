@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail da AUTORIZAÇÃO DE GERENTE: uma estrutura só na suíte inteira.
 //
@@ -30,7 +31,7 @@ const SKIP = new Set(["node_modules", ".nuxt", ".output", "dist", "tests", "cove
 
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (SKIP.has(entry)) continue;
+    if (SKIP.has(entry) || isGeneratedDir(entry)) continue;
     const path = join(dir, entry);
     if (statSync(path).isDirectory()) sourceFiles(path, found);
     else if (/\.(vue|ts)$/.test(entry)) found.push(path);

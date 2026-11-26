@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Trava da tabela da suíte (WP-FASE2-UX-OPERADOR, K1).
 //
@@ -31,7 +32,7 @@ function vueFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Trava da barra de seleção (WP-FASE2-UX-OPERADOR, K2): UMA por tela, a `OperatorBulkBar`.
 //
@@ -24,7 +25,7 @@ function vueFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);

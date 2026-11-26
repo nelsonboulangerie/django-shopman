@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { managerAuthReason } from "../app/presentation/managerAuth";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de VOCABULÁRIO: a palavra da casa para o objeto que o operador segura é
 // **dispositivo**; a do cartão é **maquininha**. "Aparelho" não é nenhuma das duas. É o
@@ -165,7 +166,7 @@ const MAY_QUOTE = new Set([
 
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (SOURCE_EXT.some((extension) => full.endsWith(extension))) found.push(full);
