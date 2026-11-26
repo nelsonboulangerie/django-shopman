@@ -134,7 +134,6 @@ const NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
 // (o pseudo-elemento do kit, aqui no tamanho da bancada).
 const PREP_CHECKBOX_UI = { base: "after:size-11" };
 const lineColumns = computed(() => [
-  { id: "done", header: "Separado", enableHiding: false },
   { id: "name", header: "Insumo", enableHiding: false },
   { id: "quantity", header: "Quantidade", meta: NUM },
   ...(projection.value?.has_stock_readings ? [{ id: "available", header: "Saldo", meta: NUM }] : []),
@@ -333,59 +332,64 @@ function refreshAll() {
             :row-label="(line) => line.name"
             :row-class="(line) => (lineMarked(line) ? 'bg-muted/40 text-muted-foreground' : '')"
             pinned="name"
+            expand-at="end"
             :empty-title="query ? `Nenhum insumo para “${query.trim()}”.` : 'Nenhum insumo para separar.'"
             caption="Insumos da preparação"
             data-mise-lines
           >
-            <template #done-header><span class="sr-only">Separado</span></template>
-            <template #done-cell="{ row }">
-              <NuxtCheckbox
-                size="xl"
-                :ui="PREP_CHECKBOX_UI"
-                :model-value="lineMarked(row.original)"
-                :aria-label="`Marcar ${row.original.name} como separado`"
-                data-prep-mark
-                @update:model-value="toggleLine(row.original)"
-              />
-            </template>
+            <!-- A caixa de "Separado" é o primeiro gesto da linha (dono, 26/11): mora na
+                 coluna fixada, antes do nome, em qualquer largura. -->
             <template #name-cell="{ row }">
-              <span
-                class="block font-semibold"
-                :class="lineMarked(row.original) ? 'line-through decoration-1' : ''"
-                >{{ row.original.name }}</span
-              >
-              <span
-                v-if="lineMark(row.original)"
-                class="block text-xs text-muted-foreground"
-                data-prep-mark-author
-                >{{ markAuthorLine(lineMark(row.original)) }}</span
-              >
-              <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir embaixo
-                     seria a mesma linha duas vezes. -->
-                <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
-                <NuxtBadge v-if="row.original.is_subrecipe" color="neutral" label="Pré-preparo" />
-              </span>
-              <!-- A falta mora sob o nome: é o que se lê em qualquer largura (a coluna
-                   de saldo sai da tela no celular). Quanto falta e o que fazer. -->
-              <span
-                v-if="stockFacts(row.original).shortage"
-                class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
-              >
-                <span class="text-sm font-semibold text-error" data-prep-shortage>{{
-                  stockFacts(row.original).shortage
-                }}</span>
-                <NuxtButton
-                  v-if="purchaseUrl"
-                  :href="purchaseUrl"
-                  v-bind="attrsFor(purchaseUrl)"
-                  color="error"
-                  variant="outline"
-                  trailing-icon="i-lucide-external-link"
-                  label="Pedir no Compras"
-                  data-prep-purchase
+              <div class="flex items-start gap-3">
+                <NuxtCheckbox
+                  size="xl"
+                  :ui="PREP_CHECKBOX_UI"
+                  class="mt-0.5 shrink-0"
+                  :model-value="lineMarked(row.original)"
+                  :aria-label="`Marcar ${row.original.name} como separado`"
+                  data-prep-mark
+                  @update:model-value="toggleLine(row.original)"
                 />
-              </span>
+                <div class="min-w-0">
+                  <span
+                    class="block font-semibold"
+                    :class="lineMarked(row.original) ? 'line-through decoration-1' : ''"
+                    >{{ row.original.name }}</span
+                  >
+                  <span
+                    v-if="lineMark(row.original)"
+                    class="block text-xs text-muted-foreground"
+                    data-prep-mark-author
+                    >{{ markAuthorLine(lineMark(row.original)) }}</span
+                  >
+                  <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir embaixo
+                         seria a mesma linha duas vezes. -->
+                    <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
+                    <NuxtBadge v-if="row.original.is_subrecipe" color="neutral" label="Pré-preparo" />
+                  </span>
+                  <!-- A falta mora sob o nome: é o que se lê em qualquer largura (a coluna
+                       de saldo sai da tela no celular). Quanto falta e o que fazer. -->
+                  <span
+                    v-if="stockFacts(row.original).shortage"
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
+                  >
+                    <span class="text-sm font-semibold text-error" data-prep-shortage>{{
+                      stockFacts(row.original).shortage
+                    }}</span>
+                    <NuxtButton
+                      v-if="purchaseUrl"
+                      :href="purchaseUrl"
+                      v-bind="attrsFor(purchaseUrl)"
+                      color="error"
+                      variant="outline"
+                      trailing-icon="i-lucide-external-link"
+                      label="Pedir no Compras"
+                      data-prep-purchase
+                    />
+                  </span>
+                </div>
+              </div>
             </template>
             <template #quantity-cell="{ row }">
               <span class="font-semibold">{{ projectedQuantityDisplay(row.original.quantity_display) }}</span>

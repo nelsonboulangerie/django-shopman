@@ -122,9 +122,9 @@ const stubs = {
   NuxtLink: { template: "<a><slot /></a>" },
   // A tabela do kit tem teste próprio; aqui ela só desenha as células da tela.
   OperatorTable: {
-    props: ["data", "columns"],
+    props: ["data", "columns", "expandAt", "pinned"],
     template: `
-      <table data-mise-lines>
+      <table data-mise-lines :data-expand-at="expandAt" :data-pinned="pinned">
         <tr v-for="line in data" :key="line.sku" :data-sku="line.sku">
           <td v-for="column in columns" :key="column.id" :data-column="column.id">
             <slot :name="column.id + '-cell'" :row="{ original: line }" />
@@ -228,6 +228,18 @@ describe("Preparação — preview e identificação", () => {
     expect(wrapper.text()).toContain("1/1 separados");
     expect(wrapper.get('[data-sku="FARINHA"] [role="checkbox"]').attributes("aria-checked")).toBe("true");
     expect(wrapper.get("[data-prep-mark-author]").text()).toContain("Separado por Ana");
+
+    // A caixa é o primeiro gesto: mora na coluna fixada do nome, antes dele; a seta da
+    // linha vai para o fim (dono, 26/11).
+    const nameCell = wrapper.get('[data-sku="FARINHA"] [data-column="name"]');
+    expect(nameCell.element.firstElementChild?.firstElementChild?.querySelector('[role="checkbox"]')).not.toBeNull();
+    expect(wrapper.findAll('[data-sku="FARINHA"] td').map((td) => td.attributes("data-column"))).toEqual([
+      "name",
+      "quantity",
+      "available",
+    ]);
+    expect(wrapper.get("[data-mise-lines]").attributes("data-pinned")).toBe("name");
+    expect(wrapper.get("[data-mise-lines]").attributes("data-expand-at")).toBe("end");
 
     await wrapper.get('[data-sku="FARINHA"] [role="checkbox"]').trigger("click");
     expect(toggleSpy).toHaveBeenCalledWith("FARINHA", "1000 g", "Farinha");

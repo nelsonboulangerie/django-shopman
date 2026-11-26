@@ -58,11 +58,15 @@ test("Preparação: o Separado vale para a bancada inteira", async ({ browser, b
     const row = rowsA.nth(index);
     const box = row.getByRole("checkbox");
     if ((await box.getAttribute("aria-checked")) === "true") continue;
-    picked.push(((await row.locator("td").nth(1).locator("span").first().textContent()) ?? "").trim());
+    picked.push(((await row.locator("td").first().locator("span.font-semibold").first().textContent()) ?? "").trim());
     await box.click();
     await expect(box).toHaveAttribute("aria-checked", "true");
   }
   await expect(tabletA.locator("[data-prep-mark-author]").first()).toContainText("Separado por");
+  // A caixa vem antes do nome, e a seta da linha fica no fim (dono, 26/11).
+  const firstRow = rowsA.first();
+  await expect(firstRow.locator("td").first().getByRole("checkbox")).toBeVisible();
+  await expect(firstRow.locator("td").last().locator("[data-operator-table-expand]")).toBeVisible();
   await capture(tabletA, testInfo, "tablet-a-cozinha-marca-tres-insumos");
 
   // O tablet B mostra as três marcas sem recarregar (SSE do canal production).

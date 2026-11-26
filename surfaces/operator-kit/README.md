@@ -1457,7 +1457,9 @@ ganha o respiro da confortável).
   ordenação local (ordenaria só a página da vez).
 - **Seleção múltipla** (`selectable`, `v-model:row-selection`): caixa em cada linha e o
   "todos" no cabeçalho; marcar não abre a linha.
-- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha.
+- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha, no começo da
+  linha. `expand-at="end"` a põe no fim, presa à direita (some do rolar de lado): a lista
+  da Preparação, onde a caixa de "Separado" é o primeiro gesto (dono, 26/11/2026).
 - **Coluna fixada** (`pinned`, e `pinned-end` para o ⋯ de uma matriz larga): presa ao
   rolar de lado e, no celular, com largura máxima (o texto dela quebra).
 - **Colunas de apoio** (`meta.supporting`): somem no celular por CSS (`max-sm:hidden`),
