@@ -362,7 +362,7 @@ function refreshAll() {
                     data-prep-mark-author
                     >{{ markAuthorLine(lineMark(row.original)) }}</span
                   >
-                  <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
                     <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir embaixo
                          seria a mesma linha duas vezes. -->
                     <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
@@ -392,7 +392,7 @@ function refreshAll() {
               </div>
             </template>
             <template #quantity-cell="{ row }">
-              <span class="font-semibold">{{ projectedQuantityDisplay(row.original.quantity_display) }}</span>
+              <span class="whitespace-nowrap font-semibold">{{ projectedQuantityDisplay(row.original.quantity_display) }}</span>
               <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do servidor quando
                    o fator é aproximado; aqui só se mostra. -->
               <span v-if="row.original.annotation" class="block text-xs text-muted-foreground">{{
@@ -410,7 +410,10 @@ function refreshAll() {
             <template #available-cell="{ row }">
               <!-- Pré-preparo nunca mostra saldo nem falta (decisão de 03/07): ele se faz na hora. -->
               <template v-if="!row.original.is_subrecipe">
-                <span :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'">
+                <span
+                  class="whitespace-nowrap"
+                  :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'"
+                >
                   {{ stockFacts(row.original).available || "—" }}
                 </span>
               </template>
