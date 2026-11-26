@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Cabeçalho das telas da Produção: o `OperatorPageHeader` do kit, com os papéis das
 // barras da fase 2 (WP-FASE2-UX-OPERADOR §5):
-//   · barra primária: título, selo ao vivo com a hora da última leitura, a busca
+//   · barra primária: título, selo de conexão com a hora da última leitura ("Ao vivo"
+//     só com o canal da Produção aberto, WP-F15; `presentation/liveSeal.ts`), a busca
 //     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋮ "Mais ações" (as
 //     ações como DADOS: as da tela e Atualizar, tecla R). Avisos e o ciclo da barra
 //     lateral são do kit;
@@ -31,6 +32,8 @@ import {
   resolveProductionGlobalShortcut,
 } from "~/presentation/keyboard";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
+import type { ProductionRealtime } from "~/composables/useProductionLive";
+import { productionLiveSeal } from "~/presentation/liveSeal";
 
 const props = withDefaults(
   defineProps<{
@@ -44,6 +47,13 @@ const props = withDefaults(
     pending?: boolean;
     /** A última leitura falhou e a tela mostra dado velho: o ao vivo fala por extenso. */
     stale?: boolean;
+    /** A leitura falhou e não há dado nenhum na tela: o selo diz "Sem conexão". */
+    offline?: boolean;
+    /** O tempo real da tela (`useProductionLive`): só "live" vira "Ao vivo" (WP-F15).
+     *  Ausente, a tela não declarou e o selo segue no "Ao vivo" de antes. */
+    realtime?: ProductionRealtime | null;
+    /** A cadência da tela sem o canal, que o selo anuncia ("a cada 30 s"). */
+    pollMs?: number | null;
     /** Selo ao lado do título (ex.: o dia que a tela mostra). */
     eyebrow?: string;
     /** O que a tela diz em uma frase, ao lado do selo ao vivo ("lotes fechados hoje"). */
@@ -66,6 +76,9 @@ const props = withDefaults(
     progress: null,
     pending: false,
     stale: false,
+    offline: false,
+    realtime: null,
+    pollMs: null,
     eyebrow: "",
     subtitle: "",
     searchPlaceholder: "Buscar produto ou SKU",
@@ -84,13 +97,21 @@ provideOperatorShortcuts(PRODUCTION_SHORTCUT_GROUPS, PRODUCTION_SHORTCUTS_DESCRI
 // A hora da última leitura útil: o selo ao vivo mostra quando a tela leu pela última
 // vez. Nasce no cliente (o SSR não sabe a hora local de quem lê).
 const readClock = ref("");
+const seal = computed(() =>
+  productionLiveSeal({
+    stale: props.stale,
+    offline: props.offline,
+    realtime: props.realtime,
+    pollMs: props.pollMs,
+  }),
+);
 function stamp() {
   readClock.value = formatClock(new Date());
 }
 watch(
   () => props.pending,
   (now, before) => {
-    if (before && !now && !props.stale) stamp();
+    if (before && !now && !props.stale && !props.offline) stamp();
   },
 );
 
@@ -139,9 +160,9 @@ const counterText = computed(() => {
   <div class="contents" data-compact-page>
   <OperatorCompactBar
     :title="title"
-    :tone="stale ? 'late' : 'live'"
+    :tone="seal.tone"
     :time="readClock"
-    :conn-label="stale ? 'Sem atualizar' : 'Ao vivo'"
+    :conn-label="seal.label"
     :query="query"
     :search="searchable"
     search-button-label="Buscar por código, SKU ou receita"
@@ -175,10 +196,12 @@ const counterText = computed(() => {
     <template v-if="$slots.lead" #lead><slot name="lead" /></template>
     <template #status>
       <OperatorLiveStatus
-        :tone="stale ? 'late' : 'live'"
+        :tone="seal.tone"
         :time="readClock"
-        :label="stale ? 'Sem atualizar' : 'Ao vivo'"
-        :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
+        :label="seal.label"
+        :short-label="seal.shortLabel"
+        :detail="seal.detail"
+        :data-live-seal="seal.tone"
       />
       <span
         v-if="subtitle"

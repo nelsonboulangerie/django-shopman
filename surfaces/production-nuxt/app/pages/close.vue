@@ -31,6 +31,7 @@ import {
   resolveQuantityKeyboardShortcut,
 } from "~/presentation/keyboard";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
+import { staleReadAlert } from "~/presentation/liveSeal";
 
 // A trilha da lista de lotes abertos (`OperatorRecordNav` no lote).
 const CLOSE_LOTS_TRAIL = "production-close-lots";
@@ -44,6 +45,8 @@ const {
   error,
   submitting,
   refresh,
+  realtime,
+  fallbackPollMs,
   finish,
   quickFinish,
 } = useQcKiosk(routeDate);
@@ -54,6 +57,9 @@ const {
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
+// A primeira leitura falhou e não há painel nenhum: a tela diz o erro, com "Tentar
+// de novo", em vez de ficar em branco (P1-18).
+const offline = computed(() => !!error.value && !kiosk.value);
 
 useHead({ title: "Finalização" });
 
@@ -358,12 +364,23 @@ function shortDate(iso: string): string {
   return match ? `${match[2]}/${match[1]}` : "";
 }
 const closeAlerts = computed<OperatorScreenAlert[]>(() => {
+  // Dado velho primeiro: fechar lote com o painel velho é fechar o lote errado.
+  const staleAlerts = stale.value
+    ? [
+        staleReadAlert(
+          "os lotes",
+          refresh,
+          "Confira antes de fechar: outro tablet pode ter mudado um lote.",
+        ),
+      ]
+    : [];
   const current = kiosk.value;
-  if (!current || current.previous_open_count <= 0) return [];
-  if (selectedOrder.value || selectedRecipe.value) return [];
+  if (!current || current.previous_open_count <= 0) return staleAlerts;
+  if (selectedOrder.value || selectedRecipe.value) return staleAlerts;
   const count = current.previous_open_count;
   const day = shortDate(current.previous_open_date);
   return [
+    ...staleAlerts,
     {
       id: "previous-open",
       color: "warning",
@@ -616,6 +633,9 @@ function onTimerKeydown(event: KeyboardEvent) {
       "
       :pending="pending"
       :stale="stale"
+      :offline="offline"
+      :realtime="realtime"
+      :poll-ms="fallbackPollMs"
       search-label="filtrando os lotes"
       :actions="closeActions"
       :alerts="closeAlerts"
@@ -669,18 +689,18 @@ function onTimerKeydown(event: KeyboardEvent) {
       v-else
       class="mx-auto flex w-full max-w-4xl flex-col gap-3 px-3 py-3 md:px-4 md:py-4"
     >
-      <div
-        v-if="stale"
-        role="status"
-        aria-live="polite"
-        class="inline-flex items-center gap-2 self-start rounded-full border border-warning/40 bg-warning/10 px-3 py-2 op-label font-semibold text-warning"
-      >
-        <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar. Mostrando o último painel carregado.</span>
-      </div>
-
+      <!-- Erro só toma a tela quando NÃO há painel nenhum a mostrar; havendo, o aviso
+           de dado velho mora nos `alerts` do cabeçalho. -->
+      <OperatorScreenState
+        v-if="offline"
+        state="error"
+        what="os lotes"
+        description="Estamos tentando reconectar sozinhos."
+        data-close-error
+        @retry="refresh()"
+      />
       <p
-        v-if="pending && !kiosk"
+        v-else-if="pending && !kiosk"
         class="py-10 text-center text-muted-foreground"
       >
         Carregando…

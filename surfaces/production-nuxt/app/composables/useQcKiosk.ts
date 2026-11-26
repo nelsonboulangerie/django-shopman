@@ -1,7 +1,8 @@
 // Quiosque de QC — read/write da finalização de fornada (ADR-017 §9).
 //   - useFetch da projection do quiosque (GET /api/v1/backstage/production/qc/);
-//   - poll calmo de 30s (o quiosque é quem ESCREVE o estado; o poll só traz
-//     fornadas fechadas por outras telas);
+//   - SSE primeiro (ADR-016, WP-F15): o canal da Produção avisa o lote que a
+//     Cozinha abriu ou outra tela fechou, e a tela refaz o GET canônico; o poll
+//     de 30 s fica de reserva, só enquanto o canal não está aberto;
 //   - finish com partição pela ordem do dia, quick-finish para fornada fora
 //     do plano. Shortage estruturado sobe para o modal, como no KDS.
 import type {
@@ -24,6 +25,7 @@ import {
   type ProductionMutationBlock,
   type ProductionMutationMetadata,
 } from "~/composables/useProductionMutationGuard";
+import { useProductionLive } from "~/composables/useProductionLive";
 
 export interface QcActResult {
   ok: boolean;
@@ -51,7 +53,7 @@ export function useQcKiosk(initialDate = "") {
   const kiosk = computed(() => data.value?.qc ?? null);
   const mutationGuard = useProductionMutationGuard(kiosk, refresh);
 
-  useAdaptivePoll(refresh, () => 30_000);
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () => 30_000);
 
   const submitting = ref(false);
   const attempts = new Map<string, string>();
@@ -219,6 +221,8 @@ export function useQcKiosk(initialDate = "") {
     pending,
     error,
     refresh,
+    realtime,
+    fallbackPollMs,
     submitting,
     finish,
     quickFinish,
