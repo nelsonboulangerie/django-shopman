@@ -1227,6 +1227,10 @@ class QCOrderCardProjection:
     # ``Recipe.meta.output_unit``). Lote de preparo medido em gramas não pode
     # ser somado com pão contado em peças: a tela agrupa por esta unidade.
     output_unit: str = ""
+    # "No forno até 05:40" (WP-F12, P1-12): a hora em que o timer declarado
+    # termina (enfornou + duração armada), para qualquer tablet ler. Vazio sem
+    # forno aberto. O timer segue lembrete local; isto é só o fato declarado.
+    oven_until_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -2287,12 +2291,19 @@ def build_qc_kiosk(
     from shopman.backstage.models import OvenRun
 
     started_refs = [card.ref for card in cards if card.status == WorkOrder.Status.STARTED]
-    open_oven_refs = set(
-        OvenRun.objects.filter(
-            work_order_ref__in=started_refs,
-            status="open",
-        ).values_list("work_order_ref", flat=True)
-    )
+    open_oven_runs = OvenRun.objects.filter(
+        work_order_ref__in=started_refs,
+        status="open",
+    ).values_list("work_order_ref", "armed_at", "planned_seconds")
+    oven_until: dict[str, str] = {}
+    for work_order_ref, armed_at, planned_seconds in open_oven_runs:
+        oven_until[work_order_ref] = format_clock(armed_at + timedelta(seconds=planned_seconds or 0))
+    open_oven_refs = set(oven_until)
+    if oven_until:
+        cards = tuple(
+            replace(card, oven_until_display=oven_until[card.ref]) if card.ref in oven_until else card
+            for card in cards
+        )
 
     return QCKioskProjection(
         selected_date=selected_date.isoformat(),

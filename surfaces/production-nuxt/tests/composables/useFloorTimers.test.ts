@@ -206,3 +206,20 @@ describe("useFloorTimers — reload", () => {
     expect(Object.keys(restored)).toEqual(["ok"]);
   });
 });
+
+// WP-F12 (P1-12): sem toque na página o navegador não libera o som; o timer
+// que ainda vai tocar precisa que a tela diga isso. Sem áudio aqui (jsdom), o
+// som fica desligado, que é exatamente o caso de depois de recarregar.
+describe("useFloorTimers — som desligado", () => {
+  it("só avisa enquanto há timer que ainda vai tocar", () => {
+    const timers = useFloorTimers();
+    for (const entry of timers.entries.value) timers.clear(entry.key);
+    expect(timers.soundOff.value).toBe(false);
+
+    timers.arm("wo-sound", 10);
+    expect(timers.soundOff.value).toBe(true);
+
+    timers.clear("wo-sound");
+    expect(timers.soundOff.value).toBe(false);
+  });
+});

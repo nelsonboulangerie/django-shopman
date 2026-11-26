@@ -10,6 +10,10 @@
 //   Sem grade de quatro: o caso comum está no corpo, e +1 morreu com o numpad
 //   da criação, que já resolve precisão.
 //
+// SOM DESLIGADO: depois de recarregar a página, o navegador só libera o som
+// no próximo toque. Enquanto isso, o card que ainda vai tocar diz no topo
+// "Som desligado. Toque para ligar." e o toque ali liga (P1-12).
+//
 // O que o toque faz nunca fica escondido: a dica escreve o gesto do estado
 // atual, e o rótulo ARIA do corpo diz a mesma frase para quem não vê a tela.
 import { createReusableTemplate } from "@vueuse/core";
@@ -26,8 +30,16 @@ const props = defineProps<{
   entry: FloorTimerEntry;
   /** O relógio vivo, já formatado pelo composable (ex.: "12:34"). */
   remaining: string;
+  /** O navegador ainda não liberou o som neste dispositivo. */
+  soundOff?: boolean;
 }>();
-const emit = defineEmits<{ seen: []; clear: []; extend: [number] }>();
+const emit = defineEmits<{
+  seen: [];
+  clear: [];
+  extend: [number];
+  "enable-sound": [];
+}>();
+const showSoundOff = computed(() => props.soundOff && props.entry.mode !== "seen");
 
 // Armar: o toque que marcou ``Visto`` transforma o card em "visto", onde o
 // toque encerra. Sem a janela, um toque que quicasse faria as duas coisas.
@@ -75,6 +87,19 @@ const FOOT_UI = { base: "min-h-14 justify-center rounded-none bg-card tabular-nu
     class="flex flex-col overflow-hidden rounded-lg border bg-card"
     :class="entry.mode === 'ringing' ? 'floor-timer-ringing border-destructive/60' : ''"
   >
+    <NuxtButton
+      v-if="showSoundOff"
+      color="neutral"
+      variant="ghost"
+      block
+      icon="i-lucide-volume-x"
+      label="Som desligado. Toque para ligar."
+      class="min-h-12 justify-start rounded-none border-b border-warning/40 bg-warning/10 text-warning hover:bg-warning/15"
+      :ui="{ leadingIcon: 'text-warning' }"
+      data-floor-timer-sound-off
+      @click="emit('enable-sound')"
+    />
+
     <DefineBody>
       <span class="block w-full truncate text-lg font-semibold leading-tight">
         {{ entry.title }}

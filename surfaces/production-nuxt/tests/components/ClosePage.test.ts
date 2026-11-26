@@ -19,7 +19,10 @@ const previousOpen = ref({ count: 0, date: "" });
 const finish = vi.fn(async (..._args: unknown[]): Promise<Record<string, unknown>> => ({ ok: true }));
 const reviewQuality = vi.fn(async () => ({ ok: true }));
 const reviewQualityBatch = vi.fn(async () => ({ ok: true }));
-const concluded = vi.fn(async () => true);
+const concluded = vi.fn(async (..._args: unknown[]) => true);
+const ovenError = ref("");
+const sonnerError = vi.fn();
+const clearTimer = vi.fn();
 const ovenConcludeEnabled = ref(false);
 const success = vi.fn();
 const remember = vi.fn();
@@ -70,6 +73,7 @@ function order(
     closed_at_display: "",
     typical_loss_qty: "",
     alert_waiting_count: 0,
+    oven_until_display: "",
     ...overrides,
   };
 }
@@ -91,7 +95,7 @@ function installGlobals() {
     trail: computed(() => null),
     load: vi.fn(),
   }));
-  vi.stubGlobal("useSonner", { success, error: vi.fn() });
+  vi.stubGlobal("useSonner", { success, error: sonnerError });
   vi.stubGlobal("useQcKiosk", () => ({
     kiosk: computed(() => ({
       selected_date: "2026-09-28",
@@ -135,7 +139,9 @@ function installGlobals() {
   }));
   vi.stubGlobal("useFloorTimers", () => ({
     lastMinutes: ref<number | null>(null),
-    clear: vi.fn(),
+    clear: clearTimer,
+    soundOff: ref(false),
+    enableSound: vi.fn(),
     get: () => null,
     isRinging: () => false,
     isSeen: () => false,
@@ -146,7 +152,7 @@ function installGlobals() {
   }));
   vi.stubGlobal("useOvenFacts", () => ({
     isPending: () => false,
-    errorFor: () => "",
+    errorFor: () => ovenError.value,
     currentRev: (_pk: number, rev: number) => rev,
     armed: vi.fn(),
     concluded,
@@ -180,6 +186,11 @@ beforeEach(() => {
   navigate.mockClear();
   remember.mockClear();
   concluded.mockClear();
+  concluded.mockResolvedValue(true);
+  ovenError.value = "";
+  sonnerError.mockClear();
+  clearTimer.mockClear();
+  success.mockClear();
   installGlobals();
 });
 
@@ -394,14 +405,88 @@ describe("Finalização — o lote mora na URL", () => {
     expect(wrapper.findComponent({ name: "OperatorRecordNav" }).exists()).toBe(false);
   });
 
-  it("abrir o lote declara a retirada do forno antes da finalização", async () => {
+  // WP-F12 (P1-10): ler não grava. Só o toque em Finalizar declara a retirada.
+  it("abrir o lote pela URL ou pelo ‹ › não declara a retirada do forno", async () => {
     ovenConcludeEnabled.value = true;
     route.query = { lot: "1" };
     const wrapper = mountPage();
     await flushPromises();
+    expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(true);
+
+    route.query = { lot: "4" };
+    await flushPromises();
+    route.query = { lot: "1" };
+    await flushPromises();
+
+    expect(concluded).not.toHaveBeenCalled();
+    expect(clearTimer).not.toHaveBeenCalled();
+  });
+
+  it("o toque em Finalizar declara a retirada e só então abre o lote", async () => {
+    ovenConcludeEnabled.value = true;
+    const wrapper = mountPage();
+
+    await wrapper.find("[data-close-finish]").trigger("click");
+    await flushPromises();
 
     expect(concluded).toHaveBeenCalledWith(1, 1);
-    expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(true);
+    expect(clearTimer).toHaveBeenCalledWith("1");
+    expect(navigate).toHaveBeenCalledWith({ path: "/close", query: { lot: "1" } });
+  });
+
+  it("a retirada recusada fica no painel e diz o porquê no cartão (P1-11)", async () => {
+    ovenConcludeEnabled.value = true;
+    concluded.mockImplementation(async () => {
+      ovenError.value = "O lote mudou em outro dispositivo.";
+      return false;
+    });
+    const wrapper = mountPage();
+
+    await wrapper.find("[data-close-finish]").trigger("click");
+    await flushPromises();
+
+    expect(navigate).not.toHaveBeenCalled();
+    const alert = wrapper.find("[data-close-oven-error]");
+    expect(alert.exists()).toBe(true);
+    expect(alert.attributes("role")).toBe("alert");
+    expect(alert.text()).toBe("O lote mudou em outro dispositivo.");
+  });
+
+  it("o lote no forno por outro tablet diz isso no cartão, sem 'Iniciar timer'", () => {
+    ovenConcludeEnabled.value = true;
+    orders.value = [order(1, "Baguete aberta", { status: "started" })];
+    const wrapper = mountPage();
+
+    expect(wrapper.find("[data-close-in-oven]").text()).toBe("No forno");
+  });
+
+  it("com a hora do servidor, o cartão diz até quando fica no forno", () => {
+    ovenConcludeEnabled.value = true;
+    orders.value = [
+      order(1, "Baguete aberta", { status: "started", oven_until_display: "5h40" }),
+    ];
+    const wrapper = mountPage();
+
+    expect(wrapper.find("[data-close-in-oven]").text()).toBe("No forno até 5h40");
+  });
+
+  it("finalizado, volta à LISTA com o nome do lote, sem pular para o próximo (P2-11)", async () => {
+    route.query = { lot: "1" };
+    const wrapper = mountPage();
+    await flushPromises();
+
+    wrapper.findComponent({ name: "QcCloseScreen" }).vm.$emit("confirm", {
+      quantity: "12",
+      partition: [],
+      yield_deviation_confirmed: false,
+      yield_deviation_reason: "",
+      reason: "",
+    });
+    await flushPromises();
+
+    expect(success).toHaveBeenCalledWith("Lote de Baguete aberta finalizado.");
+    expect(navigate).toHaveBeenLastCalledWith({ path: "/close", query: {} }, { replace: true });
+    expect(wrapper.findComponent({ name: "QcCloseScreen" }).exists()).toBe(false);
   });
 
   it("lote que não se fecha daqui (já fechado) devolve ao painel", async () => {
