@@ -244,11 +244,15 @@ export function useProductionBoard(
     );
   }
 
+  // `materialShortageProof`: "Abrir assim mesmo" (WP-F11). A prova que o aviso de
+  // falta de insumo devolveu, na MESMA tentativa (mesma chave): o servidor só abre
+  // se a falta ainda é a que a pessoa leu.
   function start(
     key: string,
     woPk: number,
     rev: number,
     quantity: string,
+    materialShortageProof = "",
   ): Promise<BoardActResult> {
     return post(key, `start:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
       startProductionWorkOrder(woPk, {
@@ -256,6 +260,9 @@ export function useProductionBoard(
         expected_rev: expectedRev ?? rev,
         ...metadata,
         idempotency_key: idempotencyKey,
+        ...(materialShortageProof
+          ? { material_shortage_proof: materialShortageProof }
+          : {}),
       }),
     );
   }

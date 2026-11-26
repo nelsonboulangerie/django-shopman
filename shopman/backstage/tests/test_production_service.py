@@ -207,8 +207,11 @@ def test_register_old_dough_rejects_unopened_production(recipe):
 
 
 @pytest.mark.django_db
-def test_manager_deviation_recalculates_included_composition_and_keeps_recipe_unchanged():
+def test_manager_deviation_recalculates_included_composition_and_keeps_recipe_unchanged(monkeypatch):
     from shopman.craftsman.services import recipe_book
+
+    # O desvio é o assunto aqui; a falta de insumo na abertura é outro teste (WP-F11).
+    monkeypatch.setattr(production, "check_start_materials", lambda work_order, quantity: [])
 
     levain_entry = recipe_book.create_entry(ref="levain-desvio", name="Levain", kind="bread", output_sku="LEVAIN-DESVIO")
     levain_version = recipe_book.create_version(
@@ -1072,7 +1075,7 @@ def test_apply_finish_fails_closed_when_inventory_backend_is_unavailable(
     monkeypatch.setattr(
         production,
         "_material_needs_for_work_order",
-        lambda order: [object()],
+        lambda order, **_: [object()],
     )
     monkeypatch.setattr(
         "django.utils.module_loading.import_string",

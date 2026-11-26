@@ -691,6 +691,27 @@ async function confirmStart() {
   }
 }
 
+// "Abrir assim mesmo" (WP-F11): a falta de insumo na abertura é aviso. A mesma
+// tentativa volta com a prova do aviso, e o servidor só abre se a falta ainda é
+// a que o padeiro leu.
+async function openAnyway(proof: string) {
+  const attempt = lastStartAttempt.value;
+  const row = attempt
+    ? (rows.value.find((r) => r.output_sku === attempt.row.output_sku) ?? attempt.row)
+    : null;
+  const wo = row?.planned_orders.find((o) => o.pk === attempt?.workOrderPk);
+  if (!attempt || !row || !wo) return;
+  shortage.value = null;
+  const res = await start(row.output_sku, wo.pk, wo.rev, attempt.quantity, proof);
+  if (res.ok) {
+    lastStartAttempt.value = null;
+    kds.refresh();
+    useSonner.success(`Lote aberto: ${rowLabel(row)} × ${attempt.quantity}`);
+  } else if (res.shortage) {
+    shortage.value = res.shortage;
+  }
+}
+
 // "Revisar quantidade": volta ao diálogo de onde a recusa veio, com a linha
 // atual do quadro e o número que o operador digitou.
 function reviewShortage() {
@@ -2244,6 +2265,7 @@ const startedDescription = computed(() => {
         }
       "
       @confirm="retryPlanWithForce"
+      @open-anyway="openAnyway"
       @review="reviewShortage"
     />
   </main>

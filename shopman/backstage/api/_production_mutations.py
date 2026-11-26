@@ -210,10 +210,22 @@ class ProductionNotFoundErrorEnvelope:
 
 @dataclass(frozen=True)
 class ProductionShortagePossibility:
-    kind: Literal["retry", "force", "confirm"]
+    kind: Literal["retry", "force", "confirm", "purchase"]
     label: str
     enabled: bool
     proof: str
+    #: Para onde a ação leva ("Pedir no Compras"); "" nas ações que voltam ao servidor.
+    href: str
+
+
+@dataclass(frozen=True)
+class ProductionShortageAuthorizer:
+    """Quem pode assinar a falta de insumo (Gerente e Dono, D-042)."""
+
+    id: int
+    username: str
+    name: str
+    pin_digits: int | None
 
 
 @dataclass(frozen=True)
@@ -224,15 +236,31 @@ class ProductionMaterialShortageItem:
     needed: str
     available: str
     shortage: str
+    #: A medida da bancada: "300 g", nunca "0,3 kg" (a mesma do aviso da sugestão).
+    shortage_display: str
+    needed_display: str
+    available_display: str
+    #: A casa produz este item (massa, recheio): não se pede ao Compras.
+    produced_here: bool
 
 
 @dataclass(frozen=True)
 class ProductionMaterialShortageErrorBody:
     code: Literal["material_shortage"]
+    #: "start": aviso na abertura; "finish": trava no fechamento (WP-F11).
+    stage: Literal["start", "finish"]
     work_order_ref: str
     idempotency_key: str
     possibilities: tuple[ProductionShortagePossibility, ...]
     missing: tuple[ProductionMaterialShortageItem, ...]
+    #: A lista de quem assina a falta no fechamento; vazia na abertura.
+    authorizers: tuple[ProductionShortageAuthorizer, ...]
+
+
+@dataclass(frozen=True)
+class ProductionShortageAuthorizationResponse:
+    override_proof: str
+    authorizer_name: str
 
 
 @dataclass(frozen=True)
@@ -410,6 +438,12 @@ class ProductionStartMutationSerializer(ExistingWorkOrderMutationSerializer):
         allow_blank=False,
         max_length=4096,
     )
+    # "Abrir assim mesmo" (WP-F11): a prova que o aviso de falta de insumo devolveu.
+    material_shortage_proof = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=4096,
+    )
     quantity = serializers.DecimalField(
         max_digits=12,
         decimal_places=3,
@@ -418,6 +452,22 @@ class ProductionStartMutationSerializer(ExistingWorkOrderMutationSerializer):
     position_id = serializers.CharField(required=False, allow_blank=True, max_length=100)
     operator_ref = serializers.CharField(required=False, allow_blank=True, max_length=100)
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ProductionShortageAuthorizationSerializer(StrictMutationSerializer):
+    """A assinatura da falta de insumo: a prova da recusa e quem assina (PIN ou crachá)."""
+
+    override_proof = serializers.CharField(allow_blank=False, max_length=4096)
+    username = serializers.CharField(required=False, allow_blank=False, max_length=150)
+    pin = serializers.CharField(required=False, allow_blank=False, max_length=32, trim_whitespace=False)
+    badge = serializers.CharField(required=False, allow_blank=False, max_length=256)
+
+    def validate(self, attrs):
+        if attrs.get("badge"):
+            return attrs
+        if not attrs.get("username") or not attrs.get("pin"):
+            raise serializers.ValidationError({"pin": "Escolha quem autoriza e digite o PIN dessa pessoa."})
+        return attrs
 
 
 class ProductionOldDoughMutationSerializer(ExistingWorkOrderMutationSerializer):
@@ -628,6 +678,13 @@ class ProductionActionSpec:
 
 PRODUCTION_ACTION_SPECS = (
     ProductionActionSpec(
+        "authorizeProductionShortage",
+        "/api/v1/backstage/production/shortage-authorization/",
+        "ProductionShortageAuthorizationRequest",
+        ProductionShortageAuthorizationSerializer,
+        ProductionShortageAuthorizationResponse,
+    ),
+    ProductionActionSpec(
         "planProduction",
         "/api/v1/backstage/production/plan/",
         "ProductionPlanMutationRequest",
@@ -761,6 +818,8 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionNotFoundErrorBody,
     ProductionNotFoundErrorEnvelope,
     ProductionShortagePossibility,
+    ProductionShortageAuthorizer,
+    ProductionShortageAuthorizationResponse,
     ProductionMaterialShortageItem,
     ProductionMaterialShortageErrorBody,
     ProductionMaterialShortageErrorEnvelope,
