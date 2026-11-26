@@ -102,7 +102,9 @@ jobs:
           COVERAGE_FILE: .coverage.bench
           PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
         run: |
-          echo "nproc=$(nproc) mem=$(free -g | awk '/Mem:/{print $2}')G" | tee -a "$GITHUB_STEP_SUMMARY"
+          # CPU no resumo: a Ubicloud manda para o "premium" (Ryzen 7950X3D) e cai no
+          # padrão (EPYC) quando o premium está ocupado; a comparação precisa saber qual.
+          echo "cpu=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p') nproc=$(nproc) mem=$(free -g | awk '/Mem:/{print $2}')G" | tee -a "$GITHUB_STEP_SUMMARY"
           start=$SECONDS
           make ${{ matrix.target }}
           echo "${{ matrix.target }} em ${{ matrix.runner }}: $((SECONDS - start)) s" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -142,7 +144,7 @@ jobs:
         env:
           CI_HEAVY: "true"
         run: |
-          echo "nproc=$(nproc)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "cpu=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p') nproc=$(nproc)" | tee -a "$GITHUB_STEP_SUMMARY"
           entry="$(node ../../scripts/surface_contract.mjs matrix quality | jq -c '.include[] | select(.dir == "pos-nuxt")')"
           phases="unit lint typecheck"
           [ "$(jq -r .component <<<"$entry")" = "true" ] && phases="$phases component"
