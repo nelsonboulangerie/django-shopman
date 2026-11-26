@@ -37,7 +37,7 @@ describe("useWeighing", () => {
     const weighing = useWeighing(ref("2026-07-06"));
 
     expect(weighing.rowsFor(ticket as never).map((row) => [row.target, row.quantity])).toEqual([
-      ["1000 g", "1 kg"],
+      ["1000\u00a0g", "1 kg"],
     ]);
     expect(weighing).not.toHaveProperty("setOldDough");
   });

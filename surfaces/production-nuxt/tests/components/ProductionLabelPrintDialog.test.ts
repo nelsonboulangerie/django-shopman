@@ -364,8 +364,8 @@ describe("ProductionLabelPrintDialog", () => {
     expect(physical.attributes("data-document-sha256")).toBe("frozen-sha-256");
     expect(physical.text()).toContain("Farinha congelada");
     expect(physical.text()).toContain("FARINHA-FROZEN");
-    expect(physical.text()).toContain("102 g");
-    expect(physical.text()).toContain("(≈ 2 un.)");
+    expect(physical.text()).toContain("102\u00a0g");
+    expect(physical.text()).toContain("(≈ 2\u00a0un.)");
     expect(physical.text()).not.toContain("Referência:");
 
     await view.setProps({
