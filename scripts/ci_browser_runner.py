@@ -29,7 +29,10 @@ usando o pago mas não está?"). ``alert=true`` quando o piloto está LIGADO e m
 assim foi para o grátis (orçamento esgotado ou erro ao medir); desligar o piloto
 (apagar a variável) é decisão e não alarma. O modo ``notify`` abre UMA issue
 "Piloto da Ubicloud voltou ao grátis" (sem duplicar nem comentar a cada grupo) e
-a comenta e fecha quando o piloto volta ao pago.
+a comenta e fecha quando o piloto volta ao pago. A issue nasce ATRIBUÍDA a quem
+``CI_ALERT_ASSIGNEE`` (variável do repositório) nomeia, para chegar como notificação
+e e-mail do GitHub em vez de esperar alguém ir procurar (dono, 26/11: "grita pra
+mim ou tenho que ir atrás?"). Atribuir que falhe não cala o aviso: abre sem dono.
 
     python3 scripts/ci_browser_runner.py            # escolhe (passo do workflow)
     python3 scripts/ci_browser_runner.py notify     # abre/fecha a issue (passo seguinte)
@@ -106,7 +109,15 @@ def notify(env: dict, gh) -> str:
             "- erro ao medir: ver o passo \"Runner dos jobs de navegador\" no run acima.\n\n"
             "Esta issue fecha sozinha quando um grupo voltar a usar o pago. DEV-2026-098, plano §9.3."
         )
-        gh("issue", "create", "--title", ISSUE_TITLE, "--body", body)
+        create = ("issue", "create", "--title", ISSUE_TITLE, "--body", body)
+        assignee = env.get("ASSIGNEE", "").strip()
+        if assignee:
+            try:
+                gh(*create, "--assignee", assignee)
+                return f"issue aberta, atribuída a {assignee}"
+            except Exception:  # login errado ou sem acesso: o aviso sai mesmo assim
+                pass
+        gh(*create)
         return "issue aberta"
     if not alert and found:
         gh("issue", "comment", found, "--body", f"Voltou ao pago neste grupo: {env.get('RUN_URL', '?')} ({reason}). Fechando.")

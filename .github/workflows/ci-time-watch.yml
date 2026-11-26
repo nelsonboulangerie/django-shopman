@@ -37,6 +37,8 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       TITLE: Orçamento de tempo da CI estourou
+      # Issue atribuída chega como notificação e e-mail (dono, 26/11). Vazio: sem dono.
+      ASSIGNEE: ${{ vars.CI_ALERT_ASSIGNEE }}
     steps:
       - uses: actions/checkout@v7
 
@@ -118,7 +120,15 @@ jobs:
               echo
               echo "Afrouxar o teto é decisão escrita no PR que muda \`scripts/ci-time-budget.json\`, com o número."
             } > body.md
-            if [ -n "$n" ]; then gh issue comment "$n" --body-file body.md; else gh issue create --title "$TITLE" --body-file body.md; fi
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --body-file body.md
+            elif [ -n "$ASSIGNEE" ]; then
+              # Atribuir que falhe (login errado) não cala o aviso: abre sem dono.
+              gh issue create --title "$TITLE" --body-file body.md --assignee "$ASSIGNEE" \
+                || gh issue create --title "$TITLE" --body-file body.md
+            else
+              gh issue create --title "$TITLE" --body-file body.md
+            fi
           elif [ -n "$n" ]; then
             gh issue comment "$n" --body "A vigia de hoje ($RUN_URL) mediu a fila dentro do orçamento. Fechando."
             gh issue close "$n"
