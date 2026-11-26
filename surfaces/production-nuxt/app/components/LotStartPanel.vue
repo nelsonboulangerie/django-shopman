@@ -23,13 +23,13 @@ defineProps<{
   outsized: string | null;
   needsDoubleCheck: boolean;
   diverges: boolean;
+  decimal: boolean;
 }>();
 
 const qty = defineModel<string>("qty", { required: true });
 
 const emit = defineEmits<{
   close: [];
-  cancel: [];
   select: [workOrder: WorkOrderCardProjection];
   bump: [delta: number];
   confirm: [];
@@ -39,6 +39,10 @@ const emit = defineEmits<{
   clear: [];
 }>();
 
+// Os dois usam o teclado da tela, nunca o do sistema (P1-25): o campo é `inputmode="none"`
+// e todo alvo tem 44 px ou mais. Massa e creme (g, kg, l) ganham a tecla da vírgula
+// (`decimal`); peça conta inteira.
+//
 // O campo de quantidade é `NuxtInput`: o foco vai ao `<input>` que ele expõe.
 const qtyInput = ref<{ inputRef?: HTMLInputElement | null } | null>(null);
 defineExpose({
@@ -71,6 +75,7 @@ defineExpose({
         variant="ghost"
         size="xl"
         square
+        class="size-11 justify-center"
         aria-label="Fechar"
         @click="emit('close')"
       />
@@ -95,13 +100,14 @@ defineExpose({
           >
             <span class="op-title">#{{ workOrder.ref }}</span>
             <span class="op-micro text-muted-foreground"
-              >planejado {{ workOrder.planned_qty }} un.</span
+              >planejado {{ formatQtyUnit(workOrder.planned_qty, row.output_unit) }}</span
             >
           </NuxtButton>
         </div>
       </template>
       <p v-else-if="selectedOrder" class="op-label text-muted-foreground">
-        Lote #{{ selectedOrder.ref }} · planejado {{ selectedOrder.planned_qty }} un.
+        Lote #{{ selectedOrder.ref }} · planejado
+        {{ formatQtyUnit(selectedOrder.planned_qty, row.output_unit) }}
       </p>
       <template v-if="selectedOrder">
         <div class="flex items-center gap-2">
@@ -111,6 +117,7 @@ defineExpose({
             variant="outline"
             size="xl"
             square
+            class="size-14 shrink-0 justify-center"
             aria-label="Diminuir"
             @click="emit('bump', -1)"
           />
@@ -122,7 +129,7 @@ defineExpose({
             color="primary"
             highlight
             class="w-full"
-            :ui="{ base: 'text-center text-3xl font-bold tabular-nums' }"
+            :ui="{ base: 'h-14 text-center text-3xl font-bold tabular-nums' }"
             aria-label="Quantidade prevista"
             @keydown.enter.prevent="emit('confirm')"
           />
@@ -132,6 +139,7 @@ defineExpose({
             variant="outline"
             size="xl"
             square
+            class="size-14 shrink-0 justify-center"
             aria-label="Aumentar"
             @click="emit('bump', 1)"
           />
@@ -150,14 +158,32 @@ defineExpose({
           "
         />
         <p v-else-if="diverges" class="op-label text-muted-foreground">
-          Diferente do planejado ({{ selectedOrder.planned_qty }}). É rendimento, não perda.
+          Diferente do planejado ({{ formatQtyUnit(selectedOrder.planned_qty, row.output_unit) }}). É
+          rendimento, não perda.
         </p>
+        <!-- Com a vírgula, uma fileira a mais: as teclas descem a 48 px para caber a
+             1024 × 768 sem rolar (o alvo continua acima de 44). -->
         <OperatorNumpad
-          class="[&_button]:h-14! [&_button]:op-figure"
+          class="[&_button]:op-figure"
+          :class="decimal ? '[&_button]:h-12!' : '[&_button]:h-14!'"
           subject="quantidade prevista"
           @digit="(digit: string) => emit('digit', digit)"
           @backspace="emit('backspace')"
           @clear="emit('clear')"
+        />
+        <NuxtButton
+          v-if="decimal"
+          color="neutral"
+          variant="outline"
+          size="xl"
+          block
+          class="justify-center"
+          :class="decimal ? 'h-12' : 'h-14'"
+          :ui="{ label: 'text-3xl font-bold leading-none' }"
+          label=","
+          aria-label="Vírgula"
+          data-start-decimal-key
+          @click="emit('digit', ',')"
         />
       </template>
     </div>
@@ -167,14 +193,14 @@ defineExpose({
         variant="outline"
         size="xl"
         block
-        class="flex-1"
-        label="Cancelar"
+        class="min-h-12 flex-1"
+        label="Fechar"
         @click="emit('close')"
       />
       <NuxtButton
         size="xl"
         block
-        class="flex-[1.6]"
+        class="min-h-12 flex-[1.6]"
         icon="i-lucide-check"
         :disabled="submitting || !ready || needsDoubleCheck"
         :label="
@@ -195,6 +221,7 @@ defineExpose({
     :title="`Quanto está previsto? · ${row ? rowLabel(row) : ''}`"
     :description="`${row?.output_sku ?? ''} · esta quantidade abre o lote e segue para a Finalização.`"
     :ui="{ content: 'sm:max-w-sm' }"
+    :close="{ class: 'size-11 justify-center' }"
     @update:open="
       (v: boolean) => {
         if (!v) emit('close');
@@ -226,14 +253,14 @@ defineExpose({
             @click="emit('select', workOrder)"
           >
             <span class="font-medium">#{{ workOrder.ref }}</span>
-            <span class="tabular-nums text-muted-foreground"
-              >{{ workOrder.planned_qty }} un.</span
-            >
+            <span class="tabular-nums text-muted-foreground">{{
+              formatQtyUnit(workOrder.planned_qty, row.output_unit)
+            }}</span>
           </NuxtButton>
         </div>
-        <p v-if="selectedOrder" class="text-sm text-muted-foreground">
+        <p v-if="selectedOrder && row" class="text-sm text-muted-foreground">
           Lote #{{ selectedOrder.ref }} · planejado
-          {{ selectedOrder.planned_qty }}
+          {{ formatQtyUnit(selectedOrder.planned_qty, row.output_unit) }}
         </p>
         <div v-if="selectedOrder" class="flex items-center gap-2">
           <NuxtButton
@@ -242,16 +269,19 @@ defineExpose({
             variant="outline"
             size="xl"
             square
+            class="size-14 shrink-0 justify-center"
             aria-label="Diminuir"
             @click="emit('bump', -1)"
           />
           <NuxtInput
             ref="qtyInput"
             v-model="qty"
-            inputmode="decimal"
+            inputmode="none"
             size="xl"
+            color="primary"
+            highlight
             class="w-full"
-            :ui="{ base: 'text-center text-3xl font-bold tabular-nums' }"
+            :ui="{ base: 'h-14 text-center text-3xl font-bold tabular-nums' }"
             aria-label="Quantidade prevista"
             @keydown.enter.prevent="emit('confirm')"
           />
@@ -261,6 +291,7 @@ defineExpose({
             variant="outline"
             size="xl"
             square
+            class="size-14 shrink-0 justify-center"
             aria-label="Aumentar"
             @click="emit('bump', 1)"
           />
@@ -281,11 +312,36 @@ defineExpose({
           "
         />
         <p
-          v-else-if="selectedOrder && diverges"
+          v-else-if="selectedOrder && row && diverges"
           class="text-sm text-muted-foreground"
         >
-          Diferente do planejado ({{ selectedOrder.planned_qty }}).
+          Diferente do planejado ({{ formatQtyUnit(selectedOrder.planned_qty, row.output_unit) }}).
+          É rendimento, não perda.
         </p>
+        <template v-if="selectedOrder">
+          <OperatorNumpad
+            class="[&_button]:op-figure"
+            :class="decimal ? '[&_button]:h-12!' : '[&_button]:h-14!'"
+            subject="quantidade prevista"
+            @digit="(digit: string) => emit('digit', digit)"
+            @backspace="emit('backspace')"
+            @clear="emit('clear')"
+          />
+          <NuxtButton
+            v-if="decimal"
+            color="neutral"
+            variant="outline"
+            size="xl"
+            block
+            class="justify-center"
+            :class="decimal ? 'h-12' : 'h-14'"
+            :ui="{ label: 'text-3xl font-bold leading-none' }"
+            label=","
+            aria-label="Vírgula"
+            data-start-decimal-key
+            @click="emit('digit', ',')"
+          />
+        </template>
       </div>
     </template>
     <template #footer>
@@ -294,14 +350,22 @@ defineExpose({
           color="neutral"
           variant="outline"
           size="xl"
-          label="Cancelar"
-          @click="emit('cancel')"
+          class="min-h-11"
+          label="Fechar"
+          @click="emit('close')"
         />
         <NuxtButton
           size="xl"
           :disabled="submitting || !ready || needsDoubleCheck"
+          class="min-h-11"
+          icon="i-lucide-check"
           aria-keyshortcuts="Enter"
-          :label="submitting ? 'Confirmando…' : 'Confirmar'"
+          data-open-confirm-submit
+          :label="
+            submitting
+              ? 'Confirmando…'
+              : `Confirmar ${formatQtyUnit(qty || '0', row?.output_unit ?? '')}`
+          "
           @click="emit('confirm')"
         />
       </div>
