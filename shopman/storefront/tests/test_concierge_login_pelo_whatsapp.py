@@ -10,6 +10,8 @@ e a Nice não responde por cima nem chama a equipe.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from shopman.doorman.models import AccessLink
 from shopman.doorman.services.link_state import store_state
@@ -18,6 +20,7 @@ from shopman.shop.models import Conversation
 from shopman.shop.models import ConversationMessage as Message
 from shopman.storefront.concierge import login_door, service
 from shopman.storefront.tests.test_concierge_engine import (
+    PHONE,
     SUBJECT,
     _binding,
     _receive,
@@ -77,14 +80,62 @@ def test_an_expired_code_says_how_to_try_again_and_never_calls_the_team(conversa
     assert not AccessLink.objects.exists() and delivered == []
 
 
-def test_when_the_manychat_flow_already_answered_the_house_stays_quiet(conversation, customer, outbox, delivered):
-    AccessLink.create_with_token(customer_id=customer.uuid, audience=AccessLink.Audience.WEB_GENERAL,
-                                 source=AccessLink.Source.MANYCHAT,
-                                 expires_at=AccessLink._meta.get_field("expires_at").default(), metadata={})
-    _turn(conversation, REAL.format(code="NB-DETPVA"))  # o fluxo já consumiu o código
+def _manychat_endpoint(customer, text, settings):
+    """O External Request do fluxo do ManyChat com a mesma mensagem (``AccessLinkCreateView``)."""
+    import json
+
+    from django.test import RequestFactory
+    from shopman.doorman.views.access_link import AccessLinkCreateView
+
+    settings.DOORMAN = {**getattr(settings, "DOORMAN", {}), "ACCESS_LINK_API_KEY": "chave-de-teste"}
+    request = RequestFactory().post(
+        "/auth/access-link/create/",
+        json.dumps({"customer_id": str(customer.uuid), "access_code": text, "subscriber_id": SUBJECT,
+                    "whatsapp_id": PHONE}),
+        content_type="application/json",
+        HTTP_AUTHORIZATION="Bearer chave-de-teste",
+    )
+    return AccessLinkCreateView.as_view()(request)
+
+
+def test_when_the_manychat_flow_answered_first_the_concierge_stays_quiet(
+    conversation, customer, outbox, delivered, settings, django_capture_on_commit_callbacks
+):
+    """A corrida, de um lado: o fluxo do ManyChat consumiu a referência e criou o link."""
+    code = store_state({"site_return": "phone", "next": "/finalizar"})
+    with django_capture_on_commit_callbacks(execute=True):
+        assert _manychat_endpoint(customer, REAL.format(code=code), settings).status_code == 200
+        _turn(conversation, REAL.format(code=code))
     conversation.refresh_from_db()
     assert conversation.state == Conversation.State.ACTIVE
     assert outbox.sent == [] and AccessLink.objects.count() == 1
+    assert len(delivered) == 1  # uma mensagem de entrada só
+
+
+def test_when_the_concierge_answered_first_the_manychat_flow_makes_no_second_link(
+    conversation, customer, outbox, delivered, settings, django_capture_on_commit_callbacks
+):
+    """A corrida, do outro (#3621): sem a marca, o endpoint criava um segundo link com o aviso
+    falso de "sua sacola não veio"."""
+    code = store_state({"site_return": "phone", "next": "/finalizar"})
+    with django_capture_on_commit_callbacks(execute=True):
+        _turn(conversation, REAL.format(code=code))
+        response = _manychat_endpoint(customer, REAL.format(code=code), settings)
+    assert response.status_code == 200 and json.loads(response.content)["already_answered"] is True
+    link = AccessLink.objects.get()
+    assert "handoff_expired" not in link.metadata and link.metadata["next"] == "/finalizar"
+    assert len(delivered) == 1
+
+
+def test_an_old_link_of_another_reference_does_not_silence_an_expired_one(
+    conversation, customer, outbox, delivered, settings, django_capture_on_commit_callbacks
+):
+    """A marca é da referência: o link de outra entrada, mesmo recente, não cala a vencida."""
+    other = store_state({"site_return": "phone"})
+    with django_capture_on_commit_callbacks(execute=True):
+        _turn(conversation, REAL.format(code=other), "login-outra")
+    _turn(conversation, REAL.format(code="NB-DETPVA"), "login-vencida")
+    assert outbox.sent == [login_door.EXPIRED]
 
 
 def test_with_the_team_the_login_still_goes_through(

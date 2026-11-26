@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -89,10 +90,9 @@ def test_runtime_gate_fails_when_a_test_is_skipped():
     relatório verde cheio de `s`. Sem ela, rodar o gate sem banco real seria
     indistinguível de rodá-lo com banco real.
     """
-    fixture = ROOT / "scripts" / "_runtime_gate_probe_test.py"
-    fixture.write_text(
+    fixture = _probe(
+        "probe",
         "import pytest\n\n\n@pytest.mark.skip(reason='sonda do gate de runtime')\ndef test_sonda():\n    pass\n",
-        encoding="utf-8",
     )
     try:
         result = subprocess.run(
@@ -120,6 +120,18 @@ def test_runtime_gate_fails_when_a_test_is_skipped():
         f"parou de reprovar skips.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "Runtime gate failed because tests were skipped" in result.stderr
+
+
+def _probe(kind: str, text: str) -> Path:
+    """Arquivo-sonda com nome ÚNICO por chamada.
+
+    Dois testes escreviam e apagavam o mesmo ``_runtime_gate_passing_probe_test.py``:
+    com xdist, o ``finally`` de um apagava a sonda do outro no meio do subprocesso
+    (5/5 verde isolado, vermelho na suíte; medido no preflight do F08, #3650, 26/11).
+    """
+    path = ROOT / "scripts" / f"_runtime_gate_{kind}_{uuid.uuid4().hex[:8]}_test.py"
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 def _run_gate_against(fixture_paths: str, env_extra: dict[str, str] | None = None):
@@ -154,15 +166,13 @@ def test_runtime_gate_fails_when_a_whole_module_skips_itself_at_collection():
     errado, sem provar nada. Com um teste que passa junto, o pytest sai 0 — e só
     o hook de coleta transforma isso em vermelho.
     """
-    skipper = ROOT / "scripts" / "_runtime_gate_module_skip_probe_test.py"
-    passer = ROOT / "scripts" / "_runtime_gate_passing_probe_test.py"
-    skipper.write_text(
+    skipper = _probe(
+        "module_skip_probe",
         "import pytest\n\n"
         "pytest.skip('sonda: modulo pulado na coleta', allow_module_level=True)\n\n\n"
         "def test_nunca_roda():\n    raise AssertionError('inalcancavel')\n",
-        encoding="utf-8",
     )
-    passer.write_text("def test_passa():\n    pass\n", encoding="utf-8")
+    passer = _probe("passing_probe", "def test_passa():\n    pass\n")
     try:
         result = _run_gate_against(
             f"{skipper.relative_to(ROOT)} {passer.relative_to(ROOT)}",
@@ -177,7 +187,7 @@ def test_runtime_gate_fails_when_a_whole_module_skips_itself_at_collection():
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "whole modules were skipped at collection" in result.stderr
-    assert "_runtime_gate_module_skip_probe_test.py" in result.stderr, (
+    assert skipper.name in result.stderr, (
         "o gate reprovou sem NOMEAR o arquivo culpado; sem o nome ninguém acha o defeito"
     )
 
@@ -189,10 +199,8 @@ def test_runtime_gate_fails_when_a_listed_file_collects_nothing():
     que perdeu seus testes num rename, ou cujo conteúdo virou helper, coleta
     zero sem pular nada — e continua na lista dizendo que está coberto.
     """
-    empty = ROOT / "scripts" / "_runtime_gate_empty_probe_test.py"
-    passer = ROOT / "scripts" / "_runtime_gate_passing_probe_test.py"
-    empty.write_text("# sonda: arquivo de teste sem teste nenhum\n", encoding="utf-8")
-    passer.write_text("def test_passa():\n    pass\n", encoding="utf-8")
+    empty = _probe("empty_probe", "# sonda: arquivo de teste sem teste nenhum\n")
+    passer = _probe("passing_probe", "def test_passa():\n    pass\n")
     try:
         result = _run_gate_against(f"{empty.relative_to(ROOT)} {passer.relative_to(ROOT)}")
     finally:
@@ -204,4 +212,4 @@ def test_runtime_gate_fails_when_a_listed_file_collects_nothing():
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "collected zero tests" in result.stderr
-    assert "_runtime_gate_empty_probe_test.py" in result.stderr
+    assert empty.name in result.stderr

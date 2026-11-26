@@ -160,8 +160,18 @@ class AccessLinkCreateView(View):
                 if isinstance(state, dict):
                     from ..services.site_context import fold_state
 
-                    origin, origin_label = fold_state(state, metadata, request=request)
+                    origin, origin_label = fold_state(
+                        state, metadata, request=request, code=str(access_code)
+                    )
                 else:
+                    from ..services.site_context import already_answered
+
+                    if already_answered(str(access_code), customer):
+                        # A mesma mensagem chegou também à Concierge da loja, que consumiu a
+                        # referência e criou o link (a mensagem de entrada já saiu com ele).
+                        # Um segundo link sairia com o aviso falso de "sacola não veio" (#3621).
+                        logger.info("access_link.already_answered")
+                        return JsonResponse({"already_answered": True, "handoff_attempted": True})
                     # Código veio mas não resolveu (expirou/já usado): um handoff do site foi
                     # TENTADO e falhou — distinto do login orgânico (sem access_code). Marcamos
                     # para o exchange avisar que a sacola não veio (omotenashi: nunca sumir com

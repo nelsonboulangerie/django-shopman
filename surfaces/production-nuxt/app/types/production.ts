@@ -48,6 +48,7 @@ export type {
   ProductionMatrixGroupRowProjection,
   ProductionMatrixRowProjection,
   ProductionMiseEnPlaceProjection,
+  ProductionPromisedProjection,
   ProductionReportsProjection,
   ProductionSuggestionProjection,
   ProductionSurfaceAccess,
@@ -60,6 +61,7 @@ export type {
   RecipeWasteRow,
   SuggestionMaterialShortageProjection,
   PlanCarryNoteProjection,
+  PromisedOrderProjection,
   WorkOrderCardProjection,
   WorkOrderReportRow,
 } from "~/generated/productionContract";

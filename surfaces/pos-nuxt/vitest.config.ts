@@ -37,7 +37,18 @@ export default defineConfig({
           setupFiles: ["./tests/support/componentSetup.ts"],
           // O teto dos HOOKS é declarado, com a conta (#2762, medido em 19/11/2026
           // nos runners gratuitos do GitHub). O teto de cada TESTE fica no padrão
-          // do Vitest (5 s) de propósito: teste não espera ambiente.
+          // do Vitest (5 s) de propósito NA CI: teste não espera ambiente, e lá ele
+          // continua pegando o teste que ficou lento.
+          //
+          // NA MÁQUINA LOCAL (`make preflight`), 15 s (#3645, 26/11/2026). Medido:
+          // primeiro o vazamento (os testes não desmontavam; `tests/support/
+          // mountedWrappers.ts`), que levava o arquivo do pagamento de 182 s para
+          // 7,5 s. O que sobrou é falta de CPU, não relógio: no preflight a máquina de
+          // 8 núcleos/8 GB divide as vagas com outras worktrees (uma delas com
+          // `pytest -n auto` ao lado, carga 12 a 14), a etapa do PDV vai de 65 s a
+          // 194 s, e 9 testes diferentes por rodada, espalhados por 7 arquivos,
+          // passam de 5 s; um teste que monta e clica em 100 ms sozinho chegou a
+          // 28 s com carga 24. Teto maior só aqui, onde a carga é dos outros.
           //
           // O `beforeAll` do `@nuxt/test-utils` sobe o app Nuxt em cada arquivo e
           // não aceita teto próprio: vale o `hookTimeout` do projeto, 10 s no
@@ -55,6 +66,7 @@ export default defineConfig({
           // e três vezes e meia o projetado. O mesmo teto cobre o aquecimento da
           // montagem (`tests/support/mountWarmup.ts`), que mediu 1,2 a 1,9 s.
           hookTimeout: 60_000,
+          testTimeout: process.env.CI ? 5_000 : 15_000,
           include: [
             "tests/components/**/*.test.ts",
             "tests/composables/**/*.test.ts",

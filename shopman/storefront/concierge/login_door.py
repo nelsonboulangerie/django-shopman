@@ -11,8 +11,9 @@ A Nice não responde por cima: uma mensagem só, a da entrada.
 
 Até 25/11 isto era do fluxo do ManyChat, disparado pela palavra-chave. Quando a mensagem
 chegava à Concierge, ela lia como conversa e chamava a equipe (conversa 2, 12:11). Se o
-fluxo do ManyChat ainda atender a mesma mensagem, o código já foi consumido e o link já
-saiu há instantes: a casa fica calada, sem segunda mensagem.
+fluxo do ManyChat também atender a mesma mensagem, quem consumir a referência primeiro cria
+o link, que leva a marca dela (``doorman.services.site_context.already_answered``); quem
+chega depois encontra a marca e fica calado, sem segunda mensagem (#3621).
 
 Sem código válido (venceu, já foi usado), a resposta diz como gerar outro. Nunca equipe.
 """
@@ -26,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 #: As palavras da mensagem pronta do site e a palavra-chave de quem digita.
 LOGIN_MARKERS = ("quero entrar no site", "#menu")
-#: O link que o fluxo do ManyChat criou há menos que isto atendeu esta mesma mensagem.
+#: Sem referência (``#menu`` digitado), o link que o fluxo do ManyChat criou há menos que
+#: isto atendeu esta mesma mensagem: não há marca para conferir.
 JUST_SENT = timedelta(minutes=3)
 
 EXPIRED = (
@@ -94,7 +96,9 @@ def answer(conversation, binding, text: str) -> str | None:
     if contains_code(text):
         state = pop_state(text)
         if not isinstance(state, dict):
-            if _just_sent(customer):
+            from shopman.doorman.services.site_context import already_answered
+
+            if already_answered(text, customer):
                 logger.info("concierge.login_door.already_sent conversation=%s", conversation.pk)
                 return ""
             logger.info("concierge.login_door.expired conversation=%s", conversation.pk)
@@ -102,14 +106,14 @@ def answer(conversation, binding, text: str) -> str | None:
     elif _just_sent(customer):
         return ""
     try:
-        sent = _create_link(customer, binding, dict(state or {}))
+        sent = _create_link(customer, binding, dict(state or {}), code=text if state else "")
     except Exception:
         logger.exception("concierge.login_door.failed conversation=%s", conversation.pk)
         return UNAVAILABLE
     return "" if sent else UNAVAILABLE
 
 
-def _create_link(customer, binding, state: dict) -> bool:
+def _create_link(customer, binding, state: dict, code: str = "") -> bool:
     """O link de acesso com o contexto do site, pelo mesmo serviço do ``AccessLinkCreateView``."""
     from shopman.doorman.models import AccessLink
     from shopman.doorman.services.access_link import AccessLinkService
@@ -119,7 +123,7 @@ def _create_link(customer, binding, state: dict) -> bool:
     if binding.subject:
         # Entregar para quem falou, pelo assinante (ver ``AccessLinkCreateView``).
         metadata["deliver_to"] = str(binding.subject)
-    origin, origin_label = fold_state(state, metadata)
+    origin, origin_label = fold_state(state, metadata, code=code)
     release_origin(customer=customer, metadata=metadata, origin=origin, origin_label=origin_label)
     result = AccessLinkService.create_token(
         customer, audience=AccessLink.Audience.WEB_GENERAL, source=AccessLink.Source.MANYCHAT, metadata=metadata
