@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoOperatorOverlap } from "../../../operator-kit/visual/playwright";
+import {
+  expectNoOperatorOverlap,
+  waitForAnimationsToSettle,
+} from "../../../operator-kit/visual/playwright";
 
 // A trava da sobreposição (dono, 07/11/2026: "não pode acontecer, nem nessa tela nem em
 // nenhuma"). Em cada largura da régua e em cada tela da Produção, nada visível se desenha
@@ -78,6 +81,7 @@ test.describe("1024 px com o painel do previsto aberto", () => {
     await page.locator("[data-open-confirm]").first().click();
     await page.locator("[data-open-confirm-panel]").waitFor();
     await settle(page);
+    await waitForAnimationsToSettle(page);
 
     await expectNoOperatorOverlap(page, "/ a 1024 px com o painel do previsto aberto");
 
@@ -136,6 +140,8 @@ for (const viewport of [
       const dialog = page.getByRole("dialog");
       await dialog.waitFor();
       await settle(page);
+      // O diálogo abre com escala: medir no meio da animação pega o botão encolhido.
+      await waitForAnimationsToSettle(page);
 
       await expect(dialog.getByRole("textbox", { name: "Quantidade prevista" })).toHaveAttribute("inputmode", "none");
       await expect(dialog.getByRole("group", { name: "Teclado numérico de quantidade prevista" })).toBeVisible();
