@@ -545,3 +545,86 @@ def test_faixa_rapida_tem_vaga_propria_e_mede_a_espera(tmp_path, monkeypatch):
         assert wait["seconds"] < 5
     with local_ci.machine_slot("none", 2) as wait:
         assert wait == {"seconds": 0.0}
+
+
+# ── Evidência por passo (#3635) ─────────────────────────────────────────────
+
+
+def _tree(repo: Path, files: dict[str, str]) -> str:
+    for rel, text in files.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_text(text)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    return subprocess.run(["git", "write-tree"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+
+
+BASE = {
+    "shopman/backstage/api.py": "a",
+    "surfaces/pos-nuxt/app.vue": "pos",
+    "surfaces/storefront-nuxt/app.vue": "loja",
+    "surfaces/operator-kit/kit.ts": "kit",
+    "surfaces/contracts.json": "{}",
+    "scripts/surface_contract.mjs": "c",
+}
+POS = local_ci.Step("pos-nuxt › component", "npm run test:component", cwd="surfaces/pos-nuxt", slot="cpu")
+SUITE = local_ci.Step("Testes (test-backstage) — fila", "make test-backstage", slot="cpu")
+PY = Path("/venv/bin/python")
+
+
+def test_passo_do_app_ignora_backend_e_o_app_irmao(repo):
+    t1 = _tree(repo, BASE)
+    t2 = _tree(repo, {"shopman/backstage/api.py": "b", "surfaces/storefront-nuxt/app.vue": "loja2"})
+    assert local_ci.step_key(repo, POS, t1, "22", PY) == local_ci.step_key(repo, POS, t2, "22", PY)
+
+
+def test_passo_do_app_muda_com_o_app_o_kit_a_raiz_e_o_node(repo):
+    t1 = _tree(repo, BASE)
+    k1 = local_ci.step_key(repo, POS, t1, "22", PY)
+    assert local_ci.step_key(repo, POS, t1, "26", PY) != k1
+    for change in ({"surfaces/pos-nuxt/app.vue": "pos2"}, {"surfaces/operator-kit/kit.ts": "kit2"},
+                   {"surfaces/contracts.json": '{"x":1}'}, {"scripts/surface_contract.mjs": "c2"}):
+        _tree(repo, BASE)
+        assert local_ci.step_key(repo, POS, _tree(repo, change), "22", PY) != k1, change
+
+
+def test_suite_python_ignora_surfaces_mas_nao_o_backend(repo):
+    t1 = _tree(repo, BASE)
+    k1 = local_ci.step_key(repo, SUITE, t1, "22", PY)
+    assert local_ci.step_key(repo, SUITE, _tree(repo, {"surfaces/pos-nuxt/app.vue": "pos2"}), "22", PY) == k1
+    assert local_ci.step_key(repo, SUITE, _tree(repo, {"shopman/backstage/api.py": "b"}), "22", PY) != k1
+
+
+def test_passo_barato_e_npm_ci_sempre_rodam(repo):
+    t1 = _tree(repo, BASE)
+    assert local_ci.step_key(repo, local_ci.Step("pinos", "x"), t1, "22", PY) is None
+    npm = local_ci.Step("pos-nuxt › npm ci", "npm ci", cwd="surfaces/pos-nuxt", slot="cpu")
+    assert local_ci.step_key(repo, npm, t1, "22", PY) is None
+
+
+def test_so_verde_e_reaproveitado(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHOPMAN_LOCAL_CI_HOME", str(tmp_path))
+    local_ci.remember("k1", {"status": "pass", "seconds": 300, "at": "x"})
+    local_ci.remember("k2", {"status": "fail", "seconds": 300, "at": "x"})
+    assert local_ci.reusable("k1")["seconds"] == 300
+    assert local_ci.reusable("k2") is None
+    assert local_ci.reusable("k3") is None
+    assert local_ci.reusable(None) is None
+
+
+def test_leitores_de_surfaces_em_producao_estao_na_chave():
+    """Código de produção novo que lê surfaces/ precisa entrar em PY_SURFACE_READERS."""
+    hits = subprocess.run(
+        ["git", "grep", "-l", "-E", local_ci.SURFACE_PATH_RE, "--", "shopman/**/*.py", "packages/**/*.py",
+         "config/**/*.py", ":!**/tests/**", ":!**/migrations/**"],
+        cwd=ROOT, capture_output=True, text=True,
+    ).stdout.split()
+    assert sorted(hits) == sorted(local_ci.PY_SURFACE_READERS), (
+        "leitor de surfaces/ fora da chave das suítes Python: atualize PY_SURFACE_READERS em scripts/local_ci.py"
+    )
+
+
+def test_suite_python_ve_o_contrato_gerado(repo):
+    t1 = _tree(repo, {**BASE, "surfaces/pos-nuxt/app/generated/posContract.ts": "v1", "surfaces/registry.json": "{}"})
+    k1 = local_ci.step_key(repo, SUITE, t1, "22", PY)
+    assert local_ci.step_key(repo, SUITE, _tree(repo, {"surfaces/pos-nuxt/app/generated/posContract.ts": "v2"}), "22", PY) != k1
+    assert local_ci.step_key(repo, SUITE, _tree(repo, {"surfaces/registry.json": '{"a":1}'}), "22", PY) != k1
