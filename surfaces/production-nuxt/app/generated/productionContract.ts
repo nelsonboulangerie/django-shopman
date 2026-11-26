@@ -964,7 +964,7 @@ export interface ProductionShortageAuthorizationResponse {
   authorizer_name: string;
 }
 
-/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str', shortage_display: 'str', needed_display: 'str', available_display: 'str') */
+/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str', shortage_display: 'str', needed_display: 'str', available_display: 'str', produced_here: 'bool') */
 export interface ProductionMaterialShortageItem {
   sku: string;
   name: string;
@@ -975,6 +975,7 @@ export interface ProductionMaterialShortageItem {
   shortage_display: string;
   needed_display: string;
   available_display: string;
+  produced_here: boolean;
 }
 
 /** ProductionMaterialShortageErrorBody(code: "Literal['material_shortage']", stage: "Literal['start', 'finish']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', missing: 'tuple[ProductionMaterialShortageItem, ...]', authorizers: 'tuple[ProductionShortageAuthorizer, ...]') */

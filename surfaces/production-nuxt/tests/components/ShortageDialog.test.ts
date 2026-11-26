@@ -24,6 +24,7 @@ const butter = {
   shortage_display: "300 g",
   needed_display: "1000 g",
   available_display: "700 g",
+  produced_here: false,
 };
 
 function materialShortage(
@@ -108,6 +109,29 @@ describe("ShortageDialog — falta de insumo na abertura (aviso)", () => {
     expect(wrapper.emitted("review")).toHaveLength(1);
     expect(wrapper.find("textarea").exists()).toBe(false);
     expect(wrapper.find("[data-shortage-authorize]").exists()).toBe(false);
+  });
+});
+
+describe("ShortageDialog — o que a casa produz não se pede ao Compras", () => {
+  it("massa em falta: a frase fala em produzir, sem Compras", () => {
+    const massa = { ...butter, sku: "MASSA-CIABATTA", name: "Massa de ciabatta", produced_here: true };
+    const opening = mountDialog(
+      materialShortage("start", {
+        missing: [massa],
+        possibilities: [
+          { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "", href: "" },
+          { kind: "confirm", label: "Abrir assim mesmo", enabled: true, proof: "p", href: "" },
+        ],
+      }),
+    );
+    expect(opening.get("[data-shortage-item]").text()).toContain("Falta 300 g de massa de ciabatta");
+    expect(opening.findComponent({ name: "NuxtModal" }).props("description")).toContain("precisa ser produzido");
+    expect(opening.findComponent({ name: "NuxtModal" }).props("description")).not.toContain("Compras");
+
+    const closing = mountDialog(materialShortage("finish", { missing: [massa], possibilities: [] }));
+    expect(closing.findComponent({ name: "NuxtModal" }).props("description")).toBe(
+      "O estoque não tem o que este lote consome. Produza o que falta e tente de novo.",
+    );
   });
 });
 

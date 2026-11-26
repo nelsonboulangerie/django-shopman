@@ -240,6 +240,8 @@ class ProductionMaterialShortageItem:
     shortage_display: str
     needed_display: str
     available_display: str
+    #: A casa produz este item (massa, recheio): não se pede ao Compras.
+    produced_here: bool
 
 
 @dataclass(frozen=True)

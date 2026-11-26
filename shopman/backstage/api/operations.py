@@ -476,10 +476,20 @@ def _production_error_response(
             status=404,
         )
     if isinstance(exc, ProductionStockShortError):
+        from shopman.craftsman.models import Recipe
+
         from shopman.backstage.projections.production import _preparation_measure
         from shopman.backstage.services import operator as operator_service
 
         material_names = _material_display_names({item.sku for item in exc.missing})
+        # O que a casa produz (massa, recheio) não se pede ao Compras: o link e a frase
+        # do Compras só valem quando falta algo comprado.
+        produced_here = set(
+            Recipe.objects.filter(
+                output_sku__in={item.sku for item in exc.missing}, is_active=True
+            ).values_list("output_sku", flat=True)
+        )
+        bought_missing = any(item.sku not in produced_here for item in exc.missing)
         # A próxima ação está no envelope (WP-F11): na abertura a falta é aviso, e
         # o padeiro escolhe entre pedir no Compras e abrir assim mesmo; no
         # fechamento é trava, e a saída é a assinatura de quem pode autorizar,
@@ -495,7 +505,7 @@ def _production_error_response(
                 "href": "",
             },
         ]
-        if purchase_url:
+        if purchase_url and bought_missing:
             possibilities.append(
                 {
                     "kind": "purchase",
@@ -552,6 +562,7 @@ def _production_error_response(
                             "shortage_display": _preparation_measure(item.shortage, item.unit),
                             "needed_display": _preparation_measure(item.needed, item.unit),
                             "available_display": _preparation_measure(item.available, item.unit),
+                            "produced_here": item.sku in produced_here,
                         }
                         for item in exc.missing
                     ],

@@ -1440,6 +1440,7 @@ describe("ProductionStageGrid — falta de insumo na abertura é aviso (WP-F11)"
         shortage_display: "300 g",
         needed_display: "1000 g",
         available_display: "700 g",
+        produced_here: false,
       },
     ],
     authorizers: [],

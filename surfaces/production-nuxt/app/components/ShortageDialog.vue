@@ -70,6 +70,10 @@ const openAnywayPossibility = computed(() =>
       )
     : undefined,
 );
+// Falta algo comprado: aí o Compras é quem resolve. Massa e recheio a casa produz.
+const boughtMissing = computed(() =>
+  (material.value?.missing ?? []).some((item) => !item.produced_here),
+);
 const materialLines = computed(() =>
   (material.value?.missing ?? []).map((item) => ({
     sku: item.sku,
@@ -147,13 +151,17 @@ const description = computed(() => {
     return `Rendeu ${shortLot.value.yielded}. ${shortLot.value.missing} para as encomendas.`;
   }
   if (isMaterial.value && opening.value) {
-    return "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente ou o Dono autoriza.";
+    return boughtMissing.value
+      ? "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente ou o Dono autoriza."
+      : "Dá para abrir assim mesmo. Para fechar o lote, o que falta precisa ser produzido ou a Gerente ou o Dono autoriza.";
   }
   if (isMaterial.value && forcePossibility.value) {
     return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
   }
   if (isMaterial.value) {
-    return "O estoque não tem o que este lote consome. Peça ao Compras para dar entrada no que falta e tente de novo.";
+    return boughtMissing.value
+      ? "O estoque não tem o que este lote consome. Peça ao Compras para dar entrada no que falta e tente de novo."
+      : "O estoque não tem o que este lote consome. Produza o que falta e tente de novo.";
   }
   return `O lote ${ref} tem encomendas que dependem dele, e a quantidade informada não cobre todas.`;
 });

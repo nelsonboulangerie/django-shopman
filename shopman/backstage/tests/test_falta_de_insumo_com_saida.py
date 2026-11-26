@@ -365,3 +365,26 @@ def test_a_abertura_pela_api_oferece_o_compras_e_abrir_assim_mesmo(client, ficha
     assert aberto.status_code == 200, aberto.json()
     work_order.refresh_from_db()
     assert work_order.status == WorkOrder.Status.STARTED
+
+
+def test_o_que_a_casa_produz_nao_se_pede_ao_compras(client, producao, cozinha, monkeypatch):
+    """A massa que falta é produzida aqui: o envelope não oferece o Compras."""
+    monkeypatch.setattr("shopman.backstage.api.operations.purchase_surface_url", lambda user: "https://compras.example")
+    Recipe.objects.create(ref="massa-f11", name="Massa F11", output_sku="MASSA-F11", batch_size=Decimal("1"))
+    pao = Recipe.objects.create(ref="pao-f11", name="Pão F11", output_sku="PAO-F11", batch_size=Decimal("1"))
+    RecipeItem.objects.create(recipe=pao, input_sku="MASSA-F11", quantity=Decimal("100"), unit="g")
+    work_order = craft.plan(pao, 10, date=date.today(), position_ref="producao")
+    client.force_login(cozinha)
+    board = client.get(reverse("api-backstage-production")).json()["board"]
+    action = next(item for item in board["actions"] if item["ref"] == f"start:{work_order.pk}")
+    body = _projected_body(
+        board, action, quantity="10", expected_rev=action["expected_rev"], idempotency_key="start-massa-f11"
+    )
+
+    aviso = client.post(reverse("api-backstage-wo-start", args=[work_order.pk]), body, content_type="application/json")
+
+    error = aviso.json()["error"]
+    assert error["missing"][0]["produced_here"] is True
+    assert error["missing"][0]["shortage_display"] == "1000 g"
+    assert "purchase" not in {item["kind"] for item in error["possibilities"]}
+    assert "confirm" in {item["kind"] for item in error["possibilities"]}
