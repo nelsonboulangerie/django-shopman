@@ -4,6 +4,8 @@ import {
   operationalTargetDisplay,
   preparationLabelsFromPrintDocument,
   projectedQuantityDisplay,
+  stockFacts,
+  weighingLabels,
   weighingRows,
 } from "~/presentation/weighing";
 import type { ProductionLabelPrintDocument } from "~/types/productionPrinting";
@@ -97,15 +99,23 @@ describe("apresentação da balança", () => {
   });
 });
 
-describe("linhas da balança: mistura final e massa velha no teto", () => {
+describe("linhas da balança e etiquetas: a mesma lista (P1-26)", () => {
   const ticket = {
-    output_sku: "MASSA-MF",
+    ticket_ref: "prep-massa",
+    blind_code: "D8",
     ingredients: [
+      {
+        sku: "MASSA-VELHA-TRADICAO",
+        name: "Massa velha de Tradição",
+        target_display: "344 g",
+        quantity_display: "344 g",
+        annotation: "",
+      },
       {
         sku: "FARINHA-T55",
         name: "Farinha T55",
-        target_display: "1000 g",
-        quantity_display: "1000 g",
+        target_display: "800 g",
+        quantity_display: "800 g",
         annotation: "",
       },
       {
@@ -116,36 +126,48 @@ describe("linhas da balança: mistura final e massa velha no teto", () => {
         annotation: "≈ 7 ovos",
       },
     ],
-    old_dough: {
-      old_dough_display: "344 g",
-      lines: [
-        { sku: "FARINHA-T55", target_display: "800 g" },
-        { sku: "OVO", target_display: "280 g" },
-      ],
-    },
   };
 
-  it("sem massa velha pesa a ficha do preparo, com a ajuda de contagem", () => {
-    const rows = weighingRows(ticket, false);
-    expect(rows.map((row) => [row.sku, row.target, row.annotation])).toEqual([
-      ["FARINHA-T55", "1000 g", ""],
-      ["OVO", "350 g", "≈ 7 ovos"],
+  it("pesa a ficha como o servidor mandou; a massa velha é um ingrediente da lista", () => {
+    const rows = weighingRows(ticket);
+    expect(rows.map((row) => [row.name, row.target, row.annotation, row.quantity])).toEqual([
+      ["Massa velha de Tradição", "344 g", "", "344 g"],
+      ["Farinha T55", "800 g", "", "800 g"],
+      ["Ovo", "350 g", "≈ 7 ovos", "350 g"],
     ]);
   });
 
-  it("com massa velha pesa a mistura final no teto e põe a massa velha primeiro", () => {
-    const rows = weighingRows(ticket, true);
-    expect(rows.map((row) => [row.name, row.target, row.isOldDough])).toEqual([
-      ["Massa velha", "344 g", true],
-      ["Farinha T55", "800 g", false],
-      ["Ovo", "280 g", false],
-    ]);
-    // A contagem era do peso cheio: no teto ela mentiria.
-    expect(rows.every((row) => row.annotation === "")).toBe(true);
+  it("a etiqueta traz o mesmo peso da tela, linha a linha", () => {
+    const labels = weighingLabels([ticket], (t) => t.ticket_ref, "06/07");
+    expect(labels.map((label) => [label.ingredient, label.weight])).toEqual(
+      weighingRows(ticket).map((row) => [row.name, row.target]),
+    );
+    expect(labels.every((label) => label.code === "D8" && label.date === "06/07")).toBe(true);
+    expect(new Set(labels.map((label) => label.key)).size).toBe(labels.length);
+  });
+});
+
+describe("saldo e falta na Preparação", () => {
+  const base = { is_subrecipe: false, is_short: false, available_display: "", missing_display: "" };
+
+  it("a falta diz quanto falta", () => {
+    expect(
+      stockFacts({ ...base, is_short: true, available_display: "700 g", missing_display: "300 g" }),
+    ).toEqual({ available: "700 g", shortage: "Faltam 300 g" });
   });
 
-  it("ficha sem teto ignora o pedido de massa velha", () => {
-    const rows = weighingRows({ ...ticket, old_dough: null }, true);
-    expect(rows.map((row) => row.target)).toEqual(["1000 g", "350 g"]);
+  it("sem falta, só o saldo", () => {
+    expect(stockFacts({ ...base, available_display: "5000 g" })).toEqual({ available: "5000 g", shortage: "" });
+  });
+
+  it("pré-preparo nunca mostra saldo nem falta", () => {
+    expect(
+      stockFacts({
+        is_subrecipe: true,
+        is_short: true,
+        available_display: "0 g",
+        missing_display: "300 g",
+      }),
+    ).toEqual({ available: "", shortage: "" });
   });
 });

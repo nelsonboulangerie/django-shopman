@@ -720,7 +720,7 @@ function weighingIngredient(sku, name, grams, annotation = "", isSubrecipe = fal
   };
 }
 
-function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null) {
+function weighingTicket(ref, name, sku, blindCode, ingredients) {
   const total = ingredients.reduce((sum, ing) => sum + Number(ing.target_g), 0);
   return {
     ticket_ref: `prep-${ref}`,
@@ -741,12 +741,11 @@ function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null)
     expiry_display: "07/07",
     validity_configured: true,
     validity_source: "recipe",
-    old_dough: oldDough,
   };
 }
 
-// Massa com teto de massa velha (20%) e massa sem teto: a mistura final no teto
-// encolhe cada linha por 0,8 e a massa velha cobre o resto, com o mesmo total.
+// Duas massas do dia, cada uma com a sua ficha. A massa velha, quando a ficha usa,
+// é um ingrediente com lote (ADR-027) e vem na lista como os outros.
 const WEIGHING_POPULATED = {
   weighing: {
     selected_date: "2026-07-06",
@@ -766,18 +765,6 @@ const WEIGHING_POPULATED = {
           weighingIngredient("SAL-REFINADO", "Sal refinado", 80),
           weighingIngredient("LEVAIN", "Levain", 800, "", true),
         ],
-        {
-          cap_pct: "20",
-          cap_display: "20%",
-          old_dough_display: "1536 g",
-          old_dough_g: "1536",
-          lines: [
-            { sku: "FARINHA-T55", target_display: "3200 g", target_g: "3200" },
-            { sku: "AGUA-FILTRADA", target_display: "2240 g", target_g: "2240" },
-            { sku: "SAL-REFINADO", target_display: "64 g", target_g: "64" },
-            { sku: "LEVAIN", target_display: "640 g", target_g: "640" },
-          ],
-        },
       ),
       weighingTicket("massa-brioche", "Massa Brioche", "MASSA-BRIOCHE", "S5", [
         weighingIngredient("FARINHA-T55", "Farinha T55", 2000),
@@ -1030,6 +1017,34 @@ function populatedResponse(url) {
   return null;
 }
 
+const PREP_MARKS = new Map();
+
+function prepMarks(req, res, url) {
+  const date = new URL(url, "http://mock").searchParams.get("date") || "2026-07-06";
+  const listFor = (day) => [...PREP_MARKS.values()].filter((mark) => mark.date === day).map(({ date: _d, ...mark }) => mark);
+  if (req.method !== "POST") return json(res, 200, { date, marks: listFor(date) });
+  let raw = "";
+  req.on("data", (chunk) => (raw += chunk));
+  req.on("end", () => {
+    const body = JSON.parse(raw || "{}");
+    const key = `${body.date}:${body.item_ref}`;
+    if (body.checked) {
+      PREP_MARKS.set(key, {
+        date: body.date,
+        item_ref: body.item_ref,
+        quantity: body.quantity,
+        marked_by: "Ana",
+        marked_at: new Date().toISOString(),
+      });
+    } else {
+      PREP_MARKS.delete(key);
+    }
+    const mark = PREP_MARKS.get(key);
+    const { date: _d, ...visible } = mark || {};
+    json(res, 200, { date: body.date, mark: mark ? visible : null, marks: listFor(body.date) });
+  });
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -1110,6 +1125,8 @@ const server = createServer((req, res) => {
   if (/\/production\/forecast\/?(\?|$)/.test(url)) return json(res, 200, FORECAST);
   if (/\/production\/kds\/?(\?|$)/.test(url)) return json(res, 200, KDS);
   if (/\/production\/qc\/?(\?|$)/.test(url)) return json(res, 200, QC);
+  // O "Separado" da bancada (WP-F09b): vive no dublê, como viveria no servidor.
+  if (/\/production\/mise-en-place\/marks\/?(\?|$)/.test(url)) return prepMarks(req, res, url);
   if (/\/production\/mise-en-place\/?(\?|$)/.test(url)) return json(res, 200, MISE);
   if (
     /\/production\/reports\/?\?/.test(url) &&

@@ -6,10 +6,14 @@ import MiseEnPlacePage from "../../app/pages/mise-en-place.vue";
 import type { WeighingTicketProjection } from "../../app/types/production";
 import { nuxtUiStubs } from "../support/nuxtUiStubs";
 import { weighingRows } from "../../app/presentation/weighing";
+import { markFor, type PrepMark } from "../../app/composables/useMiseEnPlace";
 
 const tickets = ref<WeighingTicketProjection[]>([]);
 const miseLines = ref<Array<Record<string, unknown>>>([]);
 const printSpy = vi.fn();
+const serverMarks = ref<PrepMark[]>([]);
+const toggleSpy = vi.fn();
+const purchaseUrl = ref("https://compras.example/");
 const weighingProjection = ref({
   selected_date: "2026-09-10",
   selected_date_display: "10 set 2026",
@@ -71,18 +75,22 @@ function installGlobals() {
   vi.stubGlobal("useRoute", () => ({ query: {} }));
   vi.stubGlobal("useOperatorLock", () => ({ stationRef: ref("prep-a") }));
   vi.stubGlobal("useMiseEnPlace", () => ({
-    projection: ref({ work_order_count: 1 }),
+    projection: computed(() => ({ work_order_count: 1, has_stock_readings: true, purchase_url: purchaseUrl.value })),
     lines: miseLines,
     expand: ref(false),
     pending: ref(false),
     error: ref(null),
     refresh: vi.fn(),
-    isChecked: () => false,
-    toggleChecked: vi.fn(),
-    checkedCount: ref(0),
-    checklistRevisionChanged: ref(false),
   }));
-  const oldDoughKeys = ref(new Set<string>());
+  vi.stubGlobal("usePrepMarks", () => ({
+    marks: serverMarks,
+    error: ref(null),
+    refresh: vi.fn(),
+    isMarked: (itemRef: string, quantity: string) => markFor(serverMarks.value, itemRef, quantity) !== null,
+    markOf: (itemRef: string, quantity: string) => markFor(serverMarks.value, itemRef, quantity),
+    toggle: toggleSpy,
+  }));
+  vi.stubGlobal("useOperatorAppLink", () => ({ attrsFor: () => ({}) }));
   vi.stubGlobal("useWeighing", () => ({
     projection: weighingProjection,
     tickets,
@@ -90,15 +98,7 @@ function installGlobals() {
     pending: ref(false),
     error: ref(null),
     refresh: vi.fn(),
-    usesOldDough: (key: string) => oldDoughKeys.value.has(key),
-    setOldDough: (key: string, on: boolean) => {
-      const next = new Set(oldDoughKeys.value);
-      if (on) next.add(key);
-      else next.delete(key);
-      oldDoughKeys.value = next;
-    },
-    rowsFor: (ticket: WeighingTicketProjection, key: string) =>
-      weighingRows(ticket, oldDoughKeys.value.has(key) && !!ticket.old_dough),
+    rowsFor: (ticket: WeighingTicketProjection) => weighingRows(ticket),
   }));
   vi.stubGlobal("print", printSpy);
 }
@@ -120,8 +120,19 @@ const stubs = {
   ProductionHeader: true,
   Icon: true,
   NuxtLink: { template: "<a><slot /></a>" },
-  // A lista por insumo tem teste próprio de tabela no kit; aqui só importa a tela.
-  OperatorTable: { template: "<table data-mise-lines />" },
+  // A tabela do kit tem teste próprio; aqui ela só desenha as células da tela.
+  OperatorTable: {
+    props: ["data", "columns"],
+    template: `
+      <table data-mise-lines>
+        <tr v-for="line in data" :key="line.sku" :data-sku="line.sku">
+          <td v-for="column in columns" :key="column.id" :data-column="column.id">
+            <slot :name="column.id + '-cell'" :row="{ original: line }" />
+          </td>
+        </tr>
+      </table>
+    `,
+  },
   WeighingLabels: {
     props: ["printMode", "labels", "tickets"],
     template: `
@@ -141,15 +152,44 @@ const stubs = {
         data-testid="print-preview"
         :data-mode="printMode"
         :data-label-count="labels.length"
+        :data-weights="labels.map((label) => label.weight).join('|')"
         :data-ticket-refs="tickets.map((ticket) => ticket.ticket_ref || ticket.recipe_ref).join(',')"
       />
     `,
   },
 };
 
+function line(overrides: Record<string, unknown>) {
+  return {
+    sku: "X",
+    name: "X",
+    quantity_display: "100 g",
+    unit: "g",
+    is_subrecipe: false,
+    available_display: "",
+    is_short: false,
+    missing_display: "",
+    breakdown: [],
+    annotation: "",
+    margin_display: "",
+    margin_reason: "",
+    ...overrides,
+  };
+}
+
+async function openInsumos(wrapper: ReturnType<typeof mount>) {
+  await wrapper
+    .findAll("button")
+    .find((button) => button.text().includes("Por insumo"))!
+    .trigger("click");
+}
+
 beforeEach(() => {
   installGlobals();
   printSpy.mockReset();
+  toggleSpy.mockReset();
+  serverMarks.value = [];
+  purchaseUrl.value = "https://compras.example/";
   miseLines.value = [];
   tickets.value = [
     ticket("massa-base", "Massa Croissant", "D8", "ticket-croissant"),
@@ -174,31 +214,94 @@ describe("Preparação — preview e identificação", () => {
     expect(wrapper.find("article").exists()).toBe(true);
   });
 
-  it("declara que o checklist da estação é apoio local, não auditoria", async () => {
-    miseLines.value = [
-      {
-        sku: "FARINHA",
-        name: "Farinha",
-        quantity_display: "1.000 g",
-        unit: "g",
-        is_subrecipe: false,
-        available_display: "",
-        is_short: false,
-        breakdown: [],
-        annotation: "",
-        margin_display: "",
-        margin_reason: "",
-      },
+  it("Por insumo: a marca vem do servidor e a frase do dispositivo saiu", async () => {
+    miseLines.value = [line({ sku: "FARINHA", name: "Farinha", quantity_display: "1000 g" })];
+    serverMarks.value = [
+      { item_ref: "FARINHA", quantity: "1000 g", marked_by: "Ana", marked_at: "2026-09-10T05:40:00-03:00" },
     ];
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Por insumo"))!
-      .trigger("click");
+    await openInsumos(wrapper);
 
-    expect(wrapper.text()).toContain(
-      "As marcações ficam somente nesta estação.",
-    );
+    expect(wrapper.text()).not.toContain("somente");
+    expect(wrapper.text()).not.toContain("neste dispositivo");
+    expect(wrapper.text()).toContain("1/1 separados");
+    expect(wrapper.get('[data-sku="FARINHA"] [role="checkbox"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.get("[data-prep-mark-author]").text()).toContain("Separado por Ana");
+
+    await wrapper.get('[data-sku="FARINHA"] [role="checkbox"]').trigger("click");
+    expect(toggleSpy).toHaveBeenCalledWith("FARINHA", "1000 g", "Farinha");
+  });
+
+  it("a falta diz quanto e oferece Pedir no Compras; pré-preparo não mostra saldo nem falta", async () => {
+    miseLines.value = [
+      line({
+        sku: "FARINHA",
+        name: "Farinha",
+        available_display: "700 g",
+        is_short: true,
+        missing_display: "300 g",
+      }),
+      line({
+        sku: "MASSA-BASE",
+        name: "Massa base",
+        is_subrecipe: true,
+        available_display: "0 g",
+        is_short: true,
+        missing_display: "300 g",
+      }),
+    ];
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    await openInsumos(wrapper);
+
+    const farinha = wrapper.get('[data-sku="FARINHA"] [data-column="available"]');
+    expect(farinha.get("[data-prep-shortage]").text()).toBe("Faltam 300 g");
+    const pedir = farinha.get("[data-prep-purchase]");
+    expect(pedir.text()).toContain("Pedir no Compras");
+    expect(pedir.attributes("href")).toBe("https://compras.example/");
+
+    const massa = wrapper.get('[data-sku="MASSA-BASE"] [data-column="available"]');
+    expect(massa.text()).toBe("");
+  });
+
+  it("sem o Compras, a falta continua dita e o atalho não aparece", async () => {
+    purchaseUrl.value = "";
+    miseLines.value = [
+      line({ sku: "FARINHA", name: "Farinha", available_display: "700 g", is_short: true, missing_display: "300 g" }),
+    ];
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    await openInsumos(wrapper);
+
+    expect(wrapper.get("[data-prep-shortage]").text()).toBe("Faltam 300 g");
+    expect(wrapper.find("[data-prep-purchase]").exists()).toBe(false);
+  });
+
+  it("Por preparo também marca, com a chave do preparo e a quantidade da linha", async () => {
+    serverMarks.value = [
+      { item_ref: "massa-base/FARINHA", quantity: "1 kg", marked_by: "Ana", marked_at: "2026-09-10T05:40:00-03:00" },
+    ];
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    const [croissant] = wrapper.findAll("article");
+    const boxes = croissant!.findAll('[role="checkbox"]');
+
+    expect(boxes.map((box) => box.attributes("aria-checked"))).toEqual(["true", "false"]);
+    expect(croissant!.get("[data-ticket-progress]").text()).toBe("1/2 separados");
+
+    await boxes[1]!.trigger("click");
+    expect(toggleSpy).toHaveBeenCalledWith("massa-base/AGUA", "700 g", "Água");
+  });
+
+  it("a caixa do Separado tem alvo de 44 px", () => {
+    const wrapper = mount(MiseEnPlacePage, {
+      global: {
+        stubs: {
+          ...stubs,
+          NuxtCheckbox: { props: ["ui", "size"], template: '<span data-prep-box :data-ui="ui.base" :data-size="size" />' },
+        },
+      },
+    });
+    const box = wrapper.get("[data-prep-box]");
+    expect(box.attributes("data-ui")).toBe("after:size-11");
+    expect(box.attributes("data-size")).toBe("xl");
   });
 
   it("mostra Nome e, na última linha do cabeçalho, SKU · peso total em gramas", () => {
@@ -210,42 +313,17 @@ describe("Preparação — preview e identificação", () => {
     expect(header.text()).not.toContain("12 un. · MASSA-BASE");
   });
 
-  it("só a ficha com teto oferece massa velha, e ligar troca para a mistura final no teto", async () => {
-    tickets.value = [
-      {
-        ...ticket("massa-base", "Massa Croissant", "D8", "ticket-croissant"),
-        old_dough: {
-          cap_pct: "20",
-          cap_display: "20%",
-          old_dough_display: "400 g",
-          old_dough_g: "400",
-          lines: [
-            { sku: "FARINHA", target_display: "800 g", target_g: "800" },
-            { sku: "AGUA", target_display: "560 g", target_g: "560" },
-          ],
-        },
-      },
-      ticket("massa-forma", "Massa Forma", "S5", "ticket-forma"),
-    ];
+  it("não há mais interruptor de massa velha: a etiqueta e o cartão pesam a mesma lista", async () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
-    const [comTeto, semTeto] = wrapper.findAll("article");
-    expect(semTeto!.find('[role="switch"]').exists()).toBe(false);
+    expect(wrapper.find('[role="switch"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Com massa velha");
 
-    const toggle = comTeto!.get('[role="switch"]');
-    expect(toggle.text()).toBe("Com massa velha (até 20%)");
-    expect(comTeto!.findAll("ul li").map((li) => li.text())).toEqual([
-      expect.stringContaining("1.000 g"),
-      expect.stringContaining("700 g"),
-    ]);
-
-    await toggle.trigger("click");
-    const rows = comTeto!.findAll("ul li").map((li) => li.text());
-    expect(rows[0]).toContain("Massa velha");
-    expect(rows[0]).toContain("400 g");
-    expect(rows[1]).toContain("800 g");
-    expect(rows[2]).toContain("560 g");
-    // O outro preparo não muda: a escolha é por preparo.
-    expect(semTeto!.findAll("ul li")[0]!.text()).toContain("1.000 g");
+    await wrapper
+      .get('button[aria-label="Abrir etiquetas de pesagem de Massa Croissant"]')
+      .trigger("click");
+    expect(wrapper.get('[data-testid="print-preview"]').attributes("data-weights")).toBe(
+      "1.000 g|700 g",
+    );
   });
 
   it("identifica o insumo por Nome + SKU e apresenta kg em gramas", () => {
