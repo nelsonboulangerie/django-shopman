@@ -181,6 +181,7 @@ jobs:
             /tmp/shopman-omotenashi-qa-browser.json
             /tmp/shopman-omotenashi-browser-ci-django.log
             /tmp/shopman-omotenashi-browser-ci-nuxt.log
+            /tmp/shopman-omotenashi-browser-ci-builds.log
           if-no-files-found: warn
           retention-days: 14
 
