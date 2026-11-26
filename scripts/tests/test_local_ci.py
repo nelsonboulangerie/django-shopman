@@ -426,3 +426,26 @@ def test_alert_sai_quando_ligado_e_caiu(monkeypatch, capsys):
     browser.main()
     out = capsys.readouterr().out
     assert "alert=true" in out and "runner=ubuntu-latest" in out
+
+
+def test_ready_nunca_chama_de_verde_a_evidencia_vermelha():
+    ok = {"level": "preflight", "status": "pass", "seconds": 1, "started_at": "t"}
+    assert "verde" in local_ci.evidence_line(ok, "a" * 40)
+    for ev in ({**ok, "status": "fail"}, {**ok, "level": "fast"}, {**ok, "status": "stale"}, None):
+        line = local_ci.evidence_line(ev, "a" * 40)
+        assert "verde" not in line and "exceção declarada" in line
+
+
+def test_fetch_do_ready_tenta_de_novo_quando_outro_processo_trava_o_ref(monkeypatch):
+    calls = []
+
+    def flaky_git(*args, **kwargs):
+        calls.append(args)
+        if len(calls) < 3:
+            raise subprocess.CalledProcessError(1, "git fetch", "", "cannot lock ref")
+        return ""
+
+    monkeypatch.setattr(local_ci, "git", flaky_git)
+    monkeypatch.setattr(local_ci.time, "sleep", lambda s: None)
+    local_ci.fetch_main(Path("."))
+    assert len(calls) == 3
