@@ -6123,6 +6123,26 @@ class WorkOrderStartView(_ProductionActionBase):
         )
 
 
+def _shortage_auth_refusal(field: str, message: str) -> Response:
+    """A recusa da assinatura com a frase do problema no ``detail``.
+
+    O envelope de validação genérico diz "Corrija os campos indicados", e a tela de
+    quem autoriza mostraria isso no lugar de "PIN incorreto. Restam 3 tentativas".
+    """
+    return Response(
+        {
+            "detail": message,
+            "field": field,
+            "errors": {field: [message]},
+            "error": {
+                "code": "validation_error",
+                "issues": [{"field": field, "code": "invalid", "message": message}],
+            },
+        },
+        status=400,
+    )
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -6147,30 +6167,27 @@ class ProductionShortageAuthorizationView(_ProductionActionBase):
 
         serializer = ProductionShortageAuthorizationSerializer(data=request.data)
         if not serializer.is_valid():
-            raise ProductionMutationValidationError(serializer.errors)
+            field, messages = next(iter(serializer.errors.items()))
+            return _shortage_auth_refusal(field, str(messages[0]))
         data = serializer.validated_data
         proof = data["override_proof"]
         snapshot = override_shortage_snapshot(proof)
         if not snapshot or snapshot.get("kind") != "material_shortage":
-            raise ProductionMutationValidationError(
-                {"override_proof": "Esta autorização não é de falta de insumo. Atualize o painel."}
-            )
+            return _shortage_auth_refusal("override_proof", "Esta autorização não é de falta de insumo. Atualize o painel.")
         if data.get("badge"):
             # O crachá é a posse no lugar do PIN, como no destrave e no PDV.
             user = operator_service.resolve_operator_by_badge(
                 data["badge"], required_perm=operator_service.OVERRIDE_PRODUCTION_SHORTAGE
             )
             if user is None:
-                raise ProductionMutationValidationError(
-                    {"badge": "Crachá não reconhecido, ou de quem não autoriza falta de insumo."}
-                )
+                return _shortage_auth_refusal("badge", "Crachá não reconhecido, ou de quem não autoriza falta de insumo.")
             return self._signed(proof, user, operator_service)
         user = operator_service.shortage_authorizer(data.get("username", ""))
         if user is None:
-            raise ProductionMutationValidationError({"username": "Esta pessoa não pode autorizar falta de insumo."})
+            return _shortage_auth_refusal("username", "Esta pessoa não pode autorizar falta de insumo.")
         locked_until = operator_service.pin_locked_until(user)
         if locked_until is not None:
-            raise ProductionMutationValidationError({"pin": operator_service.pin_locked_message(locked_until)})
+            return _shortage_auth_refusal("pin", operator_service.pin_locked_message(locked_until))
         if not operator_service.verify_shortage_authorizer_pin(user, data.get("pin", "")):
             logger.warning(
                 "production_shortage_pin_wrong operator=%s authorizer=%s work_order=%s",
@@ -6178,16 +6195,14 @@ class ProductionShortageAuthorizationView(_ProductionActionBase):
                 user.get_username(),
                 snapshot.get("work_order_ref"),
             )
-            raise ProductionMutationValidationError(
-                {"pin": operator_service.unlock_refusal_detail(user, badge=False)}
-            )
+            return _shortage_auth_refusal("pin", operator_service.unlock_refusal_detail(user, badge=False))
         return self._signed(proof, user, operator_service)
 
     @staticmethod
     def _signed(proof: str, user, operator_service) -> Response:
         signed = authorized_override_proof(proof, authorized_by=user.get_username())
         if signed is None:
-            raise ProductionMutationValidationError({"override_proof": "Autorização de exceção inválida."})
+            return _shortage_auth_refusal("override_proof", "Autorização de exceção inválida.")
         return Response(
             {
                 "override_proof": signed,

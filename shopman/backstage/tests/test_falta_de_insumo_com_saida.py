@@ -290,6 +290,8 @@ def test_a_gerente_assina_com_o_proprio_pin_e_o_lote_fecha(client, ficha, produc
     )
     assert wrong.status_code == 400
     assert wrong.json()["error"]["issues"][0]["field"] == "pin"
+    # A frase do problema chega à tela de quem autoriza, não "corrija os campos".
+    assert wrong.json()["detail"].startswith("PIN incorreto.")
 
     signed = client.post(
         sign_url, {"override_proof": proof, "username": "joyce-f11", "pin": "2468"}, content_type="application/json"
@@ -334,9 +336,7 @@ def test_quem_nao_pode_autorizar_nao_assina(client, ficha, producao, cozinha):
 
 
 def test_a_abertura_pela_api_oferece_o_compras_e_abrir_assim_mesmo(client, ficha, producao, cozinha, monkeypatch):
-    monkeypatch.setattr(
-        "shopman.backstage.api.operations.purchase_surface_url", lambda user: "https://compras.example"
-    )
+    monkeypatch.setattr("shopman.backstage.api.operations.purchase_surface_url", lambda user: "https://compras.example")
     _manteiga("0.7", producao)
     work_order = _planejar(ficha)
     client.force_login(cozinha)
