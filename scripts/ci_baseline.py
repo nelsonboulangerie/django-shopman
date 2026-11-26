@@ -54,7 +54,7 @@ GATE_WORKFLOWS = {
     "Ficou de fora",
     "Omotenashi Gate",
 }
-JOB_SAMPLE_WORKFLOWS = {"Runtime Gate", "Surfaces Gate"}
+JOB_SAMPLE_WORKFLOWS = {"Runtime Gate", "Surfaces Gate", "Omotenashi Gate"}
 
 
 def ts(value: str | None) -> dt.datetime | None:

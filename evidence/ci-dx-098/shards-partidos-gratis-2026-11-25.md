@@ -68,3 +68,17 @@ Run [45706524929](https://github.com/nelsonboulangerie/django-shopman/actions/ru
 | mediana | **376 s (6,3 min)** contra 606 s em série na fila | **10,2 min** contra 14,6 |
 
 As rodadas 3 e 4 caíram em máquinas mais lentas (os testes de componente levaram 182 e 191 s, contra 121 a 136 s nas outras).
+
+## Omotenashi Gate: builds durante migrate + seed
+
+Com Runtime e Surfaces encurtados, o Omotenashi Gate (14,2 min p50 na fila) virou o limite do grupo. Linha do tempo de 12 runs verdes: o job `Browser QA` leva 12,9 min; o passo do portão (6,9 min) fazia migrate (~35 s) + seed (~1,5 min) e DEPOIS cinco builds Nuxt (~3 min). Nenhum app pré-renderiza contra o Django, então os builds passaram a correr em segundo plano durante migrate + seed. O seed re-entrante (banco já semeado E navegado, incidente de staging de 19–22/08) ficou onde estava, de propósito.
+
+Duas rodadas na CI (gatilho descartável em `ci-bench/**`, fora do PR), ambas verdes:
+
+| rodada | migrate + seed (builds juntos) | passo do portão | job Browser QA |
+|---|---:|---:|---:|
+| 1 (máquina lenta: instalação 1,7 min) | 298 s | 5,5 min | 12,6 min |
+| 2 | 197 s | 3,7 min | 8,2 min |
+| antes (fila, mediana de 12) | ~125 s + builds ~180 s | 6,9 min | 12,9 min |
+
+Nas duas, os builds terminaram antes do seed: agora o seed é o caminho, e fica mais lento por dividir CPU com os builds. Ganho estimado de ~1,5 a 3 min no job (n=2, variação alta).
