@@ -658,12 +658,11 @@ def _material_projection(
         shelf_life_days=material.shelf_life_days,
     )
     internal_requests = _internal_requests(meta, unit=material.unit)
-    # A solicitação da Produção é o piso da reposição: o insumo que faltou num lote
-    # entra no "Comprar" mesmo acima do mínimo, com pelo menos o que falta.
-    requested = sum(
-        (Decimal(str(item.quantity)) for item in internal_requests if item.unit == material.unit),
-        Decimal("0"),
-    )
+    # A solicitação da Produção é o piso da reposição até o insumo chegar: o que
+    # faltou num lote entra no "Comprar" mesmo acima do mínimo, com pelo menos o que
+    # falta, e continua lá com o pedido enviado ("Aguardando entrega"). A linha da
+    # solicitação só aparece enquanto ela está aberta.
+    requested = _internal_requested_floor(meta, unit=material.unit)
     if requested > suggested:
         suggested = requested.to_integral_value(rounding=ROUND_CEILING)
     correction_factor = (
@@ -713,6 +712,23 @@ def _material_projection(
         revision=material.updated_at.isoformat() if material.updated_at else "",
         internalRequests=internal_requests,
     )
+
+
+def _internal_requested_floor(meta: dict[str, Any], *, unit: str) -> Decimal:
+    """Quanto a Produção pediu e ainda não chegou (abertas e já pedidas ao fornecedor)."""
+    total = Decimal("0")
+    for entry in meta.get("internal_requests") or ():
+        if not isinstance(entry, dict) or entry.get("status") not in ("open", "ordered"):
+            continue
+        if str(entry.get("unit") or unit) != unit:
+            continue
+        try:
+            quantity = Decimal(str(entry.get("quantity") or "0"))
+        except (InvalidOperation, ValueError):
+            continue
+        if quantity > 0:
+            total += quantity
+    return total
 
 
 def _internal_requests(meta: dict[str, Any], *, unit: str) -> tuple[InternalRequestProjection, ...]:

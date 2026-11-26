@@ -253,7 +253,9 @@ def test_fecha_ao_enviar_o_pedido_volta_ao_cancelar_e_encerra_ao_receber(manteig
 
     purchase_service.send_purchase_request(BUTTER, reviewed=True)
     assert [entry["status"] for entry in _requests()] == ["ordered"]
+    # A linha sai; o insumo segue no "Comprar", aguardando entrega, até chegar.
     assert _comprar().internalRequests == ()
+    assert _comprar().suggestedQty >= 0.3
 
     purchase_service.cancel_purchase_request(BUTTER)
     assert [entry["status"] for entry in _requests()] == ["open"]
@@ -263,3 +265,4 @@ def test_fecha_ao_enviar_o_pedido_volta_ao_cancelar_e_encerra_ao_receber(manteig
         purchase_service._close_purchase_request(Material.objects.get(sku=BUTTER), internal="received")
     assert [entry["status"] for entry in _requests()] == ["received"]
     assert _comprar().internalRequests == ()
+    assert _comprar().suggestedQty == 0.0
