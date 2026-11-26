@@ -71,6 +71,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
@@ -326,6 +327,15 @@ def apply_fix(surfaces: dict[str, dict], findings: list[dict]) -> int:
     return 0
 
 
+def tracked_nuxtrc() -> list[str]:
+    """`.nuxtrc` das superfícies que estão no git (deveriam estar todos no .gitignore)."""
+    root = SURFACES.parent
+    out = subprocess.run(
+        ["git", "ls-files", "--", "surfaces/*/.nuxtrc"], cwd=root, capture_output=True, text=True
+    ).stdout
+    return out.split()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -338,6 +348,18 @@ def main() -> int:
         if not (reason or "").strip():
             print(missing_reason_message(key), file=sys.stderr)
             return 2
+
+    tracked = tracked_nuxtrc()
+    if tracked:
+        print(
+            "✗ .nuxtrc versionado: " + ", ".join(tracked) + "\n"
+            "  O @nuxt/test-utils reescreve esse arquivo com a versão instalada a cada teste;\n"
+            "  versionado, ele diverge do lock no primeiro bump e suja a árvore de toda sessão\n"
+            "  (o preflight acusava 'stale', 26/11). Tire do git e ponha no .gitignore do app:\n"
+            "  git rm --cached <arquivo> && echo .nuxtrc >> surfaces/<app>/.gitignore",
+            file=sys.stderr,
+        )
+        return 1
 
     surfaces = load_surfaces()
     if not surfaces:
