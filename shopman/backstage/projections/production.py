@@ -137,6 +137,52 @@ class OrderCommitmentProjection:
 
 
 @dataclass(frozen=True)
+class PromisedOrderProjection:
+    """Um pedido que conta no prometido de um produto numa data (WP-F08).
+
+    Lido da régua das reservas (plano 4.1): o pedido aberto cujo dia combinado
+    é a data, com o que ele reservou (ou tentou reservar) do produto. A Produção
+    vê o primeiro nome, a hora e se é retirada ou entrega, nunca valor em
+    dinheiro nem telefone. ``customer_first_name`` fica vazio sem nome; a tela
+    cai no ``ref``. ``fulfillment_type``: ``pickup`` | ``delivery`` | "".
+    """
+
+    ref: str
+    customer_first_name: str
+    due_time: str  # "09:00"; vazio sem hora marcada
+    fulfillment_type: str
+    qty: str
+    status: str
+    status_label: str
+
+
+@dataclass(frozen=True)
+class ProductionPromisedProjection:
+    """O prometido de um produto numa data, pela régua das reservas (WP-F08).
+
+    A mesma leitura do PDV (``adapters/stock.planned_on_date``) e as reservas dos
+    pedidos abertos da data (``Order.data["hold_ids"]`` e ``hold_gaps``):
+
+    - ``planned_qty``: o lote planejado PARA a data (soma dos saldos da data);
+    - ``ordered_qty``: o que os pedidos da data pediram do produto;
+    - ``free_qty``: o que do planejado ainda não está preso a reserva nenhuma
+      (o "sem encomenda" do PDV; nunca maior que o planejado);
+    - ``over_plan_qty``: o encomendado que o plano da data não cobre. Em data
+      sem lote é a demanda inteira, o pedido à Produção.
+
+    A sobra de hoje e a vitrine não entram: pão de hoje não lastreia encomenda
+    de amanhã (dono, 18/11/2026).
+    """
+
+    date: str  # ISO
+    planned_qty: str
+    ordered_qty: str
+    free_qty: str
+    over_plan_qty: str
+    orders: tuple[PromisedOrderProjection, ...]
+
+
+@dataclass(frozen=True)
 class WorkOrderCardProjection:
     """A single work order card on the production board."""
 
@@ -173,6 +219,11 @@ class WorkOrderCardProjection:
     position_name: str = ""
     # Hora em que o lote foi planejado ("15:12"), para "Planejado 15:12".
     created_at_time: str = ""
+    # O prometido do produto na data DO LOTE, pela régua das reservas (WP-F08).
+    # Vale para o produto na data, não para este lote: dois lotes do mesmo
+    # produto no mesmo dia leem o mesmo prometido. None quando nada foi
+    # planejado nem encomendado, e no lote cancelado.
+    promised: ProductionPromisedProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -338,6 +389,10 @@ class ProductionMatrixRowProjection:
     # Unidade do que a linha produz (``un``, ``g``, ``kg``...): base medida em
     # gramas não se lê como peça ("1.230,77 g", não "1230.77").
     output_unit: str = ""
+    # O prometido do produto na data do quadro (WP-F08), inclusive sem lote:
+    # a encomenda para data sem plano aparece aqui como ``over_plan_qty``.
+    # None quando a data não tem plano nem pedido do produto.
+    promised: ProductionPromisedProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -1404,8 +1459,16 @@ def build_production_board(
     raw_suggestions = _production_suggestions(selected_date)
     _prime_base_recipe_usages([*(wo.recipe for wo in wos), *matrix_recipes, *(row.recipe for row in raw_suggestions)])
     _prime_order_commitments(wos)
+    promised = _promised_on(
+        {*(recipe.output_sku for recipe in matrix_recipes), *(wo.output_sku for wo in wos), *(row.recipe.output_sku for row in raw_suggestions)},
+        selected_date,
+    )
 
-    wo_cards = tuple(card for card in (_build_wo_card(wo, access=access) for wo in wos) if _can_view_card(card, access))
+    wo_cards = tuple(
+        _with_promised(card, promised)
+        for card in (_build_wo_card(wo, access=access) for wo in wos)
+        if _can_view_card(card, access)
+    )
     planned_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.PLANNED)
     started_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.STARTED)
     finished_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.FINISHED)
@@ -1447,6 +1510,7 @@ def build_production_board(
         output_units=_recipe_output_units(
             {recipe.pk: recipe for recipe in (*matrix_recipes, *(wo.recipe for wo in wos))}.values()
         ),
+        promised=promised,
     )
     base_recipes = _build_group_options(all_matrix_rows)
     matrix_rows = tuple(
@@ -3243,7 +3307,140 @@ def _linked_order_refs(wo: WorkOrder) -> tuple[str, ...]:
 def build_work_order_card(ref: str) -> WorkOrderCardProjection:
     """Build a single work order card by ref for cross-area projections."""
     wo = WorkOrder.objects.select_related("recipe").prefetch_related("recipe__items", "events").get(ref=ref)
-    return _build_wo_card(wo)
+    card = _build_wo_card(wo)
+    if wo.target_date is None:
+        return card
+    return _with_promised(card, _promised_on({wo.output_sku}, wo.target_date))
+
+
+# ── O prometido: a régua das reservas (WP-F08, plano 4.1) ─────────────
+
+
+def _with_promised(
+    card: WorkOrderCardProjection,
+    promised: dict[str, ProductionPromisedProjection],
+) -> WorkOrderCardProjection:
+    if card.status == WorkOrder.Status.VOID:
+        return card
+    entry = promised.get(card.output_sku)
+    return replace(card, promised=entry) if entry is not None else card
+
+
+def _promised_on(skus, day: date) -> dict[str, ProductionPromisedProjection]:
+    """Por SKU, o prometido em ``day``: planejado, encomendado, livre e os pedidos.
+
+    Uma régua só (plano 4.1): a das reservas, a mesma que a loja, o PDV e o
+    Gestor leem. O planejado e o que dele está preso a reserva vêm de
+    ``adapters/stock.planned_on_date`` (o que o PDV mostra na linha da
+    encomenda); os pedidos são os abertos cujo dia combinado é ``day``
+    (``order_helpers.in_agreed_days``), com o que cada um reservou do produto
+    (``Order.data["hold_ids"]``) e o que tentou e não coube (``hold_gaps``).
+    Nenhuma consulta nova ao Stockman: a leitura é a do adapter.
+
+    Leitura pura, degrada para vazio: sem a régua a tela fica como estava, em
+    vez de afirmar "sem encomenda".
+    """
+    wanted = sorted({sku for sku in skus or () if sku})
+    if not wanted or day is None:
+        return {}
+    try:
+        from shopman.shop.adapters import get_adapter
+
+        plan = get_adapter("stock").planned_on_date(wanted, day) or {}
+    except Exception:
+        logger.warning("production.promised_plan_failed day=%s", day, exc_info=True)
+        plan = {}
+    try:
+        orders = _promised_orders_by_sku(set(wanted), day)
+    except Exception:
+        logger.warning("production.promised_orders_failed day=%s", day, exc_info=True)
+        orders = {}
+
+    result: dict[str, ProductionPromisedProjection] = {}
+    for sku in wanted:
+        info = plan.get(sku) or {}
+        planned = _decimal_value(info.get("planned_qty"))
+        held = _decimal_value(info.get("held_qty"))
+        sku_orders = orders.get(sku, ())
+        ordered = sum((qty for _order, qty in sku_orders), Decimal("0"))
+        if planned <= 0 and ordered <= 0:
+            continue
+        result[sku] = ProductionPromisedProjection(
+            date=day.isoformat(),
+            planned_qty=_qty(planned),
+            ordered_qty=_qty(ordered),
+            free_qty=_qty(min(planned, max(Decimal("0"), planned - held))),
+            over_plan_qty=_qty(max(Decimal("0"), ordered - planned)),
+            orders=tuple(
+                _promised_order(order, qty)
+                for order, qty in sorted(sku_orders, key=lambda pair: (_order_due_time(pair[0]) or "99:99", pair[0].ref))
+            ),
+        )
+    return result
+
+
+def _promised_orders_by_sku(skus: set[str], day: date) -> dict[str, list[tuple[object, Decimal]]]:
+    """Os pedidos abertos do dia combinado ``day``, por SKU, com a quantidade de cada um.
+
+    A quantidade é a da reserva do pedido (o componente, com o combo já
+    expandido) mais o que o pedido pediu e não conseguiu reservar para a data:
+    os dois são promessa ao cliente. Pedido de teste fica de fora, como no
+    Gestor (``order_promise``).
+    """
+    from datetime import datetime, time
+
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.order_helpers import in_agreed_days, is_test_order
+    from shopman.shop.services.production_promise import OPEN_STATUSES
+    from shopman.shop.services.stock import is_untracked_hold_entry
+
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(datetime.combine(day, time.min), tz)
+    window = (start, timezone.make_aware(datetime.combine(day + timedelta(days=1), time.min), tz))
+    by_sku: dict[str, list[tuple[object, Decimal]]] = {}
+    for order in in_agreed_days(Order.objects.filter(status__in=OPEN_STATUSES), window).order_by("created_at"):
+        if is_test_order(order):
+            continue
+        data = order.data or {}
+        wanted: dict[str, Decimal] = {}
+        for entry in data.get("hold_ids") or ():
+            if not isinstance(entry, dict) or is_untracked_hold_entry(entry) or not entry.get("hold_id"):
+                continue
+            sku = str(entry.get("sku") or "")
+            if sku in skus:
+                wanted[sku] = wanted.get(sku, Decimal("0")) + _decimal_value(entry.get("qty"))
+        for entry in data.get("hold_gaps") or ():
+            if not isinstance(entry, dict):
+                continue
+            sku = str(entry.get("sku") or "")
+            gap_day = str(entry.get("target_date") or "")
+            if sku in skus and (not gap_day or gap_day == day.isoformat()):
+                wanted[sku] = wanted.get(sku, Decimal("0")) + _decimal_value(entry.get("qty"))
+        for sku, qty in wanted.items():
+            if qty > 0:
+                by_sku.setdefault(sku, []).append((order, qty))
+    return by_sku
+
+
+def _promised_order(order, qty: Decimal) -> PromisedOrderProjection:
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    name = str(((order.data or {}).get("customer") or {}).get("name") or "").split()
+    first = name[0] if name else ""
+    # O telefone não é nome (KDS-07): sem nome, a tela cai no ref do pedido.
+    if first.lstrip("+").replace("-", "").isdigit():
+        first = ""
+    fulfillment = get_fulfillment_type(order)
+    return PromisedOrderProjection(
+        ref=order.ref,
+        customer_first_name=first,
+        due_time=_order_due_time(order),
+        fulfillment_type=fulfillment if fulfillment in ("pickup", "delivery") else "",
+        qty=_qty(qty),
+        status=order.status,
+        status_label=order_status_label(order.status),
+    )
 
 
 def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentProjection, ...]:
@@ -3804,8 +4001,10 @@ def _build_matrix_rows(
     suggestions: tuple[ProductionSuggestionProjection, ...],
     *,
     output_units: dict[int, str] | None = None,
+    promised: dict[str, ProductionPromisedProjection] | None = None,
 ) -> tuple[ProductionMatrixRowProjection, ...]:
     output_units = output_units or {}
+    promised = promised or {}
     rows: dict[str, dict] = {}
 
     def row_for(output_sku: str) -> dict:
@@ -3862,6 +4061,7 @@ def _build_matrix_rows(
             finished_qty=_sum_qty(row["finished"], "finished_qty"),
             loss_qty=_sum_qty(row["finished"], "loss"),
             output_unit=output_units.get(row["recipe_pk"], "") if row["recipe_pk"] is not None else "",
+            promised=promised.get(output_sku),
         )
         # Ordena pelo texto que a bancada lê (o nome), com o SKU como desempate:
         # lista ordenada por chave invisível parece embaralhada.
