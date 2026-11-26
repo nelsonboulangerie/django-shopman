@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, nextTick, ref, watch } from "vue";
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 
 import MiseEnPlacePage from "../../app/pages/mise-en-place.vue";
 import type { WeighingTicketProjection } from "../../app/types/production";
@@ -197,6 +197,7 @@ beforeEach(() => {
   ];
 });
 
+enableAutoUnmount(afterEach);
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Preparação — preview e identificação", () => {
