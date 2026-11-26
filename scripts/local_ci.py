@@ -58,6 +58,7 @@ import contextlib
 import datetime as dt
 import fcntl
 import glob
+import hashlib
 import json
 import os
 import re
@@ -513,6 +514,7 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
         steps += surface_steps(root, entries, LIGHT_PHASES, remote, touched, install=level == "full")
 
     if level == "impact":
+        steps += surface_readers_step(root, py, steps)
         return Plan(level, pr, steps, remote, notes)
 
     # ── preflight/full: o pesado da fila que este diff alcança ──────────
@@ -549,6 +551,7 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
     if surfaces != "[]":
         entries = surface_matrix(root, heavy=True, surfaces=surfaces)
         steps += surface_steps(root, entries, BROWSER_PHASES, remote, touched, install=level == "full")
+    steps += surface_readers_step(root, py, steps)
     if python:
         remote += [
             "PostgreSQL + Redis runtime stress gate (`make up` + `make test-runtime` reproduz)",
@@ -558,6 +561,121 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
         ]
     remote.append("PWA e Supply chain das superfícies: rodam na fila")
     return Plan(level, pr, steps, remote, notes)
+
+
+# ── Evidência por passo ───────────────────────────────────────────────────
+# Um re-preflight depois de consertar UM app não precisa refazer o que não mudou
+# (#3635, 26/11). Cada passo caro tem uma chave: o comando, o ambiente dele e o
+# hash das ENTRADAS que ele lê, tirado da árvore exata da rodada (o write-tree que
+# já inclui o que não foi commitado). Passo verde com a mesma chave é reaproveitado.
+#
+# Entradas, medidas e não supostas:
+# - passo de superfície: a pasta do app, o operator-kit, os arquivos da raiz de
+#   surfaces/, o surface_contract.mjs e o major do Node (o kit lê os irmãos: surfaces/ inteiro);
+# - suíte Python ("Testes (test-*)"): a árvore SEM surfaces/, mais o que o código de
+#   produção lê de lá (PY_SURFACE_READERS: contratos gerados, registry, documentos
+#   legais). Os 32 testes que leem surfaces/ por caminho (~135 s de CPU) viram o
+#   passo SURFACE_READERS, que roda sempre que alguma suíte foi reaproveitada;
+# - qualquer outro passo caro: a árvore inteira (reaproveita só re-rodada idêntica).
+# Passo barato (slot "none") e `npm ci` (estado de disco, não de árvore) sempre rodam.
+
+SURFACE_READERS = "testes Python que leem as superfícies"
+#: Como um arquivo Python lê ``surfaces/`` (caminho entre aspas): o mesmo padrão acha
+#: os testes do passo SURFACE_READERS e o código de produção que a chave cobre.
+SURFACE_PATH_RE = r"""["']surfaces["'/]"""
+#: Código de produção que lê surfaces/, e o que ele lê (entra na chave das suítes
+#: Python). O teste ``test_leitores_de_surfaces_em_producao_estao_na_chave`` reprova
+#: leitor novo que não esteja aqui: sem isso a suíte seria reaproveitada sem ter visto
+#: a mudança que lê.
+PY_SURFACE_READERS = {
+    "config/management/commands/apply_material_skus.py": "surfaces/purchase-nuxt/tests/purchase.test.ts",
+    "shopman/backstage/management/commands/export_bi_schema.py": "surfaces/bi-nuxt/app/generated",
+    "shopman/backstage/management/commands/export_kds_schema.py": "surfaces/kds-nuxt/app/generated",
+    "shopman/backstage/management/commands/export_marketing_client.py": "surfaces/marketing-nuxt/app/generated",
+    "shopman/backstage/management/commands/export_orders_schema.py": "surfaces/orders-nuxt/app/generated",
+    "shopman/backstage/management/commands/export_production_schema.py": "surfaces/production-nuxt/app/generated",
+    "shopman/backstage/management/commands/export_recipe_book_schema.py": "surfaces/production-nuxt/app/generated",
+    "shopman/shop/checks.py": "surfaces/registry.json",
+    "shopman/shop/management/commands/export_pos_schema.py": "surfaces/pos-nuxt/app/generated",
+    "shopman/shop/services/data_retention.py": "surfaces/storefront-nuxt/public/documentos-legais",
+}
+
+
+def surface_readers_step(root: Path, py: Path, steps: list) -> list:
+    if not any(s.name.startswith("Testes (test-") for s in steps):
+        return []
+    readers = tests_reading(root, SURFACE_PATH_RE)
+    if not readers:
+        return []
+    return [Step(
+        SURFACE_READERS,
+        f"{shlex.quote(str(py))} -m pytest -q -n auto " + " ".join(map(shlex.quote, readers)),
+        slot="cpu", origin="local: evidência por passo (roda se alguma suíte foi reaproveitada)",
+    )]
+
+
+def _object(root: Path, tree: str, path: str) -> str:
+    out = subprocess.run(["git", "rev-parse", "-q", "--verify", f"{tree}:{path}"], cwd=root, capture_output=True, text=True)
+    return out.stdout.strip() or "ausente"
+
+
+def _blobs_at(root: Path, tree: str, path: str) -> list[str]:
+    """Os arquivos (não as pastas) direto em ``path``, com hash: a raiz de surfaces/."""
+    out = subprocess.run(["git", "ls-tree", f"{tree}:{path}"], cwd=root, capture_output=True, text=True).stdout
+    return sorted(line for line in out.splitlines() if " blob " in line)
+
+
+def _tree_without(root: Path, tree: str, top: str) -> list[str]:
+    out = subprocess.run(["git", "ls-tree", tree], cwd=root, capture_output=True, text=True).stdout
+    return sorted(line for line in out.splitlines() if not line.endswith(f"\t{top}"))
+
+
+def step_key(root: Path, step: Step, tree: str, node: str, py: Path) -> str | None:
+    """A chave das entradas do passo, ou None para o que sempre roda."""
+    if step.slot not in ("cpu", "browser") or step.name.endswith("npm ci"):
+        return None
+    if step.cwd.startswith("surfaces/"):
+        app = step.cwd.split("/")[1]
+        if app == "operator-kit":
+            inputs = [_object(root, tree, "surfaces")]
+        else:
+            inputs = [
+                _object(root, tree, f"surfaces/{app}"),
+                _object(root, tree, "surfaces/operator-kit"),
+                *_blobs_at(root, tree, "surfaces"),
+                _object(root, tree, "scripts/surface_contract.mjs"),
+            ]
+        inputs.append(f"node {node}")
+    elif step.name.startswith("Testes (test-"):
+        inputs = [
+            *_tree_without(root, tree, "surfaces"),
+            *_blobs_at(root, tree, "surfaces"),  # registry.json, contracts.json
+            *(f"{path} {_object(root, tree, path)}" for path in sorted(set(PY_SURFACE_READERS.values()))),
+        ]
+    else:
+        inputs = [tree]
+    material = json.dumps(
+        {"cmd": step.cmd, "cwd": step.cwd, "env": sorted(step.env.items()), "python": str(py), "inputs": inputs},
+        sort_keys=True,
+    )
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def reusable(key: str | None) -> dict | None:
+    if not key:
+        return None
+    path = state_dir() / "steps" / f"{key}.json"
+    try:
+        record = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return record if record.get("status") == "pass" else None
+
+
+def remember(key: str, record: dict) -> None:
+    folder = state_dir() / "steps"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{key}.json").write_text(json.dumps(record, ensure_ascii=False))
 
 
 # ── Node da CI ────────────────────────────────────────────────────────────
@@ -642,6 +760,8 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
     print(f"  escopo {plan.scope} · máquina: {slots} vaga(s) × {workers} workers")
     failed = False
     waited_total = 0.0
+    reused_suite = False
+    to_remember: list[tuple[str, dict]] = []
     major = ci_node_major(root)
     node_ok = node_major(Path(shutil.which("node", path=env["PATH"]) or "/nonexistent").parent) == major
     def needs_node(step: Step) -> bool:
@@ -655,6 +775,19 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
     for i, step in enumerate(plan.steps, 1):
         if (failed and not keep_going) or (not node_ok and needs_node(step)):
             results.append({**asdict(step), "status": "not-run", "seconds": 0})
+            continue
+        if step.name == SURFACE_READERS and not reused_suite:
+            # Toda suíte rodou de novo nesta árvore: esses testes já rodaram dentro dela.
+            results.append({**asdict(step), "status": "covered", "seconds": 0})
+            print(f"[{i}/{len(plan.steps)}] {step.name}\n   ↳ coberto: as suítes rodaram inteiras", flush=True)
+            continue
+        key = step_key(root, step, diff.tree, major, py)
+        previous = reusable(key)
+        if previous:
+            results.append({**asdict(step), "status": "reused", "seconds": 0, "reused_from": previous})
+            reused_suite = reused_suite or step.name.startswith("Testes (test-")
+            print(f"[{i}/{len(plan.steps)}] {step.name}\n   ↺ reaproveitado: mesmas entradas verdes em "
+                  f"{previous['at']} ({previous['seconds']:.0f}s poupados)", flush=True)
             continue
         print(f"[{i}/{len(plan.steps)}] {step.name}", flush=True)
         log = logs / f"{i:02d}-{re.sub(r'[^a-zA-Z0-9]+', '-', step.name)[:60]}.log"
@@ -680,6 +813,9 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
             tail = log.read_text(errors="replace").splitlines()[-25:]
             print("     " + "\n     ".join(tail))
         results.append({**asdict(step), "status": status, "seconds": seconds, "wait_seconds": wait["seconds"], "log": str(log)})
+        if status == "pass" and key:
+            to_remember.append((key, {"status": "pass", "seconds": seconds, "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"),
+                                      "tree": diff.tree, "worktree": str(root), "log": str(log)}))
     finished = dt.datetime.now(dt.UTC)
     current_tree = working_tree_hash(root)
     evidence = {
@@ -704,6 +840,11 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
     }
     if evidence["tree_changed_during_run"]:
         evidence["status"] = "stale"
+    else:  # árvore mudou no meio: o verde de um passo pode ser de outro conteúdo
+        for key, record in to_remember:
+            remember(key, record)
+    saved = sum(r.get("reused_from", {}).get("seconds", 0) for r in results)
+    evidence["reused_seconds"] = round(saved, 1)
     path = state_dir() / "evidence" / f"{diff.tree}.json"
     previous = json.loads(path.read_text()) if path.exists() else None
     # Evidência mais forte não é rebaixada por uma rodada mais fraca da mesma árvore.
@@ -711,7 +852,7 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
         path.write_text(json.dumps(evidence, ensure_ascii=False, indent=1))
     (logs / "last.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=1))
     total = sum(r["seconds"] for r in results)
-    print(f"\n{'✅' if evidence['status'] == 'pass' else '❌'} {plan.level}: {evidence['status']} em {evidence['seconds']}s (passos somam {total:.0f}s; espera por vaga {waited_total:.0f}s)")
+    print(f"\n{'✅' if evidence['status'] == 'pass' else '❌'} {plan.level}: {evidence['status']} em {evidence['seconds']}s (passos somam {total:.0f}s; espera por vaga {waited_total:.0f}s; reaproveitado {saved:.0f}s)")
     if evidence["status"] == "stale":
         print("   ⚠️ a árvore mudou durante a rodada: a evidência não vale para o que está no disco agora")
     if plan.remote:
