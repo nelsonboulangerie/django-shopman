@@ -1,67 +1,182 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, nextTick, ref, watch } from "vue";
-import { mount } from "@vue/test-utils";
+import { computed, defineComponent, h, nextTick, ref, watch } from "vue";
+import { flushPromises, mount } from "@vue/test-utils";
 
 import ShortageDialog from "../../app/components/ShortageDialog.vue";
 import type { ProductionShortageError } from "../../app/types/production";
 import { nuxtUiStubs } from "../support/nuxtUiStubs";
 
-// Beta 05/11: "MASSA-CROISSANT precisa 336000.000 · tem 18720.000", "Esta
-// operação não está autorizada a ignorar a falta." e, ao fechar, o modal
-// piscava "O lote undefined tem encomendas…".
+// WP-F11 (P1-14, P1-24): a falta de insumo diz o quê e quanto na medida da
+// bancada, avisa na abertura sem travar, e no fechamento sai pela assinatura da
+// lista com PIN (decisão 3 do dono, D-042), nunca por texto livre.
+const authorizeProductionShortage = vi.fn();
+vi.mock("~/generated/productionContract", () => ({
+  authorizeProductionShortage: (...args: unknown[]) => authorizeProductionShortage(...args),
+}));
 
-const materialShortage = {
-  code: "material_shortage",
-  work_order_ref: "WO-2026-00022",
-  idempotency_key: "k",
-  possibilities: [{ kind: "retry", label: "Tentar novamente", enabled: true, proof: "" }],
-  missing: [
-    {
-      sku: "MASSA-CROISSANT",
-      name: "Massa Croissant",
-      unit: "g",
-      needed: "336000.000",
-      available: "18720.000",
-      shortage: "317280.000",
-    },
-  ],
-} as unknown as ProductionShortageError;
+const butter = {
+  sku: "INS-MANTEIGA",
+  name: "Manteiga",
+  unit: "kg",
+  needed: "1",
+  available: "0.7",
+  shortage: "0.3",
+  shortage_display: "300 g",
+  needed_display: "1000 g",
+  available_display: "700 g",
+};
+
+function materialShortage(
+  stage: "start" | "finish",
+  extra: Partial<Record<string, unknown>> = {},
+): ProductionShortageError {
+  return {
+    code: "material_shortage",
+    stage,
+    work_order_ref: "WO-2026-00022",
+    idempotency_key: "k",
+    possibilities: [
+      { kind: "retry", label: stage === "start" ? "Revisar quantidade" : "Tentar novamente", enabled: true, proof: "", href: "" },
+      { kind: "purchase", label: "Pedir no Compras", enabled: true, proof: "", href: "https://compras.test" },
+      ...(stage === "start"
+        ? [{ kind: "confirm", label: "Abrir assim mesmo", enabled: true, proof: "aviso-assinado", href: "" }]
+        : []),
+    ],
+    missing: [butter],
+    authorizers: [],
+    ...extra,
+  } as unknown as ProductionShortageError;
+}
+
+const withAuthorizer = (): ProductionShortageError =>
+  materialShortage("finish", {
+    possibilities: [
+      { kind: "retry", label: "Tentar novamente", enabled: true, proof: "", href: "" },
+      { kind: "force", label: "Fechar com autorização", enabled: true, proof: "falta-assinada", href: "" },
+    ],
+    authorizers: [{ id: 7, username: "joyce", name: "Joyce", pin_digits: 4 }],
+  });
+
+const ManagerAuthStub = defineComponent({
+  name: "OperatorManagerAuth",
+  props: ["open", "operatorName", "managers", "busy", "error"],
+  emits: ["update:open", "authorize", "authorizeBadge"],
+  setup(props, { slots }) {
+    return () =>
+      props.open ? h("div", { "data-auth": "" }, [slots.context?.(), h("p", { "data-auth-error": "" }, props.error)]) : null;
+  },
+});
 
 beforeEach(() => {
   vi.stubGlobal("computed", computed);
   vi.stubGlobal("ref", ref);
   vi.stubGlobal("watch", watch);
+  vi.stubGlobal("useOperatorAppLink", () => ({ attrsFor: () => ({ target: "_blank", rel: "noopener" }) }));
+  vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { name: "Diofer" } }) }));
+  vi.stubGlobal("httpErrorMessage", (err: { message?: string }, fallback: string) => err?.message || fallback);
+  authorizeProductionShortage.mockReset();
 });
 afterEach(() => vi.unstubAllGlobals());
 
 function mountDialog(shortage: ProductionShortageError | null) {
   return mount(ShortageDialog, {
     props: { shortage },
-    global: { stubs: nuxtUiStubs },
+    global: { stubs: { ...nuxtUiStubs, OperatorManagerAuth: ManagerAuthStub } },
   });
 }
 
-describe("ShortageDialog — falta de insumo", () => {
-  it("nomeia o insumo, escreve a unidade e diz quem resolve", () => {
-    const wrapper = mountDialog(materialShortage);
+describe("ShortageDialog — falta de insumo na abertura (aviso)", () => {
+  it("diz quanto falta de quê, na medida da bancada", () => {
+    const wrapper = mountDialog(materialShortage("start"));
     const item = wrapper.get("[data-shortage-item]").text().replace(/\s+/g, " ");
 
-    expect(item).toContain("Massa Croissant");
-    expect(item).not.toContain("MASSA-CROISSANT");
-    expect(item).toContain("precisa 336 kg · tem 18,72 kg · faltam 317,28 kg");
-    expect(wrapper.html()).toContain("Peça ao gerente");
-    expect(wrapper.html()).not.toContain("não está autorizada");
+    expect(item).toContain("Falta 300 g de manteiga");
+    expect(item).toContain("precisa 1000 g · tem 700 g");
+    expect(item).not.toContain("INS-MANTEIGA");
+    expect(wrapper.findComponent({ name: "NuxtModal" }).props("title")).toBe("Falta insumo para este lote");
+  });
+
+  it("oferece Pedir no Compras e Abrir assim mesmo, e abrir devolve a prova", async () => {
+    const wrapper = mountDialog(materialShortage("start"));
+
+    expect(wrapper.get("[data-shortage-purchase]").attributes("href")).toBe("https://compras.test");
+    expect(wrapper.get("[data-shortage-open-anyway]").text()).toBe("Abrir assim mesmo");
+    await wrapper.get("[data-shortage-open-anyway]").trigger("click");
+    await wrapper.get("[data-shortage-review]").trigger("click");
+
+    expect(wrapper.emitted("open-anyway")).toEqual([["aviso-assinado"]]);
+    expect(wrapper.emitted("review")).toHaveLength(1);
+    expect(wrapper.find("textarea").exists()).toBe(false);
+    expect(wrapper.find("[data-shortage-authorize]").exists()).toBe(false);
+  });
+});
+
+describe("ShortageDialog — falta de insumo no fechamento (assinatura)", () => {
+  it("sem quem autorize, não há campo de texto livre nem botão de forçar", () => {
+    const wrapper = mountDialog(materialShortage("finish"));
+    const modal = wrapper.findComponent({ name: "NuxtModal" });
+
+    expect(modal.props("title")).toBe("Falta insumo para fechar");
+    expect(modal.props("description")).toContain("Compras");
+    expect(wrapper.find("textarea").exists()).toBe(false);
+    expect(wrapper.find("[data-shortage-authorize]").exists()).toBe(false);
+    expect(wrapper.find("[data-shortage-open-anyway]").exists()).toBe(false);
+  });
+
+  it("a Gerente escolhe o nome, assina com o PIN e o lote segue com a prova assinada", async () => {
+    authorizeProductionShortage.mockResolvedValue({ override_proof: "com-joyce", authorizer_name: "Joyce" });
+    const wrapper = mountDialog(withAuthorizer());
+
+    expect(wrapper.find("textarea").exists()).toBe(false);
+    await wrapper.get("[data-shortage-authorize]").trigger("click");
+    const auth = wrapper.findComponent(ManagerAuthStub);
+    expect(auth.props("managers")).toEqual([{ id: 7, username: "joyce", name: "Joyce", pin_digits: 4 }]);
+    expect(auth.props("operatorName")).toBe("Diofer");
+    expect(wrapper.get("[data-shortage-auth-context]").text()).toBe("Falta 300 g de manteiga");
+
+    auth.vm.$emit("authorize", "joyce", "2468");
+    await flushPromises();
+
+    expect(authorizeProductionShortage).toHaveBeenCalledWith({
+      override_proof: "falta-assinada",
+      username: "joyce",
+      pin: "2468",
+    });
+    expect(wrapper.emitted("confirm")).toEqual([["Autorizado por Joyce, com PIN.", "com-joyce"]]);
+  });
+
+  it("PIN errado fica na tela de quem autoriza, com a frase do servidor", async () => {
+    authorizeProductionShortage.mockRejectedValue({ message: "PIN incorreto. Restam 4 tentativas antes da trava." });
+    const wrapper = mountDialog(withAuthorizer());
+    await wrapper.get("[data-shortage-authorize]").trigger("click");
+
+    wrapper.findComponent(ManagerAuthStub).vm.$emit("authorize", "joyce", "1111");
+    await flushPromises();
+
+    expect(wrapper.emitted("confirm")).toBeUndefined();
+    expect(wrapper.get("[data-auth-error]").text()).toBe("PIN incorreto. Restam 4 tentativas antes da trava.");
+  });
+
+  it("o crachá também assina", async () => {
+    authorizeProductionShortage.mockResolvedValue({ override_proof: "cracha", authorizer_name: "Joyce" });
+    const wrapper = mountDialog(withAuthorizer());
+    await wrapper.get("[data-shortage-authorize]").trigger("click");
+
+    wrapper.findComponent(ManagerAuthStub).vm.$emit("authorizeBadge", "TOKEN");
+    await flushPromises();
+
+    expect(authorizeProductionShortage).toHaveBeenCalledWith({ override_proof: "falta-assinada", badge: "TOKEN" });
+    expect(wrapper.emitted("confirm")?.[0]?.[1]).toBe("cracha");
   });
 
   it("ao fechar, título e frase continuam os do último envelope", async () => {
-    const wrapper = mountDialog(materialShortage);
+    const wrapper = mountDialog(materialShortage("finish"));
     const modal = wrapper.findComponent({ name: "NuxtModal" });
-    expect(modal.props("title")).toBe("Insumos insuficientes");
 
     await wrapper.setProps({ shortage: null });
     await nextTick();
 
-    expect(modal.props("title")).toBe("Insumos insuficientes");
+    expect(modal.props("title")).toBe("Falta insumo para fechar");
     expect(modal.props("description")).not.toContain("undefined");
   });
 });
@@ -87,7 +202,7 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
   function mountShortLot(allowShortLot: boolean) {
     return mount(ShortageDialog, {
       props: { shortage: shortLot, allowShortLot },
-      global: { stubs: nuxtUiStubs },
+      global: { stubs: { ...nuxtUiStubs, OperatorManagerAuth: ManagerAuthStub } },
     });
   }
 
@@ -120,7 +235,7 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
   it("uma unidade e um pedido no singular", () => {
     const wrapper = mount(ShortageDialog, {
       props: { shortage: { ...shortLot, required: "2", requested: "1" } as ProductionShortageError, allowShortLot: true },
-      global: { stubs: nuxtUiStubs },
+      global: { stubs: { ...nuxtUiStubs, OperatorManagerAuth: ManagerAuthStub } },
     });
 
     expect(wrapper.findComponent({ name: "NuxtModal" }).props("description")).toBe("Rendeu 1. Falta 1 para as encomendas.");
@@ -130,7 +245,7 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
   it("rendeu zero: não diz que o pão entra no estoque", () => {
     const wrapper = mount(ShortageDialog, {
       props: { shortage: { ...shortLot, requested: "0" } as ProductionShortageError, allowShortLot: true },
-      global: { stubs: nuxtUiStubs },
+      global: { stubs: { ...nuxtUiStubs, OperatorManagerAuth: ManagerAuthStub } },
     });
 
     expect(wrapper.findComponent({ name: "NuxtModal" }).props("description")).toBe("Rendeu 0. Faltam 6 para as encomendas.");

@@ -1,14 +1,27 @@
 <script setup lang="ts">
 // Material/order shortage modal. Renders the structured shortage envelope the API
-// returns (409) when a finish/plan would consume more than is available, or leave
-// committed orders uncovered. For a material shortage the operator can override
-// (force=1) only when the server advertises that possibility. An order shortage
-// offers "retry" (o operador volta ao número que digitou e corrige). Quando o
+// returns (409) when a start/finish/plan would consume more than is available, or
+// leave committed orders uncovered.
+//
+// Falta de insumo (WP-F11, P1-14 e P1-24):
+//   - na ABERTURA (`stage: "start"`) é aviso, não trava: "Falta 300 g de
+//     manteiga", com "Pedir no Compras" e "Abrir assim mesmo". O padeiro decide
+//     com a informação; abrir devolve a prova ao host (`open-anyway`).
+//   - no FECHAMENTO (`stage: "finish"`) é trava, e a saída é a assinatura de quem
+//     pode autorizar (Gerente ou Dono), ESCOLHIDO DA LISTA e com o próprio PIN ou
+//     crachá, no `OperatorManagerAuth` de sempre (decisão 3 do dono, D-042; regra
+//     de 28/10). Nada de "quem autorizou" em texto livre: o servidor assina a
+//     prova com o nome de quem autorizou, e o host segue pelo `confirm` de sempre.
+//
+// Falta de encomenda: "Revisar quantidade" volta ao número digitado. Quando o
 // servidor oferece "confirm" e a tela sabe fechar o lote curto (`allowShortLot`),
 // o lote fecha com o que rendeu: a tela diz quanto falta para as encomendas e
 // quais pedidos ficam descobertos (decisão 1 do dono, 23/11/2026).
+import type { OperatorSession } from "../../../operator-kit/app/types/operator";
 import type { ProductionShortageError } from "~/types/production";
-import { formatQty, formatQtyUnit } from "~/presentation/production";
+import { authorizeProductionShortage } from "~/generated/productionContract";
+import { formatQty } from "~/presentation/production";
+import { materialShortageLine } from "~/presentation/shortage";
 
 const props = defineProps<{
   shortage: ProductionShortageError | null;
@@ -28,25 +41,47 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
   confirm: [reason: string, proof: string];
   "close-short-lot": [proof: string];
+  "open-anyway": [proof: string];
   review: [];
 }>();
 
-const isMaterial = computed(() => last.value?.code === "material_shortage");
-const forcePossibility = computed(() =>
-  last.value?.possibilities.find(
-    (possibility) => possibility.kind === "force" && possibility.enabled,
-  ),
+const { attrsFor } = useOperatorAppLink();
+
+const material = computed(() =>
+  last.value?.code === "material_shortage" ? last.value : null,
 );
-const retryPossibility = computed(() =>
-  last.value?.possibilities.find(
-    (possibility) => possibility.kind === "retry" && possibility.enabled,
-  ),
+const isMaterial = computed(() => material.value != null);
+const opening = computed(() => material.value?.stage === "start");
+function possibility(kind: string) {
+  return last.value?.possibilities.find(
+    (candidate) => candidate.kind === kind && candidate.enabled,
+  );
+}
+const forcePossibility = computed(() => possibility("force"));
+const retryPossibility = computed(() => possibility("retry"));
+const purchasePossibility = computed(() =>
+  isMaterial.value ? possibility("purchase") : undefined,
+);
+const openAnywayPossibility = computed(() =>
+  opening.value
+    ? last.value?.possibilities.find(
+        (candidate) =>
+          candidate.kind === "confirm" && candidate.enabled && candidate.proof,
+      )
+    : undefined,
+);
+const materialLines = computed(() =>
+  (material.value?.missing ?? []).map((item) => ({
+    sku: item.sku,
+    line: materialShortageLine(item),
+    detail: `precisa ${item.needed_display} · tem ${item.available_display}`,
+  })),
 );
 const shortLotPossibility = computed(() =>
   props.allowShortLot && last.value?.code === "order_shortage"
     ? last.value.possibilities.find(
-        (possibility) =>
-          possibility.kind === "confirm" && possibility.enabled && possibility.proof,
+        (candidate) =>
+          candidate.kind === "confirm" && candidate.enabled && candidate.proof,
       )
     : undefined,
 );
@@ -67,36 +102,54 @@ const shortLot = computed(() => {
         : "O lote fecha sem nada para o estoque.",
   };
 });
+
+// Falta de encomenda forçada no Planejamento: quem tem a permissão escreve o motivo.
 const overrideReason = ref("");
-const canConfirm = computed(
+const canConfirmOrderOverride = computed(
   () =>
     Boolean(forcePossibility.value?.proof) && overrideReason.value.trim().length > 0,
+);
+
+// A assinatura da falta de insumo no fechamento.
+const authorizers = computed(() => material.value?.authorizers ?? []);
+const authOpen = ref(false);
+const authBusy = ref(false);
+const authError = ref("");
+const operatorName = computed(
+  () =>
+    useNuxtData<OperatorSession>("operator-session").data.value?.operator?.name ??
+    "",
 );
 
 watch(
   () => props.shortage,
   () => {
     overrideReason.value = "";
+    authOpen.value = false;
+    authBusy.value = false;
+    authError.value = "";
   },
 );
 
-const title = computed(() =>
-  isMaterial.value
-    ? "Insumos insuficientes"
-    : shortLot.value
-      ? "Rendeu menos que o encomendado"
-      : "Quantidade não cobre pedidos",
-);
+const title = computed(() => {
+  if (isMaterial.value) {
+    return opening.value ? "Falta insumo para este lote" : "Falta insumo para fechar";
+  }
+  return shortLot.value ? "Rendeu menos que o encomendado" : "Quantidade não cobre pedidos";
+});
 const description = computed(() => {
   const ref = last.value?.work_order_ref;
   if (shortLot.value) {
     return `Rendeu ${shortLot.value.yielded}. ${shortLot.value.missing} para as encomendas.`;
   }
+  if (isMaterial.value && opening.value) {
+    return "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente autoriza.";
+  }
   if (isMaterial.value && forcePossibility.value) {
-    return `Faltam insumos para concluir ${ref}. Registre o motivo real da autorização; a identidade do operador e um alerta serão preservados.`;
+    return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
   }
   if (isMaterial.value) {
-    return `Faltam insumos para concluir ${ref}. Peça ao gerente para registrar a entrada do que falta e confirme de novo.`;
+    return "O estoque não tem o que este lote consome. Peça ao Compras para dar entrada no que falta e tente de novo.";
   }
   return `O lote ${ref} tem encomendas que dependem dele, e a quantidade informada não cobre todas.`;
 });
@@ -106,17 +159,41 @@ function closeShortLot() {
   if (proof) emit("close-short-lot", proof);
 }
 
-function confirmOverride() {
+function openAnyway() {
+  const proof = openAnywayPossibility.value?.proof;
+  if (proof) emit("open-anyway", proof);
+}
+
+function confirmOrderOverride() {
   const reason = overrideReason.value.trim();
   if (forcePossibility.value?.proof && reason) {
     emit("confirm", reason, forcePossibility.value.proof);
+  }
+}
+
+async function sign(credentials: { username?: string; pin?: string; badge?: string }) {
+  const proof = forcePossibility.value?.proof;
+  if (!proof || authBusy.value) return;
+  authBusy.value = true;
+  authError.value = "";
+  try {
+    const signed = await authorizeProductionShortage({
+      override_proof: proof,
+      ...credentials,
+    });
+    authOpen.value = false;
+    emit("confirm", `Autorizado por ${signed.authorizer_name}, com PIN.`, signed.override_proof);
+  } catch (err) {
+    authError.value = httpErrorMessage(err, "Não deu para conferir a autorização. Tente de novo.");
+  } finally {
+    authBusy.value = false;
   }
 }
 </script>
 
 <template>
   <NuxtModal
-    :open="shortage != null"
+    :open="shortage != null && !authOpen"
     :title="title"
     :description="description"
     @update:open="(v: boolean) => emit('update:open', v)"
@@ -124,24 +201,18 @@ function confirmOverride() {
     <template #body>
       <div class="flex flex-col gap-3">
         <ul
-          v-if="last && last.code === 'material_shortage'"
+          v-if="material"
           class="divide-y rounded-md border text-sm"
+          data-shortage-items
         >
           <li
-            v-for="item in last.missing"
+            v-for="item in materialLines"
             :key="item.sku"
-            class="flex items-center justify-between gap-2 px-3 py-2"
+            class="flex flex-col gap-0.5 px-3 py-2"
             data-shortage-item
           >
-            <span class="font-medium">{{ item.name || item.sku }}</span>
-            <span class="tabular-nums text-muted-foreground">
-              precisa
-              <b class="text-foreground">{{ formatQtyUnit(item.needed, item.unit) }}</b>
-              · tem {{ formatQtyUnit(item.available, item.unit) }} ·
-              <span class="text-destructive"
-                >faltam {{ formatQtyUnit(item.shortage, item.unit) }}</span
-              >
-            </span>
+            <span class="font-medium text-destructive">{{ item.line }}</span>
+            <span class="tabular-nums text-muted-foreground">{{ item.detail }}</span>
           </li>
         </ul>
         <template v-else-if="shortLot">
@@ -181,15 +252,18 @@ function confirmOverride() {
           </p>
         </template>
 
-        <NuxtFormField v-if="forcePossibility" label="Motivo da autorização">
+        <NuxtFormField
+          v-if="forcePossibility && !isMaterial"
+          label="Motivo da autorização"
+        >
           <NuxtTextarea
             v-model="overrideReason"
             :maxlength="500"
             :rows="3"
             required
             class="w-full"
-            aria-label="Motivo da autorização para falta de insumos"
-            placeholder="Descreva quem autorizou e por quê"
+            aria-label="Motivo para salvar abaixo das encomendas"
+            placeholder="Por que salvar abaixo das encomendas"
           />
         </NuxtFormField>
       </div>
@@ -197,14 +271,48 @@ function confirmOverride() {
 
     <template #footer>
       <div class="flex w-full flex-wrap justify-end gap-2">
-        <NuxtButton
-          v-if="!shortLotPossibility"
-          color="neutral"
-          variant="outline"
-          :label="isMaterial || retryPossibility ? 'Cancelar' : 'Entendi'"
-          @click="emit('update:open', false)"
-        />
-        <template v-if="shortLotPossibility">
+        <template v-if="isMaterial">
+          <NuxtButton
+            v-if="retryPossibility && opening"
+            color="neutral"
+            variant="outline"
+            :label="retryPossibility.label"
+            data-shortage-review
+            @click="emit('review')"
+          />
+          <NuxtButton
+            v-else
+            color="neutral"
+            variant="outline"
+            label="Cancelar"
+            @click="emit('update:open', false)"
+          />
+          <NuxtButton
+            v-if="purchasePossibility"
+            :href="purchasePossibility.href"
+            v-bind="attrsFor(purchasePossibility.href)"
+            color="warning"
+            variant="outline"
+            trailing-icon="i-lucide-external-link"
+            :label="purchasePossibility.label"
+            data-shortage-purchase
+          />
+          <NuxtButton
+            v-if="openAnywayPossibility"
+            color="primary"
+            :label="openAnywayPossibility.label"
+            data-shortage-open-anyway
+            @click="openAnyway"
+          />
+          <NuxtButton
+            v-if="forcePossibility"
+            color="primary"
+            :label="forcePossibility.label"
+            data-shortage-authorize
+            @click="authOpen = true"
+          />
+        </template>
+        <template v-else-if="shortLotPossibility">
           <NuxtButton
             v-if="retryPossibility"
             color="neutral"
@@ -220,26 +328,54 @@ function confirmOverride() {
             @click="closeShortLot"
           />
         </template>
-        <NuxtButton
-          v-else-if="retryPossibility && !isMaterial && forcePossibility"
-          color="neutral"
-          variant="outline"
-          :label="retryPossibility.label"
-          @click="emit('review')"
-        />
-        <NuxtButton
-          v-else-if="retryPossibility && !isMaterial"
-          :label="retryPossibility.label"
-          @click="emit('review')"
-        />
-        <NuxtButton
-          v-if="forcePossibility"
-          color="primary"
-          :disabled="!canConfirm"
-          :label="forcePossibility.label"
-          @click="confirmOverride"
-        />
+        <template v-else>
+          <NuxtButton
+            color="neutral"
+            variant="outline"
+            :label="retryPossibility ? 'Cancelar' : 'Entendi'"
+            @click="emit('update:open', false)"
+          />
+          <NuxtButton
+            v-if="retryPossibility"
+            :color="forcePossibility ? 'neutral' : 'primary'"
+            :variant="forcePossibility ? 'outline' : 'solid'"
+            :label="retryPossibility.label"
+            @click="emit('review')"
+          />
+          <NuxtButton
+            v-if="forcePossibility"
+            color="primary"
+            :disabled="!canConfirmOrderOverride"
+            :label="forcePossibility.label"
+            @click="confirmOrderOverride"
+          />
+        </template>
       </div>
     </template>
   </NuxtModal>
+
+  <!-- A assinatura da falta: quem autoriza escolhe o próprio nome e digita o PIN
+       (ou passa o crachá). Quem fecha o lote continua sendo quem era. -->
+  <OperatorManagerAuth
+    :open="authOpen"
+    :operator-name="operatorName || undefined"
+    :managers="authorizers"
+    :busy="authBusy"
+    :error="authError"
+    @update:open="
+      (value: boolean) => {
+        if (!value && !authBusy) authOpen = false;
+      }
+    "
+    @authorize="(username: string, pin: string) => sign({ username, pin })"
+    @authorize-badge="(badge: string) => sign({ badge })"
+  >
+    <template #context>
+      <ul class="grid gap-1 text-sm" data-shortage-auth-context>
+        <li v-for="item in materialLines" :key="item.sku" class="font-medium">
+          {{ item.line }}
+        </li>
+      </ul>
+    </template>
+  </OperatorManagerAuth>
 </template>

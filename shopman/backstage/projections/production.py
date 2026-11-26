@@ -3946,8 +3946,10 @@ def _suggestion_material_checks(
         batch_size = _decimal_value(recipe.batch_size)
         if batch_size <= 0:
             continue
+        # A bruta, como a guarda da abertura e a baixa do Core (P1-23): a sugestão
+        # que "cabe" pela líquida e falta pela bruta prometia o que a baixa recusa.
         per_unit[sku] = [
-            (item.input_sku, _decimal_value(item.quantity) / batch_size, item.unit)
+            (item.input_sku, _decimal_value(item.gross_quantity) / batch_size, item.unit)
             for item in recipe.items.all()
             if not item.is_optional and item.input_sku and item.input_sku not in produced_here
         ]
