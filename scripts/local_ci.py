@@ -312,6 +312,7 @@ def surface_steps(
     steps: list[Step] = []
     skipped: list[str] = []
     installed: set[str] = set()
+    browsers: set[str] = set()
 
     def npm_ci(directory: str) -> None:
         if directory in installed or (root / "surfaces" / directory / "node_modules").exists():
@@ -330,6 +331,7 @@ def surface_steps(
             if e.get("install_layer") and e["dir"] != "operator-kit":
                 npm_ci("operator-kit")
             npm_ci(e["dir"])
+        first = len(steps)
         concurrent = (e.get("concurrent") or "").split()
         together = [p for p in phases if p in concurrent]
         if len(together) >= 2:
@@ -358,6 +360,19 @@ def surface_steps(
                 f"{e['dir']} › {phase}",
                 f"node ../../scripts/surface_contract.mjs run {shlex.quote(e['id'])} {phase}",
                 cwd=f"surfaces/{e['dir']}", slot=slot, origin="surfaces-gate.yml#quality",
+            ))
+        browser_at = next((i for i in range(first, len(steps)) if steps[i].slot == "browser"), None)
+        if browser_at is not None and e["dir"] not in browsers:
+            # O passo de instalação do workflow tem `${{ }}` e o espelho o pula: sem
+            # isto, o motor que o contrato declara e a máquina não tem (WebKit da
+            # Produção, medido 26/11 no F08) reprovava como defeito. Idempotente:
+            # com o motor já instalado, termina em segundos.
+            browsers.add(e["dir"])
+            engines = e.get("browser_engines") or "chromium"
+            steps.insert(browser_at, Step(
+                f"{e['dir']} › navegadores do Playwright ({engines})",
+                f"node ../../scripts/install_playwright_browsers.mjs {shlex.quote(engines)}",
+                cwd=f"surfaces/{e['dir']}", origin="surfaces-gate.yml#quality (Instalar navegadores)",
             ))
         if e.get("visual"):
             remote.append(f"{e['dir']} › visual (retrato só vale no navegador da CI)")

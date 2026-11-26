@@ -628,3 +628,24 @@ def test_suite_python_ve_o_contrato_gerado(repo):
     k1 = local_ci.step_key(repo, SUITE, t1, "22", PY)
     assert local_ci.step_key(repo, SUITE, _tree(repo, {"surfaces/pos-nuxt/app/generated/posContract.ts": "v2"}), "22", PY) != k1
     assert local_ci.step_key(repo, SUITE, _tree(repo, {"surfaces/registry.json": '{"a":1}'}), "22", PY) != k1
+
+
+# ── Motores do Playwright declarados no contrato (#3650, 26/11) ─────────────
+
+
+def test_motor_declarado_e_instalado_antes_da_fase_de_navegador(tmp_path):
+    (tmp_path / "surfaces" / "production-nuxt" / "node_modules").mkdir(parents=True)
+    entry = {"id": "production", "dir": "production-nuxt", "browser": True, "browser_engines": "chromium webkit"}
+    steps = local_ci.surface_steps(tmp_path, [entry], local_ci.BROWSER_PHASES, [], set(), install=False)
+    names = [s.name for s in steps]
+    install = names.index("production-nuxt › navegadores do Playwright (chromium webkit)")
+    assert install < names.index("production-nuxt › browser")
+    assert "'chromium webkit'" in steps[install].cmd
+    assert steps[install].slot == "none"  # sempre roda: estado da máquina, não da árvore
+
+
+def test_sem_fase_de_navegador_nao_instala_motor(tmp_path):
+    (tmp_path / "surfaces" / "pos-nuxt" / "node_modules").mkdir(parents=True)
+    entry = {"id": "pos", "dir": "pos-nuxt", "browser_engines": "chromium"}
+    steps = local_ci.surface_steps(tmp_path, [entry], ("unit", "lint"), [], set(), install=False)
+    assert not any("navegadores do Playwright" in s.name for s in steps)
