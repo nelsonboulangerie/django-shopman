@@ -400,6 +400,27 @@ def test_queda_nao_pedida_abre_uma_issue_so():
     assert not any(c[:2] in {("issue", "create"), ("issue", "comment")} for c in gh2.calls)
 
 
+def test_queda_chega_ao_dono_atribuida():
+    env = {**PILOT, "ALERT": "true", "RUN_URL": "u", "ASSIGNEE": "dono"}
+    gh = _FakeGh()
+    assert browser.notify(env, gh) == "issue aberta, atribuída a dono"
+    create = next(c for c in gh.calls if c[:2] == ("issue", "create"))
+    assert create[-2:] == ("--assignee", "dono")
+
+
+def test_atribuir_que_falha_nao_cala_o_aviso():
+    class _Recusa(_FakeGh):
+        def __call__(self, *args):
+            if "--assignee" in args:
+                raise RuntimeError("could not assign user")
+            return super().__call__(*args)
+
+    gh = _Recusa()
+    env = {**PILOT, "ALERT": "true", "RUN_URL": "u", "ASSIGNEE": "fulano"}
+    assert browser.notify(env, gh) == "issue aberta"
+    assert any(c[:2] == ("issue", "create") and "--assignee" not in c for c in gh.calls)
+
+
 def test_voltou_ao_pago_fecha_a_issue():
     gh = _FakeGh(open_issue="77")
     assert browser.notify({**PILOT, "ALERT": "false", "RUN_URL": "u"}, gh) == "issue #77 fechada"

@@ -111,6 +111,7 @@ jobs:
           ALERT: ${{ steps.browser-runner.outputs.alert }}
           REASON: ${{ steps.browser-runner.outputs.reason }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_ALERT_ASSIGNEE }}
         run: python3 scripts/ci_browser_runner.py notify
       - name: Gerar matrizes por capability
         id: matrix
