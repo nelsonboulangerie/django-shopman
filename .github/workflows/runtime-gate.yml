@@ -99,6 +99,19 @@ jobs:
       - name: Escopo da CI erra para o lado de rodar
         run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_ci_scope.py -q
 
+      # DEV-2026-098: o executor local (make check-*/preflight/ready) lê os passos
+      # DESTE arquivo; estes testes avisam quando um workflow muda de forma e o
+      # local perde a paridade, e conferem que as partes dos shards concordam
+      # entre Makefile, matriz e Coverage Gate.
+      - name: Executor local, shards e hook de promoção
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_local_ci.py -q
+
+      # Dono, 25/11: "NÃO DEIXAR que esse tipo de 'sacada' se perca". Seed
+      # completo contado (crescer reprova), quem semeia no shard certo, shards
+      # partidos completos e equilibrados pelos pesos medidos.
+      - name: "Custo dos testes: seed contado, shards completos e equilibrados"
+        run: .venv/bin/python scripts/check_test_cost.py
+
       - name: Teto do job cabe a espera do job
         run: .venv/bin/python scripts/check_workflow_budgets.py
 
@@ -472,16 +485,27 @@ jobs:
   # e morto pelo timeout; job 127687615016 morreu antes de terminar) e tirou o
   # #2154 da fila. A divisão e a medição moram no Makefile, junto de
   # BACKSTAGE_HEAVY_TESTS. O nome `Backstage rest` ficou com o shard do resto.
+  #
+  # 25/11/2026 (DEV-2026-098): `seed` e `rest` partidos em DOIS cada, por peso
+  # medido (scripts/test_shards.py + scripts/test-shard-weights.json). O
+  # benchmark do mesmo commit mostrou que só esses dois aceleram com mais núcleo
+  # (1,95x e 1,47x com 8 vCPU): dois runners grátis de 4 vCPU fazem o mesmo de
+  # graça. O número de partes mora no Makefile (BACKSTAGE_SEED_PARTS,
+  # BACKSTAGE_REST_PARTS); esta matriz e a lista do Coverage Gate precisam
+  # concordar com ele (scripts/tests/test_local_ci.py reprova se não).
   tests-backstage-shards:
     name: Backstage ${{ matrix.shard }}
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
+    # Grátis de propósito: medido em 25 e 26/11 (evidence/ci-dx-098/), máquina paga não
+    # acelera estes shards Python (8-core 1,0–1,9x só no seed/rest; Ubicloud ~1,0x). O
+    # ganho deles veio da divisão em mais shards, de graça.
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [seed, heavy, rest]
+        shard: [seed-1, seed-2, heavy-1, heavy-2, rest-1, rest-2]
 
     steps:
       - name: Checkout
@@ -503,7 +527,9 @@ jobs:
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.backstage-${{ matrix.shard }}
-          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+          # junit: a vigia diária (ci-time-watch.yml) re-mede os pesos dos
+          # shards com ele (scripts/test_shards.py --measure).
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0 --junitxml=junit-backstage-${{ matrix.shard }}.xml
         run: make test-backstage-${{ matrix.shard }}
 
       - name: Publicar cobertura do shard
@@ -513,6 +539,16 @@ jobs:
           path: .coverage.backstage-${{ matrix.shard }}
           include-hidden-files: true
           if-no-files-found: error
+
+      - name: Publicar tempos do shard (junit)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-backstage-${{ matrix.shard }}
+          path: junit-backstage-${{ matrix.shard }}.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
   # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
   # trocar o contexto obrigatório antes — ver o comentário acima.
@@ -524,7 +560,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Os três shards do backstage passaram
+      - name: Todos os shards do backstage passaram
         run: |
           resultado='${{ needs.tests-backstage-shards.result }}'
           echo "shards: $resultado"
@@ -553,12 +589,17 @@ jobs:
     name: Shop ${{ matrix.shard }}
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
+    # Grátis de propósito: medido em 25 e 26/11 (evidence/ci-dx-098/), máquina paga não
+    # acelera estes shards Python (8-core 1,0–1,9x só no seed/rest; Ubicloud ~1,0x). O
+    # ganho deles veio da divisão em mais shards, de graça.
     runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [heavy, rest]
+        # 25/11 (DEV-2026-098): `rest` partido por peso medido, como o do
+        # backstage; partes em SHOP_REST_PARTS no Makefile.
+        shard: [heavy, rest-1, rest-2]
 
     steps:
       - name: Checkout
@@ -580,7 +621,7 @@ jobs:
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.shop-${{ matrix.shard }}
-          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0 --junitxml=junit-shop-${{ matrix.shard }}.xml
         run: make test-shop-${{ matrix.shard }}
 
       - name: Publicar cobertura do shard
@@ -590,6 +631,16 @@ jobs:
           path: .coverage.shop-${{ matrix.shard }}
           include-hidden-files: true
           if-no-files-found: error
+
+      - name: Publicar tempos do shard (junit)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-shop-${{ matrix.shard }}
+          path: junit-shop-${{ matrix.shard }}.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
   # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
   # trocar o contexto obrigatório antes.
@@ -645,8 +696,9 @@ jobs:
       - name: Instalar coverage
         run: python -m pip install 'coverage[toml]>=7.6,<8.0'
 
-      # storefront + backstage (seed, heavy, rest) + shop (heavy, rest) = 6
-      - name: Baixar todos os seis shards
+      # Os shards pelo NOME, não pela contagem: shard faltando é dito qual.
+      # storefront + backstage (seed-1, seed-2, heavy-1, heavy-2, rest-1, rest-2) + shop (heavy, rest-1, rest-2)
+      - name: Baixar todos os shards
         uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
@@ -654,9 +706,18 @@ jobs:
           merge-multiple: true
 
       - name: Combinar, publicar e aplicar o piso de 75%
+        env:
+          COVERAGE_SHARDS: >-
+            test-storefront
+            backstage-seed-1 backstage-seed-2 backstage-heavy-1 backstage-heavy-2 backstage-rest-1 backstage-rest-2
+            shop-heavy shop-rest-1 shop-rest-2
         run: |
+          for shard in $COVERAGE_SHARDS; do
+            test -f "coverage-data/.coverage.$shard" || { echo "::error::falta a cobertura do shard $shard"; exit 1; }
+          done
           count=$(find coverage-data -type f -name '.coverage.*' | wc -l | tr -d ' ')
-          test "$count" = "6"
+          expected=$(echo $COVERAGE_SHARDS | wc -w | tr -d ' ')
+          test "$count" = "$expected" || { echo "::error::$count arquivos de cobertura, esperados $expected"; exit 1; }
           python -m coverage combine coverage-data
           python -m coverage report --fail-under=75 | tee coverage.txt
           python -m coverage xml -o coverage.xml

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import json
 import statistics
 import subprocess
@@ -53,7 +54,7 @@ GATE_WORKFLOWS = {
     "Ficou de fora",
     "Omotenashi Gate",
 }
-JOB_SAMPLE_WORKFLOWS = {"Runtime Gate", "Surfaces Gate"}
+JOB_SAMPLE_WORKFLOWS = {"Runtime Gate", "Surfaces Gate", "Omotenashi Gate"}
 
 
 def ts(value: str | None) -> dt.datetime | None:
@@ -248,6 +249,7 @@ def analyse_jobs(cache: Cache, runs: list[dict]) -> dict:
     wait: dict[str, list[float]] = defaultdict(list)
     run_s: dict[str, list[float]] = defaultdict(list)
     labels: Counter = Counter()
+    paid_wait: list[float] = []  # espera por máquina dos jobs em runner PAGO (ubicloud-*)
     for r in runs:
         if r["name"] not in JOB_SAMPLE_WORKFLOWS or r["status"] != "completed":
             continue
@@ -258,11 +260,13 @@ def analyse_jobs(cache: Cache, runs: list[dict]) -> dict:
             wait[name].append((ts(j["started_at"]) - ts(j["created_at"])).total_seconds())
             run_s[name].append((ts(j["completed_at"]) - ts(j["started_at"])).total_seconds())
             labels[",".join(j.get("labels") or [])] += 1
+            if any(str(lab).startswith("ubicloud") for lab in (j.get("labels") or [])):
+                paid_wait.append((ts(j["started_at"]) - ts(j["created_at"])).total_seconds())
     rows = {
         name: {"wait": summary(wait[name]), "run": summary(run_s[name])}
         for name in sorted(run_s, key=lambda n: -(pct(run_s[n], 0.5) or 0))
     }
-    return {"jobs": rows, "runner_labels": dict(labels.most_common())}
+    return {"jobs": rows, "runner_labels": dict(labels.most_common()), "paid_runner_wait": summary(paid_wait)}
 
 
 def analyse_merges(since: dt.date, until: dt.date) -> dict:
@@ -313,6 +317,54 @@ def analyse_merges(since: dt.date, until: dt.date) -> dict:
         "removals_per_merged_pr": round(sum(removals.values()) / total, 2) if total else None,
         "removal_reasons": dict(removals.most_common()),
     }
+
+
+def runner_label(job: dict) -> str:
+    labels = job.get("labels") or []
+    return ",".join(labels) or "?"
+
+
+def compare_runners(cache: Cache, runs: list[dict], workflows: set[str] | None = None) -> list[dict]:
+    """Execução p50 de cada job por rótulo de runner (verdes só).
+
+    Serve ao benchmark (``runner-benchmark.yml``: o nome do job é
+    ``<alvo> · <runner> · <rep>``, agrupado pelo ``<alvo>``) e ao piloto vivo
+    na fila (mesmo job em runners diferentes). O primeiro rótulo em ordem de
+    mediana maior é a referência da coluna ``aceleração``.
+    """
+    dur: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    for r in runs:
+        if r["status"] != "completed" or (workflows and r["name"] not in workflows):
+            continue
+        for j in jobs_for_run(cache, r["id"]):
+            if j["conclusion"] != "success" or not j["started_at"]:
+                continue
+            name = j["name"].split(" · ")[0]
+            key = name if r["name"] == "Benchmark de runner" else f'{r["name"]} › {name}'
+            dur[key][runner_label(j)].append((ts(j["completed_at"]) - ts(j["started_at"])).total_seconds())
+    rows = []
+    for job, by_label in dur.items():
+        if len(by_label) < 2:
+            continue
+        stats = {lab: (len(v), statistics.median(v)) for lab, v in by_label.items()}
+        base_label = "ubuntu-latest" if "ubuntu-latest" in stats else max(stats, key=lambda k: stats[k][1])
+        base = stats[base_label][1]
+        rows.append({
+            "job": job,
+            "runners": {lab: {"n": n, "p50_min": round(m / 60, 1), "speedup": round(base / m, 2)} for lab, (n, m) in stats.items()},
+            "reference": base_label,
+        })
+    return sorted(rows, key=lambda r: -r["runners"][r["reference"]]["p50_min"])
+
+
+def print_runner_comparison(rows: list[dict]) -> None:
+    if not rows:
+        print("Nenhum job verde em dois runners diferentes nesta seleção.")
+        return
+    print("| job | runner | n | execução p50 (min) | aceleração |\n|---|---|---:|---:|---:|")
+    for row in rows:
+        for lab, st in sorted(row["runners"].items(), key=lambda kv: kv[0] != row["reference"]):
+            print(f"| {row['job']} | {lab} | {st['n']} | {st['p50_min']} | {st['speedup']}x |")
 
 
 def days(since: dt.date, until: dt.date):
@@ -372,9 +424,35 @@ def main() -> int:
     parser.add_argument("--no-merges", action="store_true")
     parser.add_argument("--cache", type=Path, default=Path(".ci-baseline"))
     parser.add_argument("--json", type=Path)
+    parser.add_argument(
+        "--compare-runners", action="store_true",
+        help="só a comparação por rótulo de runner (benchmark com --run, ou fila em --since..--until)",
+    )
+    parser.add_argument("--run", type=int, help="id de um run do runner-benchmark.yml")
+    parser.add_argument(
+        "--events", default="merge_group,pull_request",
+        help="eventos medidos (a vigia usa só merge_group: cabe no limite do GITHUB_TOKEN)",
+    )
+    parser.add_argument(
+        "--budget", type=Path,
+        help="scripts/ci-time-budget.json: compara e sai com 3 se algum teto estourou",
+    )
     args = parser.parse_args()
+    events = [e for e in args.events.split(",") if e]
 
     cache = Cache(args.cache)
+    if args.compare_runners:
+        if args.run:
+            runs = [gh_json(f"repos/{REPO}/actions/runs/{args.run}")]
+            workflows = None
+        else:
+            runs = [r for day in days(args.since, args.until) for r in runs_for_day(cache, "merge_group", day, today)]
+            workflows = {"Runtime Gate", "Surfaces Gate"}
+        rows = compare_runners(cache, runs, workflows)
+        if args.json:
+            args.json.write_text(json.dumps(rows, ensure_ascii=False, indent=2))
+        print_runner_comparison(rows)
+        return 0
     by_regime: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     job_runs: list[dict] = []
     jobs_from = args.until - dt.timedelta(days=max(args.jobs_days - 1, 0))
@@ -385,6 +463,8 @@ def main() -> int:
             else f"desde {args.split} (leve no PR, pesado na fila)"
         )
         for event, label in (("merge_group", "queue"), ("pull_request", "pr")):
+            if event not in events:
+                continue
             runs = runs_for_day(cache, event, day, today)
             by_regime[regime][label].extend(runs)
             if event == "merge_group" and args.jobs_days and day >= jobs_from:
@@ -404,10 +484,84 @@ def main() -> int:
     if job_runs:
         rep["jobs_window"] = f"{jobs_from}..{args.until} (merge_group)"
         rep["jobs"] = analyse_jobs(cache, job_runs)
+    if args.budget:
+        rep["budget"] = check_budget(rep, json.loads(args.budget.read_text()))
     if args.json:
         args.json.write_text(json.dumps(rep, ensure_ascii=False, indent=2))
     print_report(rep)
+    if args.budget:
+        print_budget(rep["budget"])
+        return 3 if rep["budget"]["violations"] else 0
     return 0
+
+
+def check_budget(rep: dict, budget: dict) -> dict:
+    """Compara a medição com o orçamento versionado; devolve estouros e folgas."""
+    violations: list[str] = []
+    checked: list[str] = []
+    latest = rep["regimes"][sorted(rep["regimes"])[-1]]["queue"] if rep["regimes"] else None
+    if latest and latest["success_wall"]["n"]:
+        for key, label in (("p50_min", "group_wall_p50_min"), ("p95_min", "group_wall_p95_min")):
+            value, limit = latest["success_wall"][key], budget.get(label)
+            if limit is None:
+                continue
+            checked.append(f"relógio do grupo verde {key[:3]}: {value} min (teto {limit})")
+            if value > limit:
+                violations.append(f"relógio do grupo verde {key[:3]} = {value} min, teto {limit} min (n={latest['success_wall']['n']})")
+    merges = rep.get("merges")
+    limit = budget.get("failed_checks_removals_per_merged_pr")
+    if merges and merges["merged_via_queue"] and limit is not None:
+        rate = round(merges["removal_reasons"].get("failed_checks", 0) / merges["merged_via_queue"], 2)
+        checked.append(f"saídas por check reprovado por PR mergeado: {rate} (teto {limit})")
+        if rate > limit:
+            violations.append(f"saídas da fila por check reprovado = {rate} por PR mergeado, teto {limit}")
+    jobs = (rep.get("jobs") or {}).get("jobs", {})
+    for pattern, limit in budget.get("jobs", {}).items():
+        matched = [(name, s) for name, s in jobs.items() if fnmatch.fnmatch(name, pattern)]
+        if not matched:
+            checked.append(f"{pattern}: sem amostra nesta janela")
+            continue
+        for name, s in matched:
+            value = s["run"]["p50_min"]
+            checked.append(f"{name}: {value} min (teto {limit}, n={s['run']['n']})")
+            if value is not None and value > limit:
+                violations.append(f"{name}: execução p50 {value} min, teto {limit} min (n={s['run']['n']})")
+    # Runner pago (Ubicloud) que demora a chegar = fornecedor fora do ar ou corte de gasto
+    # atingido: o job fica esperando máquina e a fila trava. Teto próprio, bem mais baixo.
+    limit = budget.get("paid_runner_wait_p95_min")
+    paid = (rep.get("jobs") or {}).get("paid_runner_wait") or {}
+    if limit is not None and paid.get("n"):
+        checked.append(f"espera por runner PAGO p95: {paid['p95_min']} min (teto {limit}, n={paid['n']})")
+        if paid["p95_min"] is not None and paid["p95_min"] > limit:
+            violations.append(
+                f"runner pago demorando: espera p95 {paid['p95_min']} min, teto {limit}. Veja o status da "
+                "Ubicloud e o corte de gasto; para soltar a fila, apague `CI_BROWSER_RUNNER`"
+            )
+    # Cada shard a mais é mais um job disputando os runners grátis no pico: a
+    # espera é o custo escondido de partir demais, e tem teto próprio.
+    limit = budget.get("runner_wait_p95_min")
+    if limit is not None and jobs:
+        waits = [(s["wait"]["p95_min"], name) for name, s in jobs.items() if s["wait"]["p95_min"] is not None]
+        if waits:
+            worst, name = max(waits)
+            checked.append(f"espera por runner p95 (pior job, {name}): {worst} min (teto {limit})")
+            if worst > limit:
+                violations.append(
+                    f"espera por runner p95 = {worst} min em {name}, teto {limit}: a fila está sem máquina no pico; "
+                    "antes de partir mais shards, reduza trabalho (preflight) ou junte shards"
+                )
+    return {"violations": violations, "checked": checked, "calibrated_at": budget.get("calibrated_at")}
+
+
+def print_budget(result: dict) -> None:
+    print(f"\n## Orçamento de tempo (scripts/ci-time-budget.json, calibrado em {result['calibrated_at']})\n")
+    if result["violations"]:
+        print("**Estourou:**\n")
+        for v in result["violations"]:
+            print(f"- ❌ {v}")
+        print()
+    for c in result["checked"]:
+        print(f"- {c}")
 
 
 if __name__ == "__main__":

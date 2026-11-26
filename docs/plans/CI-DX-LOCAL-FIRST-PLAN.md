@@ -187,3 +187,140 @@ Em ordem de custo:
    com núcleos. Em fornecedor como Ubicloud o minuto sai ~1/3 do preço do GitHub. Que
    8 vCPU acelerem esses testes é **hipótese, não medida**: o piloto mede no mesmo SHA, com
    teto aprovado pelo dono, e só fica o que baixar o relógio por menos.
+
+### 9.1 Piloto barato, preparado e desligado (dono, 25/11: "Sim, prepare")
+
+Duas peças, as duas sem efeito até alguém ligar:
+
+| Peça | Onde | Liga com | Efeito desligada |
+|---|---|---|---|
+| Benchmark no mesmo commit | `.github/workflows/runner-benchmark.yml` | `gh workflow run runner-benchmark.yml -f runner=<rótulo> -f reps=3` (depois de entrar no `main`), ou push em `ci-bench/**` com `vars.CI_BENCH_RUNNER` | nenhum: não roda em PR nem na fila e só lê cache |
+| Seletor só dos 6 jobs, só na fila | `runtime-gate.yml` (shards do backstage e do shop) e `surfaces-gate.yml` (`app-quality`) | `vars.CI_HEAVY_RUNNER=<rótulo>` e `vars.CI_HEAVY_SURFACES=["pos-nuxt"]` | runner de sempre (`CI_LINUX_RUNNER` ou `ubuntu-latest`) |
+
+Comparação dos dois: `python3 scripts/ci_baseline.py --compare-runners --run <id>` (benchmark)
+ou `--since … --until …` (fila ao vivo), por rótulo de runner. Com os dados de 18–19/11 ela
+reproduz a tabela de 25/11 (`Backstage rest` 13,7 × 13,8 min).
+
+**Etapa 1, benchmark (estimado, não medido):** 6 jobs × 3 repetições × ~12 min ≈ 216 min no
+candidato. Em 8 vCPU: ~US$ 4,75 no GitHub (`linux-8core`, US$ 0,022/min) ou ~US$ 1,75 na
+Ubicloud (US$ 0,008/min, preço publicado consultado pelo plano A). Teto proposto: **US$ 10**.
+
+**Regra de decisão:** o piloto ao vivo só acontece se o benchmark mostrar **≥ 1,4x** na
+mediana dos 6 jobs. Abaixo disso, não se paga por velocidade: o caminho é o grátis (preflight
+e shards, #3635).
+
+**Etapa 2, piloto ao vivo (só se a etapa 1 passar):** por grupo da fila os 6 jobs somam
+~79 min em 4 vCPU; a 1,6x seriam ~50 min pagos, cerca de US$ 0,40 por grupo na Ubicloud ou
+US$ 1,10 no GitHub (estimado). Com o volume de hoje (~150 grupos/dia, metade reprovando),
+isso daria ~US$ 60/dia na Ubicloud; o preflight reduz o número de grupos. Teto proposto:
+**US$ 50 por 2 dias**. Fica só se o relógio do grupo verde p50 cair ≥ 3 min (hoje 26,2) e o
+custo por PR mergeado couber no teto mensal que o dono definir. O Surfaces Gate termina por
+último em 63% dos grupos verdes por causa da cadeia e da espera, não só do `pos-nuxt`: o
+ganho real pode ser menor que a aceleração do job.
+
+**Desligar:** apagar `CI_HEAVY_RUNNER` (efeito no próximo job, sem commit). Para não repetir
+o 21/11, a concorrência máxima do runner pago precisa comportar ~30 jobs (6 jobs × 5 grupos
+simultâneos da fila).
+
+**Segurança:** só código já aprovado roda ali (fila e disparo manual/push de branch da casa;
+nunca PR de fork). Os seis jobs não usam segredo.
+
+**O que depende do dono:** escolher o fornecedor e criar o runner. No GitHub: um runner
+`linux-8core` em org Settings › Actions › Runners, concorrência ≥ 30, dentro do orçamento
+de Actions que já existe. Na Ubicloud: a conta, o app da Ubicloud instalado só neste
+repositório e o teto de gasto lá. Depois disso, a coordenação dispara o benchmark e traz a
+tabela.
+
+### 9.2 Resultado do benchmark (25/11, run 45666175682, `evidence/ci-dx-098/benchmark-linux-8core-2026-11-25.md`)
+
+Com 8 vCPU, a mediana dos 6 jobs foi **1,20x**, abaixo da regra de 1,4x: **sem piloto pago
+ao vivo.** O que os números mostram, job a job:
+
+- **Escalam com núcleos:** `backstage seed` 1,81x (teste 1,95x) e `backstage rest` 1,44x
+  (teste 1,47x). São suítes `-n auto` limitadas por CPU.
+- **Quase nada:** `pos-nuxt` 1,01x (navegador, não CPU), `shop rest` 1,07x,
+  `backstage heavy` 1,14x.
+- **O relógio do grupo mal mudaria:** o Surfaces Gate termina por último em 63% dos grupos
+  verdes e o `pos-nuxt` não acelera. Pagar encurtaria só o Runtime Gate.
+
+**A mesma aceleração sai de graça:** dois runners grátis de 4 vCPU somam os 8 vCPU de um
+pago. Dividir `backstage seed` e `backstage rest` em mais shards (#3635) dá o ganho medido
+sem custo. Isso vale enquanto houver vaga no pico, e o preflight reduz a disputa por vaga.
+O seletor `CI_HEAVY_RUNNER` e o benchmark ficam para medir outro fornecedor ou o transbordo
+de pico, se um dia fizer sentido.
+
+## 10. Guardar as decisões de desempenho (dono, 25/11)
+
+> "A questão é NÃO DEIXAR que esse tipo de 'sacada' que teve se perca... daqui a pouco termos
+> shards, seeds e seja lá o que for que esteja dado de um jeito que o trabalho fique lento."
+
+Até aqui, as decisões de desempenho da suíte viviam em comentário do Makefile e eram refeitas
+**depois** do estrago: o shard `rest` foi rebalanceado à mão em 30/09 e em 06/11, as duas vezes
+depois de estourar o teto e tirar PR da fila. Agora há três camadas, no padrão das travas que o
+repositório já tem:
+
+| Camada | Onde | O que garante | Quando age |
+|---|---|---|---|
+| 1. Definição versionada | `scripts/ci-time-budget.json` (teto por job e do grupo), `scripts/test-shard-weights.json` (segundos por arquivo), `scripts/test-cost-baseline.json` (seed completo por arquivo), `BACKSTAGE_*_PARTS` no Makefile | a decisão tem número e endereço; mudar é diff num PR | sempre |
+| 2. Trava do PR (determinística) | `scripts/check_test_cost.py` no job Quality; `test_local_ci.py` | teste novo que chama o seed completo reprova (35 chamadas em 20 arquivos congeladas; crescer só com `--update` à vista do revisor); quem semeia no backstage mora no `seed`/`heavy`, nunca no `rest`; shards partidos cobrem cada arquivo uma vez e ficam ≤ 1,35x pelos pesos; peso de arquivo morto reprova; partes iguais no Makefile, na matriz e no Coverage Gate | todo PR |
+| 3. Vigia agendada | `.github/workflows/ci-time-watch.yml`, diária | mede a fila real (`ci_baseline.py --budget`) e re-mede os pesos com o junit da última fila verde; estourou → abre/comenta a issue "Orçamento de tempo da CI estourou" com os números e o comando (`make shard-weights run=<id>`); voltou → fecha | todo dia, sem reprovar PR (relógio oscila) |
+
+**Primeira aplicação:** `backstage seed` e `backstage rest` partidos em dois cada, por peso
+medido (`scripts/test_shards.py`, LPT determinístico). Coleta provada idêntica: `seed` 25 = 13 +
+12, `rest` 13.400 = soma das partes, zero duplicata. O piso do `seed` é
+`test_nelson_seed_operational.py`, 56% do shard sozinho. O próximo ganho ali é o que o Makefile já
+anotava: os testes que só **leem** o catálogo semeado dividirem um seed. A trava agora conta isso.
+
+**Segunda aplicação (mesmo dia):** a vigia, na primeira leitura, apontou `Shop rest` em 12,3 min
+p50 na fila, acima do teto de 12; depois do backstage, ele era o patamar do Runtime Gate. Partido
+pelo mesmo mecanismo (`SHOP_REST_PARTS := 2`), com partes de 682 s × 682 s pelos pesos medidos.
+Coleta provada idêntica: 15.120 testes = 8.773 + 6.347, zero duplicata. A trava e o teste de
+consistência agora cobrem o shop (matriz `tests-shop-shards`, `COVERAGE_SHARDS`), e a vigia re-mede
+os pesos dos dois (`junit-*`).
+
+**Terceira aplicação:** com `seed`, `rest` e `shop rest` partidos, o `backstage heavy` virou o job
+mais longo do Runtime Gate (12,6 min). Partido em dois (`BACKSTAGE_HEAVY_PARTS := 2`), partes de
+647 s × 650 s, coleta 1.012 = 512 + 500. Antes de partir, foi preciso consertar a #3637: o
+teste do PDV "reprovava" sob xdist sem nenhuma asserção falhar, porque o pytest 9 serializa o
+relatório de cada subteste e um `datetime.date` no `subTest(...)` não serializa. Mudar a
+distribuição dos workers poderia levar esse vermelho para a fila. A vigia ganhou um teto de
+**espera por runner** (`runner_wait_p95_min`), porque cada shard a mais disputa os runners grátis no
+pico. É o custo escondido de partir demais, e agora ele também é vigiado.
+
+**Quarta aplicação, no Surfaces Gate:** a linha do tempo da fila mostrou que a cadeia do Surfaces Gate quase não custa (~0,4 min). O caminho crítico é o `pos-nuxt` (14,6 min), com geometria e navegador em série. As duas fases têm mock, app, portas e pasta de saída próprios, e agora rodam **juntas**. A declaração é guardada como as outras decisões: `concurrentPhases` em `surfaces/contracts.json`, e o `surface_contract.mjs validate` reprova porta repetida ou pasta aninhada (as duas travas testadas). A largada é escalonada, porque largando juntas o primeiro teste da geometria estourou em 1 de 2 rodadas. Resultado na CI, 5/5 verdes: as duas fases caem de 10,1 para 6,3 min (mediana) e o job, de 14,6 para 10,2 min. Não se soltou o paralelismo dentro do `saleColumn.spec.ts`: os testes dele dividem a mesma comanda do mock.
+
+**Quinta aplicação, no Omotenashi Gate:** o gate passou a ser o limite do grupo (14,2 min). No job Browser QA, os cinco builds Nuxt esperavam o migrate + seed sem precisar do banco (nenhum app pré-renderiza contra o Django). Agora os builds correm durante o migrate + seed. Build ruim reprova com o log inteiro, e seed ruim encerra os builds (os três caminhos foram provados). Em 2 rodadas verdes na CI, o portão cai de 6,9 para 5,5 e 3,7 min. O seed re-entrante continua sobre o banco já semeado e navegado, de propósito. O Omotenashi entra na vigia diária (teto de 13 min no Browser QA).
+
+### 9.3 Ubicloud (26/11, run 45788867113, `evidence/ci-dx-098/benchmark-ubicloud-2026-11-26.md`)
+
+`ubicloud-standard-4` (premium Ryzen 7950X3D na prática) contra o grátis de 4 vCPU, no mesmo commit: **`pos-nuxt` 1,59–1,71x**; shards Python 0,79–1,17x. Custo real: US$ 1,02. Passa a regra só para a classe de **navegador**. Para o grupo da fila andar, essa classe inteira teria de ir junto (`pos-nuxt`, `purchase-nuxt`, `kitchensink-nuxt`, `orders-nuxt`, Browser QA, Storefront E2E: ~67 min de job por grupo no grátis). Estimativa, não medida: ~40 min pagos por grupo, ~US$ 25/dia (~US$ 750/mês) no volume de hoje, com o grupo caindo de ~15 para ~10–11 min. O seletor `CI_HEAVY_RUNNER` atual também manda os shards Python, que não ganham: antes de qualquer piloto ele precisa virar seletor por classe (navegador). Decisão de despesa é do dono.
+
+### 9.4 Piloto da Ubicloud, preparado e desligado (dono, 26/11: "não quero levar susto de gasto")
+
+**Só a classe de navegador, só na fila, com teto que não trava a fila:**
+
+- `scripts/ci_browser_runner.py` escolhe o runner **a cada grupo**, antes de pedir a máquina: conta
+  os grupos desde `CI_BROWSER_SINCE` × `CI_BROWSER_COST_PER_GROUP_USD` (padrão **0,30**, contra
+  ~0,17 medido) e, ao chegar em `CI_BROWSER_BUDGET_USD` (padrão **8**), devolve o grátis. Assim o
+  corte de **US$ 10** do console da Ubicloud (confirmado em 26/11) nunca é atingido. Atingido, ele
+  RECUSARIA máquina e os jobs ficariam esperando: fila travada, como em 18/11. Erro e variável
+  ausente também caem no grátis. O passo nunca falha.
+- **A queda não é silenciosa:** piloto ligado que cai (orçamento, erro ou configuração incompleta)
+  abre **uma** issue "Piloto da Ubicloud voltou ao grátis" com o motivo e o conserto; ao voltar ao
+  pago, ela é comentada e fechada. A vigia diária põe o estado do piloto no resumo e alarma se o
+  runner pago demorar mais de 10 min a chegar (`paid_runner_wait_p95_min`).
+- **Shards Python voltaram ao grátis de vez:** não ganham com máquina paga (medido duas vezes).
+- **Os jobs do Omotenashi** (Browser QA, E2E da loja) só entram pelo nome em
+  `CI_BROWSER_SURFACES`: usam contêiner de Postgres, ainda não medido na Ubicloud.
+- Check obrigatório nunca pula: os jobs do Omotenashi dependem do `scope` com `!cancelled()`, e o
+  runner cai no grátis se a escolha falhar.
+
+**Ligar (depois que este PR estiver no `main`), variáveis do repositório:**
+`CI_BROWSER_RUNNER=ubicloud-standard-4`,
+`CI_BROWSER_SURFACES=["pos-nuxt","purchase-nuxt","kitchensink-nuxt","orders-nuxt"]`,
+`CI_BROWSER_SINCE=<agora, ISO UTC>`, `CI_BROWSER_BUDGET_USD=8`. **Desligar:** apagar
+`CI_BROWSER_RUNNER`, sem commit, com efeito no próximo grupo.
+
+**Ao ligar:** a vigia diária vai acusar `pos-nuxt` e Browser QA acima do teto no primeiro dia, porque
+a janela dela ainda contém dados de antes das acelerações (25/11: 14,5 e 13,6 min). Some quando a
+janela tiver só grupos novos.

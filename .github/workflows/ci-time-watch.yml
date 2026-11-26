@@ -1,0 +1,125 @@
+name: Vigia do tempo da CI
+
+# DEV-2026-098. Dono, 25/11/2026: "NÃO DEIXAR que esse tipo de 'sacada' se
+# perca... daqui a pouco termos shards, seeds e seja lá o que for que esteja
+# dado de um jeito que o trabalho fique lento".
+#
+# Três camadas guardam o desempenho da fila:
+#   1. a definição versionada: scripts/ci-time-budget.json (tetos por job e do
+#      grupo) e scripts/test-shard-weights.json (peso de cada arquivo de teste);
+#   2. a trava do PR, determinística: scripts/check_test_cost.py (seed completo
+#      contado, quem semeia no shard certo, shards completos e equilibrados);
+#   3. ESTA vigia, porque relógio oscila e não pode reprovar PR: todo dia mede a
+#      fila real contra o orçamento e re-mede os pesos com o junit da última
+#      fila verde. Estourou → abre (ou comenta) a issue "Orçamento de tempo da
+#      CI estourou" com os números e o comando que conserta. Voltou ao
+#      orçamento → comenta e fecha. Nunca muda código sozinha.
+#
+# Não é check obrigatório e não roda em PR nem na fila.
+
+"on":
+  schedule:
+    - cron: "23 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  watch:
+    name: Tempo da fila contra o orçamento
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TITLE: Orçamento de tempo da CI estourou
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Só merge_group e 1 dia de jobs: cabe no limite de 1.000 chamadas/hora do
+      # GITHUB_TOKEN com folga.
+      - name: Fila real contra scripts/ci-time-budget.json
+        id: budget
+        run: |
+          set +e
+          python3 scripts/ci_baseline.py \
+            --since "$(date -u -d '3 days ago' +%F)" --until "$(date -u +%F)" \
+            --jobs-days 1 --events merge_group \
+            --budget scripts/ci-time-budget.json --cache .ci-baseline > report.md
+          code=$?
+          set -e
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          [ "$code" = "0" ] || [ "$code" = "3" ] || exit "$code"
+          echo "over=$([ "$code" = "3" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      # Estado do piloto da Ubicloud (DEV-2026-098, §9.3): gasto estimado do mês contra o
+      # teto, no resumo do dia. A queda para o grátis já abre issue sozinha, no grupo.
+      - name: Estado do piloto da Ubicloud
+        continue-on-error: true
+        env:
+          EVENT: merge_group
+          GH_TOKEN: ${{ github.token }}
+          CI_LINUX_RUNNER: ${{ vars.CI_LINUX_RUNNER }}
+          CI_BROWSER_RUNNER: ${{ vars.CI_BROWSER_RUNNER }}
+          CI_BROWSER_SINCE: ${{ vars.CI_BROWSER_SINCE }}
+          CI_BROWSER_BUDGET_USD: ${{ vars.CI_BROWSER_BUDGET_USD }}
+          CI_BROWSER_COST_PER_GROUP_USD: ${{ vars.CI_BROWSER_COST_PER_GROUP_USD }}
+        run: python3 scripts/ci_browser_runner.py > /dev/null
+
+      # Pesos frescos do junit da última fila verde: se o equilíbrio dos shards
+      # partidos passou do limite, a trava do PR (check_test_cost) vai reprovar
+      # quem tocar nos pesos — melhor avisar antes, com o comando pronto.
+      - name: Pesos dos shards (backstage e shop) com o junit da última fila verde
+        id: weights
+        run: |
+          run_id="$(gh run list --workflow runtime-gate.yml --event merge_group --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          if [ -z "$run_id" ] || ! gh run download "$run_id" --pattern 'junit-*' -D junit; then
+            echo "Sem junit dos shards na última fila verde ($run_id)." >> "$GITHUB_STEP_SUMMARY"
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 scripts/test_shards.py --measure junit/*/*.xml
+          set +e
+          python3 scripts/check_test_cost.py > cost.txt 2>&1
+          code=$?
+          set -e
+          cat cost.txt >> "$GITHUB_STEP_SUMMARY"
+          echo "drift=$([ "$code" = "0" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+
+      - name: Abrir, comentar ou fechar a issue
+        env:
+          OVER: ${{ steps.budget.outputs.over }}
+          DRIFT: ${{ steps.weights.outputs.drift }}
+          WEIGHTS_RUN: ${{ steps.weights.outputs.run_id }}
+        run: |
+          n="$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')"
+          if [ "$OVER" = "true" ] || [ "$DRIFT" = "true" ]; then
+            {
+              echo "A vigia diária ($RUN_URL) encontrou a fila fora do orçamento versionado (DEV-2026-098)."
+              echo
+              if [ "$DRIFT" = "true" ]; then
+                echo "**Shards desequilibrados pelos pesos medidos agora** (junit do run $WEIGHTS_RUN):"
+                echo
+                echo '```'; cat cost.txt; echo '```'
+                echo
+                echo "Conserto: \`make shard-weights run=$WEIGHTS_RUN\`, depois \`make test-cost\`; se ainda desequilibrar, aumente as partes no Makefile (BACKSTAGE_*_PARTS) e a matriz do runtime-gate.yml juntos."
+                echo
+              fi
+              sed -n '/## Orçamento de tempo/,$p' report.md
+              echo
+              echo "Afrouxar o teto é decisão escrita no PR que muda \`scripts/ci-time-budget.json\`, com o número."
+            } > body.md
+            if [ -n "$n" ]; then gh issue comment "$n" --body-file body.md; else gh issue create --title "$TITLE" --body-file body.md; fi
+          elif [ -n "$n" ]; then
+            gh issue comment "$n" --body "A vigia de hoje ($RUN_URL) mediu a fila dentro do orçamento. Fechando."
+            gh issue close "$n"
+          fi

@@ -52,7 +52,7 @@ Cada workflow com filtro tem um job **Escopo do PR**, que chama a action local
 | Production Contract, Security Gate (CodeQL) | se mexeu código | sempre |
 | `operator-kit`, `<app>-nuxt` (Surfaces Gate) | leve, só nos apps tocados; os outros reportam verde | inteiro: navegador, visual, geometria, a11y, segurança, catálogo |
 | Retratos macOS — `pos-nuxt` / `marketing-nuxt` (**não obrigatório**) | se tocou o app, a layer ou o contrato | não roda; noturno no `main` |
-| Shop heavy/rest, Backstage seed/heavy/rest, Coverage Gate | pulado (agregadores `Testes (test-shop)`/`(test-backstage)` verdes) | sempre |
+| Shop heavy/rest, Backstage seed-1/seed-2/heavy/rest-1/rest-2 (partidos por peso, `scripts/test_shards.py`), Coverage Gate | pulado (agregadores `Testes (test-shop)`/`(test-backstage)` verdes) | sempre |
 | Docker deploy image, PostgreSQL + Redis runtime stress gate | pulado | sempre |
 | Browser QA, Storefront E2E | pulado | sempre |
 | Supply chain, PWA | pulado | sempre |

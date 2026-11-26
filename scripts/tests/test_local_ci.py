@@ -219,3 +219,210 @@ def test_hook_falha_aberto_sem_gh(evidence_home, monkeypatch):
 
     monkeypatch.setattr(guard, "gh", boom)
     assert guard.decide("gh pr merge 7 --auto")[0]
+
+
+def test_comparacao_de_runner_agrupa_o_benchmark_pelo_alvo(monkeypatch):
+    def run(i, name):
+        return {"id": i, "name": name, "status": "completed"}
+
+    jobs = {
+        1: [
+            {"name": "test-backstage-rest · ubuntu-latest · 1", "conclusion": "success", "labels": ["ubuntu-latest"],
+             "started_at": "2026-11-25T10:00:00Z", "completed_at": "2026-11-25T10:14:00Z"},
+            {"name": "test-backstage-rest · ubicloud-standard-8 · 1", "conclusion": "success", "labels": ["ubicloud-standard-8"],
+             "started_at": "2026-11-25T10:00:00Z", "completed_at": "2026-11-25T10:07:00Z"},
+            {"name": "test-shop-rest · ubuntu-latest · 1", "conclusion": "failure", "labels": ["ubuntu-latest"],
+             "started_at": "2026-11-25T10:00:00Z", "completed_at": "2026-11-25T10:09:00Z"},
+        ]
+    }
+    monkeypatch.setattr(ci_baseline, "jobs_for_run", lambda cache, rid: jobs[rid])
+    rows = ci_baseline.compare_runners(None, [run(1, "Benchmark de runner")])
+    assert len(rows) == 1  # job vermelho e job em um runner só não entram
+    row = rows[0]
+    assert row["job"] == "test-backstage-rest" and row["reference"] == "ubuntu-latest"
+    assert row["runners"]["ubicloud-standard-8"]["speedup"] == 2.0
+
+
+# ── Shards por peso e trava do custo (DEV-2026-098: "não deixar a sacada se perder") ──
+
+import check_test_cost  # noqa: E402
+import test_shards  # noqa: E402
+
+
+def test_particao_cobre_cada_arquivo_uma_vez_e_e_deterministica():
+    files = [f"t/test_{i:03d}.py" for i in range(40)]
+    weights = {f: float((i * 37) % 11 + 1) for i, f in enumerate(files)}
+    for n in (1, 2, 3, 5):
+        parts = test_shards.partition(files, n, weights)
+        flat = [f for p in parts for f in p]
+        assert sorted(flat) == files and len(flat) == len(set(flat))
+        assert parts == test_shards.partition(list(reversed(files)), n, weights)
+
+
+def test_particao_equilibra_pelo_peso_e_arquivo_novo_entra_com_a_mediana():
+    weights = {"a.py": 100.0, "b.py": 60.0, "c.py": 40.0}
+    parts = test_shards.partition(["a.py", "b.py", "c.py", "novo.py"], 2, weights)
+    loads = [sum(weights.get(f, 60.0) for f in p) for p in parts]
+    assert max(loads) - min(loads) <= 60.0
+    assert any("novo.py" in p for p in parts)
+
+
+def test_arquivo_listado_que_nao_existe_reprova_alto():
+    with pytest.raises(SystemExit, match="não existe"):
+        test_shards.expand(["shopman/backstage/tests/test_que_nao_existe.py"], [])
+
+
+def _cost(monkeypatch, tmp_path, calls, baseline, seed_list=(), heavy_list=()):
+    base = tmp_path / "baseline.json"
+    base.write_text(json.dumps({"seed_calls": baseline}))
+    monkeypatch.setattr(check_test_cost, "BASELINE", base)
+    monkeypatch.setattr(check_test_cost, "seed_calls", lambda: calls)
+    lists = {"BACKSTAGE_SEED_TESTS": list(seed_list), "BACKSTAGE_HEAVY_TESTS": list(heavy_list)}
+    monkeypatch.setattr(check_test_cost, "make_list", lambda var: lists[var])
+    monkeypatch.setattr(check_test_cost, "shard_specs", lambda: [])
+    monkeypatch.setattr(check_test_cost, "load_weights", lambda path: {})
+    monkeypatch.setattr(sys, "argv", ["check_test_cost.py"])
+    return check_test_cost.main()
+
+
+def test_trava_reprova_teste_novo_que_paga_o_seed_completo(monkeypatch, tmp_path, capsys):
+    f = "shopman/shop/tests/test_novo.py"
+    assert _cost(monkeypatch, tmp_path, {f: 1}, {}) == 1
+    out = capsys.readouterr().out
+    assert f in out and "--update" in out
+
+
+def test_trava_reprova_quem_semeia_no_rest_do_backstage(monkeypatch, tmp_path, capsys):
+    f = "shopman/backstage/tests/test_x.py"
+    assert _cost(monkeypatch, tmp_path, {f: 1}, {f: 1}) == 1
+    assert "BACKSTAGE_SEED_TESTS" in capsys.readouterr().out
+    assert _cost(monkeypatch, tmp_path, {f: 1}, {f: 1}, seed_list=[f]) == 0
+
+
+def test_trava_deixa_diminuir_e_pede_update(monkeypatch, tmp_path, capsys):
+    f = "shopman/shop/tests/test_y.py"
+    assert _cost(monkeypatch, tmp_path, {}, {f: 2}) == 0
+    assert "--update" in capsys.readouterr().out
+
+
+def test_trava_real_do_repositorio_passa():
+    proc = subprocess.run([sys.executable, str(SCRIPTS / "check_test_cost.py")], cwd=ROOT, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_partes_concordam_entre_makefile_matriz_e_coverage_gate():
+    """Mudar o número de partes num lugar só deixaria shard sem rodar ou cobertura faltando."""
+    seed_parts = int(check_test_cost.make_list("BACKSTAGE_SEED_PARTS")[0])
+    rest_parts = int(check_test_cost.make_list("BACKSTAGE_REST_PARTS")[0])
+    heavy_parts = int(check_test_cost.make_list("BACKSTAGE_HEAVY_PARTS")[0])
+    expected = (
+        {f"seed-{k}" for k in range(1, seed_parts + 1)}
+        | {f"rest-{k}" for k in range(1, rest_parts + 1)}
+        | {f"heavy-{k}" for k in range(1, heavy_parts + 1)}
+    )
+    wf = yaml.safe_load((ROOT / ".github/workflows/runtime-gate.yml").read_text())
+    assert set(wf["jobs"]["tests-backstage-shards"]["strategy"]["matrix"]["shard"]) == expected
+    gate = next(s for s in wf["jobs"]["coverage-gate"]["steps"] if "COVERAGE_SHARDS" in (s.get("env") or {}))
+    listed = set(gate["env"]["COVERAGE_SHARDS"].split())
+    assert {f"backstage-{s}" for s in expected} <= listed
+    shop_parts = int(check_test_cost.make_list("SHOP_REST_PARTS")[0])
+    shop = {f"rest-{k}" for k in range(1, shop_parts + 1)} | {"heavy"}
+    assert set(wf["jobs"]["tests-shop-shards"]["strategy"]["matrix"]["shard"]) == shop
+    assert {f"shop-{s}" for s in shop} <= listed
+    # nada além dos shards que existem: cobertura velha esperada travaria o gate
+    assert listed == {"test-storefront"} | {f"backstage-{s}" for s in expected} | {f"shop-{s}" for s in shop}
+
+
+# ── Piloto da Ubicloud: seletor dos jobs de navegador com teto (scripts/ci_browser_runner.py) ──
+
+import ci_browser_runner as browser  # noqa: E402
+
+PILOT = {"EVENT": "merge_group", "CI_BROWSER_RUNNER": "ubicloud-standard-4", "CI_BROWSER_SINCE": "2026-11-26T12:00:00Z"}
+
+
+@pytest.mark.parametrize("env", [
+    {**PILOT, "EVENT": "pull_request"},
+    {**PILOT, "CI_BROWSER_RUNNER": ""},
+    {**PILOT, "CI_BROWSER_SINCE": ""},
+])
+def test_seletor_fica_no_gratis_fora_da_fila_ou_sem_piloto(env, monkeypatch):
+    monkeypatch.delenv("CI_LINUX_RUNNER", raising=False)
+    runner, _ = browser.choose(env, lambda since: pytest.fail("não deve nem consultar a API"))
+    assert runner == "ubuntu-latest"
+
+
+def test_seletor_usa_o_piloto_dentro_do_orcamento():
+    runner, reason = browser.choose({**PILOT, "CI_BROWSER_BUDGET_USD": "8"}, lambda since: 10)
+    assert runner == "ubicloud-standard-4" and "US$ 3.00 de US$ 8.00" in reason
+
+
+def test_seletor_volta_ao_gratis_ao_esgotar_o_orcamento(monkeypatch):
+    monkeypatch.delenv("CI_LINUX_RUNNER", raising=False)
+    # 27 grupos × 0,30 = 8,10 ≥ 8: grátis ANTES do corte de 10 da Ubicloud (que travaria a fila)
+    runner, reason = browser.choose({**PILOT, "CI_BROWSER_BUDGET_USD": "8"}, lambda since: 27)
+    assert runner == "ubuntu-latest" and "esgotado" in reason
+
+
+def test_seletor_erro_de_api_vira_gratis(monkeypatch):
+    monkeypatch.delenv("CI_LINUX_RUNNER", raising=False)
+
+    def boom(since):
+        raise TimeoutError("api")
+
+    runner, reason = browser.choose(PILOT, boom)
+    assert runner == "ubuntu-latest" and "erro" in reason
+
+
+def test_jobs_do_piloto_nunca_pulam_check_obrigatorio():
+    """`needs: scope` + `!cancelled()`: scope que falha não pode PULAR check obrigatório (contaria verde)."""
+    wf = yaml.safe_load((ROOT / ".github/workflows/omotenashi-gate.yml").read_text())
+    for job in ("omotenashi-browser-qa", "storefront-e2e"):
+        assert "!cancelled()" in wf["jobs"][job]["if"]
+        assert "|| vars.CI_LINUX_RUNNER || 'ubuntu-latest'" in wf["jobs"][job]["runs-on"]
+
+
+class _FakeGh:
+    def __init__(self, open_issue=""):
+        self.open_issue, self.calls = open_issue, []
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        return self.open_issue if args[:2] == ("issue", "list") else ""
+
+
+def test_queda_nao_pedida_abre_uma_issue_so():
+    env = {**PILOT, "ALERT": "true", "REASON": "orçamento do piloto esgotado: …", "RUN_URL": "u"}
+    gh = _FakeGh()
+    assert browser.notify(env, gh) == "issue aberta"
+    assert any(c[:2] == ("issue", "create") for c in gh.calls)
+    gh2 = _FakeGh(open_issue="77")  # já existe: não duplica nem comenta a cada grupo
+    assert browser.notify(env, gh2) == "estado já registrado: nada a fazer"
+    assert not any(c[:2] in {("issue", "create"), ("issue", "comment")} for c in gh2.calls)
+
+
+def test_voltou_ao_pago_fecha_a_issue():
+    gh = _FakeGh(open_issue="77")
+    assert browser.notify({**PILOT, "ALERT": "false", "RUN_URL": "u"}, gh) == "issue #77 fechada"
+    assert ("issue", "close", "77") in gh.calls
+
+
+def test_passo_de_escolha_que_falhou_tambem_alarma():
+    gh = _FakeGh()  # sem ALERT: a escolha falhou e não deixou saída
+    assert browser.notify({**PILOT, "RUN_URL": "u"}, gh) == "issue aberta"
+
+
+def test_piloto_desligado_nao_alarma():
+    gh = _FakeGh()
+    assert "nada a avisar" in browser.notify({**PILOT, "CI_BROWSER_RUNNER": "", "ALERT": "true"}, gh)
+    assert gh.calls == []
+
+
+def test_alert_sai_quando_ligado_e_caiu(monkeypatch, capsys):
+    monkeypatch.setattr(browser, "groups_since", lambda *a: 99)
+    for k, v in {**PILOT, "CI_BROWSER_BUDGET_USD": "8"}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(sys, "argv", ["ci_browser_runner.py"])
+    browser.main()
+    out = capsys.readouterr().out
+    assert "alert=true" in out and "runner=ubuntu-latest" in out
