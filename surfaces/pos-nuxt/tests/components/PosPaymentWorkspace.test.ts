@@ -6,6 +6,7 @@ import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
 import { warmUpMount } from "../support/mountWarmup";
+import { unmountMounted } from "../support/mountedWrappers";
 
 // Este arquivo roda no primeiro lote, com o Vite frio: o primeiro mount paga a
 // raiz do app num hook, fora do primeiro teste (ver `mountWarmup.ts`).
@@ -1377,7 +1378,7 @@ describe("PosPaymentWorkspace — as teclas do checkout têm dono único", () =>
   // o documento. O `afterEach` limpa o resto de um teste para o seguinte não ler
   // o modal do anterior como se fosse o seu.
   const modalDeDividir = () => document.body.textContent?.includes("Em quantas pessoas") ?? false;
-  afterEach(() => { document.body.innerHTML = ""; });
+  afterEach(() => { unmountMounted(); document.body.innerHTML = ""; });
   // As teclas do checkout entram pelo `defineExpose` — o mesmo objeto que o
   // shell (`pages/index.vue`) segura no `paymentWorkspaceRef`. O `mountSuspended`
   // não o promove ao `vm`; ele fica na instância, em `$.exposed`.
@@ -1475,7 +1476,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
   const comFiscal = { capabilities: { supports_fiscal_document: true }, receipt_channels: [] };
   const registryLines = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
     w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
-  afterEach(() => { document.body.innerHTML = ""; });
+  afterEach(() => { unmountMounted(); document.body.innerHTML = ""; });
 
   it("e-mail de comprovante não anuncia cadastro sem uma escolha explícita", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
@@ -1666,7 +1667,7 @@ it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
 // P1-7: o Pix da venda mista não liquida pela palavra solta. Antes de validar, o
 // mesmo degrau da maquininha pede a conferência, e o botão diz o que afirma.
 describe("Pix na venda mista: Recebi o Pix", () => {
-  afterEach(() => { document.body.innerHTML = ""; });
+  afterEach(() => { unmountMounted(); document.body.innerHTML = ""; });
   const mixed = [
     { method: "cash", amount_q: 200, collection: "terminal" as const },
     { method: "pix", amount_q: 800, collection: "terminal" as const },

@@ -18,6 +18,15 @@ import {
 } from "../../../operator-kit/app/presentation/timeTone";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
+// O prometido por produto e data, lido da régua das reservas (WP-F08): o
+// planejado, o encomendado, o livre e os pedidos com nome, hora e retirada ou
+// entrega. A tela ainda lê o vínculo antigo (`order_commitments`); o WP-F10
+// troca a fonte e o vínculo some junto.
+export type {
+  ProductionPromisedProjection,
+  PromisedOrderProjection,
+} from "~/types/production";
+
 // ── Timer tone (urgency of the started clock) ──────────────────────────────
 
 export type TimerTone = TimeTone;

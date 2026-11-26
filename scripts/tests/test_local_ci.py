@@ -470,3 +470,78 @@ def test_fetch_do_ready_tenta_de_novo_quando_outro_processo_trava_o_ref(monkeypa
     monkeypatch.setattr(local_ci.time, "sleep", lambda s: None)
     local_ci.fetch_main(Path("."))
     assert len(calls) == 3
+
+
+# ── Node da CI ──────────────────────────────────────────────────────────────
+
+
+def _fake_node(bindir: Path, version: str) -> Path:
+    bindir.mkdir(parents=True)
+    node = bindir / "node"
+    node.write_text(f"#!/bin/sh\necho {version}\n")
+    node.chmod(0o755)
+    return bindir
+
+
+def test_node_da_ci_vem_dos_workflows():
+    assert local_ci.ci_node_major(ROOT) == "22"
+
+
+def test_node_do_path_que_ja_serve_e_o_escolhido(tmp_path):
+    on_path = _fake_node(tmp_path / "path", "v22.9.0")
+    assert local_ci.find_ci_node("22", str(on_path), homes=()) == on_path
+
+
+def test_node_diferente_no_path_busca_o_instalado(tmp_path):
+    """Node 26 no PATH (sem localStorage) e o 22 instalado ao lado: usa o 22."""
+    on_path = _fake_node(tmp_path / "path", "v26.4.0")
+    _fake_node(tmp_path / "node@22" / "bin", "v22.23.1")
+    found = local_ci.find_ci_node("22", str(on_path), homes=(str(tmp_path / "node@{m}" / "bin"),))
+    assert found == tmp_path / "node@22" / "bin"
+
+
+def test_sem_node_da_ci_nao_acha_nada(tmp_path):
+    on_path = _fake_node(tmp_path / "path", "v26.4.0")
+    assert local_ci.find_ci_node("22", str(on_path), homes=(str(tmp_path / "nada@{m}"),)) is None
+
+
+# ── Faixa rápida e suítes da fila (#3635) ───────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("files", "expected"),
+    [
+        ([".github/workflows/surfaces-gate.yml", "scripts/local_ci.py", "Makefile"], set()),
+        (["surfaces/storefront-nuxt/.gitignore", "docs/x.md"], set()),
+        (["shopman/backstage/api/pos.py"], {"backstage"}),
+        (["shopman/storefront/api/cart.py"], set()),
+        (["shopman/shop/lifecycle.py"], {"shop", "backstage"}),
+        (["packages/orderman/x.py", "scripts/local_ci.py"], {"shop", "backstage"}),
+        (["constraints.txt"], {"shop", "backstage"}),  # desconhecido liga as duas
+        (["pyproject.toml"], {"shop", "backstage"}),
+    ],
+)
+def test_suites_da_fila_so_onde_o_diff_alcanca(files, expected):
+    assert local_ci.queue_domains("preflight", files) == expected
+
+
+def test_full_roda_as_suites_da_fila_sempre():
+    assert local_ci.queue_domains("full", ["scripts/local_ci.py"]) == {"shop", "backstage"}
+
+
+def test_diff_de_ferramenta_de_ci_prova_so_a_invocacao(tmp_path):
+    diff = local_ci.Diff("origin/main", "0" * 40, ["scripts/local_ci.py", ".github/workflows/runtime-gate.yml"], [], "1" * 40)
+    plan = local_ci.build_plan(ROOT, Path(sys.executable), "preflight", diff, 4)
+    names = [s.name for s in plan.steps]
+    assert not any(n.endswith("— fila") for n in names)
+    assert "invocação das suítes da fila (make -n)" in names
+    assert any("ficam para a fila" in n for n in plan.notes)
+
+
+def test_faixa_rapida_tem_vaga_propria_e_mede_a_espera(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHOPMAN_LOCAL_CI_HOME", str(tmp_path))
+    with local_ci.machine_slot("quick", 2) as wait:
+        assert (tmp_path / "locks" / "quick-0.lock").exists()
+        assert wait["seconds"] < 5
+    with local_ci.machine_slot("none", 2) as wait:
+        assert wait == {"seconds": 0.0}

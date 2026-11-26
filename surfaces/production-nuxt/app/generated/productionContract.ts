@@ -91,6 +91,27 @@ export interface OrderCommitmentProjection {
   due_time: string;
 }
 
+/** Um pedido que conta no prometido de um produto numa data (WP-F08). */
+export interface PromisedOrderProjection {
+  ref: string;
+  customer_first_name: string;
+  due_time: string;
+  fulfillment_type: string;
+  qty: string;
+  status: string;
+  status_label: string;
+}
+
+/** O prometido de um produto numa data, pela régua das reservas (WP-F08). */
+export interface ProductionPromisedProjection {
+  date: string;
+  planned_qty: string;
+  ordered_qty: string;
+  free_qty: string;
+  over_plan_qty: string;
+  orders: PromisedOrderProjection[];
+}
+
 /** How much of a base recipe is used by an output SKU recipe. */
 export interface BaseRecipeUsageProjection {
   ref: string;
@@ -129,6 +150,7 @@ export interface WorkOrderCardProjection {
   can_void: boolean;
   position_name: string;
   created_at_time: string;
+  promised: ProductionPromisedProjection | null;
 }
 
 /** Aggregate counts for the production board header. */
@@ -238,6 +260,7 @@ export interface ProductionMatrixRowProjection {
   finished_qty: string;
   loss_qty: string;
   output_unit: string;
+  promised: ProductionPromisedProjection | null;
 }
 
 /** A matrix row within a base recipe group. */

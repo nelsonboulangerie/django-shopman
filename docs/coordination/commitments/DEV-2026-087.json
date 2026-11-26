@@ -7,6 +7,6 @@
   "criado": "2026-11-24",
   "revisar_em": "2026-11-26",
   "gatilho": "-",
-  "estado": "EM_EXECUCAO",
-  "prova": "regra medida e travada neste PR; recibo #3538 e retirada parcial #3539 esperam o dono"
+  "estado": "FEITO",
+  "prova": "PR #3544 (regra do contador e fiscal.emit) e PR #3564 (recibo do valor retido); retirada parcial adiada pelo dono para depois do go-live (#3539, #3585)"
 }
