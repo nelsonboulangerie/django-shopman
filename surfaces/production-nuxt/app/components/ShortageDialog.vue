@@ -113,6 +113,10 @@ const canConfirmOrderOverride = computed(
 // A assinatura da falta de insumo no fechamento.
 const authorizers = computed(() => material.value?.authorizers ?? []);
 const authOpen = ref(false);
+// O fato do lote na frase do diálogo de assinatura: "Falta 300 g de manteiga."
+const authDetail = computed(() =>
+  materialLines.value.map((item) => `${item.line}.`).join(" "),
+);
 const authBusy = ref(false);
 const authError = ref("");
 const operatorName = computed(
@@ -143,7 +147,7 @@ const description = computed(() => {
     return `Rendeu ${shortLot.value.yielded}. ${shortLot.value.missing} para as encomendas.`;
   }
   if (isMaterial.value && opening.value) {
-    return "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente autoriza.";
+    return "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente ou o Dono autoriza.";
   }
   if (isMaterial.value && forcePossibility.value) {
     return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
@@ -291,7 +295,7 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             v-if="purchasePossibility"
             :href="purchasePossibility.href"
             v-bind="attrsFor(purchasePossibility.href)"
-            color="warning"
+            color="neutral"
             variant="outline"
             trailing-icon="i-lucide-external-link"
             :label="purchasePossibility.label"
@@ -358,6 +362,8 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
        (ou passa o crachá). Quem fecha o lote continua sendo quem era. -->
   <OperatorManagerAuth
     :open="authOpen"
+    action="production_shortage"
+    :detail="authDetail"
     :operator-name="operatorName || undefined"
     :managers="authorizers"
     :busy="authBusy"
@@ -369,13 +375,5 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
     "
     @authorize="(username: string, pin: string) => sign({ username, pin })"
     @authorize-badge="(badge: string) => sign({ badge })"
-  >
-    <template #context>
-      <ul class="grid gap-1 text-sm" data-shortage-auth-context>
-        <li v-for="item in materialLines" :key="item.sku" class="font-medium">
-          {{ item.line }}
-        </li>
-      </ul>
-    </template>
-  </OperatorManagerAuth>
+  />
 </template>

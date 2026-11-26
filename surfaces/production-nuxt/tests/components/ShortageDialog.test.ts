@@ -59,7 +59,7 @@ const withAuthorizer = (): ProductionShortageError =>
 
 const ManagerAuthStub = defineComponent({
   name: "OperatorManagerAuth",
-  props: ["open", "operatorName", "managers", "busy", "error"],
+  props: ["open", "action", "detail", "operatorName", "managers", "busy", "error"],
   emits: ["update:open", "authorize", "authorizeBadge"],
   setup(props, { slots }) {
     return () =>
@@ -132,7 +132,8 @@ describe("ShortageDialog — falta de insumo no fechamento (assinatura)", () => 
     const auth = wrapper.findComponent(ManagerAuthStub);
     expect(auth.props("managers")).toEqual([{ id: 7, username: "joyce", name: "Joyce", pin_digits: 4 }]);
     expect(auth.props("operatorName")).toBe("Diofer");
-    expect(wrapper.get("[data-shortage-auth-context]").text()).toBe("Falta 300 g de manteiga");
+    expect(auth.props("action")).toBe("production_shortage");
+    expect(auth.props("detail")).toBe("Falta 300 g de manteiga.");
 
     auth.vm.$emit("authorize", "joyce", "2468");
     await flushPromises();
