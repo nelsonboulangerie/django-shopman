@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Trava do CONJUNTO MÍNIMO da suíte (dono, 08/10/2026, PR #1539; laudo em
 // docs/plans/completed/WP-BI-CANON-LAUDO.md, seção F). O tema do kit fixa o default de cada
@@ -88,7 +89,7 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (full.endsWith(".vue") || full.endsWith(".ts")) found.push(full);
