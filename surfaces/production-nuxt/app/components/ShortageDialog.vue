@@ -12,6 +12,10 @@
 //     crachá, no `OperatorManagerAuth` de sempre (decisão 3 do dono, D-042; regra
 //     de 28/10). Nada de "quem autorizou" em texto livre: o servidor assina a
 //     prova com o nome de quem autorizou, e o host segue pelo `confirm` de sempre.
+//   - o Compras aparece para todos (decisão do dono, 26/11/2026): quem opera o
+//     Compras vai até ele ("Pedir no Compras"); quem não opera "Solicita ao
+//     Compras", e a falta vira uma solicitação que o "Comprar" mostra. O diálogo
+//     não fecha: a pessoa segue decidindo o lote.
 //
 // Falta de encomenda: "Revisar quantidade" volta ao número digitado. Quando o
 // servidor oferece "confirm" e a tela sabe fechar o lote curto (`allowShortLot`),
@@ -19,7 +23,10 @@
 // quais pedidos ficam descobertos (decisão 1 do dono, 23/11/2026).
 import type { OperatorSession } from "../../../operator-kit/app/types/operator";
 import type { ProductionShortageError } from "~/types/production";
-import { authorizeProductionShortage } from "~/generated/productionContract";
+import {
+  authorizeProductionShortage,
+  requestProductionPurchase,
+} from "~/generated/productionContract";
 import { formatQty } from "~/presentation/production";
 import { materialShortageLine } from "~/presentation/shortage";
 
@@ -61,6 +68,14 @@ const forcePossibility = computed(() => possibility("force"));
 const retryPossibility = computed(() => possibility("retry"));
 const purchasePossibility = computed(() =>
   isMaterial.value ? possibility("purchase") : undefined,
+);
+const requestPurchasePossibility = computed(() =>
+  isMaterial.value
+    ? last.value?.possibilities.find(
+        (candidate) =>
+          candidate.kind === "request_purchase" && candidate.enabled && candidate.proof,
+      )
+    : undefined,
 );
 const openAnywayPossibility = computed(() =>
   opening.value
@@ -123,6 +138,26 @@ const authDetail = computed(() =>
 );
 const authBusy = ref(false);
 const authError = ref("");
+// A solicitação ao Compras: uma por aviso; o botão vira a confirmação.
+const requestBusy = ref(false);
+const requested = ref(false);
+const requestError = ref("");
+
+async function requestPurchase() {
+  const proof = requestPurchasePossibility.value?.proof;
+  if (!proof || requestBusy.value || requested.value) return;
+  requestBusy.value = true;
+  requestError.value = "";
+  try {
+    await requestProductionPurchase({ purchase_request_proof: proof });
+    requested.value = true;
+  } catch (err) {
+    requestError.value = httpErrorMessage(err, "Não deu para solicitar ao Compras. Tente de novo.");
+  } finally {
+    requestBusy.value = false;
+  }
+}
+
 const operatorName = computed(
   () =>
     useNuxtData<OperatorSession>("operator-session").data.value?.operator?.name ??
@@ -136,6 +171,9 @@ watch(
     authOpen.value = false;
     authBusy.value = false;
     authError.value = "";
+    requestBusy.value = false;
+    requested.value = false;
+    requestError.value = "";
   },
 );
 
@@ -227,6 +265,22 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             <span class="tabular-nums text-muted-foreground">{{ item.detail }}</span>
           </li>
         </ul>
+        <p
+          v-if="material && requested"
+          class="text-sm"
+          role="status"
+          data-shortage-requested
+        >
+          O Compras vê a solicitação no Comprar.
+        </p>
+        <p
+          v-if="material && requestError"
+          class="text-sm text-destructive"
+          role="alert"
+          data-shortage-request-error
+        >
+          {{ requestError }}
+        </p>
         <template v-else-if="shortLot">
           <ul class="divide-y rounded-md border text-sm" data-short-lot-orders>
             <li
@@ -308,6 +362,17 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             trailing-icon="i-lucide-external-link"
             :label="purchasePossibility.label"
             data-shortage-purchase
+          />
+          <NuxtButton
+            v-if="requestPurchasePossibility"
+            color="neutral"
+            variant="outline"
+            :icon="requested ? 'i-lucide-check' : undefined"
+            :label="requested ? 'Solicitado ao Compras' : requestPurchasePossibility.label"
+            :loading="requestBusy"
+            :disabled="requested"
+            data-shortage-request-purchase
+            @click="requestPurchase"
           />
           <NuxtButton
             v-if="openAnywayPossibility"

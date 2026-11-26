@@ -210,7 +210,7 @@ class ProductionNotFoundErrorEnvelope:
 
 @dataclass(frozen=True)
 class ProductionShortagePossibility:
-    kind: Literal["retry", "force", "confirm", "purchase"]
+    kind: Literal["retry", "force", "confirm", "purchase", "request_purchase"]
     label: str
     enabled: bool
     proof: str
@@ -261,6 +261,14 @@ class ProductionMaterialShortageErrorBody:
 class ProductionShortageAuthorizationResponse:
     override_proof: str
     authorizer_name: str
+
+
+@dataclass(frozen=True)
+class ProductionPurchaseRequestResponse:
+    """O que ficou solicitado ao Compras: os insumos e a frase de confirmação."""
+
+    requested_skus: list[str]
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -468,6 +476,12 @@ class ProductionShortageAuthorizationSerializer(StrictMutationSerializer):
         if not attrs.get("username") or not attrs.get("pin"):
             raise serializers.ValidationError({"pin": "Escolha quem autoriza e digite o PIN dessa pessoa."})
         return attrs
+
+
+class ProductionPurchaseRequestSerializer(StrictMutationSerializer):
+    """A solicitação ao Compras de quem não opera o Compras: só a prova da falta."""
+
+    purchase_request_proof = serializers.CharField(allow_blank=False, max_length=4096)
 
 
 class ProductionOldDoughMutationSerializer(ExistingWorkOrderMutationSerializer):
@@ -678,6 +692,13 @@ class ProductionActionSpec:
 
 PRODUCTION_ACTION_SPECS = (
     ProductionActionSpec(
+        "requestProductionPurchase",
+        "/api/v1/backstage/production/purchase-request/",
+        "ProductionPurchaseRequestRequest",
+        ProductionPurchaseRequestSerializer,
+        ProductionPurchaseRequestResponse,
+    ),
+    ProductionActionSpec(
         "authorizeProductionShortage",
         "/api/v1/backstage/production/shortage-authorization/",
         "ProductionShortageAuthorizationRequest",
@@ -820,6 +841,7 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionShortagePossibility,
     ProductionShortageAuthorizer,
     ProductionShortageAuthorizationResponse,
+    ProductionPurchaseRequestResponse,
     ProductionMaterialShortageItem,
     ProductionMaterialShortageErrorBody,
     ProductionMaterialShortageErrorEnvelope,

@@ -10,8 +10,10 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 // bancada, avisa na abertura sem travar, e no fechamento sai pela assinatura da
 // lista com PIN (decisão 3 do dono, D-042), nunca por texto livre.
 const authorizeProductionShortage = vi.fn();
+const requestProductionPurchase = vi.fn();
 vi.mock("~/generated/productionContract", () => ({
   authorizeProductionShortage: (...args: unknown[]) => authorizeProductionShortage(...args),
+  requestProductionPurchase: (...args: unknown[]) => requestProductionPurchase(...args),
 }));
 
 const butter = {
@@ -76,6 +78,7 @@ beforeEach(() => {
   vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { name: "Diofer" } }) }));
   vi.stubGlobal("httpErrorMessage", (err: { message?: string }, fallback: string) => err?.message || fallback);
   authorizeProductionShortage.mockReset();
+  requestProductionPurchase.mockReset();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -109,6 +112,48 @@ describe("ShortageDialog — falta de insumo na abertura (aviso)", () => {
     expect(wrapper.emitted("review")).toHaveLength(1);
     expect(wrapper.find("textarea").exists()).toBe(false);
     expect(wrapper.find("[data-shortage-authorize]").exists()).toBe(false);
+  });
+});
+
+// Decisão do dono ao aprovar o WP-F11 (26/11/2026, #3664): o Compras aparece para
+// todos; quem não opera o Compras solicita, e a falta vira solicitação de compra.
+describe("ShortageDialog — quem não opera o Compras solicita", () => {
+  const requesting = () =>
+    materialShortage("start", {
+      possibilities: [
+        { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "", href: "" },
+        { kind: "request_purchase", label: "Solicitar ao Compras", enabled: true, proof: "falta-medida", href: "" },
+        { kind: "confirm", label: "Abrir assim mesmo", enabled: true, proof: "aviso-assinado", href: "" },
+      ],
+    });
+
+  it("toca em Solicitar ao Compras, o servidor grava, e o botão vira a confirmação", async () => {
+    requestProductionPurchase.mockResolvedValue({ requested_skus: ["INS-MANTEIGA"], detail: "Solicitado ao Compras." });
+    const wrapper = mountDialog(requesting());
+
+    expect(wrapper.find("[data-shortage-purchase]").exists()).toBe(false);
+    const button = wrapper.get("[data-shortage-request-purchase]");
+    expect(button.text()).toBe("Solicitar ao Compras");
+    await button.trigger("click");
+    await flushPromises();
+
+    expect(requestProductionPurchase).toHaveBeenCalledWith({ purchase_request_proof: "falta-medida" });
+    expect(wrapper.get("[data-shortage-request-purchase]").text()).toBe("Solicitado ao Compras");
+    expect(wrapper.get("[data-shortage-requested]").text()).toBe("O Compras vê a solicitação no Comprar.");
+    // O diálogo segue aberto: a pessoa ainda decide o lote.
+    expect(wrapper.get("[data-shortage-open-anyway]").text()).toBe("Abrir assim mesmo");
+    expect(wrapper.emitted("update:open")).toBeUndefined();
+  });
+
+  it("a recusa do servidor aparece na tela, com a frase dele", async () => {
+    requestProductionPurchase.mockRejectedValue({ message: "Este aviso de falta ficou antigo. Tente a ação de novo para ver a falta de agora." });
+    const wrapper = mountDialog(requesting());
+
+    await wrapper.get("[data-shortage-request-purchase]").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get("[data-shortage-request-error]").text()).toContain("ficou antigo");
+    expect(wrapper.find("[data-shortage-requested]").exists()).toBe(false);
   });
 });
 

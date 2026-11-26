@@ -100,6 +100,22 @@ const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadS
                   class="shrink-0"
                 />
               </div>
+              <ul
+                v-if="row.material.internalRequests?.length"
+                class="mt-3 flex flex-col gap-1 rounded-md border border-default px-3 py-2 text-sm"
+                aria-label="Solicitações da Produção"
+                data-buy-internal-requests
+              >
+                <li
+                  v-for="request in row.material.internalRequests"
+                  :key="request.workOrderRef"
+                  class="flex items-start gap-2"
+                  data-buy-internal-request
+                >
+                  <NuxtIcon name="i-lucide-chef-hat" class="mt-0.5 size-4 shrink-0 text-muted" />
+                  <span>{{ request.line }}</span>
+                </li>
+              </ul>
               <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                 <div class="col-span-2"><dt class="text-xs text-muted">Cobertura</dt><dd class="font-semibold tabular-nums">{{ coverageLabel(row.material.coverageDays) }}</dd></div>
                 <div class="col-span-2"><dt class="text-xs text-muted">Comprar</dt><dd class="font-semibold tabular-nums">{{ purchaseSuggestionLabel(row.material, row.suggestedQty) }}</dd></div>
