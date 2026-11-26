@@ -208,21 +208,23 @@ def test_a_frase_humana_ainda_carrega_o_codigo(client: Client):
 # ── DEV-2026-092: quem tocou em Finalizar volta a Finalizar ─────────────────────
 #
 # A fala do dono: a cliente tocou em Finalizar, entrou pelo WhatsApp e precisou tocar em
-# Finalizar de novo. A referência NB-… é de uso único: a mesma mensagem processada duas
-# vezes (ou sem o texto, ou vencida) deixa o link da resposta só com o "/menu" do
-# ManyChat. O botão abre a loja numa aba nova do MESMO navegador, e ali o destino que o
+# Finalizar de novo. A referência NB-… é de uso único: vencida, ou sem o texto, ela
+# deixa o link da resposta só com o "/menu" do ManyChat. O botão abre a loja numa aba nova do MESMO navegador, e ali o destino que o
 # navegador guardou ao começar a entrar vale.
 
 
-def _create_twice(customer: Customer, message: str) -> dict:
+def _create_without_site_context(customer: Customer, message: str) -> dict:
+    from shopman.doorman.services.link_state import extract_code, pop_state
+
+    # A referência venceu (ou o cache a perdeu) antes de a resposta chegar: o link sai
+    # só com o "/menu" do ManyChat. A mesma mensagem processada duas vezes não serve
+    # mais para chegar aqui, porque a segunda vez é absorvida (#3621).
+    pop_state(extract_code(message))
     payload = {"customer_id": str(customer.uuid), "access_code": message, "next": "/menu"}
     key = ACCESS_SETTINGS["ACCESS_LINK_API_KEY"]
-    first = _post_json(Client(), "/api/auth/access/create/", payload, HTTP_X_API_KEY=key)
-    assert first.status_code == 200, first.content
-    second = _post_json(Client(), "/api/auth/access/create/", payload, HTTP_X_API_KEY=key)
-    assert second.status_code == 200, second.content
-    link = second.json()
-    # A segunda resposta vai sem o contexto do site: é o caso do dono.
+    response = _post_json(Client(), "/api/auth/access/create/", payload, HTTP_X_API_KEY=key)
+    assert response.status_code == 200, response.content
+    link = response.json()
     assert link["handoff_expired"] is True
     assert link["has_cart_context"] is False
     return link
@@ -233,7 +235,7 @@ def test_link_sem_o_contexto_do_site_volta_a_finalizar_no_navegador_que_comecou(
     customer = _customer()
     sku, _cart_key = _add_to_cart(client)
     start = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"}).json()
-    link = _create_twice(customer, start["message"])
+    link = _create_without_site_context(customer, start["message"])
 
     # O botão abre a loja numa aba nova do mesmo navegador: o mesmo cookie.
     exchange = _post_json(client, "/api/v1/auth/access/", {"token": link["token"]})
@@ -254,7 +256,7 @@ def test_navegador_que_nao_comecou_a_entrar_segue_o_link(client: Client):
     customer = _customer()
     _add_to_cart(client)
     start = _post_json(client, "/api/v1/auth/whatsapp/start/", {"next": "/finalizar"}).json()
-    link = _create_twice(customer, start["message"])
+    link = _create_without_site_context(customer, start["message"])
 
     other_browser = Client()
     body = _post_json(other_browser, "/api/v1/auth/access/", {"token": link["token"]}).json()

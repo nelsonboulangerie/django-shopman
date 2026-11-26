@@ -10,7 +10,11 @@ cliente que tocou em Finalizar e cai no cardápio.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from datetime import timedelta
+
+from django.utils import timezone
 
 from ..conf import get_doorman_settings
 from ..models import AccessLink
@@ -20,15 +24,52 @@ from .access_link import AccessLinkService
 logger = logging.getLogger(__name__)
 
 
-def fold_state(state: dict, metadata: dict, *, request=None) -> tuple[str, str]:
+#: A marca, na metadata do link, da referência que ele consumiu (``code_mark``).
+SITE_CODE_KEY = "site_code"
+
+
+def code_mark(code: str) -> str:
+    """A marca de uma referência ``NB-…`` (o código puro ou a mensagem inteira).
+
+    Hash e não o código: o link guarda só a prova de que aquela referência já foi
+    atendida, nunca o código que ainda abriria o contexto.
+    """
+    from .link_state import extract_code
+
+    body = extract_code(code or "")
+    return hashlib.sha256(body.encode()).hexdigest()[:24] if body else ""
+
+
+def already_answered(code: str, customer) -> bool:
+    """A referência já virou link para este cliente, por qualquer dos caminhos.
+
+    A mesma mensagem pode chegar ao endpoint do ManyChat e à Concierge da loja. A
+    referência é de uso único: quem a consome primeiro cria o link (e a mensagem de
+    entrada sai com ele); quem chega depois encontra a marca e não cria o segundo,
+    que sairia com o aviso falso de "sua sacola não veio" (#3621).
+    """
+    mark = code_mark(code)
+    if not mark or customer is None:
+        return False
+    window = timezone.now() - timedelta(seconds=get_doorman_settings().LINK_STATE_TTL_SECONDS + 60)
+    return AccessLink.objects.filter(
+        customer_id=customer.subject_id, created_at__gte=window, **{f"metadata__{SITE_CODE_KEY}": mark}
+    ).exists()
+
+
+def fold_state(state: dict, metadata: dict, *, request=None, code: str = "") -> tuple[str, str]:
     """Dobra o estado da referência na metadata do link e devolve ``(origin, origin_label)``.
 
     A sessão de origem não viaja na metadata: ela é o endereço da liberação
     (``release_origin``), não contexto do login. ``next`` passa por ``safe_redirect_url``;
     o resto (ex.: ``cart_session_key``, ``site_return``) viaja opaco, sem sobrescrever o
-    que quem pediu o link já pôs.
+    que quem pediu o link já pôs. Com ``code``, o link leva a marca da referência
+    (``already_answered``).
     """
     state = dict(state)
+    mark = code_mark(code)
+    if mark:
+        metadata[SITE_CODE_KEY] = mark
     origin = str(state.pop("origin", "") or "")
     origin_label = str(state.pop("origin_label", "") or "")
     for key, value in state.items():
