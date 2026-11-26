@@ -689,6 +689,19 @@ def cmd_pins(root: Path, fix: bool = False) -> int:
     return 0
 
 
+def fetch_main(root: Path) -> None:
+    """``git fetch origin main`` com nova tentativa: outra worktree buscando ao mesmo
+    tempo trava o ref por um instante ("cannot lock ref"), e o `ready` abortava (26/11)."""
+    for attempt in range(4):
+        try:
+            git("fetch", "-q", "origin", "main", cwd=root)
+            return
+        except subprocess.CalledProcessError:
+            if attempt == 3:
+                raise
+            time.sleep(2 * (attempt + 1))
+
+
 def gh(*args: str) -> str:
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout.strip()
 
@@ -696,6 +709,17 @@ def gh(*args: str) -> str:
 def find_evidence(tree: str) -> dict | None:
     path = state_dir() / "evidence" / f"{tree}.json"
     return json.loads(path.read_text()) if path.exists() else None
+
+
+def evidence_line(evidence: dict | None, tree: str) -> str:
+    """O que a evidência É. Com a exceção declarada, nunca "verde" se não for (26/11:
+    a mensagem antiga dizia "verde" para um preflight 44/45)."""
+    if evidence and evidence["status"] == "pass" and evidence["level"] in PROMOTABLE:
+        return f"✓ evidência {evidence['level']} verde para a árvore {tree[:12]} ({evidence['seconds']}s, {evidence['started_at']})"
+    if evidence:
+        return (f"ℹ️ evidência registrada para a árvore {tree[:12]}: {evidence['level']}/{evidence['status']} "
+                f"({evidence['started_at']}); promovido pela exceção declarada")
+    return f"ℹ️ nenhuma evidência para a árvore {tree[:12]}; promovido pela exceção declarada"
 
 
 def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run: bool) -> int:
@@ -732,7 +756,7 @@ def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run:
         proc = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True)
         if proc.returncode:
             problems.append(f"{name} reprova o corpo do PR:\n    " + (proc.stdout + proc.stderr).strip().replace("\n", "\n    "))
-    git("fetch", "-q", "origin", "main", cwd=root)
+    fetch_main(root)
     behind = int(git("rev-list", "--count", "HEAD..origin/main", cwd=root) or 0)
     if behind:
         mine = set(git("diff", "--name-only", f"{git('merge-base', 'HEAD', 'origin/main', cwd=root)}", "HEAD", cwd=root).splitlines())
@@ -745,8 +769,7 @@ def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run:
         for p in problems:
             print(f"  - {p}")
         return 1
-    if evidence:
-        print(f"✓ evidência {evidence['level']} verde para a árvore {tree[:12]} ({evidence['seconds']}s, {evidence['started_at']})")
+    print(evidence_line(evidence, tree))
     # Sem flag de estratégia: com fila obrigatória, a fila é dona (esteira-stop-hook).
     # --match-head-commit: se alguém empurrar depois desta conferência, o GitHub recusa.
     cmd = ["gh", "pr", "merge", str(pr), "-R", REPO_SLUG, "--auto", "--match-head-commit", head]
