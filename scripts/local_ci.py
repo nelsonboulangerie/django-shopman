@@ -16,9 +16,17 @@ comandos dos workflows, lidos do YAML, sem lista copiada:
 ``preflight``  antes de promover o PR: ``impact`` + o pesado da fila que este
                diff alcança (shop/backstage por domínio, as fases de navegador
                dos apps tocados, os testes que leem o repositório inteiro ou a
-               documentação). Grava a evidência que ``ready`` exige.
+               documentação). Diff só de ferramenta de CI (``QUEUE_NEUTRAL``)
+               não paga as suítes da fila, que não mudam de resultado com ele:
+               prova só que a invocação resolve (``make -n``) e deixa a fila
+               rodá-las. Grava a evidência que ``ready`` exige.
 ``full``       ``make ci-local``: tudo o que é executável nesta máquina, como
                se o diff fosse de infraestrutura.
+
+Vagas da máquina: ``preflight``/``full`` disputam as vagas ``cpu`` (2 nesta
+máquina); ``fast``/``impact`` têm a vaga ``quick`` própria, com metade dos
+workers, para a iteração não esperar atrás de um passo de 17 min. A evidência
+separa a espera por vaga (``wait_seconds``) da execução (``seconds``).
 
 O que só a CI executa (retrato de pixel preso ao navegador da CI, PostgreSQL +
 Redis reais, imagem Docker, E2E da loja, Browser QA, cobertura agregada) sai
@@ -70,6 +78,7 @@ from ci_scope import classify, is_doc  # noqa: E402  (a MESMA classificação da
 LEVELS = ("fast", "impact", "preflight", "full")
 #: Níveis que contam como evidência para promover o PR.
 PROMOTABLE = {"preflight", "full"}
+QUICK_LEVELS = {"fast", "impact"}  # vaga própria ("quick"), fora da disputa do preflight
 
 
 # ── Ambiente ──────────────────────────────────────────────────────────────
@@ -124,11 +133,12 @@ def machine_budget() -> tuple[int, int]:
 def machine_slot(kind: str, slots: int):
     """Vaga de máquina compartilhada por TODAS as worktrees (``flock``)."""
     if kind == "none":
-        yield
+        yield {"seconds": 0.0}
         return
     locks = state_dir() / "locks"
     count = slots if kind == "cpu" else 1
     handles = [open(locks / f"{kind}-{i}.lock", "w") for i in range(count)]
+    wait = {"seconds": 0.0}
     try:
         waited = time.monotonic()
         announced = False
@@ -138,12 +148,13 @@ def machine_slot(kind: str, slots: int):
                     fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     continue
+                wait["seconds"] = round(time.monotonic() - waited, 1)
                 if announced:
-                    print(f"   vaga {kind} liberada após {time.monotonic() - waited:.0f}s", flush=True)
+                    print(f"   vaga {kind} liberada após {wait['seconds']:.0f}s", flush=True)
                 handle.write(f"{os.getpid()} {repo_root()}\n")
                 handle.flush()
                 try:
-                    yield
+                    yield wait
                 finally:
                     fcntl.flock(handle, fcntl.LOCK_UN)
                 return
@@ -408,6 +419,32 @@ def focused_tests(root: Path, files: list[str]) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in out.items() if v}
 
 
+#: O que não muda o resultado das suítes Python da fila (backstage, shop): workflow,
+#: scripts de CI, Makefile, registro/contratos das superfícies, deploy e documentação.
+#: O PR trata isso como alcance desconhecido e roda todo o leve; o preflight não
+#: precisa pagar ~26 min das suítes da fila por isso (medido 26/11, #3635).
+QUEUE_NEUTRAL = (".github/", "scripts/", "surfaces/", ".do/", ".claude/", ".codex/", "Dockerfile", "Makefile")
+
+
+def queue_neutral(path: str) -> bool:
+    return is_doc(path) or path.startswith(QUEUE_NEUTRAL)
+
+
+def queue_domains(level: str, files: list[str]) -> set[str]:
+    """Quais suítes da fila o diff alcança. Arquivo desconhecido liga as duas."""
+    if level == "full":
+        return {"shop", "backstage"}
+    domains: set[str] = set()
+    for f in files:
+        if f.startswith("shopman/backstage/"):
+            domains.add("backstage")
+        elif f.startswith(("shopman/storefront/", "tools/")) or queue_neutral(f):
+            continue  # storefront tem suíte própria no PR; o neutro não muda o resultado
+        else:  # shop, packages, config, locale, manage.py, constraints, pyproject, conftest…
+            domains.update({"shop", "backstage"})
+    return domains
+
+
 def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Plan:
     files = diff.files
     pr = classify("pull_request", files)
@@ -479,17 +516,23 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
         return Plan(level, pr, steps, remote, notes)
 
     # ── preflight/full: o pesado da fila que este diff alcança ──────────
-    domains = set()
-    for f in files:
-        parts = f.split("/")
-        if full or parts[0] in ("packages", "config", "locale") or f == "manage.py" or f.startswith("shopman/shop/"):
-            domains.update({"shop", "backstage"})
-        elif f.startswith("shopman/backstage/"):
-            domains.add("backstage")
-    if full:
-        domains.update({"shop", "backstage"})
+    domains = queue_domains(level, files)
     for d in sorted(domains):
         steps.append(Step(f"Testes (test-{d}) — fila", f"make PYTHON={q(str(py))} test-{d}", slot="cpu", origin="runtime-gate.yml#tests-*-shards"))
+    if full and level != "full" and domains != {"shop", "backstage"}:
+        # Diff de ferramenta de CI: o PR roda todo o leve (escopo desconhecido), mas as
+        # suítes da fila não mudam de resultado; a fila as roda de qualquer forma. Aqui
+        # fica só a prova de que a invocação delas ainda resolve.
+        skipped = sorted({"shop", "backstage"} - domains)
+        steps.append(Step(
+            "invocação das suítes da fila (make -n)",
+            "make -n " + " ".join(f"test-{d}" for d in skipped) + " >/dev/null",
+            origin="local: diff de ferramenta de CI",
+        ))
+        notes.append(
+            "suítes da fila " + ", ".join(f"test-{d}" for d in skipped) + " ficam para a fila: o diff só "
+            "toca ferramenta de CI (" + ", ".join(sorted({f for f in files if queue_neutral(f)})[:4]) + "…)"
+        )
     covered = {f"shopman/{d}/" for d in domains} | {"shopman/storefront/"} if python else {f"shopman/{d}/" for d in domains}
     readers: list[str] = []
     if code:
@@ -598,6 +641,7 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
     print(f"▶ {plan.level} · {len(diff.files)} arquivo(s) · árvore {diff.tree[:12]} · base {diff.base_ref}@{diff.merge_base[:9]}")
     print(f"  escopo {plan.scope} · máquina: {slots} vaga(s) × {workers} workers")
     failed = False
+    waited_total = 0.0
     major = ci_node_major(root)
     node_ok = node_major(Path(shutil.which("node", path=env["PATH"]) or "/nonexistent").parent) == major
     def needs_node(step: Step) -> bool:
@@ -614,13 +658,20 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
             continue
         print(f"[{i}/{len(plan.steps)}] {step.name}", flush=True)
         log = logs / f"{i:02d}-{re.sub(r'[^a-zA-Z0-9]+', '-', step.name)[:60]}.log"
-        t0 = time.monotonic()
-        with machine_slot(step.slot, slots), open(log, "w") as fh:
+        # A faixa rápida (fast/impact) não espera atrás de um passo de 17 min de
+        # preflight: tem vaga própria, com metade dos workers (#3635, 26/11).
+        slot = "quick" if plan.level in QUICK_LEVELS and step.slot == "cpu" else step.slot
+        step_env = {**env, **step.env}
+        if slot == "quick":
+            step_env["PYTEST_XDIST_AUTO_NUM_WORKERS"] = str(max(1, workers // 2))
+        with machine_slot(slot, slots) as wait, open(log, "w") as fh:
+            t0 = time.monotonic()
             proc = subprocess.run(
-                ["bash", "-c", step.cmd], cwd=root / step.cwd, env={**env, **step.env},
+                ["bash", "-c", step.cmd], cwd=root / step.cwd, env=step_env,
                 stdout=fh, stderr=subprocess.STDOUT,
             )
         seconds = round(time.monotonic() - t0, 1)
+        waited_total += wait["seconds"]
         status = "pass" if proc.returncode == 0 else "fail"
         mark = "✓" if status == "pass" else "✗"
         print(f"   {mark} {seconds}s" + ("" if status == "pass" else f" — log: {log}"), flush=True)
@@ -628,7 +679,7 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
             failed = True
             tail = log.read_text(errors="replace").splitlines()[-25:]
             print("     " + "\n     ".join(tail))
-        results.append({**asdict(step), "status": status, "seconds": seconds, "log": str(log)})
+        results.append({**asdict(step), "status": status, "seconds": seconds, "wait_seconds": wait["seconds"], "log": str(log)})
     finished = dt.datetime.now(dt.UTC)
     current_tree = working_tree_hash(root)
     evidence = {
@@ -646,6 +697,7 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
         "notes": plan.notes,
         "worktree": str(root),
         "python": str(py),
+        "wait_seconds": round(waited_total, 1),
         "machine": {"slots": slots, "workers": workers, "node": major if node_ok else "ausente"},
         "started_at": started.isoformat(timespec="seconds"),
         "seconds": round((finished - started).total_seconds(), 1),
@@ -659,7 +711,7 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
         path.write_text(json.dumps(evidence, ensure_ascii=False, indent=1))
     (logs / "last.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=1))
     total = sum(r["seconds"] for r in results)
-    print(f"\n{'✅' if evidence['status'] == 'pass' else '❌'} {plan.level}: {evidence['status']} em {evidence['seconds']}s (passos somam {total:.0f}s)")
+    print(f"\n{'✅' if evidence['status'] == 'pass' else '❌'} {plan.level}: {evidence['status']} em {evidence['seconds']}s (passos somam {total:.0f}s; espera por vaga {waited_total:.0f}s)")
     if evidence["status"] == "stale":
         print("   ⚠️ a árvore mudou durante a rodada: a evidência não vale para o que está no disco agora")
     if plan.remote:
