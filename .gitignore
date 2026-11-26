@@ -70,3 +70,4 @@ var/
 !.env.example
 
 .dsh-worktrees/
+.ci-baseline/
