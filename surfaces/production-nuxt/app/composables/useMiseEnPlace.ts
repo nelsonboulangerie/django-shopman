@@ -18,6 +18,7 @@ import {
   openResilientEventSource,
   type ResilientEventSource,
 } from "../../../operator-kit/app/utils/resilientEventSource";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export const PREP_MARKS_PATH = "/api/v1/backstage/production/mise-en-place/marks/";
 const PREP_MARKS_EVENTS = ["backstage-production-update"] as const;
@@ -60,10 +61,7 @@ export function markFor(
 /** "Separado por Ana às 5h40": quem e quando, como o servidor gravou. */
 export function markAuthorLine(mark: PrepMark | null): string {
   if (!mark) return "";
-  const at = new Date(mark.marked_at);
-  const time = Number.isNaN(at.getTime())
-    ? ""
-    : `${at.getHours()}h${String(at.getMinutes()).padStart(2, "0")}`;
+  const time = formatClock(mark.marked_at);
   const who = mark.marked_by ? ` por ${mark.marked_by}` : "";
   return `Separado${who}${time ? ` às ${time}` : ""}`;
 }

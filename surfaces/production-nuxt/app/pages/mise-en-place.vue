@@ -402,7 +402,6 @@ function refreshAll() {
                   class="mt-1"
                   color="error"
                   variant="outline"
-                  size="sm"
                   trailing-icon="i-lucide-external-link"
                   label="Pedir no Compras"
                   data-prep-purchase
