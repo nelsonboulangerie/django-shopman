@@ -6,8 +6,8 @@ import LotCancelDialog from "../../app/components/LotCancelDialog.vue";
 import LotVoidStakes from "../../app/components/LotVoidStakes.vue";
 import { lotStakes } from "../../app/presentation/lotStakes";
 import type {
-  OrderCommitmentProjection,
   ProductionMatrixRowProjection,
+  PromisedOrderProjection,
   WorkOrderCardProjection,
 } from "../../app/types/production";
 import { nuxtUiStubs } from "../support/nuxtUiStubs";
@@ -17,14 +17,28 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 // 23/11: com 7 un. encomendadas o diálogo dizia só "o vínculo com pedidos é
 // desfeito", e o motivo vazio virava "Cancelado pelo operador" no código.
 
-function commitment(ref: string, qty: string, due = ""): OrderCommitmentProjection {
-  return { ref, status: "confirmed", status_label: "Confirmado", qty_required: qty, due_time: due };
+function commitment(
+  ref: string,
+  qty: string,
+  due = "",
+  name = "",
+  fulfillment = "",
+): PromisedOrderProjection {
+  return {
+    ref,
+    customer_first_name: name,
+    due_time: due,
+    fulfillment_type: fulfillment,
+    qty,
+    status: "confirmed",
+    status_label: "Confirmado",
+  };
 }
 
 const SEVEN_IN_FOUR = [
-  commitment("NB-261123-A01", "2", "08:30"),
-  commitment("NB-261123-A02", "2", "09:00"),
-  commitment("NB-261123-A03", "2"),
+  commitment("NB-261123-A01", "2", "08:30", "Clara", "pickup"),
+  commitment("NB-261123-A02", "2", "09:00", "Marina", "delivery"),
+  commitment("NB-261123-A03", "2", "", "Ana"),
   commitment("NB-261123-A04", "1", "10:00"),
 ];
 
@@ -49,11 +63,11 @@ describe("lotStakes: o que está encomendado, numa frase", () => {
   });
 });
 
-function mountStakes(commitments: OrderCommitmentProjection[], reason = "") {
+function mountStakes(orders: PromisedOrderProjection[], reason = "") {
   const model = ref(reason);
   const wrapper = mount(LotVoidStakes, {
     props: {
-      commitments,
+      orders,
       unit: "un",
       consequence: "O lote volta atrás.",
       reason: model.value,
@@ -75,12 +89,13 @@ describe("LotVoidStakes: o aviso e o motivo", () => {
     expect(alert).toContain("7 un. encomendadas: 4 pedidos");
     const lines = wrapper
       .findAll("[data-lot-stakes-orders] li")
-      .map((li) => li.findAll("span").map((span) => span.text()).join(" "));
+      .map((li) => li.text().replace(/\s+/g, " ").trim());
+    // Primeiro nome, modo e hora (WP-F10); sem nome, o código do pedido.
     expect(lines).toEqual([
-      "NB-261123-A01 2 un. às 08:30",
-      "NB-261123-A02 2 un. às 09:00",
-      "NB-261123-A03 2 un.",
-      "NB-261123-A04 1 un. às 10:00",
+      "Clara · retirada · 8h30 · 2 un.",
+      "Marina · entrega · 9h · 2 un.",
+      "Ana · 2 un.",
+      "NB-261123-A04 · 10h · 1 un.",
     ]);
     expect(alert).toContain("Promessa em risco");
     expect(wrapper.find("[data-lot-stakes-free]").exists()).toBe(false);
@@ -120,7 +135,14 @@ function card(over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProject
     status: "planned",
     planned_qty: "40",
     started_qty: "",
-    order_commitments: SEVEN_IN_FOUR,
+    promised: {
+      date: "2026-11-24",
+      planned_qty: "40",
+      ordered_qty: "7",
+      free_qty: "33",
+      over_plan_qty: "0",
+      orders: SEVEN_IN_FOUR,
+    },
     can_void: true,
     ...over,
   } as WorkOrderCardProjection;

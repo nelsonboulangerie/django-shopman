@@ -82,15 +82,6 @@ export interface OperatorAlertsProjection {
   contract_version: number;
 }
 
-/** A compact order commitment for a production work order. */
-export interface OrderCommitmentProjection {
-  ref: string;
-  status: string;
-  status_label: string;
-  qty_required: string;
-  due_time: string;
-}
-
 /** Um pedido que conta no prometido de um produto numa data (WP-F08). */
 export interface PromisedOrderProjection {
   ref: string;
@@ -145,8 +136,6 @@ export interface WorkOrderCardProjection {
   started_at_display: string;
   created_at_display: string;
   progress_pct: number;
-  committed_qty: string;
-  order_commitments: OrderCommitmentProjection[];
   can_void: boolean;
   position_name: string;
   created_at_time: string;
@@ -655,7 +644,6 @@ export interface QCOrderCardProjection {
   partition: QCPartitionGroupProjection[];
   correction_count: number;
   last_correction_at_display: string;
-  committed_qty: string;
   full_price_qty: string;
   discounted_qty: string;
   loss_qty: string;
@@ -666,6 +654,7 @@ export interface QCOrderCardProjection {
   alert_waiting_count: number | null;
   output_unit: string;
   oven_until_display: string;
+  promised: ProductionPromisedProjection | null;
 }
 
 /** O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC. */

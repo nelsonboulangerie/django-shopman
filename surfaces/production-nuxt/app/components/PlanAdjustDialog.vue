@@ -154,7 +154,7 @@ defineExpose({
         <LotVoidStakes
           v-if="removes && selectedOrder?.can_void"
           v-model:reason="removeReason"
-          :commitments="selectedOrder.order_commitments ?? []"
+          :orders="selectedOrder.promised?.orders ?? []"
           :unit="row?.output_unit"
           consequence="O lote planejado sai do dia."
         />

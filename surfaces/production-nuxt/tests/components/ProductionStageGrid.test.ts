@@ -51,7 +51,6 @@ function wo(
     started_at_display: "",
     created_at_display: "",
     progress_pct: 0,
-    committed_qty: "0",
     ...over,
   } as WorkOrderCardProjection;
 }

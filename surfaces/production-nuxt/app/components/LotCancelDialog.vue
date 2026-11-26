@@ -115,7 +115,7 @@ const emit = defineEmits<{
         <LotVoidStakes
           v-if="voidConfirming && selectedOrder"
           v-model:reason="voidReason"
-          :commitments="selectedOrder.order_commitments ?? []"
+          :orders="selectedOrder.promised?.orders ?? []"
           :unit="row?.output_unit"
           :consequence="
             selectedOrder.started_qty

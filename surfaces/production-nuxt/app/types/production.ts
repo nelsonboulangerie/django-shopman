@@ -34,7 +34,6 @@ export type {
   MiseEnPlaceBreakdownProjection,
   MiseEnPlaceLineProjection,
   OperatorProductivityRow,
-  OrderCommitmentProjection,
   PositionOptionProjection,
   ProductionActionProjection,
   ProductionBlindMapProjection,

@@ -4,16 +4,16 @@
 // (WP-F07, P1-01). E o motivo, que é de quem decide: um toque nos motivos comuns ou
 // o texto livre. O motivo nunca nasce do código (o servidor recusa sem ele, #3400).
 //
-// Lê só o que o cartão do lote já traz (`order_commitments`); a régua das reservas
-// é outra frente (WP-F08 e F10).
+// Lê o prometido do produto na data do lote, pela régua das reservas (WP-F10):
+// primeiro nome e hora de cada pedido.
 import { computed, nextTick, ref } from "vue";
 
-import { formatQtyUnit } from "~/presentation/production";
+import { promisedOrderLine } from "~/presentation/production";
 import { lotStakes } from "~/presentation/lotStakes";
-import type { OrderCommitmentProjection } from "~/types/production";
+import type { PromisedOrderProjection } from "~/types/production";
 
 const props = defineProps<{
-  commitments: OrderCommitmentProjection[];
+  orders: PromisedOrderProjection[];
   unit?: string;
   /** O que acontece com o lote, na voz do gesto ("O lote volta atrás."). */
   consequence: string;
@@ -26,7 +26,7 @@ const reason = defineModel<string>("reason", { required: true });
 // (J-P3, 23/11), abaixo dos 4,5 de leitura.
 const LEGIBLE = { title: "text-highlighted", description: "text-default" };
 
-const stakes = computed(() => lotStakes(props.commitments, props.unit));
+const stakes = computed(() => lotStakes(props.orders, props.unit));
 
 // Motivos comuns de tirar um lote do dia. Tocar preenche o texto, que continua
 // editável; "Outro" limpa e leva o foco ao campo.
@@ -74,13 +74,11 @@ const otherActive = computed(
         <p>{{ consequence }} Esses pedidos perdem o pão garantido e aparecem em "Promessa em risco" no Gestor.</p>
         <ul class="mt-2 grid gap-1">
           <li
-            v-for="order in commitments"
+            v-for="order in orders"
             :key="order.ref"
-            class="flex flex-wrap items-baseline gap-x-2 tabular-nums"
+            class="tabular-nums"
           >
-            <span class="font-medium">{{ order.ref }}</span>
-            <span>{{ formatQtyUnit(order.qty_required, unit) }}</span>
-            <span v-if="order.due_time">às {{ order.due_time }}</span>
+            {{ promisedOrderLine(order, unit) }}
           </li>
         </ul>
       </template>

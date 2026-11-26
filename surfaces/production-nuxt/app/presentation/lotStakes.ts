@@ -1,11 +1,12 @@
 /**
  * O que está encomendado de um lote, em uma frase: "7 un. encomendadas: 4 pedidos".
  *
- * Lê só o que o cartão do lote já traz (`order_commitments`). Sem encomenda, `null`:
- * a tela diz que nenhuma encomenda depende do lote, em vez de um zero.
+ * Lê o prometido do produto na data do lote, pela régua das reservas (WP-F08/F10).
+ * Sem encomenda, `null`: a tela diz que nenhuma encomenda depende do lote, em vez de
+ * um zero.
  */
-import { formatQtyUnit } from "./production";
-import type { OrderCommitmentProjection } from "~/types/production";
+import { orderedLabel } from "./production";
+import type { PromisedOrderProjection } from "~/types/production";
 
 export interface LotStakes {
   headline: string;
@@ -18,23 +19,12 @@ function parseQty(value: string): number {
 }
 
 export function lotStakes(
-  commitments: readonly OrderCommitmentProjection[],
+  orders: readonly PromisedOrderProjection[],
   unit?: string,
 ): LotStakes | null {
-  const orders = new Set(commitments.map((commitment) => commitment.ref)).size;
-  if (!orders) return null;
-  const units = commitments.reduce(
-    (total, commitment) => total + parseQty(commitment.qty_required),
-    0,
-  );
-  const quantity = formatQtyUnit(String(units), unit);
-  const noun = orders === 1 ? "1 pedido" : `${orders} pedidos`;
-  // "un." é feminino (unidades); peso é masculino (quilos, gramas).
-  const counted = quantity.endsWith(" un.");
-  const adjective = counted
-    ? units === 1
-      ? "encomendada"
-      : "encomendadas"
-    : "encomendados";
-  return { headline: `${quantity} ${adjective}: ${noun}`, units, orders };
+  const count = new Set(orders.map((order) => order.ref)).size;
+  if (!count) return null;
+  const units = orders.reduce((total, order) => total + parseQty(order.qty), 0);
+  const noun = count === 1 ? "1 pedido" : `${count} pedidos`;
+  return { headline: `${orderedLabel(units, unit)}: ${noun}`, units, orders: count };
 }

@@ -64,7 +64,6 @@ function order(
     partition: [],
     correction_count: 0,
     last_correction_at_display: "",
-    committed_qty: "0",
     full_price_qty: "",
     discounted_qty: "",
     loss_qty: "",

@@ -27,7 +27,6 @@ import PlanLens from "./PlanLens.vue";
 
 import {
   boardDisplay,
-  commitmentChipLabel,
   dayContextLine,
   formatQty,
   formatQtyUnit,
@@ -38,8 +37,9 @@ import {
   isStale,
   matchesRowQuery,
   outsizedQuantityWarning,
-  rowCommittedUnits,
+  promisedChipLabel,
   rowLabel,
+  rowOrderedUnits,
 } from "~/presentation/production";
 import { suggestionSignal } from "~/presentation/planningReason";
 import {
@@ -858,9 +858,9 @@ function openRowMenu(row: ProductionMatrixRowProjection): OperatorMoreMenuItem[]
       icon: "i-lucide-check",
       onSelect: () => openStart(row),
     });
-  if (rowCommittedUnits(row) > 0)
+  if (rowOrderedUnits(row) > 0)
     main.push({
-      label: `Ver encomendas (${rowCommittedUnits(row)} un.)`,
+      label: `Ver encomendas (${formatQtyUnit(rowOrderedUnits(row), row.output_unit)})`,
       icon: "i-lucide-shopping-bag",
       onSelect: () => {
         commitmentsRow.value = row;
@@ -1374,9 +1374,9 @@ function plannedItemMenu(row: ProductionMatrixRowProjection) {
       onSelect: () => onAction(row),
     },
   ];
-  if (rowCommittedUnits(row) > 0)
+  if (rowOrderedUnits(row) > 0)
     items.push({
-      label: `Ver encomendas (${rowCommittedUnits(row)} un.)`,
+      label: `Ver encomendas (${formatQtyUnit(rowOrderedUnits(row), row.output_unit)})`,
       icon: "i-lucide-shopping-bag",
       disabled: false,
       onSelect: () => {
@@ -1614,14 +1614,14 @@ const startedDescription = computed(() => {
                 }}</span>
               </p>
               <NuxtButton
-                v-if="rowCommittedUnits(row) > 0"
+                v-if="rowOrderedUnits(row) > 0"
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-shopping-bag"
                 class="shrink-0 tabular-nums"
                 :ui="{ leadingIcon: 'text-info' }"
-                :label="commitmentChipLabel(row)"
-                :aria-label="`${commitmentChipLabel(row)}: unidades de ${rowLabel(row)} comprometidas com encomendas`"
+                :label="promisedChipLabel(row, todayISO)"
+                :aria-label="`Ver encomendas de ${rowLabel(row)}: ${promisedChipLabel(row, todayISO)}`"
                 data-commitment-chip
                 @click="commitmentsRow = row"
               />
@@ -1871,7 +1871,7 @@ const startedDescription = computed(() => {
                       formatQty(plannedQtyLabel(row), row.output_unit)
                     }}</b>
                     <Icon
-                      v-if="rowCommittedUnits(row) > 0"
+                      v-if="rowOrderedUnits(row) > 0"
                       name="lucide:shopping-bag"
                       class="size-3.5 text-info"
                     />
@@ -1984,14 +1984,14 @@ const startedDescription = computed(() => {
                     >· {{ formatQty(row.planned_qty, row.output_unit) }} planejadas</span
                   >
                   <NuxtButton
-                    v-if="rowCommittedUnits(row) > 0"
+                    v-if="rowOrderedUnits(row) > 0"
                     color="neutral"
                     variant="ghost"
                     icon="i-lucide-shopping-bag"
                     class="shrink-0 tabular-nums"
                     :ui="{ leadingIcon: 'text-info' }"
-                    :label="commitmentChipLabel(row)"
-                    :aria-label="`${commitmentChipLabel(row)}: unidades de ${rowLabel(row)} comprometidas com encomendas`"
+                    :label="promisedChipLabel(row, todayISO)"
+                    :aria-label="`Ver encomendas de ${rowLabel(row)}: ${promisedChipLabel(row, todayISO)}`"
                     data-commitment-chip
                     @click="commitmentsRow = row"
                   />
@@ -2233,6 +2233,7 @@ const startedDescription = computed(() => {
 
     <LotCommitmentsDialog
       :row="commitmentsRow"
+      :today="todayISO"
       @close="commitmentsRow = null"
     />
 
