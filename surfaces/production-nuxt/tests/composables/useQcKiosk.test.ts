@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { nextTick } from "vue";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useQcKiosk } from "~/composables/useQcKiosk";
 
@@ -284,5 +285,31 @@ describe("useQcKiosk — guarded writes", () => {
         }),
       }),
     );
+  });
+});
+
+describe("useQcKiosk — dado velho visível (WP-F15)", () => {
+  beforeEach(() => env.reset());
+
+  /** O `data` que o `useFetch` devolveu: o `useFetch` zera ele quando a leitura falha. */
+  const fetched = () =>
+    env.useFetchMock.mock.results[0]!.value.data as { value: unknown };
+
+  it("a releitura que falha não apaga o painel: fica a última leitura boa", async () => {
+    env.fetchData.value = { qc: { selected_date: "2026-11-26", orders: [], actions: [] } };
+    const { kiosk } = useQcKiosk();
+    expect(kiosk.value?.selected_date).toBe("2026-11-26");
+    fetched().value = null;
+    await nextTick();
+    expect(kiosk.value?.selected_date).toBe("2026-11-26");
+  });
+
+  it("trocar de dia descarta a leitura do dia anterior", async () => {
+    env.fetchData.value = { qc: { selected_date: "2026-11-26", orders: [], actions: [] } };
+    const { kiosk, selectedDate } = useQcKiosk();
+    fetched().value = null;
+    selectedDate.value = "2026-11-25";
+    await nextTick();
+    expect(kiosk.value).toBeNull();
   });
 });

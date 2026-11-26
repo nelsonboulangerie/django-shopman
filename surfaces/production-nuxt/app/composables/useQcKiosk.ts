@@ -8,6 +8,7 @@
 import type {
   ProductionQCResponse,
   ProductionShortageError,
+  QCKioskProjection,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 import {
@@ -50,7 +51,22 @@ export function useQcKiosk(initialDate = "") {
     },
   );
 
-  const kiosk = computed(() => data.value?.qc ?? null);
+  // Dado velho visível > painel em branco: o `useFetch` zera o dado quando a releitura
+  // falha (medido na pilha real com o Django parado, WP-F15), então o quiosque guarda a
+  // última leitura boa do dia que mostra, e a tela avisa que ela é velha. Trocar de dia
+  // a descarta. Sem nenhuma leitura boa, a tela mostra o erro com "Tentar de novo".
+  const lastGood = shallowRef<QCKioskProjection | null>(null);
+  watch(
+    () => data.value?.qc ?? null,
+    (next) => {
+      if (next) lastGood.value = next;
+    },
+    { immediate: true },
+  );
+  watch(selectedDate, () => {
+    lastGood.value = null;
+  });
+  const kiosk = computed(() => data.value?.qc ?? lastGood.value);
   const mutationGuard = useProductionMutationGuard(kiosk, refresh);
 
   const { realtime, fallbackPollMs } = useProductionLive(refresh, () => 30_000);
