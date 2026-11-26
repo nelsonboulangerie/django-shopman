@@ -92,6 +92,10 @@ LEGAL_ARCHIVE: dict[str, dict[str, str]] = {
         "privacy": "731e938ddf4356600a22001b29e6bbb13a12f4da3e595a7b237f5f4a13ee78ee",
         "terms": "59f482deb98e29526954c47cd6ec9e3bd04a6b09bb8fad8493d9b9fafc3cf304",
     },
+    "2026-11-24": {
+        "privacy": "5894987fc5e1b0fa9ffbdf4b4503fd1d8768e871beb38f4961b1c86960facc37",
+        "terms": "6573bb9ba06dce1ac31cb754a1b5fe17b7e47f56d980b74c72ae6cee046cc1fb",
+    },
 }
 
 LEGAL_ARCHIVE_KINDS = ("privacy", "terms")
