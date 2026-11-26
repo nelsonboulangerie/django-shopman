@@ -16,6 +16,8 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 // é a UX pedida: UM toque na etiqueta dispara, "Novo timer" abre o caminho
 // livre, e os ativos aparecem como cards.
 const entries = ref<FloorTimerEntry[]>([]);
+const soundOff = ref(false);
+const enableSoundSpy = vi.fn();
 const tags = ref([
   { ref: "estufa", label: "Estufa", minutes: 60, origin: "admin" as const },
   { ref: "pausa-cafe", label: "Pausa-café", minutes: 15, origin: "admin" as const },
@@ -76,6 +78,8 @@ beforeEach(() => {
     restore: restoreSpy,
     extend: extendSpy,
     remainingLabel: () => "12:34",
+    soundOff,
+    enableSound: enableSoundSpy,
   }));
   vi.stubGlobal("useTimerTags", () => ({
     tags,
@@ -87,6 +91,8 @@ beforeEach(() => {
     saving: ref(false),
   }));
   entries.value = [];
+  soundOff.value = false;
+  enableSoundSpy.mockClear();
   createSpy.mockClear();
   createTagSpy.mockClear();
   createTagSpy.mockResolvedValue({ ok: true, created: true, tag: tags.value[0] });
@@ -199,6 +205,28 @@ describe("Página /timers — os ativos como cards", () => {
     expect(message).toBe("Timer encerrado.");
     options.action.onClick();
     expect(restoreSpy).toHaveBeenCalledWith("a", removed);
+  });
+});
+
+// WP-F12 (P1-12): depois de recarregar, o navegador só libera o som no próximo
+// toque. O card que ainda vai tocar avisa, e o toque no aviso liga.
+describe("Página /timers — som desligado depois de recarregar", () => {
+  it('o card diz "Som desligado. Toque para ligar." e o toque liga', async () => {
+    soundOff.value = true;
+    entries.value = [entry({ key: "a", title: "Estufa", mode: "running" })];
+    const page = await mountPage();
+
+    const notice = page.find("[data-floor-timer-sound-off]");
+    expect(notice.text()).toBe("Som desligado. Toque para ligar.");
+    await notice.trigger("click");
+    expect(enableSoundSpy).toHaveBeenCalled();
+  });
+
+  it("com o som ligado, nada de aviso", async () => {
+    entries.value = [entry({ key: "a", title: "Estufa", mode: "running" })];
+    const page = await mountPage();
+
+    expect(page.find("[data-floor-timer-sound-off]").exists()).toBe(false);
   });
 });
 

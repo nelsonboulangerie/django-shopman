@@ -574,6 +574,9 @@ class MiseEnPlaceLineProjection:
     # O motivo, por extenso. Margem sem motivo é número que cresceu sozinho, e
     # quem lê a lista de separação tem de saber de onde vieram os gramas.
     margin_reason: str
+    # "300 g": quanto falta para a necessidade do dia (necessidade − saldo). "" sem
+    # falta, sem leitura de saldo, e sempre em pré-preparo (ele se faz na hora).
+    missing_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -594,6 +597,8 @@ class ProductionMiseEnPlaceProjection:
     # motivo por linha não tem mais onde morar.
     yield_margin_note: str
     access: ProductionSurfaceAccess
+    # "Pedir no Compras" ao lado da falta: só para quem opera o Compras ("" aos demais).
+    purchase_url: str = ""
     actions: tuple[ProductionActionProjection, ...] = ()
     generated_at: str = ""
     source_revision: str = ""
@@ -1282,6 +1287,10 @@ class QCOrderCardProjection:
     # ``Recipe.meta.output_unit``). Lote de preparo medido em gramas não pode
     # ser somado com pão contado em peças: a tela agrupa por esta unidade.
     output_unit: str = ""
+    # "No forno até 05:40" (WP-F12, P1-12): a hora em que o timer declarado
+    # termina (enfornou + duração armada), para qualquer tablet ler. Vazio sem
+    # forno aberto. O timer segue lembrete local; isto é só o fato declarado.
+    oven_until_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -1774,6 +1783,7 @@ def build_production_mise_en_place(
     selected_date: date | None = None,
     expand: bool = False,
     access: ProductionSurfaceAccess | None = None,
+    purchase_url: str = "",
 ) -> ProductionMiseEnPlaceProjection:
     """Lista de separação do dia — ``craft.needs()`` com quebra e saldo.
 
@@ -1853,6 +1863,7 @@ def build_production_mise_en_place(
         margin_total = (
             target - (need.quantity - need.margin.total) if need.margin is not None else None
         )
+        is_short = bool(available is not None and available < need.quantity)
         lines.append(
             MiseEnPlaceLineProjection(
                 sku=need.item_ref,
@@ -1861,7 +1872,7 @@ def build_production_mise_en_place(
                 unit="g" if units.dimension(need.unit) == units.MASS else need.unit,
                 is_subrecipe=need.has_recipe,
                 available_display=_preparation_measure(available, need.unit) if available is not None else "",
-                is_short=bool(available is not None and available < need.quantity),
+                is_short=is_short,
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
                 annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
                 margin_display=(
@@ -1870,6 +1881,7 @@ def build_production_mise_en_place(
                     else ""
                 ),
                 margin_reason=need.margin.reason() if need.margin is not None else "",
+                missing_display=_preparation_measure(need.quantity - available, need.unit) if is_short else "",
             )
         )
     lines.sort(key=lambda line: (not line.is_subrecipe, line.name.lower()))
@@ -1885,6 +1897,7 @@ def build_production_mise_en_place(
         yield_margin_applied=margin_applied,
         yield_margin_note=_YIELD_MARGIN_NOTE,
         access=access,
+        purchase_url=purchase_url,
     )
 
 
@@ -2351,12 +2364,19 @@ def build_qc_kiosk(
     from shopman.backstage.models import OvenRun
 
     started_refs = [card.ref for card in cards if card.status == WorkOrder.Status.STARTED]
-    open_oven_refs = set(
-        OvenRun.objects.filter(
-            work_order_ref__in=started_refs,
-            status="open",
-        ).values_list("work_order_ref", flat=True)
-    )
+    open_oven_runs = OvenRun.objects.filter(
+        work_order_ref__in=started_refs,
+        status="open",
+    ).values_list("work_order_ref", "armed_at", "planned_seconds")
+    oven_until: dict[str, str] = {}
+    for work_order_ref, armed_at, planned_seconds in open_oven_runs:
+        oven_until[work_order_ref] = format_clock(armed_at + timedelta(seconds=planned_seconds or 0))
+    open_oven_refs = set(oven_until)
+    if oven_until:
+        cards = tuple(
+            replace(card, oven_until_display=oven_until[card.ref]) if card.ref in oven_until else card
+            for card in cards
+        )
 
     return QCKioskProjection(
         selected_date=selected_date.isoformat(),

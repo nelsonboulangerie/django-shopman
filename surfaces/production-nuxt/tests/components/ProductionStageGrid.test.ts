@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, defineComponent, h, reactive, ref, watch, type PropType } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
+import LotStartPanel from "../../app/components/LotStartPanel.vue";
 import PlanReasonCard from "../../app/components/PlanReasonCard.vue";
 import ProductionStageGrid from "../../app/components/ProductionStageGrid.vue";
 import ShortageDialog from "../../app/components/ShortageDialog.vue";
@@ -111,7 +112,12 @@ function installGlobals() {
   vi.stubGlobal("useSonner", { success: vi.fn(), error: vi.fn() });
   // Mesa, mouse: sem o painel encaixado do tablet de toque.
   vi.stubGlobal("useTouchPointer", () => ref(false));
-  vi.stubGlobal("useScreen", () => ({ belowLg: ref(false), belowSm: ref(false), ready: ref(true) }));
+  vi.stubGlobal("useScreen", () => ({
+    belowLg: ref(false),
+    belowXl: ref(false),
+    belowSm: ref(false),
+    ready: ref(true),
+  }));
   vi.stubGlobal("useOperatorAppLink", () => ({
     attrsFor: () => ({ target: "_self" }),
   }));
@@ -919,7 +925,7 @@ describe("ProductionStageGrid — Produção", () => {
     await byText(w, "button", "WO-008")!.trigger("click");
     await w
       .findAll("button")
-      .filter((button) => button.text().trim() === "Confirmar")
+      .filter((button) => button.attributes("data-open-confirm-submit") !== undefined)
       .at(-1)!
       .trigger("click");
 
@@ -940,7 +946,7 @@ describe("ProductionStageGrid — Produção", () => {
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
     const submit = w
       .findAll("button")
-      .filter((button) => button.text().trim() === "Confirmar")
+      .filter((button) => button.attributes("data-open-confirm-submit") !== undefined)
       .at(-1)!;
 
     await submit.trigger("click");
@@ -984,11 +990,11 @@ describe("ProductionStageGrid — Produção", () => {
     await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
     const input = w.find('input[aria-label="Quantidade prevista"]');
     await input.setValue("27");
-    expect(w.text()).toContain("Diferente do planejado (30)");
+    expect(w.text()).toContain("Diferente do planejado (30 un.)");
     expect(w.find("textarea").exists()).toBe(false);
     const submit = w
       .findAll("button")
-      .filter((button) => button.text().trim() === "Confirmar")
+      .filter((button) => button.attributes("data-open-confirm-submit") !== undefined)
       .at(-1)!;
     expect(submit.attributes("disabled")).toBeUndefined();
     await input.trigger("keydown", { key: "Enter" });
@@ -1014,7 +1020,7 @@ describe("ProductionStageGrid — Produção", () => {
     const submit = () =>
       w
         .findAll("button")
-        .filter((button) => button.text().trim() === "Confirmar")
+        .filter((button) => button.attributes("data-open-confirm-submit") !== undefined)
         .at(-1)!;
     expect(submit().attributes("disabled")).toBeDefined();
     await input.trigger("keydown", { key: "Enter" });
@@ -1591,5 +1597,120 @@ describe("ProductionStageGrid — menu da linha da Produção", () => {
     await flushPromises();
 
     expect(w.find('input[aria-label="Quantidade prevista"]').exists()).toBe(true);
+  });
+});
+
+// WP-F20: o painel de abertura e os alvos do chão.
+describe("ProductionStageGrid — o painel de abertura (WP-F20)", () => {
+  const startModal = (w: ReturnType<typeof mountGrid>) =>
+    w
+      .findAllComponents(LotStartPanel)
+      .find((panel) => panel.props("variant") === "modal")!;
+  const press = async (w: ReturnType<typeof mountGrid>, keys: string[]) => {
+    for (const key of keys) {
+      startModal(w).vm.$emit("digit", key);
+      await flushPromises();
+    }
+  };
+  const qty = (w: ReturnType<typeof mountGrid>) =>
+    (w.find('input[aria-label="Quantidade prevista"]').element as HTMLInputElement).value;
+
+  it("o diálogo usa o teclado da tela, nunca o do sistema (P1-25)", async () => {
+    boardRows.value = [row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] })];
+    const w = mountGrid();
+    await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
+
+    expect(w.find('input[aria-label="Quantidade prevista"]').attributes("inputmode")).toBe("none");
+    expect(startModal(w).html().toLowerCase()).toContain("operatornumpad");
+    // O primeiro dígito troca o número sugerido; os seguintes somam.
+    await press(w, ["2", "8"]);
+    expect(qty(w)).toBe("28");
+    // Peça conta inteira: sem a tecla da vírgula, e a vírgula não entra.
+    expect(w.find("[data-start-decimal-key]").exists()).toBe(false);
+    await press(w, [","]);
+    expect(qty(w)).toBe("28");
+    // O botão diz o que vai abrir, com a unidade, e "Fechar" não cancela nada.
+    expect(w.get("[data-open-confirm-submit]").text()).toBe("Confirmar 28 un.");
+    expect(byText(w, "button", "Fechar")).toBeDefined();
+    expect(byText(w, "button", "Cancelar")).toBeUndefined();
+  });
+
+  it("massa aceita vírgula na tela e vai ao servidor com ponto (P1-22)", async () => {
+    boardRows.value = [
+      row({
+        output_unit: "kg",
+        planned_qty: "2.5",
+        planned_orders: [wo({ status: "planned", planned_qty: "2.5" })],
+      }),
+    ];
+    const w = mountGrid();
+    await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
+
+    // O planejado chega com vírgula, e o lote diz a unidade.
+    expect(qty(w)).toBe("2,5");
+    expect(w.text()).toContain("planejado 2,5 kg");
+    expect(w.find("[data-start-decimal-key]").exists()).toBe(true);
+    await press(w, ["1", ",", "2", "5", ",", "0", "0"]);
+    // Uma vírgula só, e no máximo três casas.
+    expect(qty(w)).toBe("1,250");
+    await w.get("[data-open-confirm-submit]").trigger("click");
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "1.250");
+  });
+
+  it("o lote fechado fica na lista com o previsto que teve (P2-13)", () => {
+    boardRows.value = [
+      row({
+        output_sku: "PAO-001",
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+      row({
+        output_sku: "CHOCO",
+        recipe_name: "Pain au chocolat",
+        // Como o servidor manda: o lote fechado não soma no started_qty da linha.
+        started_qty: "0",
+        finished_qty: "36",
+        finished_orders: [wo({ pk: 9, status: "finished", started_qty: "36", finished_qty: "36" })],
+      }),
+    ];
+    const w = mountGrid();
+    const closed = w.get('[data-open-row][data-sku="CHOCO"]');
+    expect(closed.text()).toContain("Pain au chocolat");
+    expect(closed.text()).toContain("Fechado");
+    expect(closed.text()).toContain("36");
+    // O progresso conta o fechado: "Todos 2", não "Todos 1".
+    expect(byText(w, '[role="tab"]', "Todos")!.text()).toContain("2");
+  });
+
+  it("com o painel encaixado a lista encolhe por colunas, nunca pelo nome (P1-06)", async () => {
+    vi.stubGlobal("useTouchPointer", () => ref(true));
+    vi.stubGlobal("useScreen", () => ({
+      belowLg: ref(false),
+      belowXl: ref(true),
+      belowSm: ref(false),
+      ready: ref(true),
+    }));
+    boardRows.value = [
+      row({
+        recipe_name: "Croissant de manteiga",
+        planned_qty: "42",
+        planned_orders: [wo({ status: "planned", planned_qty: "42" })],
+      }),
+    ];
+    const w = mountGrid();
+    await flushPromises();
+    await w.find('button[aria-label="Confirmar Croissant de manteiga"]').trigger("click");
+
+    expect(w.find("[data-open-confirm-panel]").exists()).toBe(true);
+    const header = w.get("[data-open-table] > div[aria-hidden]");
+    // Some a Situação (vira ponto) e o Planejado (desce para a linha do SKU).
+    expect(header.text()).not.toContain("Situação");
+    expect(header.text()).not.toContain("Planej");
+    const line = w.get("[data-open-row]");
+    expect(line.find("[data-open-situation-dot]").text()).toBe("A confirmar");
+    expect(line.get("[data-open-planned-compact]").text()).toContain("42 planejadas");
+    // A 1024 px a ação da linha é só o ícone; o nome fica com a largura.
+    expect(line.get("[data-open-confirming]").text().trim()).toBe("");
+    expect(line.get("[data-row-name]").text()).toBe("Croissant de manteiga");
   });
 });

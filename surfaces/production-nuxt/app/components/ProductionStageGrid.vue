@@ -30,6 +30,7 @@ import {
   commitmentChipLabel,
   dayContextLine,
   formatQty,
+  formatQtyUnit,
   fullDateLabel,
   latestPlanTime,
   plannedAsSuggested,
@@ -193,8 +194,12 @@ const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
       r.base_usages.some((usage) => usage.output_sku === baseFilter.value),
     );
   }
+  // O lote fechado continua na lista (P2-13): sem ele a linha sumia ao fechar e o
+  // progresso do dia encolhia ("5 de 8" virava "4 de 7").
   if (props.stage === "open") {
-    return base.filter((r) => r.planned_qty !== "0" || r.started_qty !== "0");
+    return base.filter(
+      (r) => r.planned_qty !== "0" || r.started_qty !== "0" || r.finished_qty !== "0",
+    );
   }
   return base;
 });
@@ -411,9 +416,10 @@ function bump(field: keyof typeof qtyFields, delta: number) {
   const target = qtyFields[field];
   const current = parseFloat(target.value.replace(",", ".")) || 0;
   const next = Math.max(0, current + delta);
-  target.value = Number.isInteger(next)
+  const value = Number.isInteger(next)
     ? String(next)
     : next.toFixed(3).replace(/\.?0+$/, "");
+  target.value = field === "start" ? startDisplay(value) : value;
 }
 
 function openPlan(
@@ -632,7 +638,7 @@ function openStart(row: ProductionMatrixRowProjection) {
   startRow.value = row;
   selectedStartPk.value =
     row.planned_orders.length === 1 ? row.planned_orders[0]!.pk : null;
-  startQty.value = selectedStartOrder.value?.planned_qty ?? "";
+  startQty.value = startDisplay(selectedStartOrder.value?.planned_qty ?? "");
   if (selectedStartPk.value != null) {
     focusQty(startPanel, startModal);
   }
@@ -640,7 +646,7 @@ function openStart(row: ProductionMatrixRowProjection) {
 
 function selectStartWorkOrder(workOrder: WorkOrderCardProjection) {
   selectedStartPk.value = workOrder.pk;
-  startQty.value = workOrder.planned_qty;
+  startQty.value = startDisplay(workOrder.planned_qty);
   focusQty(startPanel, startModal);
 }
 
@@ -656,14 +662,14 @@ async function confirmStart() {
       row.output_sku,
       wo.pk,
       wo.rev,
-      startQty.value.trim(),
+      startQty.value.trim().replace(",", "."),
     );
     if (res.ok) {
       startRow.value = null;
       selectedStartPk.value = null;
       kds.refresh();
       useSonner.success(
-        `Lote aberto: ${rowLabel(row)} × ${startQty.value.trim()}`,
+        `Lote aberto: ${rowLabel(row)} × ${formatQtyUnit(startQty.value.trim(), row.output_unit)}`,
       );
     } else if (res.shortage) {
       // Confirmar abaixo das encomendas nunca é forçável (o servidor não
@@ -922,21 +928,77 @@ onMounted(() => {
 const docked = computed(
   () => gridMounted.value && touchPointer.value && !screen.belowLg.value,
 );
-// Com o painel encaixado a lista estreita: colunas de número compactas (v3 tablet).
-// Sem ele, as colunas de número e a da ação têm a largura do que mostram ("A confirmar",
-// o número, "Confirmar" e o ⋯): fixas, para alinhar de uma linha para a outra, e justas,
-// para o nome do produto caber a 1024 px (#2959: com 236 px na ação, sobravam 76 px
-// para o produto, e o nome quebrava no meio da palavra).
+// Com o painel encaixado a lista estreita, e ela encolhe por colunas, nunca pelo nome
+// (P1-06, `EV/02`): a Situação vira um ponto antes do nome, o Planejado desce para a
+// linha do SKU ("· 42 planejadas") e, abaixo de 1280 px, a ação da linha é só o ícone.
+// Ficam Produto, Previsto e Ação.
+// Sem o painel, as colunas de número e a da ação têm a largura do que mostram ("A
+// confirmar", o número, "Confirmar" e o ⋯): fixas, para alinhar de uma linha para a
+// outra, e justas, para o nome do produto caber a 1024 px (#2959: com 236 px na ação,
+// sobravam 76 px para o produto, e o nome quebrava no meio da palavra).
+// No toque (tablet deitado ou em pé, celular), todo alvo das linhas tem 44 px (P1-25).
+// A suíte desenha botão em 32 px (dono, 09/10/2026); o chão de luva e farinha é a
+// opção maior do app, sem mexer no kit.
+const FLOOR_TARGETS =
+  "pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11";
+const dockedCompact = computed(() => docked.value && screen.belowXl.value);
 const openCols = computed(() =>
   docked.value
-    ? "lg:grid-cols-[minmax(0,1fr)_118px_60px_72px_auto] lg:gap-x-3"
+    ? "lg:grid-cols-[minmax(0,1fr)_64px_100px] xl:grid-cols-[minmax(0,1fr)_72px_200px] lg:gap-x-3"
     : "lg:grid-cols-[minmax(0,1fr)_120px_96px_96px_156px]",
 );
+
+// A situação da linha da Produção: a confirmar, aberto ou fechado. O lote fechado
+// fica na lista com o previsto que teve (P2-13).
+type OpenSituation = "pending" | "opened" | "closed";
+function openSituation(row: ProductionMatrixRowProjection): OpenSituation {
+  if (openRowPending(row)) return "pending";
+  if (row.started_orders.length) return "opened";
+  return "closed";
+}
+const OPEN_SITUATION: Record<
+  OpenSituation,
+  { label: string; color: "warning" | "success" | "neutral"; dot: string }
+> = {
+  pending: { label: "A confirmar", color: "warning", dot: "bg-warning" },
+  opened: { label: "Aberto", color: "success", dot: "bg-success" },
+  closed: { label: "Fechado", color: "neutral", dot: "bg-muted-foreground" },
+};
+// O previsto da linha soma os lotes abertos e os fechados: fechar não apaga o número.
+function rowForecastQty(row: ProductionMatrixRowProjection): string {
+  const total = [...row.started_orders, ...row.finished_orders].reduce(
+    (sum, order) => sum + qtyNumber(order.started_qty || "0"),
+    0,
+  );
+  return total ? String(Number(total.toFixed(3))) : "0";
+}
+
+// O teclado da tela do previsto. Peça conta inteira; massa e creme (g, kg, l) aceitam
+// vírgula, com até três casas (P1-22, o lado da abertura). O campo guarda a vírgula
+// que a pessoa vê; o envio troca por ponto.
+const START_COUNT_UNITS = new Set(["", "un", "un.", "und", "pc", "pç", "unidade"]);
+const startDecimal = computed(
+  () => !START_COUNT_UNITS.has((startRow.value?.output_unit ?? "").trim().toLowerCase()),
+);
+function startDisplay(value: string): string {
+  return value.replace(".", ",");
+}
 const startPadFresh = ref(true);
-function startDigit(digit: string) {
-  const next = startPadFresh.value ? digit : `${startQty.value}${digit}`;
-  startQty.value = String(Math.min(99999, Number(next) || 0));
+function startDigit(key: string) {
+  const current = startPadFresh.value ? "" : startQty.value;
   startPadFresh.value = false;
+  if (key === ",") {
+    if (!startDecimal.value || current.includes(",")) return;
+    startQty.value = `${current || "0"},`;
+    return;
+  }
+  const [whole = "", fraction] = `${current}${key}`.split(",");
+  if (fraction !== undefined) {
+    if (fraction.length > 3) return;
+    startQty.value = `${whole},${fraction}`;
+    return;
+  }
+  startQty.value = String(Math.min(99999, Number(whole) || 0));
 }
 function startBackspace() {
   startQty.value = startQty.value.length <= 1 ? "0" : startQty.value.slice(0, -1);
@@ -980,10 +1042,6 @@ const planActionAllowed = computed(() =>
     ? access.value?.can_edit_suggested === true
     : access.value?.can_edit_planned === true,
 );
-
-function cellQty(value: string): string {
-  return value === "0" ? "—" : value;
-}
 
 // Progresso do dia, no cabeçalho: "4 de 28 planejados" (Planejamento) ou "5 de 8
 // abertos" (Produção), com a barra do quanto o dia andou. Conta produtos (linhas),
@@ -1531,6 +1589,7 @@ const startedDescription = computed(() => {
         <div
           v-else-if="stage === 'plan'"
           class="overflow-hidden rounded-lg border border-border bg-card"
+          :class="FLOOR_TARGETS"
           data-plan-table
         >
           <div
@@ -1874,6 +1933,7 @@ const startedDescription = computed(() => {
         <div
           v-else
           class="overflow-hidden rounded-lg border border-border bg-card"
+          :class="FLOOR_TARGETS"
           data-open-table
         >
           <div
@@ -1882,10 +1942,10 @@ const startedDescription = computed(() => {
             aria-hidden="true"
           >
             <span>Produto</span>
-            <span>Situação</span>
-            <span class="text-right">{{
-              lens.read.visible ? (docked ? "Planej." : lens.read.label) : ""
-            }}</span>
+            <template v-if="!docked">
+              <span>Situação</span>
+              <span class="text-right">{{ lens.read.visible ? lens.read.label : "" }}</span>
+            </template>
             <span class="text-right">{{
               lens.action.visible ? lens.action.label : ""
             }}</span>
@@ -1903,7 +1963,7 @@ const startedDescription = computed(() => {
               class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0 lg:min-h-14 lg:py-2"
               :class="[
                 openCols,
-                openRowPending(row) ? '' : 'bg-success/5',
+                openSituation(row) === 'opened' ? 'bg-success/5' : '',
                 docked && startRow?.output_sku === row.output_sku
                   ? 'shadow-[inset_4px_0_0_var(--primary)] bg-primary/5'
                   : '',
@@ -1915,19 +1975,32 @@ const startedDescription = computed(() => {
                 <!-- Nome em até 2 linhas, nunca "Croissa…" no tablet deitado. Quebra por
                      palavra, nunca no meio dela ("Coelhinh o", #2959); o que não couber
                      nas 2 linhas termina em reticências. -->
-                <p
-                  class="line-clamp-2 break-normal hyphens-none op-title"
-                  :title="rowLabel(row)"
-                  data-row-name
-                >
-                  {{ rowLabel(row) }}
-                </p>
+                <!-- Sem a coluna Situação (celular, tablet em pé, painel encaixado), a
+                     situação é o ponto antes do nome. -->
+                <div class="flex items-start gap-2">
+                  <span
+                    class="mt-[0.45em] size-2.5 shrink-0 rounded-full"
+                    :class="[OPEN_SITUATION[openSituation(row)].dot, docked ? '' : 'lg:hidden']"
+                    data-open-situation-dot
+                  >
+                    <span class="sr-only">{{ OPEN_SITUATION[openSituation(row)].label }}</span>
+                  </span>
+                  <p
+                    class="line-clamp-2 min-w-0 break-normal hyphens-none op-title"
+                    :title="rowLabel(row)"
+                    data-row-name
+                  >
+                    {{ rowLabel(row) }}
+                  </p>
+                </div>
                 <p class="mt-0.5 flex items-center gap-1.5 op-micro text-muted-foreground">
                   <span class="truncate font-mono">{{ row.output_sku }}</span>
-                  <!-- Celular e tablet em pé: sem a coluna Planejado, o número vem aqui. -->
+                  <!-- Celular, tablet em pé e painel encaixado: sem a coluna Planejado, o
+                       número vem aqui. -->
                   <span
-                    v-if="row.started_qty === '0' && row.planned_qty !== '0' && lens.read.visible"
-                    class="shrink-0 tabular-nums lg:hidden"
+                    v-if="row.planned_qty !== '0' && openSituation(row) === 'pending' && lens.read.visible"
+                    class="shrink-0 tabular-nums"
+                    :class="docked ? '' : 'lg:hidden'"
                     data-open-planned-compact
                     >· {{ formatQty(row.planned_qty, row.output_unit) }} planejadas</span
                   >
@@ -1945,49 +2018,54 @@ const startedDescription = computed(() => {
                   />
                 </p>
               </div>
-              <span class="hidden lg:inline-flex">
-                <NuxtBadge
-                  :color="openRowPending(row) ? 'warning' : 'success'"
-                  :label="openRowPending(row) ? 'A confirmar' : 'Aberto'"
-                />
-              </span>
-              <span
-                v-if="lens.read.visible"
-                class="hidden text-right text-lg font-semibold tabular-nums lg:block"
-                :class="row.planned_qty === '0' ? 'text-muted-foreground' : ''"
-                >{{ row.planned_qty === "0" ? "—" : formatQty(row.planned_qty, row.output_unit) }}</span
-              >
-              <span v-else class="hidden lg:block" />
+              <template v-if="!docked">
+                <span class="hidden lg:inline-flex">
+                  <NuxtBadge
+                    :color="OPEN_SITUATION[openSituation(row)].color"
+                    :label="OPEN_SITUATION[openSituation(row)].label"
+                  />
+                </span>
+                <span
+                  v-if="lens.read.visible"
+                  class="hidden text-right text-lg font-semibold tabular-nums lg:block"
+                  :class="row.planned_qty === '0' ? 'text-muted-foreground' : ''"
+                  >{{ row.planned_qty === "0" ? "—" : formatQty(row.planned_qty, row.output_unit) }}</span
+                >
+                <span v-else class="hidden lg:block" />
+              </template>
               <!-- Previsto: o número abre a conferência e o cancelamento do lote aberto. -->
               <span v-if="lens.action.visible" class="hidden justify-end lg:flex">
                 <span
-                  v-if="row.started_qty !== '0'"
+                  v-if="rowForecastQty(row) !== '0'"
                   class="inline-flex items-center gap-1.5 text-lg font-semibold tabular-nums"
-                  >{{ formatQty(row.started_qty, row.output_unit) }}
+                  >{{ formatQty(rowForecastQty(row), row.output_unit) }}
                   <Icon name="lucide:circle-check" class="size-4 text-success"
                 /></span>
                 <span
                   v-else
                   class="text-lg font-semibold tabular-nums text-muted-foreground"
-                  >{{ cellQty(row.started_qty) }}</span
+                  >—</span
                 >
               </span>
               <span v-else class="hidden lg:block" />
               <div class="flex items-center justify-end gap-1.5">
                 <!-- No celular e no tablet em pé o previsto vem junto da ação. -->
                 <span
-                  v-if="row.started_qty !== '0' && lens.action.visible"
+                  v-if="rowForecastQty(row) !== '0' && lens.action.visible"
                   class="inline-flex h-8 items-center gap-1.5 px-1 text-base font-semibold tabular-nums lg:hidden"
                   data-open-started-compact
-                  >{{ formatQty(row.started_qty, row.output_unit) }}
+                  >{{ formatQty(rowForecastQty(row), row.output_unit) }}
                   <Icon name="lucide:circle-check" class="size-4 text-success"
                 /></span>
                 <!-- Confirmando: o painel encaixado está aberto nesta linha (tablet deitado). -->
                 <NuxtButton
                   v-if="docked && startRow?.output_sku === row.output_sku"
                   size="xl"
+                  :square="dockedCompact"
+                  :class="dockedCompact ? 'size-11 justify-center' : ''"
                   trailing-icon="i-lucide-chevron-right"
-                  label="Confirmando"
+                  :label="dockedCompact ? undefined : 'Confirmando'"
+                  :aria-label="`Confirmando ${rowLabel(row)}: fechar o painel`"
                   data-open-confirming
                   @click="startRow = null"
                 />
@@ -1998,8 +2076,10 @@ const startedDescription = computed(() => {
                   color="primary"
                   :variant="docked ? 'outline' : 'solid'"
                   :size="docked ? 'xl' : 'md'"
+                  :square="dockedCompact"
+                  :class="dockedCompact ? 'size-11 justify-center' : ''"
                   icon="i-lucide-check"
-                  label="Confirmar"
+                  :label="dockedCompact ? undefined : 'Confirmar'"
                   :disabled="isBusy(row.output_sku)"
                   :aria-label="`Confirmar ${rowLabel(row)}`"
                   data-open-confirm
@@ -2051,6 +2131,7 @@ const startedDescription = computed(() => {
       :outsized="startOutsized"
       :needs-double-check="startNeedsDoubleCheck"
       :diverges="startDiverges"
+      :decimal="startDecimal"
       @close="
         startRow = null;
         selectedStartPk = null;
@@ -2105,15 +2186,18 @@ const startedDescription = computed(() => {
       :outsized="startOutsized"
       :needs-double-check="startNeedsDoubleCheck"
       :diverges="startDiverges"
+      :decimal="startDecimal"
       @close="
         startRow = null;
         selectedStartPk = null;
       "
-      @cancel="startRow = null"
       @select="selectStartWorkOrder"
       @bump="(delta: number) => bump('start', delta)"
       @confirm="confirmStart()"
       @acknowledge="acknowledgeStartOutsized"
+      @digit="startDigit"
+      @backspace="startBackspace"
+      @clear="startClear"
     />
 
     <LotCancelDialog
