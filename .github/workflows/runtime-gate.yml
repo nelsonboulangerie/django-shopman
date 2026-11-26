@@ -497,10 +497,10 @@ jobs:
     name: Backstage ${{ matrix.shard }}
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
-    # Piloto DEV-2026-098 (docs/plans/CI-DX-LOCAL-FIRST-PLAN.md §9): `CI_HEAVY_RUNNER` manda SÓ
-    # os shards que seguram o relógio, e SÓ na fila, para a máquina paga. Sem a
-    # variável, é o runner de sempre. Desligar = apagar a variável.
-    runs-on: ${{ github.event_name == 'merge_group' && vars.CI_HEAVY_RUNNER || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    # Grátis de propósito: medido em 25 e 26/11 (evidence/ci-dx-098/), máquina paga não
+    # acelera estes shards Python (8-core 1,0–1,9x só no seed/rest; Ubicloud ~1,0x). O
+    # ganho deles veio da divisão em mais shards, de graça.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
@@ -589,10 +589,10 @@ jobs:
     name: Shop ${{ matrix.shard }}
     # Pesado: só na fila (docs/reference/ci-escopo.md).
     if: github.event_name != 'pull_request'
-    # Piloto DEV-2026-098 (docs/plans/CI-DX-LOCAL-FIRST-PLAN.md §9): `CI_HEAVY_RUNNER` manda SÓ
-    # os shards que seguram o relógio, e SÓ na fila, para a máquina paga. Sem a
-    # variável, é o runner de sempre. Desligar = apagar a variável.
-    runs-on: ${{ github.event_name == 'merge_group' && vars.CI_HEAVY_RUNNER || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    # Grátis de propósito: medido em 25 e 26/11 (evidence/ci-dx-098/), máquina paga não
+    # acelera estes shards Python (8-core 1,0–1,9x só no seed/rest; Ubicloud ~1,0x). O
+    # ganho deles veio da divisão em mais shards, de graça.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false

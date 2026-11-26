@@ -294,3 +294,33 @@ pico. É o custo escondido de partir demais, e agora ele também é vigiado.
 ### 9.3 Ubicloud (26/11, run 45788867113, `evidence/ci-dx-098/benchmark-ubicloud-2026-11-26.md`)
 
 `ubicloud-standard-4` (premium Ryzen 7950X3D na prática) contra o grátis de 4 vCPU, no mesmo commit: **`pos-nuxt` 1,59–1,71x**; shards Python 0,79–1,17x. Custo real: US$ 1,02. Passa a regra só para a classe de **navegador**. Para o grupo da fila andar, essa classe inteira teria de ir junto (`pos-nuxt`, `purchase-nuxt`, `kitchensink-nuxt`, `orders-nuxt`, Browser QA, Storefront E2E: ~67 min de job por grupo no grátis). Estimativa, não medida: ~40 min pagos por grupo, ~US$ 25/dia (~US$ 750/mês) no volume de hoje, com o grupo caindo de ~15 para ~10–11 min. O seletor `CI_HEAVY_RUNNER` atual também manda os shards Python, que não ganham: antes de qualquer piloto ele precisa virar seletor por classe (navegador). Decisão de despesa é do dono.
+
+### 9.4 Piloto da Ubicloud, preparado e desligado (dono, 26/11: "não quero levar susto de gasto")
+
+**Só a classe de navegador, só na fila, com teto que não trava a fila:**
+
+- `scripts/ci_browser_runner.py` escolhe o runner **a cada grupo**, antes de pedir a máquina: conta
+  os grupos desde `CI_BROWSER_SINCE` × `CI_BROWSER_COST_PER_GROUP_USD` (padrão **0,30**, contra
+  ~0,17 medido) e, ao chegar em `CI_BROWSER_BUDGET_USD` (padrão **8**), devolve o grátis. Assim o
+  corte de **US$ 10** do console da Ubicloud (confirmado em 26/11) nunca é atingido. Atingido, ele
+  RECUSARIA máquina e os jobs ficariam esperando: fila travada, como em 18/11. Erro e variável
+  ausente também caem no grátis. O passo nunca falha.
+- **A queda não é silenciosa:** piloto ligado que cai (orçamento, erro ou configuração incompleta)
+  abre **uma** issue "Piloto da Ubicloud voltou ao grátis" com o motivo e o conserto; ao voltar ao
+  pago, ela é comentada e fechada. A vigia diária põe o estado do piloto no resumo e alarma se o
+  runner pago demorar mais de 10 min a chegar (`paid_runner_wait_p95_min`).
+- **Shards Python voltaram ao grátis de vez:** não ganham com máquina paga (medido duas vezes).
+- **Os jobs do Omotenashi** (Browser QA, E2E da loja) só entram pelo nome em
+  `CI_BROWSER_SURFACES`: usam contêiner de Postgres, ainda não medido na Ubicloud.
+- Check obrigatório nunca pula: os jobs do Omotenashi dependem do `scope` com `!cancelled()`, e o
+  runner cai no grátis se a escolha falhar.
+
+**Ligar (depois que este PR estiver no `main`), variáveis do repositório:**
+`CI_BROWSER_RUNNER=ubicloud-standard-4`,
+`CI_BROWSER_SURFACES=["pos-nuxt","purchase-nuxt","kitchensink-nuxt","orders-nuxt"]`,
+`CI_BROWSER_SINCE=<agora, ISO UTC>`, `CI_BROWSER_BUDGET_USD=8`. **Desligar:** apagar
+`CI_BROWSER_RUNNER`, sem commit, com efeito no próximo grupo.
+
+**Ao ligar:** a vigia diária vai acusar `pos-nuxt` e Browser QA acima do teto no primeiro dia, porque
+a janela dela ainda contém dados de antes das acelerações (25/11: 14,5 e 13,6 min). Some quando a
+janela tiver só grupos novos.

@@ -60,6 +60,20 @@ jobs:
           [ "$code" = "0" ] || [ "$code" = "3" ] || exit "$code"
           echo "over=$([ "$code" = "3" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
+      # Estado do piloto da Ubicloud (DEV-2026-098, §9.3): gasto estimado do mês contra o
+      # teto, no resumo do dia. A queda para o grátis já abre issue sozinha, no grupo.
+      - name: Estado do piloto da Ubicloud
+        continue-on-error: true
+        env:
+          EVENT: merge_group
+          GH_TOKEN: ${{ github.token }}
+          CI_LINUX_RUNNER: ${{ vars.CI_LINUX_RUNNER }}
+          CI_BROWSER_RUNNER: ${{ vars.CI_BROWSER_RUNNER }}
+          CI_BROWSER_SINCE: ${{ vars.CI_BROWSER_SINCE }}
+          CI_BROWSER_BUDGET_USD: ${{ vars.CI_BROWSER_BUDGET_USD }}
+          CI_BROWSER_COST_PER_GROUP_USD: ${{ vars.CI_BROWSER_COST_PER_GROUP_USD }}
+        run: python3 scripts/ci_browser_runner.py > /dev/null
+
       # Pesos frescos do junit da última fila verde: se o equilíbrio dos shards
       # partidos passou do limite, a trava do PR (check_test_cost) vai reprovar
       # quem tocar nos pesos — melhor avisar antes, com o comando pronto.

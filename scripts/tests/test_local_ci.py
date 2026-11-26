@@ -331,3 +331,98 @@ def test_partes_concordam_entre_makefile_matriz_e_coverage_gate():
     assert {f"shop-{s}" for s in shop} <= listed
     # nada além dos shards que existem: cobertura velha esperada travaria o gate
     assert listed == {"test-storefront"} | {f"backstage-{s}" for s in expected} | {f"shop-{s}" for s in shop}
+
+
+# ── Piloto da Ubicloud: seletor dos jobs de navegador com teto (scripts/ci_browser_runner.py) ──
+
+import ci_browser_runner as browser  # noqa: E402
+
+PILOT = {"EVENT": "merge_group", "CI_BROWSER_RUNNER": "ubicloud-standard-4", "CI_BROWSER_SINCE": "2026-11-26T12:00:00Z"}
+
+
+@pytest.mark.parametrize("env", [
+    {**PILOT, "EVENT": "pull_request"},
+    {**PILOT, "CI_BROWSER_RUNNER": ""},
+    {**PILOT, "CI_BROWSER_SINCE": ""},
+])
+def test_seletor_fica_no_gratis_fora_da_fila_ou_sem_piloto(env, monkeypatch):
+    monkeypatch.delenv("CI_LINUX_RUNNER", raising=False)
+    runner, _ = browser.choose(env, lambda since: pytest.fail("não deve nem consultar a API"))
+    assert runner == "ubuntu-latest"
+
+
+def test_seletor_usa_o_piloto_dentro_do_orcamento():
+    runner, reason = browser.choose({**PILOT, "CI_BROWSER_BUDGET_USD": "8"}, lambda since: 10)
+    assert runner == "ubicloud-standard-4" and "US$ 3.00 de US$ 8.00" in reason
+
+
+def test_seletor_volta_ao_gratis_ao_esgotar_o_orcamento(monkeypatch):
+    monkeypatch.delenv("CI_LINUX_RUNNER", raising=False)
+    # 27 grupos × 0,30 = 8,10 ≥ 8: grátis ANTES do corte de 10 da Ubicloud (que travaria a fila)
+    runner, reason = browser.choose({**PILOT, "CI_BROWSER_BUDGET_USD": "8"}, lambda since: 27)
+    assert runner == "ubuntu-latest" and "esgotado" in reason
+
+
+def test_seletor_erro_de_api_vira_gratis(monkeypatch):
+    monkeypatch.delenv("CI_LINUX_RUNNER", raising=False)
+
+    def boom(since):
+        raise TimeoutError("api")
+
+    runner, reason = browser.choose(PILOT, boom)
+    assert runner == "ubuntu-latest" and "erro" in reason
+
+
+def test_jobs_do_piloto_nunca_pulam_check_obrigatorio():
+    """`needs: scope` + `!cancelled()`: scope que falha não pode PULAR check obrigatório (contaria verde)."""
+    wf = yaml.safe_load((ROOT / ".github/workflows/omotenashi-gate.yml").read_text())
+    for job in ("omotenashi-browser-qa", "storefront-e2e"):
+        assert "!cancelled()" in wf["jobs"][job]["if"]
+        assert "|| vars.CI_LINUX_RUNNER || 'ubuntu-latest'" in wf["jobs"][job]["runs-on"]
+
+
+class _FakeGh:
+    def __init__(self, open_issue=""):
+        self.open_issue, self.calls = open_issue, []
+
+    def __call__(self, *args):
+        self.calls.append(args)
+        return self.open_issue if args[:2] == ("issue", "list") else ""
+
+
+def test_queda_nao_pedida_abre_uma_issue_so():
+    env = {**PILOT, "ALERT": "true", "REASON": "orçamento do piloto esgotado: …", "RUN_URL": "u"}
+    gh = _FakeGh()
+    assert browser.notify(env, gh) == "issue aberta"
+    assert any(c[:2] == ("issue", "create") for c in gh.calls)
+    gh2 = _FakeGh(open_issue="77")  # já existe: não duplica nem comenta a cada grupo
+    assert browser.notify(env, gh2) == "estado já registrado: nada a fazer"
+    assert not any(c[:2] in {("issue", "create"), ("issue", "comment")} for c in gh2.calls)
+
+
+def test_voltou_ao_pago_fecha_a_issue():
+    gh = _FakeGh(open_issue="77")
+    assert browser.notify({**PILOT, "ALERT": "false", "RUN_URL": "u"}, gh) == "issue #77 fechada"
+    assert ("issue", "close", "77") in gh.calls
+
+
+def test_passo_de_escolha_que_falhou_tambem_alarma():
+    gh = _FakeGh()  # sem ALERT: a escolha falhou e não deixou saída
+    assert browser.notify({**PILOT, "RUN_URL": "u"}, gh) == "issue aberta"
+
+
+def test_piloto_desligado_nao_alarma():
+    gh = _FakeGh()
+    assert "nada a avisar" in browser.notify({**PILOT, "CI_BROWSER_RUNNER": "", "ALERT": "true"}, gh)
+    assert gh.calls == []
+
+
+def test_alert_sai_quando_ligado_e_caiu(monkeypatch, capsys):
+    monkeypatch.setattr(browser, "groups_since", lambda *a: 99)
+    for k, v in {**PILOT, "CI_BROWSER_BUDGET_USD": "8"}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.setattr(sys, "argv", ["ci_browser_runner.py"])
+    browser.main()
+    out = capsys.readouterr().out
+    assert "alert=true" in out and "runner=ubuntu-latest" in out

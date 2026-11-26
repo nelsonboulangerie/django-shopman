@@ -249,6 +249,7 @@ def analyse_jobs(cache: Cache, runs: list[dict]) -> dict:
     wait: dict[str, list[float]] = defaultdict(list)
     run_s: dict[str, list[float]] = defaultdict(list)
     labels: Counter = Counter()
+    paid_wait: list[float] = []  # espera por máquina dos jobs em runner PAGO (ubicloud-*)
     for r in runs:
         if r["name"] not in JOB_SAMPLE_WORKFLOWS or r["status"] != "completed":
             continue
@@ -259,11 +260,13 @@ def analyse_jobs(cache: Cache, runs: list[dict]) -> dict:
             wait[name].append((ts(j["started_at"]) - ts(j["created_at"])).total_seconds())
             run_s[name].append((ts(j["completed_at"]) - ts(j["started_at"])).total_seconds())
             labels[",".join(j.get("labels") or [])] += 1
+            if any(str(lab).startswith("ubicloud") for lab in (j.get("labels") or [])):
+                paid_wait.append((ts(j["started_at"]) - ts(j["created_at"])).total_seconds())
     rows = {
         name: {"wait": summary(wait[name]), "run": summary(run_s[name])}
         for name in sorted(run_s, key=lambda n: -(pct(run_s[n], 0.5) or 0))
     }
-    return {"jobs": rows, "runner_labels": dict(labels.most_common())}
+    return {"jobs": rows, "runner_labels": dict(labels.most_common()), "paid_runner_wait": summary(paid_wait)}
 
 
 def analyse_merges(since: dt.date, until: dt.date) -> dict:
@@ -523,6 +526,17 @@ def check_budget(rep: dict, budget: dict) -> dict:
             checked.append(f"{name}: {value} min (teto {limit}, n={s['run']['n']})")
             if value is not None and value > limit:
                 violations.append(f"{name}: execução p50 {value} min, teto {limit} min (n={s['run']['n']})")
+    # Runner pago (Ubicloud) que demora a chegar = fornecedor fora do ar ou corte de gasto
+    # atingido: o job fica esperando máquina e a fila trava. Teto próprio, bem mais baixo.
+    limit = budget.get("paid_runner_wait_p95_min")
+    paid = (rep.get("jobs") or {}).get("paid_runner_wait") or {}
+    if limit is not None and paid.get("n"):
+        checked.append(f"espera por runner PAGO p95: {paid['p95_min']} min (teto {limit}, n={paid['n']})")
+        if paid["p95_min"] is not None and paid["p95_min"] > limit:
+            violations.append(
+                f"runner pago demorando: espera p95 {paid['p95_min']} min, teto {limit}. Veja o status da "
+                "Ubicloud e o corte de gasto; para soltar a fila, apague `CI_BROWSER_RUNNER`"
+            )
     # Cada shard a mais é mais um job disputando os runners grátis no pico: a
     # espera é o custo escondido de partir demais, e tem teto próprio.
     limit = budget.get("runner_wait_p95_min")
