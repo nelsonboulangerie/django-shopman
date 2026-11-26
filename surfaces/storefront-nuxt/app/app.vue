@@ -155,6 +155,7 @@ useSeoMeta({
     <NuxtPage />
   </div>
   <div v-else class="shop-shell flex min-h-dvh flex-col">
+    <!-- Barra de rota, link marcado e aviso de espera (DEV-2026-094). -->
     <NavigationFeedback />
     <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
          dele, em fluxo normal, para não depender do position:fixed que deriva no

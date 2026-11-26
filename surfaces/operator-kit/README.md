@@ -1894,13 +1894,35 @@ Contrato:
   erro continua sendo da ação.
 - **Spinner empacotado**: `line-md:loading-loop` (coleção instalada na layer, #1316).
   Ícone buscado pela rede no meio do gesto é a mesma inércia por outro caminho.
+- **Na raiz, o botão da suíte já cumpre isso sozinho** (DEV-2026-094). O plugin
+  `app/plugins/buttonPendingByDefault.ts` liga o `loadingAuto` do Nuxt UI em todo
+  `NuxtButton` (e no `OperatorButton`, que o embrulha): o clique que **devolve** a
+  promessa (`@click="save"`, `@click="save(linha)"`) gira e trava até ela assentar.
+  `usePendingAction` continua sendo o caminho para pendente por chave (linha A não
+  trava a B), para o estado que outra peça da tela precisa ler e para o `<button>`
+  nativo. Desligar o automático (`:loading-auto="false"`) só com motivo, na lista da
+  trava.
+- **Navegação também responde no toque**: o `OperatorLoadingFeedback` (montado pelo
+  `OperatorAppRoot`) começa a espera no `page:loading:start`, antes do middleware, com
+  uma barra de rota indeterminada no topo (só `transform`, sem fade: o compositor a
+  mantém andando mesmo com a thread presa), e marca o link tocado (`aria-busy` +
+  `data-navigation-pending`, esmaecido por um estilo global do próprio componente). O atalho que abre
+  outro app (origem diferente) ganha a marca, a barra e o modal no toque: no PWA não
+  há barra do navegador para dizer que a página está vindo.
+- **Pinta antes de trabalhar**: `app/plugins/navigationPaintsFirst.client.ts` faz a
+  troca de página esperar um quadro pintado (teto de 50 ms). Sem isso, a montagem da
+  tela nova prendia a thread (~380 ms medidos no Compras) e nenhum sinal chegava à tela.
 - A trava `tests/guardrails.pendingAction.test.ts` varre a layer e os apps de operador
   do `registry.json`: botão com `@click` numa função `async` do próprio componente
   precisa declarar o pendente (`:loading`, `:aria-busy` ou `:disabled` no mesmo
-  elemento). O que já existia sem isso está numa lista que **só encolhe**: corrigir um
-  item obriga a tirá-lo da lista, e item novo reprova.
+  elemento), a não ser o botão da suíte que devolve a promessa. Botão da suíte cujo
+  handler **joga a promessa fora** (`@click="a(); save()"`) reprova sem lista: o
+  automático não a veria. A lista do que já existia zerou em 25/11/2026 e **só
+  encolhe**: item novo reprova.
 
-A loja tem cópia espelhada (`storefront-nuxt/app/composables/usePendingAction.ts`) e,
+A loja tem cópia espelhada (`storefront-nuxt/app/composables/usePendingAction.ts`), o
+mesmo automático no `UiButton` (o clique que devolve promessa gira e trava), a mesma
+barra de rota e o mesmo link marcado e,
 além dela, o **toque antes da hidratação** (`storefront-nuxt/app/utils/earlyTap.ts`):
 o "Adicionar" nasce ativo no HTML do servidor, um script inline no `<head>` guarda o
 toque que chega antes do app e o mostra girando, e o componente o executa uma vez ao

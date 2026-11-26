@@ -297,7 +297,21 @@ def test_nota_inteira_sai_sem_casa_decimal():
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_aba_por_situacao_junta_as_paginas_e_filtra(operator, fake):
+def test_aba_por_situacao_junta_as_paginas_e_filtra(operator, fake, monkeypatch):
+    # O período padrão da aba conta os últimos STATUS_TAB_DEFAULT_DAYS a partir de HOJE,
+    # e as avaliações do falso iFood têm datas fixas (r1 em 10/11, r2 em 18/11). Sem
+    # hoje fixo o teste virava bomba-relógio: em 26/11/2026 a r1 caiu fora dos 15 dias e
+    # a fila de todo PR reprovou. Hoje fixo em 20/11, a semana em que o teste nasceu.
+    from datetime import UTC, datetime
+
+    from shopman.backstage.api import ifood_reviews as ifood_reviews_api
+
+    class _HojeFixo(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 20, 12, 0, tzinfo=UTC).astimezone(tz) if tz else datetime(2026, 11, 20, 12, 0)
+
+    monkeypatch.setattr(ifood_reviews_api, "datetime", _HojeFixo)
     body = operator.get(reverse("api-backstage-ifood-reviews"), {"status": "not_replied"}).json()
 
     assert {r["id"] for r in body["reviews"]} == {"r1", "r2"}
