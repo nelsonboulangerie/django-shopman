@@ -470,3 +470,36 @@ def test_fetch_do_ready_tenta_de_novo_quando_outro_processo_trava_o_ref(monkeypa
     monkeypatch.setattr(local_ci.time, "sleep", lambda s: None)
     local_ci.fetch_main(Path("."))
     assert len(calls) == 3
+
+
+# ── Node da CI ──────────────────────────────────────────────────────────────
+
+
+def _fake_node(bindir: Path, version: str) -> Path:
+    bindir.mkdir(parents=True)
+    node = bindir / "node"
+    node.write_text(f"#!/bin/sh\necho {version}\n")
+    node.chmod(0o755)
+    return bindir
+
+
+def test_node_da_ci_vem_dos_workflows():
+    assert local_ci.ci_node_major(ROOT) == "22"
+
+
+def test_node_do_path_que_ja_serve_e_o_escolhido(tmp_path):
+    on_path = _fake_node(tmp_path / "path", "v22.9.0")
+    assert local_ci.find_ci_node("22", str(on_path), homes=()) == on_path
+
+
+def test_node_diferente_no_path_busca_o_instalado(tmp_path):
+    """Node 26 no PATH (sem localStorage) e o 22 instalado ao lado: usa o 22."""
+    on_path = _fake_node(tmp_path / "path", "v26.4.0")
+    _fake_node(tmp_path / "node@22" / "bin", "v22.23.1")
+    found = local_ci.find_ci_node("22", str(on_path), homes=(str(tmp_path / "node@{m}" / "bin"),))
+    assert found == tmp_path / "node@22" / "bin"
+
+
+def test_sem_node_da_ci_nao_acha_nada(tmp_path):
+    on_path = _fake_node(tmp_path / "path", "v26.4.0")
+    assert local_ci.find_ci_node("22", str(on_path), homes=(str(tmp_path / "nada@{m}"),)) is None

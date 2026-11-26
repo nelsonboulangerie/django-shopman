@@ -49,10 +49,12 @@ import argparse
 import contextlib
 import datetime as dt
 import fcntl
+import glob
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -515,6 +517,53 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
     return Plan(level, pr, steps, remote, notes)
 
 
+# ── Node da CI ────────────────────────────────────────────────────────────
+# A CI roda as superfícies no Node do `setup-node` (22); a máquina pode ter outro
+# no PATH (26, medido em 26/11, sem `localStorage` global: o `usePwaInstall` da loja
+# reprovava no preflight de todos e empurrava sessões para o `sem_preflight`).
+# O preflight usa o MESMO major da CI, achado nos gerenciadores comuns; sem ele,
+# falha dizendo o que instalar, em vez de reprovar teste por diferença de runtime.
+
+NODE_HOMES = (
+    "/opt/homebrew/opt/node@{m}/bin",
+    "/usr/local/opt/node@{m}/bin",
+    "~/.nvm/versions/node/v{m}.*/bin",
+    "~/.volta/tools/image/node/{m}.*/bin",
+    "~/.local/share/fnm/node-versions/v{m}.*/installation/bin",
+    "~/Library/Application Support/fnm/node-versions/v{m}.*/installation/bin",
+)
+
+
+def ci_node_major(root: Path) -> str:
+    """O major do `node-version` dos workflows; mais de um é erro de configuração."""
+    majors = {
+        m for wf in sorted((root / ".github" / "workflows").glob("*.y*ml"))
+        for m in re.findall(r"node-version:\s*[\"']?(\d+)", wf.read_text())
+    }
+    if len(majors) != 1:
+        raise SystemExit(f"❌ os workflows pedem Node {sorted(majors) or 'nenhum'}: deveria ser um major só")
+    return majors.pop()
+
+
+def node_major(bindir: Path) -> str | None:
+    try:
+        out = subprocess.run([str(bindir / "node"), "-v"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.match(r"v(\d+)\.", out.strip())
+    return m.group(1) if m else None
+
+
+def find_ci_node(major: str, path: str, homes: tuple[str, ...] = NODE_HOMES) -> Path | None:
+    """O diretório de um `node` do major pedido: o do PATH se já servir, senão o primeiro instalado."""
+    on_path = shutil.which("node", path=path)
+    candidates = [Path(on_path).parent] if on_path else []
+    for pattern in homes:
+        expanded = os.path.expanduser(pattern.format(m=major))
+        candidates += [Path(p) for p in sorted(glob.glob(expanded), reverse=True)]
+    return next((c for c in candidates if node_major(c) == major), None)
+
+
 # ── Execução e evidência ─────────────────────────────────────────────────
 
 
@@ -533,6 +582,9 @@ def base_env(root: Path, py: Path, workers: int) -> dict:
         "SHOPMAN_LOCAL_CI": "1",
         "PATH": f"{py.parent}:{os.environ.get('PATH', '')}",
     }
+    node = find_ci_node(ci_node_major(root), env["PATH"])
+    if node:
+        env["PATH"] = f"{py.parent}:{node}:{os.environ.get('PATH', '')}"
     return env
 
 
@@ -546,8 +598,18 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
     print(f"▶ {plan.level} · {len(diff.files)} arquivo(s) · árvore {diff.tree[:12]} · base {diff.base_ref}@{diff.merge_base[:9]}")
     print(f"  escopo {plan.scope} · máquina: {slots} vaga(s) × {workers} workers")
     failed = False
+    major = ci_node_major(root)
+    node_ok = node_major(Path(shutil.which("node", path=env["PATH"]) or "/nonexistent").parent) == major
+    def needs_node(step: Step) -> bool:
+        return step.cwd.startswith("surfaces") or "surface_contract" in step.cmd
+
+    if not node_ok and any(needs_node(s) for s in plan.steps):
+        print(f"❌ a CI roda as superfícies no Node {major} e esta máquina não tem um Node {major} instalado.")
+        print(f"   Instale (`brew install node@{major}`, ou pelo nvm/volta/fnm) e rode de novo: o preflight acha sozinho.")
+        print("   Rodar com outro Node reprova teste por diferença de runtime, não por defeito.")
+        failed = True
     for i, step in enumerate(plan.steps, 1):
-        if failed and not keep_going:
+        if (failed and not keep_going) or (not node_ok and needs_node(step)):
             results.append({**asdict(step), "status": "not-run", "seconds": 0})
             continue
         print(f"[{i}/{len(plan.steps)}] {step.name}", flush=True)
@@ -584,7 +646,7 @@ def run_plan(root: Path, py: Path, plan: Plan, diff: Diff, keep_going: bool) -> 
         "notes": plan.notes,
         "worktree": str(root),
         "python": str(py),
-        "machine": {"slots": slots, "workers": workers},
+        "machine": {"slots": slots, "workers": workers, "node": major if node_ok else "ausente"},
         "started_at": started.isoformat(timespec="seconds"),
         "seconds": round((finished - started).total_seconds(), 1),
     }
