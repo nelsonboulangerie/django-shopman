@@ -665,6 +665,7 @@ export interface QCOrderCardProjection {
   typical_loss_qty: string;
   alert_waiting_count: number | null;
   output_unit: string;
+  oven_until_display: string;
 }
 
 /** O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC. */

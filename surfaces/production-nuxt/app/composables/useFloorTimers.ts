@@ -13,6 +13,11 @@
 // Som: "dim-dom" quente em triangle wave, duas frases curtas, volume moderado
 // — fácil de ouvir, fácil de conviver. Repete a cada 45s enquanto ninguém
 // marca ``Visto``. O alerta não conclui o forno, o QC nem a produção.
+//
+// O navegador só libera o som depois de um toque na página. Depois de recarregar,
+// o timer restaurado volta CORRENDO e MUDO até alguém tocar na tela: por isso o
+// estado do som é reativo (`soundOff`), a tela escreve "Som desligado. Toque para
+// ligar." enquanto houver timer que vai tocar, e qualquer toque na página liga.
 import { countdownLabel } from "~/presentation/production";
 
 export type FloorTimerKind = "oven" | "free";
@@ -60,7 +65,11 @@ const chimes = new Map<string, { lastAt: number }>();
 const lastMinutes = ref<number | null>(null);
 let ticker: ReturnType<typeof setInterval> | null = null;
 let audio: AudioContext | null = null;
+// O som está liberado? Só o navegador sabe; o ref espelha `audio.state`.
+const audioRunning = ref(false);
 let loaded = false;
+let unlockListening = false;
+const UNLOCK_EVENTS = ["click", "touchend", "keydown"] as const;
 
 export function restoreFloorTimers(
   parsed: Record<string, FloorTimer>,
@@ -130,6 +139,27 @@ function load() {
     timers.value = {};
   }
   ensureTicker();
+  listenForUnlock();
+}
+
+/**
+ * Qualquer toque na página destrava o som (é a única hora em que o navegador
+ * deixa). Ouvido na captura, uma vez por toque, até o som estar ligado.
+ */
+function listenForUnlock() {
+  if (unlockListening || !import.meta.client || audioRunning.value) return;
+  unlockListening = true;
+  const onGesture = () => {
+    unlockAudio();
+    if (!audioRunning.value) return;
+    for (const name of UNLOCK_EVENTS) {
+      window.removeEventListener(name, onGesture, true);
+    }
+    unlockListening = false;
+  };
+  for (const name of UNLOCK_EVENTS) {
+    window.addEventListener(name, onGesture, true);
+  }
 }
 
 function persist() {
@@ -157,15 +187,25 @@ function ensureTicker() {
   }, 1000);
 }
 
-/** O gesto de armar é interação do usuário — aproveita para destravar o áudio. */
+function syncAudioState() {
+  audioRunning.value = audio?.state === "running";
+}
+
+/** Todo toque é interação do usuário: aproveita para destravar o áudio. */
 function unlockAudio() {
   if (!import.meta.client) return;
   try {
-    audio = audio ?? new AudioContext();
-    if (audio.state === "suspended") void audio.resume();
+    if (!audio) {
+      audio = new AudioContext();
+      audio.addEventListener?.("statechange", syncAudioState);
+    }
+    if (audio.state === "suspended") {
+      void audio.resume().then(syncAudioState, syncAudioState);
+    }
   } catch {
     audio = null;
   }
+  syncAudioState();
 }
 
 function chime() {
@@ -326,6 +366,13 @@ export function useFloorTimers() {
   const ringingCount = computed(
     () => entries.value.filter((entry) => entry.mode === "ringing").length,
   );
+  // Som desligado só importa enquanto há timer que ainda vai tocar (ou toca
+  // agora); o visto já cumpriu e não pede som.
+  const soundOff = computed(
+    () =>
+      !audioRunning.value &&
+      entries.value.some((entry) => entry.mode !== "seen"),
+  );
 
   return {
     arm,
@@ -342,5 +389,8 @@ export function useFloorTimers() {
     entries,
     activeCount,
     ringingCount,
+    soundOff,
+    /** O toque no aviso "Som desligado": liga o som ali mesmo. */
+    enableSound: unlockAudio,
   };
 }

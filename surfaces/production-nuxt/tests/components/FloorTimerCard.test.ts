@@ -21,9 +21,9 @@ function entry(overrides: Partial<FloorTimerEntry> = {}): FloorTimerEntry {
   } as FloorTimerEntry;
 }
 
-function mountCard(overrides: Partial<FloorTimerEntry> = {}) {
+function mountCard(overrides: Partial<FloorTimerEntry> = {}, soundOff = false) {
   return mount(FloorTimerCard, {
-    props: { entry: entry(overrides), remaining: "12:34" },
+    props: { entry: entry(overrides), remaining: "12:34", soundOff },
     global: { stubs: { ...nuxtUiStubs, Icon: true } },
   });
 }
@@ -117,5 +117,22 @@ describe("FloorTimerCard — os dois botões explícitos", () => {
 
     await buttons[1]!.trigger("click");
     expect(wrapper.emitted("clear")).toHaveLength(1);
+  });
+});
+
+describe("FloorTimerCard — som desligado (P1-12)", () => {
+  it("o timer que ainda vai tocar avisa no topo, e o toque pede para ligar", async () => {
+    const wrapper = mountCard({ mode: "running" }, true);
+
+    const notice = wrapper.find("[data-floor-timer-sound-off]");
+    expect(notice.text()).toBe("Som desligado. Toque para ligar.");
+    await notice.trigger("click");
+    expect(wrapper.emitted("enable-sound")).toHaveLength(1);
+  });
+
+  it("o visto já cumpriu: sem aviso de som", () => {
+    const wrapper = mountCard({ mode: "seen" }, true);
+
+    expect(wrapper.find("[data-floor-timer-sound-off]").exists()).toBe(false);
   });
 });

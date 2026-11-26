@@ -180,10 +180,27 @@ watch(
 // O forno do lote aparece sempre, pelo nome (v3 celular a: "Forno 2 · …"): é
 // por ele que o forneiro acha a assadeira.
 
-function openOrder(order: QCOrderCardProjection) {
+// O TOQUE EM FINALIZAR é o único gesto que declara "retirou do forno" (P1-10):
+// quem pede para finalizar já tirou a assadeira. O ‹ › entre lotes, o link e o
+// voltar do navegador só mostram o lote; ler nunca grava. Se a declaração não
+// passa, a pessoa fica no painel e lê o porquê no cartão (P1-11), com o mesmo
+// Finalizar para tentar de novo.
+async function openOrder(order: QCOrderCardProjection) {
   if (!finishAvailable(order) || ovenFacts.isPending(order.pk)) return;
+  if (projectedAction(`oven_conclude:${order.pk}`)?.enabled === true) {
+    const recorded = await ovenFacts.concluded(
+      order.pk,
+      ovenFacts.currentRev(order.pk, order.rev),
+    );
+    // A recusa fica no cartão, onde o dedo está (`cardOvenError`); nada de
+    // aviso no outro canto da tela.
+    if (!recorded) return;
+    // Retirou: o lembrete do forno deste dispositivo já cumpriu.
+    oven.clear(ovenKey(order));
+  }
   void navigateTo(lotLocation(String(order.pk)));
 }
+
 
 function openOffPlan(recipe: RecipeOptionProjection) {
   if (!quickRecipeAvailable(recipe)) return;
@@ -270,7 +287,9 @@ async function onConfirm(
     // Fornada fechada leva o timer junto — senão ele fica órfão no
     // localStorage e alarma depois, num card que nem existe mais.
     if (closingOrder) oven.clear(ovenKey(closingOrder));
-    useSonner.success("Lote enviado para Qualidade (QC).");
+    // A tela volta à LISTA (P2-11): o próximo lote só abre se a pessoa tocar.
+    const name = closingOrder?.recipe_name ?? selectedRecipe.value?.name ?? "";
+    useSonner.success(name ? `Lote de ${name} finalizado.` : "Lote finalizado.");
     backToBoard();
     return;
   }
@@ -405,13 +424,10 @@ onMounted(() => {
 onBeforeUnmount(() => window.removeEventListener("keydown", onTimerKeydown));
 
 // ── O lote da URL vira a tela de finalização ─────────────────────────────────
-// Entrar no lote é o gesto produtivo: se o forno ainda está declarado, abrir o
-// finalização declara "retirou" (o timer apenas lembra; o fato físico pertence à
-// ação de finalizar a fornada, nunca ao Visto do alarme). Vale para o toque no
-// painel, para o leitor de etiqueta, para o link e para o anterior/próximo. Só
-// depois de montar: o SSR desenha o painel, e o cliente abre o lote.
-let enteringLot = "";
-async function syncLotFromRoute() {
+// Só MOSTRA o lote: não declara nada ao servidor nem mexe no timer (P1-10). A
+// retirada do forno é do toque em Finalizar, no painel (`openOrder`). Só depois
+// de montar: o SSR desenha o painel, e o cliente abre o lote.
+function syncLotFromRoute() {
   const lot = routeLot.value;
   if (!lot) {
     if (selectedOrder.value) {
@@ -423,7 +439,6 @@ async function syncLotFromRoute() {
   }
   if (!hydrated.value || !kiosk.value) return;
   if (selectedOrder.value && String(selectedOrder.value.pk) === lot) return;
-  if (enteringLot === lot) return;
   const order = kiosk.value.orders.find(
     (item) => String(item.pk) === lot && !item.closed,
   );
@@ -434,33 +449,30 @@ async function syncLotFromRoute() {
     leaveLot();
     return;
   }
-  enteringLot = lot;
-  try {
-    if (projectedAction(`oven_conclude:${order.pk}`)?.enabled === true) {
-      const recorded = await ovenFacts.concluded(
-        order.pk,
-        ovenFacts.currentRev(order.pk, order.rev),
-      );
-      if (!recorded) {
-        if (routeLot.value === lot) leaveLot();
-        return;
-      }
-    }
-    if (routeLot.value !== lot) return;
-    oven.clear(ovenKey(order));
-    ovenOrder.value = null;
-    selectedRecipe.value = null;
-    shortage.value = null;
-    lastPayload.value = null;
-    selectedOrder.value = order;
-  } finally {
-    if (enteringLot === lot) enteringLot = "";
-  }
+  ovenOrder.value = null;
+  selectedRecipe.value = null;
+  shortage.value = null;
+  lastPayload.value = null;
+  selectedOrder.value = order;
 }
-watch(
-  [routeLot, () => kiosk.value, pending, hydrated],
-  () => void syncLotFromRoute(),
-);
+watch([routeLot, () => kiosk.value, pending, hydrated], syncLotFromRoute);
+
+// No forno pelo servidor: alguém declarou "enfornou" e ninguém retirou ainda.
+// Vale em qualquer tablet, com ou sem o timer deste.
+function inOven(order: QCOrderCardProjection): boolean {
+  return projectedAction(`oven_conclude:${order.pk}`)?.enabled === true;
+}
+// "No forno até 5h40": a hora é do servidor (enfornou + duração armada), a
+// mesma em qualquer tablet, com ou sem o timer deste.
+function inOvenLabel(order: QCOrderCardProjection): string {
+  return order.oven_until_display ? `No forno até ${order.oven_until_display}` : "No forno";
+}
+// A recusa do "retirou" fica no cartão (o diálogo do timer mostra a do armar).
+function cardOvenError(order: QCOrderCardProjection): string {
+  if (ovenOrder.value?.pk === order.pk) return "";
+  return ovenFacts.errorFor(order.pk);
+}
+const minutesWord = (n: number) => (n === 1 ? "1 minuto" : `${n} minutos`);
 
 type OvenMode = "idle" | "running" | "ringing" | "seen";
 function ovenMode(order: QCOrderCardProjection): OvenMode {
@@ -524,14 +536,15 @@ function ovenAdd(minutes: number) {
 async function startOven() {
   const order = ovenOrder.value;
   const minutes = parseInt(ovenMinutes.value, 10);
-  if (
-    !order ||
-    !(minutes >= 1) ||
-    projectedAction(`oven_arm:${order.pk}`)?.enabled !== true
-  )
+  if (!order || !(minutes >= 1)) return;
+  // Enfornar é fato do servidor; com o lote JÁ no forno (outro tablet armou),
+  // o Iniciar daqui só arma o lembrete deste dispositivo, sem declarar de novo.
+  if (projectedAction(`oven_arm:${order.pk}`)?.enabled === true) {
+    const recorded = await ovenFacts.armed(order.pk, order.rev, minutes);
+    if (!recorded) return;
+  } else if (!inOven(order)) {
     return;
-  const recorded = await ovenFacts.armed(order.pk, order.rev, minutes);
-  if (!recorded) return;
+  }
   oven.arm(ovenKey(order), minutes, {
     kind: "oven",
     label: order.recipe_name,
@@ -695,7 +708,7 @@ function onTimerKeydown(event: KeyboardEvent) {
         <div
           v-for="order in openOrders"
           :key="order.pk"
-          class="flex items-stretch justify-between gap-3 rounded-xl border border-border bg-card p-4 text-left transition"
+          class="flex min-w-0 items-stretch justify-between gap-3 rounded-xl border border-border bg-card p-4 text-left transition"
           :class="[
             ovenFactAvailable(order) ? 'hover:bg-accent' : '',
             ovenMode(order) === 'ringing'
@@ -759,7 +772,13 @@ function onTimerKeydown(event: KeyboardEvent) {
                 "
               >
                 <Icon
-                  :name="ovenMode(order) === 'seen' ? 'lucide:alarm-clock-check' : 'lucide:alarm-clock'"
+                  :name="
+                    ovenMode(order) === 'seen'
+                      ? 'lucide:alarm-clock-check'
+                      : ovenMode(order) === 'idle' && inOven(order)
+                        ? 'lucide:flame'
+                        : 'lucide:alarm-clock'
+                  "
                   class="size-5"
                 />
                 <template v-if="ovenMode(order) === 'ringing'"
@@ -778,7 +797,35 @@ function onTimerKeydown(event: KeyboardEvent) {
                     >restante</span
                   ></template
                 >
+                <span
+                  v-else-if="inOven(order)"
+                  class="text-foreground"
+                  data-close-in-oven
+                  >{{ inOvenLabel(order) }}</span
+                >
                 <template v-else>Iniciar timer</template>
+              </p>
+              <!-- Som desligado: o timer daqui vai tocar sem som até alguém
+                   tocar na tela (o navegador exige). O toque aqui já liga. -->
+              <NuxtButton
+                v-if="hydrated && oven.soundOff.value && (ovenMode(order) === 'running' || ovenMode(order) === 'ringing')"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-volume-x"
+                class="pointer-events-auto mt-2 flex min-h-12 w-full justify-start text-left text-warning ring-warning/40"
+                :ui="{ leadingIcon: 'text-warning' }"
+                data-close-sound-off
+                @click.stop="oven.enableSound()"
+              >
+                <span class="whitespace-normal">Som desligado. Toque para ligar.</span>
+              </NuxtButton>
+              <p
+                v-if="cardOvenError(order)"
+                role="alert"
+                class="mt-2 rounded-md border border-destructive/50 bg-card p-2.5 op-label text-destructive"
+                data-close-oven-error
+              >
+                {{ cardOvenError(order) }}
               </p>
             </div>
           </div>
@@ -883,7 +930,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             role="alert"
             class="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive"
           >
-            {{ ovenFactError }} O timer local não foi alterado.
+            {{ ovenFactError }}
           </p>
 
           <!-- O processo físico não pausa. O mostrador informa; as únicas
@@ -954,7 +1001,7 @@ function onTimerKeydown(event: KeyboardEvent) {
                 block
                 class="tabular-nums"
                 :label="`+${row.add}`"
-                :aria-label="`Somar ${row.add} minutos`"
+                :aria-label="`Somar ${minutesWord(row.add)}`"
                 @click="ovenAdd(row.add)"
               />
             </template>
@@ -1013,7 +1060,7 @@ function onTimerKeydown(event: KeyboardEvent) {
               block
               class="tabular-nums"
               :label="`+${extra}`"
-              :aria-label="`Somar ${extra} minutos`"
+              :aria-label="`Somar ${minutesWord(extra)}`"
               @click="ovenAdd(extra)"
             />
             <NuxtButton
