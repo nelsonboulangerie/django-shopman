@@ -254,14 +254,17 @@ describe("Preparação — preview e identificação", () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
     await openInsumos(wrapper);
 
-    const farinha = wrapper.get('[data-sku="FARINHA"] [data-column="available"]');
+    // A falta mora sob o nome, visível em qualquer largura; o saldo fica na coluna.
+    const farinha = wrapper.get('[data-sku="FARINHA"] [data-column="name"]');
     expect(farinha.get("[data-prep-shortage]").text()).toBe("Faltam 300 g");
     const pedir = farinha.get("[data-prep-purchase]");
     expect(pedir.text()).toContain("Pedir no Compras");
     expect(pedir.attributes("href")).toBe("https://compras.example/");
+    expect(wrapper.get('[data-sku="FARINHA"] [data-column="available"]').text()).toBe("700 g");
 
-    const massa = wrapper.get('[data-sku="MASSA-BASE"] [data-column="available"]');
-    expect(massa.text()).toBe("");
+    const massa = wrapper.get('[data-sku="MASSA-BASE"]');
+    expect(massa.find("[data-prep-shortage]").exists()).toBe(false);
+    expect(massa.get('[data-column="available"]').text()).toBe("");
   });
 
   it("sem o Compras, a falta continua dita e o atalho não aparece", async () => {

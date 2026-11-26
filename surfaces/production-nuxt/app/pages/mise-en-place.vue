@@ -366,6 +366,26 @@ function refreshAll() {
                 <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
                 <NuxtBadge v-if="row.original.is_subrecipe" color="neutral" label="Pré-preparo" />
               </span>
+              <!-- A falta mora sob o nome: é o que se lê em qualquer largura (a coluna
+                   de saldo sai da tela no celular). Quanto falta e o que fazer. -->
+              <span
+                v-if="stockFacts(row.original).shortage"
+                class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
+              >
+                <span class="text-sm font-semibold text-error" data-prep-shortage>{{
+                  stockFacts(row.original).shortage
+                }}</span>
+                <NuxtButton
+                  v-if="purchaseUrl"
+                  :href="purchaseUrl"
+                  v-bind="attrsFor(purchaseUrl)"
+                  color="error"
+                  variant="outline"
+                  trailing-icon="i-lucide-external-link"
+                  label="Pedir no Compras"
+                  data-prep-purchase
+                />
+              </span>
             </template>
             <template #quantity-cell="{ row }">
               <span class="font-semibold">{{ projectedQuantityDisplay(row.original.quantity_display) }}</span>
@@ -389,23 +409,6 @@ function refreshAll() {
                 <span :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'">
                   {{ stockFacts(row.original).available || "—" }}
                 </span>
-                <span
-                  v-if="stockFacts(row.original).shortage"
-                  class="block text-sm font-semibold text-error"
-                  data-prep-shortage
-                  >{{ stockFacts(row.original).shortage }}</span
-                >
-                <NuxtButton
-                  v-if="row.original.is_short && purchaseUrl"
-                  :href="purchaseUrl"
-                  v-bind="attrsFor(purchaseUrl)"
-                  class="mt-1"
-                  color="error"
-                  variant="outline"
-                  trailing-icon="i-lucide-external-link"
-                  label="Pedir no Compras"
-                  data-prep-purchase
-                />
               </template>
             </template>
             <template #expanded="{ row }">
