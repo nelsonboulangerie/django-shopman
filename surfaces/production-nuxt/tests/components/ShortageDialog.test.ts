@@ -125,7 +125,7 @@ describe("ShortageDialog — o que a casa produz não se pede ao Compras", () =>
       }),
     );
     expect(opening.get("[data-shortage-item]").text()).toContain("Falta 300 g de massa de ciabatta");
-    expect(opening.findComponent({ name: "NuxtModal" }).props("description")).toContain("precisa ser produzido");
+    expect(opening.findComponent({ name: "NuxtModal" }).props("description")).toContain("o que falta entra no estoque");
     expect(opening.findComponent({ name: "NuxtModal" }).props("description")).not.toContain("Compras");
 
     const closing = mountDialog(materialShortage("finish", { missing: [massa], possibilities: [] }));

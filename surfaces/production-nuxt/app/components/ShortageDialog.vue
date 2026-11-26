@@ -153,7 +153,7 @@ const description = computed(() => {
   if (isMaterial.value && opening.value) {
     return boughtMissing.value
       ? "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente ou o Dono autoriza."
-      : "Dá para abrir assim mesmo. Para fechar o lote, o que falta precisa ser produzido ou a Gerente ou o Dono autoriza.";
+      : "Dá para abrir assim mesmo. Para fechar o lote, o que falta entra no estoque ou a Gerente ou o Dono autoriza.";
   }
   if (isMaterial.value && forcePossibility.value) {
     return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
