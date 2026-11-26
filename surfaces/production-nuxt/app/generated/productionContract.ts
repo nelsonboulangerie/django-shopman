@@ -447,6 +447,7 @@ export interface MiseEnPlaceLineProjection {
   annotation: string;
   margin_display: string;
   margin_reason: string;
+  missing_display: string;
 }
 
 /** Aggregated material needs for the day's open work orders. */
@@ -461,6 +462,7 @@ export interface ProductionMiseEnPlaceProjection {
   yield_margin_applied: boolean;
   yield_margin_note: string;
   access: ProductionSurfaceAccess;
+  purchase_url: string;
   actions: ProductionActionProjection[];
   generated_at: string;
   source_revision: string;

@@ -177,14 +177,6 @@ export type WeighingTicketProjection = Omit<
   "ingredients" | "ticket_ref" | "total_weight_display"
 > & {
   ingredients: WeighingIngredientProjection[];
-  /** Mistura final com massa velha no teto; ausente quando a ficha não tem teto. */
-  old_dough?: {
-    cap_pct: string;
-    cap_display: string;
-    old_dough_display: string;
-    old_dough_g: string | null;
-    lines: Array<{ sku: string; target_display: string; target_g: string | null }>;
-  } | null;
   /** Identidade da ocorrência/preparo; recipe_ref é só fallback de transição. */
   ticket_ref?: string;
   /** Peso total pronto para a balança, emitido em gramas pelo backend novo. */

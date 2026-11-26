@@ -1954,6 +1954,7 @@ class ProductionMiseEnPlaceView(APIView):
             selected_date=query.get("date"),
             expand=query["expand"],
             access=access,
+            purchase_url=purchase_surface_url(request.user),
         )
         return Response({"mise_en_place": projection_data(mise_en_place)})
 

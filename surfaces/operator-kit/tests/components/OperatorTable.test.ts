@@ -201,6 +201,31 @@ describe("OperatorTable", () => {
     expect(open.className).toContain("py-1.5");
   });
 
+  it("expand-at=end põe a seta no fim da linha, presa à direita", async () => {
+    mounted = await mountSuspended(OperatorTable as never, {
+      attachTo: document.body,
+      props: {
+        data: orders,
+        columns,
+        rowKey: (row: Order) => row.ref,
+        rowLabel: (row: Order) => `o pedido ${row.ref}`,
+        caption: "Pedidos",
+        pinned: "ref",
+        expandAt: "end",
+      },
+      slots: { expanded: ({ row }: { row: { original: Order } }) => h("p", `Itens de ${row.original.ref}`) },
+    });
+    const cells = [...table().querySelectorAll<HTMLElement>("tbody tr:first-child td")];
+    expect(cells[0]!.textContent).toContain("H58");
+    expect(cells[0]!.getAttribute("data-pinned")).toBe("left");
+    const last = cells.at(-1)!;
+    expect(last.querySelector("[data-operator-table-expand]")).not.toBeNull();
+    expect(last.getAttribute("data-pinned")).toBe("right");
+    last.querySelector<HTMLElement>("[data-operator-table-expand]")!.click();
+    await nextTick();
+    expect(document.querySelector("[data-operator-table-expanded]")?.textContent).toContain("Itens de H58");
+  });
+
   it("a coluna fixada cabe no celular e a tela não escreve :ui", async () => {
     mounted = await mountSuspended(OperatorTable as never, {
       attachTo: document.body,
