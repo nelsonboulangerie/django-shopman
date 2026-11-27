@@ -944,15 +944,30 @@ export interface ProductionNotFoundErrorEnvelope {
   error: ProductionNotFoundErrorBody;
 }
 
-/** ProductionShortagePossibility(kind: "Literal['retry', 'force', 'confirm']", label: 'str', enabled: 'bool', proof: 'str') */
+/** ProductionShortagePossibility(kind: "Literal['retry', 'force', 'confirm', 'purchase']", label: 'str', enabled: 'bool', proof: 'str', href: 'str') */
 export interface ProductionShortagePossibility {
-  kind: "retry" | "force" | "confirm";
+  kind: "retry" | "force" | "confirm" | "purchase";
   label: string;
   enabled: boolean;
   proof: string;
+  href: string;
 }
 
-/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str') */
+/** Quem pode assinar a falta de insumo (Gerente e Dono, D-042). */
+export interface ProductionShortageAuthorizer {
+  id: number;
+  username: string;
+  name: string;
+  pin_digits: number | null;
+}
+
+/** ProductionShortageAuthorizationResponse(override_proof: 'str', authorizer_name: 'str') */
+export interface ProductionShortageAuthorizationResponse {
+  override_proof: string;
+  authorizer_name: string;
+}
+
+/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str', shortage_display: 'str', needed_display: 'str', available_display: 'str', produced_here: 'bool') */
 export interface ProductionMaterialShortageItem {
   sku: string;
   name: string;
@@ -960,15 +975,21 @@ export interface ProductionMaterialShortageItem {
   needed: string;
   available: string;
   shortage: string;
+  shortage_display: string;
+  needed_display: string;
+  available_display: string;
+  produced_here: boolean;
 }
 
-/** ProductionMaterialShortageErrorBody(code: "Literal['material_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', missing: 'tuple[ProductionMaterialShortageItem, ...]') */
+/** ProductionMaterialShortageErrorBody(code: "Literal['material_shortage']", stage: "Literal['start', 'finish']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', missing: 'tuple[ProductionMaterialShortageItem, ...]', authorizers: 'tuple[ProductionShortageAuthorizer, ...]') */
 export interface ProductionMaterialShortageErrorBody {
   code: "material_shortage";
+  stage: "start" | "finish";
   work_order_ref: string;
   idempotency_key: string;
   possibilities: ProductionShortagePossibility[];
   missing: ProductionMaterialShortageItem[];
+  authorizers: ProductionShortageAuthorizer[];
 }
 
 /** ProductionMaterialShortageErrorEnvelope(detail: 'str', error: 'ProductionMaterialShortageErrorBody') */
@@ -1013,6 +1034,13 @@ export interface ProductionQualityReviewBatchItemRequest {
   expected_rev: number;
 }
 
+export interface ProductionShortageAuthorizationRequest {
+  override_proof: string;
+  username?: string;
+  pin?: string;
+  badge?: string;
+}
+
 export interface ProductionPlanMutationRequest {
   idempotency_key: string;
   projection_generated_at: string;
@@ -1044,6 +1072,7 @@ export interface ProductionStartMutationRequest {
   action_proof: string;
   expected_rev: number;
   short_lot_proof?: string;
+  material_shortage_proof?: string;
   quantity: string;
   position_id?: string;
   operator_ref?: string;
@@ -1224,6 +1253,10 @@ async function postProductionMutation<T>(href: string, body: unknown): Promise<T
     options: { method: "POST"; body: unknown },
   ) => Promise<T>;
   return post(href, { method: "POST", body });
+}
+
+export function authorizeProductionShortage(body: ProductionShortageAuthorizationRequest): Promise<ProductionShortageAuthorizationResponse> {
+  return postProductionMutation<ProductionShortageAuthorizationResponse>("/api/v1/backstage/production/shortage-authorization/", body);
 }
 
 export function planProduction(body: ProductionPlanMutationRequest): Promise<ProductionPlanMutationSuccess> {

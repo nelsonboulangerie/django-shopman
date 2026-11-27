@@ -121,11 +121,18 @@ class MissingMaterial:
 
 
 class ProductionStockShortError(ProductionError):
-    """Raised when pre-finish material validation detects a shortage."""
+    """Raised when material validation detects a shortage.
 
-    def __init__(self, *, work_order_ref: str, missing: list[MissingMaterial]):
+    ``stage`` diz de onde veio a falta. Na abertura (``"start"``) ela é aviso: o
+    padeiro lê o que falta e decide, e a confirmação do mesmo impacto abre o lote.
+    No fechamento (``"finish"``) é trava: só fecha com a assinatura de quem pode
+    autorizar (decisão 3 do dono, D-042).
+    """
+
+    def __init__(self, *, work_order_ref: str, missing: list[MissingMaterial], stage: str = "finish"):
         self.work_order_ref = work_order_ref
         self.missing = missing
+        self.stage = stage
         summary = ", ".join(f"{item.sku}: faltam {_qty(item.shortage)}" for item in missing)
         super().__init__(f"Insumos insuficientes para {work_order_ref}: {summary}")
 
@@ -943,6 +950,7 @@ def apply_quick_finish(
     idempotency_key: str | None = None,
     projected_action_proof: str = "",
     approved_shortage: dict | None = None,
+    authorized_by: str = "",
 ):
     """Plan and immediately finish a work order from the operator surface.
 
@@ -1063,6 +1071,7 @@ def apply_quick_finish(
             override_action="quick_finish",
             allow_implicit_start=True,
             approved_shortage=approved_shortage,
+            authorized_by=authorized_by,
         )
         _complete_quick_finish_receipt(
             receipt_pk,
@@ -1444,12 +1453,20 @@ def apply_start(
     expected_rev: int | None = None,
     idempotency_key: str | None = None,
     approved_short_lot: dict | None = None,
+    approved_material_shortage: dict | None = None,
 ):
     """Start a planned work order from the operator surface.
 
     Previsto abaixo do encomendado não recusa (decisão 1 do dono, 23/11/2026): a
     primeira tentativa devolve os pedidos descobertos, e a confirmação do mesmo
     impacto abre o lote. Quem responde pelo pão que faltar é o fechamento.
+
+    Falta de insumo na abertura é aviso, não trava (WP-F11, P1-14): a primeira
+    tentativa devolve o que falta, pela mesma régua da baixa (a quantidade bruta),
+    e ``approved_material_shortage`` com o mesmo impacto abre o lote. A decisão
+    fica no histórico do lote (``SHORTAGE_OVERRIDDEN`` com ``action="start"``),
+    que nunca autoriza a baixa: o fechamento com falta continua pedindo a
+    assinatura de quem pode autorizar.
     """
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
@@ -1486,6 +1503,32 @@ def apply_start(
                 approved_short_lot,
                 actor=actor,
             )
+            # Só o lote planejado: o que já abriu ou fechou recebe a recusa de
+            # estado do Core, não um aviso de insumo. Se o Compras deu entrada no
+            # meio e a falta sumiu, abrir é o gesto de sempre, sem registro.
+            missing = (
+                check_start_materials(work_order, quantity)
+                if work_order.status == WorkOrder.Status.PLANNED
+                else []
+            )
+            if missing:
+                material_shortage = ProductionStockShortError(
+                    work_order_ref=work_order.ref,
+                    missing=missing,
+                    stage="start",
+                )
+                if approved_material_shortage is None:
+                    raise material_shortage
+                _require_approved_shortage_snapshot(approved_material_shortage, material_shortage)
+                _record_shortage_override(
+                    work_order_ref=work_order.ref,
+                    action="start",
+                    reason="Abriu o lote sabendo da falta de insumo.",
+                    actor=actor,
+                    client_key=idempotency_key,
+                    impact=production_shortage_snapshot(material_shortage),
+                    resulting_rev=work_order.rev + 1,
+                )
             return production_core.start_work_order(
                 work_order_id=work_order_id,
                 quantity=quantity,
@@ -3336,8 +3379,12 @@ def apply_finish(
     allow_implicit_start: bool = False,
     approved_shortage: dict | None = None,
     approved_short_lot: dict | None = None,
+    authorized_by: str = "",
 ):
     """Finish a work order from the operator surface — escalar ou particionado.
+
+    ``authorized_by``: o usuário de quem assinou a falta de insumo com o próprio PIN
+    (decisão 3 do dono, D-042). Vai para o histórico do lote junto do impacto.
 
     ``approved_short_lot``: o lote que rendeu menos que o encomendado fecha com o
     número verdadeiro (decisão 1 do dono, 23/11/2026). A primeira tentativa devolve
@@ -3537,6 +3584,7 @@ def apply_finish(
                     action=override_action,
                     reason=override_reason,
                     actor=actor,
+                    authorized_by=authorized_by,
                     client_key=idempotency_key,
                     impact={
                         "kind": "material_shortage",
@@ -4245,6 +4293,7 @@ def _record_shortage_override(
     client_key: str | None,
     impact: dict,
     resulting_rev: int | None = None,
+    authorized_by: str = "",
 ) -> None:
     """Append the accepted override and its impact in the locked transaction."""
     from django.db import transaction
@@ -4269,6 +4318,7 @@ def _record_shortage_override(
             "reason": normalized_reason,
             "impact": impact,
             "work_order_rev": (work_order.rev if resulting_rev is None else resulting_rev),
+            **({"authorized_by": authorized_by} if authorized_by else {}),
         },
         actor=actor,
         idempotency_key=event_key,
@@ -4282,6 +4332,7 @@ def _record_shortage_override(
                 "production_reason": normalized_reason,
                 "production_work_order": work_order_ref,
                 "production_impact": impact,
+                "production_authorized_by": authorized_by,
             },
         )
     )
@@ -4314,11 +4365,24 @@ def check_finish_materials(work_order) -> list[MissingMaterial]:
     Returns [] when no backend is configured (standalone). Ingredients carry real
     Stockman stock via the seed.
     """
+    return _missing_materials(work_order)
+
+
+def check_start_materials(work_order, quantity) -> list[MissingMaterial]:
+    """A mesma conferência, antes de abrir, pela quantidade que vai abrir (WP-F11).
+
+    O lote planejado ainda não tem ``started_qty``; a abertura confere o que o
+    padeiro confirmou, pela mesma régua (bruta) da baixa no fechamento.
+    """
+    return _missing_materials(work_order, quantity=Decimal(str(quantity)))
+
+
+def _missing_materials(work_order, *, quantity: Decimal | None = None) -> list[MissingMaterial]:
     backend_path = _craftsman_setting("INVENTORY_BACKEND")
     if not backend_path:
         return []
 
-    material_needs = _material_needs_for_work_order(work_order)
+    material_needs = _material_needs_for_work_order(work_order, quantity=quantity)
     if not material_needs:
         return []
 
@@ -4345,11 +4409,20 @@ def check_finish_materials(work_order) -> list[MissingMaterial]:
     ]
 
 
-def _material_needs_for_work_order(work_order):
+def _material_needs_for_work_order(work_order, *, quantity: Decimal | None = None):
+    """O que o lote vai tirar do estoque, pela mesma régua da baixa.
+
+    A baixa do Core consome a quantidade BRUTA (``gross_quantity``: a casca da
+    cebola sai do estoque e não entra no produto). Conferir pela líquida deixava a
+    guarda passar e a baixa falhar com "o estoque falhou", sem nome (P1-23). Sem
+    ``gross_quantity`` no snapshot o Core recusa a baixa; aqui a guarda cai na
+    líquida só para não esconder a falta que ela já enxerga, e a recusa do Core
+    continua sendo a palavra final.
+    """
     from shopman.craftsman.protocols.inventory import MaterialNeed
 
     recipe = work_order.recipe
-    started_qty = work_order.started_qty or work_order.quantity
+    started_qty = quantity if quantity is not None else (work_order.started_qty or work_order.quantity)
     snapshot = (work_order.meta or {}).get("_recipe_snapshot")
     if snapshot:
         batch_size = Decimal(str(snapshot["batch_size"]))
@@ -4360,16 +4433,17 @@ def _material_needs_for_work_order(work_order):
             {
                 "input_sku": item.input_sku,
                 "quantity": str(item.quantity),
+                "gross_quantity": str(item.gross_quantity),
                 "unit": item.unit,
             }
             for item in recipe.items.filter(is_optional=False).order_by("sort_order")
         ]
 
-    coefficient = started_qty / batch_size
+    coefficient = Decimal(str(started_qty)) / batch_size
     return [
         MaterialNeed(
             sku=item["input_sku"],
-            quantity=Decimal(str(item["quantity"])) * coefficient,
+            quantity=Decimal(str(item.get("gross_quantity") or item["quantity"])) * coefficient,
             unit=item.get("unit", "un"),
             position_ref=work_order.position_ref or None,
         )

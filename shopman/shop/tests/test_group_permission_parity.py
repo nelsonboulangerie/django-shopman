@@ -133,6 +133,10 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     # dali cancelando o lote. Sem o grant, o lote de 4.200 do beta ficava preso:
     # só o superusuário cancelava. A Cozinha segue sem ele.
     ("backstage.void_production", {"Gerente", "Dono"}),
+    # Fechar um lote com falta de insumo (decisão 3 do dono, D-042, WP-F11): a Gerente
+    # e o Dono, escolhidos da lista, cada um com o próprio PIN. A Cozinha segue sem ele:
+    # ela lê a falta e chama quem assina.
+    ("backstage.override_production_shortage", {"Gerente", "Dono"}),
 ]
 
 # ---------------------------------------------------------------------------
@@ -156,7 +160,6 @@ UNGRANTED_BY_DESIGN: dict[str, str] = {
     # High-risk production actions were split out before D1.  Their gates fail
     # closed until the business chooses which role receives each grant.
     "backstage.quick_finish_production": ("D1 pending: quick finish requires an explicit high-risk grant."),
-    "backstage.override_production_shortage": ("D1 pending: shortage override requires an explicit high-risk grant."),
     "backstage.reveal_production_blind_map": ("D1 pending: revealing blind weighing codes requires an explicit grant."),
     # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
     # a trazer de volta achando que corrige algo.
