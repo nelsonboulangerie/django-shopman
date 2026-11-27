@@ -284,3 +284,58 @@ describe("ShortageDialog — o lote curto fecha com a verdade", () => {
     expect(wrapper.findComponent({ name: "NuxtModal" }).props("title")).toBe("Quantidade não cobre pedidos");
   });
 });
+
+// WP-F14 (P1-13): reduzir o plano abaixo do encomendado diz uma frase só, sem a oferta
+// de forçar que o Core recusaria, e oferece ver as encomendas e revisar o número.
+const planBelowOrders = {
+  code: "order_shortage",
+  work_order_ref: "WO-2026-00040",
+  idempotency_key: "k",
+  possibilities: [{ kind: "retry", label: "Revisar quantidade", enabled: true, proof: "", href: "" }],
+  required: "12",
+  requested: "10",
+  order_refs: [],
+  orders: [],
+} as unknown as ProductionShortageError;
+
+describe("ShortageDialog — o plano abaixo do encomendado", () => {
+  function mountPlan() {
+    return mount(ShortageDialog, {
+      props: { shortage: planBelowOrders, planning: true },
+      global: { stubs: { ...nuxtUiStubs, OperatorManagerAuth: ManagerAuthStub } },
+    });
+  }
+
+  it("diz a frase da casa, sem código do Core e sem 'informe pelo menos'", () => {
+    const wrapper = mountPlan();
+    const modal = wrapper.findComponent({ name: "NuxtModal" });
+
+    expect(modal.props("description")).toBe(
+      "Há 12 un. encomendadas para este dia. O plano não pode ficar abaixo disso.",
+    );
+    expect(wrapper.html()).not.toContain("COMMITTED_HOLDS");
+    expect(wrapper.html()).not.toContain("pelo menos");
+    expect(wrapper.html()).not.toContain("Pedidos:");
+    expect(wrapper.html()).not.toContain("Salvar com justificativa");
+  });
+
+  it("oferece Ver encomendas e Revisar quantidade", async () => {
+    const wrapper = mountPlan();
+
+    await wrapper.get("[data-shortage-orders]").trigger("click");
+    const review = wrapper.findAll("button").find((button) => button.text() === "Revisar quantidade");
+    await review!.trigger("click");
+
+    expect(wrapper.emitted("orders")).toHaveLength(1);
+    expect(wrapper.emitted("review")).toHaveLength(1);
+  });
+
+  it("fora do Planejamento a frase continua a de sempre", () => {
+    const wrapper = mount(ShortageDialog, {
+      props: { shortage: planBelowOrders },
+      global: { stubs: { ...nuxtUiStubs, OperatorManagerAuth: ManagerAuthStub } },
+    });
+
+    expect(wrapper.find("[data-shortage-orders]").exists()).toBe(false);
+  });
+});

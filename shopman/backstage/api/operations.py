@@ -634,21 +634,11 @@ def _production_validation_error_response(
     *,
     fallback: str,
 ) -> Response:
+    from shopman.backstage.api._production_mutations import validation_error_body
+
     message = str(exc) or fallback
     return Response(
-        {
-            "detail": message,
-            "error": {
-                "code": "validation_error",
-                "issues": [
-                    {
-                        "field": "non_field_errors",
-                        "code": "invalid",
-                        "message": message,
-                    }
-                ],
-            },
-        },
+        validation_error_body([{"field": "non_field_errors", "code": "invalid", "message": message}]),
         status=400,
     )
 

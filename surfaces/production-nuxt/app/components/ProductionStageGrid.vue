@@ -750,6 +750,15 @@ function reviewShortage() {
   focusQty(planDialog);
 }
 
+// "Ver encomendas" da recusa do plano (WP-F14): a lista das encomendas da linha
+// em que o plano foi tentado; o número digitado continua guardado para revisar.
+function showPlanOrders() {
+  const attempt = lastPlanAttempt.value;
+  const row = attempt ? rows.value.find((r) => r.output_sku === attempt.key) : null;
+  shortage.value = null;
+  if (row) commitmentsRow.value = row;
+}
+
 function closeShortage() {
   shortage.value = null;
   lastStartAttempt.value = null;
@@ -2259,6 +2268,7 @@ const startedDescription = computed(() => {
 
     <ShortageDialog
       :shortage="shortage"
+      :planning="lastPlanAttempt != null"
       @update:open="
         (v: boolean) => {
           if (!v) closeShortage();
@@ -2267,6 +2277,7 @@ const startedDescription = computed(() => {
       @confirm="retryPlanWithForce"
       @open-anyway="openAnyway"
       @review="reviewShortage"
+      @orders="showPlanOrders"
     />
   </main>
 </template>

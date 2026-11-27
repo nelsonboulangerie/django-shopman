@@ -53,8 +53,11 @@ def _operator_error(exc: Exception) -> Exception:
     from shopman.stockman.exceptions import StockError
 
     if isinstance(exc, StockError):
+        # A frase do estoque, sem o código entre colchetes ("[INSUFFICIENT_QUANTITY] …"):
+        # o operador lê o que aconteceu, e o código fica no log.
+        logger.warning("production.stock_error code=%s data=%s", exc.code, getattr(exc, "data", {}))
         return ProductionError(
-            f"O lote não foi fechado porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
+            f"O estoque não aceitou: {_lower_first(exc.message)}. Nada foi gravado. Atualize o painel e tente de novo."
         )
     if isinstance(exc, ObjectDoesNotExist):
         return ProductionNotFound(
@@ -88,7 +91,133 @@ def _operator_error(exc: Exception) -> Exception:
         )
     if code == "INVALID_QUANTITY":
         return ProductionError("Quantidade inválida.")
-    return ProductionError(str(exc) or "Falha na produção.")
+    if code == "COMMITTED_HOLDS":
+        return ProductionError(_committed_holds_message(data.get("committed")))
+    if code == "INSUFFICIENT_MATERIALS":
+        names = _input_names(str(row.get("sku") or "") for row in data.get("shortages") or ())
+        listed = f": {', '.join(names)}" if names else ""
+        return ProductionError(
+            f"Falta insumo para esta quantidade{listed}. Revise o número ou peça ao Compras antes de planejar."
+        )
+    if code == "DOWNSTREAM_DEFICIT":
+        refs = [str(row.get("wo_ref") or "") for row in data.get("deficit") or ()]
+        products = _work_order_product_names(refs)
+        listed = f" ({', '.join(products)})" if products else ""
+        return ProductionError(
+            "Reduzir este lote deixa faltar para os lotes que já estão planejados com ele"
+            f"{listed}. Reduza esses lotes primeiro."
+        )
+    if code in ("RECIPE_NOT_FOUND", "WORK_ORDER_NOT_FOUND"):
+        recipe = code == "RECIPE_NOT_FOUND"
+        return ProductionNotFound(
+            "Receita não encontrada. Atualize o painel." if recipe else "Lote não encontrado. Atualize o painel.",
+            resource="recipe" if recipe else "work_order",
+            identifier=str(data.get("ref") or data.get("work_order") or ""),
+        )
+    if code == "AMBIGUOUS_RECIPE":
+        return ProductionError("Há mais de uma receita ativa para este produto. Arquive a que sobra em Receitas.")
+    if code == "BOM_CYCLE":
+        return ProductionError("A receita usa a si mesma em algum passo. Confira a receita em Receitas.")
+    if code in _CRAFT_CODES_IN_PORTUGUESE:
+        return ProductionError(exc.message)
+    # Código que a Produção ainda não traduz: o operador lê o que fazer, e o código
+    # vai para o log, para virar tradução (nunca "[CODE] message in English").
+    logger.warning("production.untranslated_craft_error code=%s data=%s", code, data)
+    return ProductionError("Não deu para salvar esta mudança na produção. Atualize o painel e tente de novo.")
+
+
+#: Códigos do Craftsman cuja mensagem padrão já é a frase da casa.
+_CRAFT_CODES_IN_PORTUGUESE = frozenset(
+    {
+        "MADE_TO_ORDER_RECIPE",
+        "FORMULA_INVALID",
+        "ENTRY_WITHOUT_SKU",
+        "ITEM_WITHOUT_SKU",
+        "VERSION_NOT_DRAFT",
+        "PART_WITHOUT_FORMULA",
+        "PART_EXCEEDS_BASE",
+        "ENTRY_ARCHIVED",
+        "ANCHOR_EMPTY",
+    }
+)
+
+
+def _committed_holds_message(committed) -> str:
+    """A trava de redução, numa frase só (P1-13): a do vínculo e a do Core dizem isto."""
+    try:
+        amount = _qty(Decimal(str(committed)))
+    except (ArithmeticError, TypeError, ValueError):
+        return "Há encomendas para este dia. O plano não pode ficar abaixo delas."
+    return f"Há {amount} un. encomendadas para este dia. O plano não pode ficar abaixo disso."
+
+
+def _lower_first(text: str) -> str:
+    text = str(text or "").strip().rstrip(".")
+    return text[:1].lower() + text[1:] if text else "a operação falhou"
+
+
+def _input_names(skus) -> list[str]:
+    """O nome de cada insumo, como o cadastro chama (nunca o SKU cru)."""
+    wanted = [sku for sku in dict.fromkeys(skus) if sku]
+    if not wanted:
+        return []
+    names: dict[str, str] = {}
+    try:
+        from shopman.buyman.models import Material
+        from shopman.craftsman.models import Recipe
+
+        from shopman.backstage.projections.production import _product_names
+
+        names.update(_product_names(set(wanted)))
+        names.update(
+            (sku, name)
+            for sku, name in Material.objects.filter(sku__in=wanted).values_list("sku", "name")
+            if sku not in names and str(name or "").strip()
+        )
+        names.update(
+            (sku, name)
+            for sku, name in Recipe.objects.filter(output_sku__in=wanted, is_active=True).values_list("output_sku", "name")
+            if sku not in names and str(name or "").strip()
+        )
+    except Exception:  # silêncio-deliberado: sem nome, a frase sai sem a lista
+        logger.warning("production.input_names_failed", exc_info=True)
+    return [names.get(sku, sku) for sku in wanted]
+
+
+def _work_order_product_names(refs) -> list[str]:
+    wanted = [ref for ref in dict.fromkeys(refs) if ref]
+    if not wanted:
+        return []
+    try:
+        from shopman.craftsman.models import WorkOrder
+
+        skus = dict(WorkOrder.objects.filter(ref__in=wanted).values_list("ref", "output_sku"))
+    except Exception:  # silêncio-deliberado: sem nome, a frase sai sem a lista
+        logger.warning("production.work_order_names_failed", exc_info=True)
+        return []
+    return list(dict.fromkeys(_input_names(skus.get(ref, "") for ref in wanted)))
+
+
+def _speaks_to_operator(func):
+    """A recusa do Core ou do estoque chega ao operador em português, nunca como 500.
+
+    Para os serviços que não passavam pelo ``_operator_error``: um ``CraftError``
+    ou ``StockError`` vindo de dentro deles escapava da view (que só conhece
+    ``ProductionError``) e virava 500 com a mensagem do Core em inglês (P1-13).
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ProductionError:
+            raise
+        except Exception as exc:
+            translated = _operator_error(exc)
+            raise translated from (None if translated is exc else exc)
+
+    return wrapper
 
 
 def _positive_quantity(value, *, allow_zero: bool = False) -> Decimal:
@@ -162,6 +291,7 @@ class ProductionOrderShortError(ProductionError):
         allow_override: bool = True,
         confirmable: bool = False,
         orders: tuple[tuple[str, Decimal], ...] = (),
+        message: str = "",
     ):
         self.work_order_ref = work_order_ref
         self.required = required
@@ -176,8 +306,11 @@ class ProductionOrderShortError(ProductionError):
         self.orders = orders
         short = max(Decimal("0"), required - requested)
         super().__init__(
-            f"{work_order_ref} tem {_qty(required)} un. comprometidas; "
-            f"a nova quantidade deixa {_qty(short)} un. descobertas."
+            message
+            or (
+                f"{work_order_ref} tem {_qty(required)} un. comprometidas; "
+                f"a nova quantidade deixa {_qty(short)} un. descobertas."
+            )
         )
 
 
@@ -1287,6 +1420,21 @@ def apply_planned(
                 work_order_id=work_order_id,
                 create_new=create_new,
             )
+            # As duas travas de redução numa só (P1-13): a dos pedidos ligados ao lote
+            # oferecia "Salvar com justificativa", e logo depois a do Core recusava de
+            # qualquer jeito com "[COMMITTED_HOLDS] …". Onde o Core recusa, a recusa
+            # vem antes, com a frase da casa e sem oferta que não leva a lugar nenhum.
+            core_refusal = _committed_holds_refusal(
+                recipe_id=recipe_id,
+                quantity=quantity,
+                target_date_value=target_date_value,
+                position_ref=resolved_position_ref,
+                work_order_id=work_order_id,
+                create_new=create_new,
+                linked=shortage,
+            )
+            if core_refusal is not None:
+                raise core_refusal
             if force:
                 _require_approved_shortage_snapshot(
                     approved_shortage,
@@ -1588,6 +1736,7 @@ def _old_dough_composition_snapshot(work_order) -> tuple[str, dict]:
     return version_ref, formula
 
 
+@_speaks_to_operator
 def register_old_dough(
     *,
     work_order_id,
@@ -1621,7 +1770,7 @@ def register_old_dough(
         raise ProductionError("A validade da massa velha não pode estar no passado.")
     attempt = str(idempotency_key or "").strip()
     if not attempt:
-        raise ProductionError("A tentativa precisa de uma chave de idempotência.")
+        raise ProductionError("Esta ação chegou incompleta. Atualize o painel e tente de novo.")
 
     with transaction.atomic():
         work_order = (
@@ -1760,6 +1909,7 @@ def _execution_snapshot_items(bom: tuple[dict, ...], authored_items: list[dict],
     return resolved
 
 
+@_speaks_to_operator
 def authorize_formula_deviation(
     *,
     work_order_id,
@@ -1792,7 +1942,7 @@ def authorize_formula_deviation(
     if not normalized_reason:
         raise ProductionError("Justificativa é obrigatória para autorizar um desvio da receita.")
     if not attempt:
-        raise ProductionError("A tentativa precisa de uma chave de idempotência.")
+        raise ProductionError("Esta ação chegou incompleta. Atualize o painel e tente de novo.")
 
     with transaction.atomic():
         work_order = WorkOrder.objects.select_for_update().filter(pk=work_order_id).first()
@@ -2265,7 +2415,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
     }
 
     if partition is not None and str(quality or "").strip():
-        raise ProductionError("Informe quality ou partition, nunca os dois.")
+        raise ProductionError("Informe a qualidade do lote de um jeito só: o grau ou a divisão em grupos.")
     if partition is not None:
         if not partition:
             raise ProductionError("A partição do lote não pode ser vazia.")
@@ -4129,6 +4279,65 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
         prepared.close()
 
 
+def _committed_holds_refusal(
+    *,
+    recipe_id,
+    quantity,
+    target_date_value,
+    position_ref: str,
+    work_order_id=None,
+    create_new: bool = False,
+    linked: ProductionOrderShortError | None = None,
+) -> ProductionOrderShortError | None:
+    """A recusa que o Core daria ao ajustar este lote (``COMMITTED_HOLDS``), antes dele.
+
+    Mesma conta do Core (``scheduling._validate_committed_holds``): o lote planejado
+    que esta célula ajusta não pode ficar abaixo do que o ``DEMAND_BACKEND`` diz que
+    está encomendado para o produto e o dia. Não muda a regra: só a diz antes, em
+    português, e sem a oferta de forçar (o Core não aceita força aqui).
+    """
+    from django.utils.module_loading import import_string
+    from shopman.craftsman.conf import get_setting
+    from shopman.craftsman.models import WorkOrder
+
+    requested = Decimal(str(quantity or "0"))
+    if create_new or requested <= 0:
+        return None
+    backend_path = get_setting("DEMAND_BACKEND")
+    if not backend_path:
+        return None
+    planned = list(
+        WorkOrder.objects.filter(
+            recipe_id=recipe_id,
+            target_date=date.fromisoformat(str(target_date_value)),
+            position_ref=position_ref,
+            status=WorkOrder.Status.PLANNED,
+        ).order_by("created_at", "pk")
+    )
+    if work_order_id not in (None, ""):
+        target = next((wo for wo in planned if str(wo.pk) == str(work_order_id)), None)
+    else:
+        target = planned[0] if len(planned) == 1 else None
+    if target is None:
+        return None
+    try:
+        committed = Decimal(str(import_string(backend_path)().committed(target.output_sku, target.target_date)))
+    except Exception:  # silêncio-deliberado: o Core decide sozinho se a leitura falhar
+        logger.warning("production.committed_holds_probe_failed work_order=%s", target.ref, exc_info=True)
+        return None
+    if requested >= committed:
+        return None
+    return ProductionOrderShortError(
+        work_order_ref=target.ref,
+        required=committed,
+        requested=requested,
+        order_refs=linked.order_refs if linked else (),
+        orders=linked.orders if linked else (),
+        allow_override=False,
+        message=_committed_holds_message(committed),
+    )
+
+
 def _check_linked_order_coverage(
     *,
     recipe_id,
@@ -4271,6 +4480,12 @@ def _check_linked_order_coverage(
                 requested=requested,
                 order_refs=active_refs,
                 orders=lines,
+                # Só a trava dos pedidos ligados (o Core aceitaria): quem tem a
+                # permissão ainda pode salvar abaixo, com justificativa.
+                message=(
+                    f"Há {_qty(required)} un. encomendadas neste lote. "
+                    "Para planejar menos, é preciso justificar."
+                ),
             )
         return None
     except ProductionError:

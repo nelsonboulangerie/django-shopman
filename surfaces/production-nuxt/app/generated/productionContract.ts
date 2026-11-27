@@ -869,10 +869,12 @@ export interface ProductionValidationErrorBody {
   issues: ProductionValidationIssue[];
 }
 
-/** ProductionValidationErrorEnvelope(detail: 'str', error: 'ProductionValidationErrorBody') */
+/** O dialeto da casa (``docs/reference/errors.md``) por cima do superset. */
 export interface ProductionValidationErrorEnvelope {
   detail: string;
   error: ProductionValidationErrorBody;
+  field: string | null;
+  errors: Record<string, string[]> | null;
 }
 
 /** ProductionConflictRecovery(action: "Literal['refresh', 'retry']", label: 'str') */
