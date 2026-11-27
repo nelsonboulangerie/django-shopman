@@ -130,8 +130,16 @@ class ProductionValidationErrorBody:
 
 @dataclass(frozen=True)
 class ProductionValidationErrorEnvelope:
+    """O dialeto da casa (``docs/reference/errors.md``) por cima do superset.
+
+    ``detail`` é a frase do problema (nunca "Corrija os campos indicados"); ``field``
+    e ``errors`` sobem ao topo quando a recusa é de um campo.
+    """
+
     detail: str
     error: ProductionValidationErrorBody
+    field: str | None = None
+    errors: dict[str, list[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -325,15 +333,29 @@ class ProductionMutationValidationError(APIException):
 
     def __init__(self, detail) -> None:
         issues = _validation_issues(detail)
-        super().__init__(
-            {
-                "detail": "Corrija os campos indicados e tente novamente.",
-                "error": {
-                    "code": "validation_error",
-                    "issues": issues,
-                },
-            }
-        )
+        super().__init__(validation_error_body(issues))
+        # O normalizador do APIException transforma todo escalar em ErrorDetail e a
+        # lista de ``errors`` em lista de ErrorDetail; o envelope sai como foi escrito.
+        self.detail = validation_error_body(issues)
+
+
+def validation_error_body(issues: list[dict[str, str]]) -> dict:
+    """A recusa de validação da Produção no dialeto da casa (P2-19).
+
+    ``detail`` é a frase do primeiro problema; ``field`` sobe quando ele é de um
+    campo (não para ``non_field_errors``); ``errors`` traz o mapa campo → frases.
+    """
+    detail = next((issue["message"] for issue in issues if issue.get("message")), "") or (
+        "Corrija os campos indicados e tente novamente."
+    )
+    errors: dict[str, list[str]] = {}
+    for issue in issues:
+        errors.setdefault(issue["field"], []).append(issue["message"])
+    field = next((issue["field"] for issue in issues if issue["field"] != "non_field_errors"), None)
+    body: dict = {"detail": detail, "error": {"code": "validation_error", "issues": issues}, "errors": errors}
+    if field:
+        body["field"] = field
+    return body
 
 
 class ProductionProjectionExpiredError(APIException):

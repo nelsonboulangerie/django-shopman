@@ -26,6 +26,8 @@ import { materialShortageLine } from "~/presentation/shortage";
 const props = defineProps<{
   shortage: ProductionShortageError | null;
   allowShortLot?: boolean;
+  /** A recusa veio do Planejamento: a frase é a do plano, e "Ver encomendas" abre a lista. */
+  planning?: boolean;
 }>();
 // O modal some com animação depois de `shortage` virar null. Título e frase
 // saem do último envelope não nulo, para a saída não piscar outro caso com
@@ -43,6 +45,7 @@ const emit = defineEmits<{
   "close-short-lot": [proof: string];
   "open-anyway": [proof: string];
   review: [];
+  orders: [];
 }>();
 
 const { attrsFor } = useOperatorAppLink();
@@ -139,6 +142,17 @@ watch(
   },
 );
 
+// Reduzir o plano abaixo do encomendado (WP-F14, P1-13): as duas travas (a dos pedidos
+// ligados ao lote e a do Core) dizem uma frase só, e onde o servidor não oferece forçar
+// a saída é revisar o número ou ver as encomendas.
+const planRefusal = computed(
+  () =>
+    props.planning &&
+    last.value?.code === "order_shortage" &&
+    !shortLot.value &&
+    !forcePossibility.value,
+);
+
 const title = computed(() => {
   if (isMaterial.value) {
     return opening.value ? "Falta insumo para este lote" : "Falta insumo para fechar";
@@ -157,6 +171,9 @@ const description = computed(() => {
   }
   if (isMaterial.value && forcePossibility.value) {
     return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
+  }
+  if (planRefusal.value && last.value?.code === "order_shortage") {
+    return `Há ${formatQty(last.value.required)} un. encomendadas para este dia. O plano não pode ficar abaixo disso.`;
   }
   if (isMaterial.value) {
     return boughtMissing.value
@@ -252,11 +269,11 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
               <b class="tabular-nums">{{ last.required }}</b> un. ·
               informado: <b class="tabular-nums">{{ last.requested }}</b> un.
             </p>
-            <p class="mt-1 text-muted-foreground">
+            <p v-if="last.order_refs.length" class="mt-1 text-muted-foreground">
               Pedidos: {{ last.order_refs.join(", ") }}
             </p>
           </div>
-          <p v-if="!forcePossibility" class="text-sm">
+          <p v-if="!forcePossibility && !planRefusal" class="text-sm">
             Confira a contagem e informe pelo menos
             <b class="tabular-nums">{{ last.required }}</b> un. Se saiu mesmo
             menos, nada foi registrado: avise quem cuida das encomendas antes de
@@ -346,6 +363,15 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             variant="outline"
             :label="retryPossibility ? 'Cancelar' : 'Entendi'"
             @click="emit('update:open', false)"
+          />
+          <NuxtButton
+            v-if="planRefusal"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-shopping-bag"
+            label="Ver encomendas"
+            data-shortage-orders
+            @click="emit('orders')"
           />
           <NuxtButton
             v-if="retryPossibility"
