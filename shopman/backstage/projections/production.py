@@ -4639,6 +4639,54 @@ def resolve_production_access(
     request does not carry a validated station reference.
     """
     del selected_date
+    from shopman.backstage.station_trust import is_station_account
+
+    access = _resolve_operator_access(user, trusted_station_ref=trusted_station_ref)
+    if is_station_account(user):
+        return _station_read_only(access)
+    return access
+
+
+#: O que a conta de uma ESTAÇÃO (o totem do Letreiro) pode escrever na Produção.
+#:
+#: Fechado por padrão: a estação só lê (WP-F16, P1-27). A conta do totem age sem
+#: PIN, num dispositivo que qualquer pessoa alcança, e a loja pode pô-la em qualquer
+#: grupo (no da Cozinha, por exemplo, ela planejaria, abriria e fecharia lote). Por
+#: isso o teto vale por cima das permissões da conta. Abrir uma exceção é decisão
+#: escrita, com o nome da capacidade aqui e o motivo ao lado.
+STATION_WRITE_CEILING: frozenset[str] = frozenset()
+
+#: Toda capacidade que muda algo (ou revela o que é cego). A leitura fica de fora.
+PRODUCTION_WRITE_CAPABILITIES: tuple[str, ...] = (
+    "can_manage_all",
+    "can_edit_suggested",
+    "can_edit_planned",
+    "can_edit_started",
+    "can_edit_finished",
+    "can_edit_unsold",
+    "can_edit_plan",
+    "can_start",
+    "can_close_qc",
+    "can_correct_qc",
+    "can_quick_finish",
+    "can_override_shortage",
+    "can_void",
+    "can_record_oven_fact",
+    "can_reveal_blind_map",
+    "can_print_prep",
+)
+
+
+def _station_read_only(access: ProductionSurfaceAccess) -> ProductionSurfaceAccess:
+    """A mesma leitura, sem nenhuma escrita fora do ``STATION_WRITE_CEILING``."""
+    return replace(
+        access,
+        **{name: False for name in PRODUCTION_WRITE_CAPABILITIES if name not in STATION_WRITE_CEILING},
+    )
+
+
+def _resolve_operator_access(user, *, trusted_station_ref: str) -> ProductionSurfaceAccess:
+    """As capacidades que as permissões da conta concedem, antes do teto da estação."""
     is_superuser = bool(getattr(user, "is_superuser", False))
     if is_superuser:
         return _full_access()
