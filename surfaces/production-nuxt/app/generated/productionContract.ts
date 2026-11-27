@@ -656,6 +656,7 @@ export interface ProductionDashboardProjection {
   planned_display: string;
   loss_display: string;
   loss_hint: string;
+  planned_hint: string;
   loss_by_unit: DayLossByUnitProjection[];
   loss_lots: WorkOrderReportRow[];
   actions: ProductionActionProjection[];

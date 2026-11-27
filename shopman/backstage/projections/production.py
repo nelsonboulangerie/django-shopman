@@ -1122,6 +1122,9 @@ class ProductionDashboardProjection:
     loss_display: str = "0"
     # A frase sob a Perda fala só dos lotes fechados, como a própria perda.
     loss_hint: str = ""
+    #: A frase sob o Planejado conta os MESMOS lotes que o número soma (todos os do dia,
+    #: menos os cancelados). ``planned_orders`` conta só os que ainda esperam abrir.
+    planned_hint: str = ""
     #: A perda do dia por grandeza (peça, quilo, litro em colunas separadas), com as
     #: duas partes: a declarada e a diferença de rendimento. Mesma conta dos Relatórios.
     loss_by_unit: tuple[DayLossByUnitProjection, ...] = ()
@@ -2137,13 +2140,10 @@ def build_production_dashboard(
         bucket["total"].append((unit, Decimal(row.qty_loss)))
         bucket["declared"].append((unit, Decimal(row.loss_declared)))
         bucket["shortfall"].append((unit, Decimal(row.loss_shortfall)))
-    if closed:
-        # A frase não junta peça e quilo (P2-05): cada grandeza tem a sua coluna na
-        # tabela da perda do dia, logo abaixo.
-        lots = "no lote fechado" if len(closed) == 1 else f"nos {len(closed)} lotes fechados"
-        loss_hint = f"Perda declarada mais rendeu menos, {lots}"
-    else:
-        loss_hint = "Nenhum lote fechado no dia"
+    # A frase não junta peça e quilo (P2-05; cada grandeza tem a sua coluna na tabela
+    # logo abaixo) e diz quantos lotes tiveram perda, para bater com a lista ao lado.
+    with_loss = sum(1 for _wo, row in closed_rows if Decimal(row.qty_loss) > 0)
+    loss_hint = _loss_hint(with_loss, len(closed))
     rank = {"un.": 0, "kg": 1, "l": 2}
 
     def written(amounts, unit: str) -> str:
@@ -2168,6 +2168,7 @@ def build_production_dashboard(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
         planned_orders=summary.planned_orders,
+        planned_hint=_planned_hint(len(live)),
         started_orders=summary.started_orders,
         finished_orders=summary.finished_orders,
         void_orders=summary.void_orders,
@@ -2185,6 +2186,27 @@ def build_production_dashboard(
         loss_by_unit=loss_by_unit,
         loss_lots=loss_lots,
     )
+
+
+def _planned_hint(lots: int) -> str:
+    """Quantos lotes o número do Planejado soma, no plural certo."""
+    if lots == 0:
+        return "Nenhum lote no plano do dia"
+    if lots == 1:
+        return "1 lote no plano do dia"
+    return f"{lots} lotes no plano do dia"
+
+
+def _loss_hint(with_loss: int, closed: int) -> str:
+    """Quantos dos lotes fechados tiveram perda (declarada ou rendeu menos)."""
+    if closed == 0:
+        return "Nenhum lote fechado no dia"
+    if with_loss == 0:
+        return "Nenhum lote fechado teve perda" if closed > 1 else "O lote fechado não teve perda"
+    if closed == 1:
+        return "O lote fechado teve perda"
+    verb = "teve" if with_loss == 1 else "tiveram"
+    return f"{with_loss} dos {closed} lotes fechados {verb} perda"
 
 
 def _ptbr_number(value: Decimal, max_decimals: int = 2) -> str:

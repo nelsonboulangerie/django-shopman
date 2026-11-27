@@ -340,7 +340,7 @@ function refreshAll() {
         <OperatorMetric
           title="Planejado"
           :value="management?.planned_display || '0'"
-          :hint="`${management?.planned_orders ?? 0} lotes planejados`"
+          :hint="management?.planned_hint || ''"
         />
         <!-- Grandezas por unidade, em pt-BR, e a frase só dos lotes fechados:
              o servidor escreve (beta 05/11: 159966.487 somava g com peças). -->
