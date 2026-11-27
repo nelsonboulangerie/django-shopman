@@ -117,7 +117,7 @@ describe("ProductionHeader — teclas", () => {
   it("entrega os grupos de teclas da Produção à ajuda do kit", () => {
     expect(provideShortcuts).toHaveBeenCalledOnce();
     const groups = provideShortcuts.mock.calls[0]![0] as Array<{ title: string }>;
-    expect(groups.map((group) => group.title)).toContain("QC e timer");
+    expect(groups.map((group) => group.title)).toContain("Finalização e timer");
   });
 });
 

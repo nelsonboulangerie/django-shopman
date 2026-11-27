@@ -205,7 +205,11 @@ def test_reports_paginate_with_filter_bound_cursor_and_server_sort(client, manag
     assert second.status_code == 200
     assert second.json()["reports"]["history_rows"][0]["ref"] == report_data["finished"].ref
     assert second.json()["pagination"]["previous_cursor"]
-    assert len(captured) <= 20
+    # 20 → 26 (WP-F18): a linha agora diz a perda com as partes, a grandeza, o posto
+    # e quem fechou, e cada um desses nomes é UMA consulta por página (linhas de
+    # perda pré-carregadas; defeito, posto, grandeza e nome em dicionário), nunca
+    # uma por linha.
+    assert len(captured) <= 26
     assert any(
         'FROM "crafting_work_order"' in query["sql"]
         and "LIMIT 1 OFFSET 1" in query["sql"].upper()
@@ -233,9 +237,9 @@ def test_history_page_does_not_build_unselected_aggregates(client, manager, repo
     original_row_builder = production_projection._work_order_report_row
     materialized = []
 
-    def record_row(work_order):
+    def record_row(work_order, lookup=None):
         materialized.append(work_order.pk)
-        return original_row_builder(work_order)
+        return original_row_builder(work_order, lookup)
 
     monkeypatch.setattr(production_projection, "_work_order_report_row", record_row)
     monkeypatch.setattr(
