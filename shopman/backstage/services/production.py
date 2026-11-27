@@ -797,6 +797,16 @@ def _claim_projected_action_attempt(
                         "Esta chave já pertence a outra tentativa projetada.",
                         data={"cause": "idempotency_conflict"},
                     )
+                if (claim.response_body or {}).get("released"):
+                    # A dona volta ("Salvar com justificativa"): a posse é dela de novo.
+                    claim.response_body = {"idempotency_key": client_key, "attempt_digest": attempt_digest}
+                    claim.save(update_fields=["response_body"])
+                return
+            if (claim.response_body or {}).get("released"):
+                # A tentativa dona foi recusada sem gravar nada: a ação serve à
+                # tentativa revisada, com outra chave (ver _release_projected_action_attempt).
+                claim.response_body = {"idempotency_key": client_key, "attempt_digest": attempt_digest}
+                claim.save(update_fields=["response_body"])
                 return
             raise ProductionConflict(
                 "Esta ação projetada já foi consumida por outra tentativa.",
@@ -806,6 +816,24 @@ def _claim_projected_action_attempt(
         "Não foi possível confirmar a posse da ação projetada.",
         data={"cause": "projected_action_claim_conflict"},
     )
+
+
+def _release_projected_action_attempt(*, projected_action_proof: str, idempotency_key: str) -> None:
+    """Solta a posse da ação projetada que ESTA tentativa tomou, quando ela foi recusada.
+
+    Só a tentativa dona solta: a posse de outra chave fica como está. Soltar não
+    apaga: a mesma chave continua presa ao que tentou (outro número com ela é
+    conflito), e só OUTRA chave pode tomar a ação.
+    """
+    if not projected_action_proof or not idempotency_key:
+        return
+    from shopman.orderman.models import IdempotencyKey
+
+    proof_digest = hashlib.sha256(projected_action_proof.encode("utf-8")).hexdigest()
+    claim = IdempotencyKey.objects.filter(scope=PROJECTED_ACTION_CLAIM_SCOPE, key=proof_digest).first()
+    if claim is not None and str((claim.response_body or {}).get("idempotency_key") or "") == str(idempotency_key).strip():
+        claim.response_body = {**(claim.response_body or {}), "released": True}
+        claim.save(update_fields=["response_body"])
 
 
 def _claim_quick_finish_receipt(
@@ -1495,6 +1523,16 @@ def apply_planned(
             return result
     except Exception as exc:
         translated = _operator_error(exc)
+        if isinstance(translated, (ProductionOrderShortError, ProductionStockShortError)):
+            # A recusa por encomenda ou insumo não grava nada (a transação da célula
+            # volta inteira), mas a posse da ação projetada é gravada à parte. Presa,
+            # ela recusava o "Revisar quantidade" com "Esta ação projetada já foi
+            # consumida por outra tentativa" (WP-F14, P1-13). Solta, a mesma ação
+            # serve à tentativa revisada; o "forçar" da mesma chave a toma de novo.
+            _release_projected_action_attempt(
+                projected_action_proof=projected_action_proof,
+                idempotency_key=str(idempotency_key or ""),
+            )
         raise translated from (None if translated is exc else exc)
 
 

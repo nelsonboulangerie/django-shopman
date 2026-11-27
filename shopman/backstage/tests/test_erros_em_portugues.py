@@ -185,13 +185,14 @@ def plano(db, monkeypatch):
     )
     monkeypatch.setattr(
         "shopman.shop.adapters.demand.LedgerAwareDemandBackend.committed",
-        lambda self, sku, target_date: Decimal("12") if sku == "BRIOCHE-F14" else Decimal("0"),
+        # Como o banco devolve: três casas. O envelope e a frase saem "12".
+        lambda self, sku, target_date: Decimal("12.000") if sku == "BRIOCHE-F14" else Decimal("0"),
     )
     work_order = WorkOrder.objects.get(recipe=recipe, status=WorkOrder.Status.PLANNED)
     return recipe, work_order
 
 
-def _reduzir(recipe, work_order, *, quantity="10", force=False, key="plan-f14-reduce"):
+def _reduzir(recipe, work_order, *, quantity="10", force=False, key="plan-f14-reduce", proof=""):
     return production_service.apply_planned(
         recipe_id=recipe.pk,
         quantity=Decimal(quantity),
@@ -203,6 +204,7 @@ def _reduzir(recipe, work_order, *, quantity="10", force=False, key="plan-f14-re
         actor="production:cozinha",
         expected_rev=work_order.rev,
         idempotency_key=key,
+        projected_action_proof=proof,
     )
 
 
@@ -238,6 +240,69 @@ def test_revisar_quantidade_aceita_um_numero_novo(plano):
 
     work_order.refresh_from_db()
     assert work_order.quantity == Decimal("12")
+
+
+def test_a_recusa_solta_a_acao_projetada_para_a_tentativa_revisada(plano):
+    """A posse da ação projetada é gravada à parte; presa, recusava o número revisado."""
+    recipe, work_order = plano
+    with pytest.raises(ProductionOrderShortError):
+        _reduzir(recipe, work_order, key="plan-f14-first", proof="prova-da-acao")
+
+    _reduzir(recipe, work_order, quantity="12", key="plan-f14-revised", proof="prova-da-acao")
+
+    work_order.refresh_from_db()
+    assert work_order.quantity == Decimal("12")
+
+
+def test_a_posse_da_acao_continua_valendo_depois_de_gravar(plano):
+    """Soltar é só na recusa: a ação que gravou não serve a outra tentativa."""
+    from shopman.backstage.services.exceptions import ProductionConflict
+
+    recipe, work_order = plano
+    _reduzir(recipe, work_order, quantity="14", key="plan-f14-saved", proof="prova-gravada")
+    work_order.refresh_from_db()
+
+    with pytest.raises(ProductionConflict):
+        _reduzir(recipe, work_order, quantity="15", key="plan-f14-other", proof="prova-gravada")
+
+
+def test_forcar_depois_da_recusa_retoma_a_posse(plano, monkeypatch):
+    """A dona que volta com a mesma chave retoma a ação: depois de gravar, outra
+    chave não a usa mais."""
+    from shopman.backstage.services.exceptions import ProductionConflict
+
+    recipe, work_order = plano
+    monkeypatch.setattr(production_service, "_committed_holds_refusal", lambda **kwargs: None)
+    monkeypatch.setattr(
+        production_service,
+        "_check_linked_order_coverage",
+        lambda **kwargs: ProductionOrderShortError(
+            work_order_ref=work_order.ref,
+            required=Decimal("20"),
+            requested=Decimal(str(kwargs["quantity"])),
+            order_refs=("ORD-F14",),
+        ),
+    )
+    with pytest.raises(ProductionOrderShortError) as refused:
+        _reduzir(recipe, work_order, quantity="14", key="plan-f14-own", proof="prova-forcada")
+    production_service.apply_planned(
+        recipe_id=recipe.pk,
+        quantity=Decimal("14"),
+        target_date_value=timezone.localdate().isoformat(),
+        position_ref="",
+        operator_ref="",
+        force=True,
+        reason="Pedido do gestor.",
+        actor="production:cozinha",
+        expected_rev=work_order.rev,
+        idempotency_key="plan-f14-own",
+        approved_shortage=production_service.production_shortage_snapshot(refused.value),
+        projected_action_proof="prova-forcada",
+    )
+    work_order.refresh_from_db()
+
+    with pytest.raises(ProductionConflict):
+        _reduzir(recipe, work_order, quantity="15", key="plan-f14-thief", proof="prova-forcada")
 
 
 @pytest.fixture
