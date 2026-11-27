@@ -661,8 +661,8 @@ def _production_error_response(
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
-                    "required": str(exc.required),
-                    "requested": str(exc.requested),
+                    "required": _production_quantity(exc.required),
+                    "requested": _production_quantity(exc.requested),
                     "order_refs": list(exc.order_refs),
                     "orders": [{"ref": ref, "qty": _production_quantity(quantity)} for ref, quantity in exc.orders],
                 },
@@ -680,21 +680,11 @@ def _production_validation_error_response(
     *,
     fallback: str,
 ) -> Response:
+    from shopman.backstage.api._production_mutations import validation_error_body
+
     message = str(exc) or fallback
     return Response(
-        {
-            "detail": message,
-            "error": {
-                "code": "validation_error",
-                "issues": [
-                    {
-                        "field": "non_field_errors",
-                        "code": "invalid",
-                        "message": message,
-                    }
-                ],
-            },
-        },
+        validation_error_body([{"field": "non_field_errors", "code": "invalid", "message": message}]),
         status=400,
     )
 

@@ -512,6 +512,128 @@ def test_station_policy_can_fail_closed_without_changing_the_role_matrix(recipe)
     assert on_station.can_start is True
 
 
+# ── A estação do Letreiro só lê (WP-F16, P1-27) ──────────────────────────────
+
+
+def _station_account(username: str = "totem-letreiro", *, terminal_ref: str = "letreiro", mode: str = "autonomous"):
+    """A conta do totem, no grupo mais forte da Produção, declarada no terminal dela.
+
+    A conta recebe TUDO o que o operador recebe, de propósito: o teto da estação
+    tem de valer por cima das permissões, qualquer que seja o grupo.
+    """
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.production_grants import grant_production_operator
+
+    user = User.objects.create_user(username, password="pw", is_staff=True)
+    user = grant_production_operator(user)
+    user.user_permissions.add(
+        _permission("shop", "manage_production"),
+        _permission("backstage", "quick_finish_production"),
+        _permission("backstage", "override_production_shortage"),
+        _permission("backstage", "void_production"),
+        _permission("backstage", "correct_production_qc"),
+        _permission("backstage", "reveal_production_blind_map"),
+        _permission("backstage", "view_production_reports"),
+    )
+    Terminal.objects.create(
+        ref=terminal_ref,
+        label="Letreiro",
+        metadata={"station": {"mode": mode, "operator": username}},
+    )
+    return User.objects.get(pk=user.pk)
+
+
+@pytest.mark.django_db
+def test_a_conta_da_estacao_tem_toda_capacidade_de_escrita_falsa(recipe):
+    from shopman.backstage.projections.production import (
+        PRODUCTION_WRITE_CAPABILITIES,
+        STATION_WRITE_CEILING,
+    )
+
+    station = _station_account()
+
+    access = resolve_production_access(station, trusted_station_ref="letreiro")
+
+    assert STATION_WRITE_CEILING == frozenset()
+    assert {name: getattr(access, name) for name in PRODUCTION_WRITE_CAPABILITIES} == dict.fromkeys(
+        PRODUCTION_WRITE_CAPABILITIES, False
+    )
+    # E a leitura continua: o Letreiro mostra o dia.
+    assert access.can_access_board is True
+    assert access.can_view_started is True
+    assert access.can_view_finished is True
+
+
+@pytest.mark.django_db
+def test_toda_capacidade_que_nao_e_leitura_esta_na_lista_de_escrita():
+    """Capacidade nova nasce fechada para a estação: ou é leitura (``can_view_*``), ou entra na lista."""
+    from dataclasses import fields
+
+    from shopman.backstage.projections.production import (
+        PRODUCTION_WRITE_CAPABILITIES,
+        ProductionSurfaceAccess,
+    )
+
+    names = {field.name for field in fields(ProductionSurfaceAccess)}
+    reads = {name for name in names if name.startswith("can_view_")}
+
+    assert names - reads == set(PRODUCTION_WRITE_CAPABILITIES)
+
+
+@pytest.mark.django_db
+def test_modo_escrito_errado_nao_devolve_a_escrita_a_conta_da_estacao(recipe):
+    station = _station_account(mode="autonoma")
+
+    assert resolve_production_access(station).can_start is False
+
+
+@pytest.mark.django_db
+def test_o_mesmo_grupo_fora_da_estacao_continua_escrevendo(recipe, production_operator):
+    _station_account()
+
+    assert resolve_production_access(production_operator).can_start is True
+
+
+@pytest.mark.django_db
+def test_o_tablet_do_letreiro_le_o_quadro_e_a_mutacao_dele_devolve_403(client, recipe):
+    from shopman.backstage.tests.support import trust_station
+
+    _station_account()
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    trust_station(client, "letreiro")
+
+    board = client.get(reverse("api-backstage-production"))
+    access = board.json()["board"]["access"]
+    start = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-start", args=[work_order.pk]),
+        {"quantity": "10", "expected_rev": work_order.rev, "idempotency_key": "letreiro-start"},
+        content_type="application/json",
+    )
+    plan = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        {
+            "recipe_id": recipe.pk,
+            "quantity": "20",
+            "target_date": date.today().isoformat(),
+            "position_ref": "forno",
+            "expected_rev": None,
+            "idempotency_key": "letreiro-plan",
+        },
+        content_type="application/json",
+    )
+
+    assert board.status_code == 200
+    assert not any(value for key, value in access.items() if not key.startswith("can_view_") and key != "can_access_board" and isinstance(value, bool))
+    assert start.status_code == 403
+    assert plan.status_code == 403
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1
+
+
 @pytest.mark.django_db
 def test_forged_force_payload_requires_separate_override_capability(client, recipe):
     operator = User.objects.create_user("ordinary-manager", password="pw", is_staff=True)
