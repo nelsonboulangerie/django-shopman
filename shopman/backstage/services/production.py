@@ -117,7 +117,7 @@ def _operator_error(exc: Exception) -> Exception:
     if code == "AMBIGUOUS_RECIPE":
         return ProductionError("Há mais de uma receita ativa para este produto. Arquive a que sobra em Receitas.")
     if code == "BOM_CYCLE":
-        return ProductionError("A receita usa a si mesma em algum passo. Confira a receita em Receitas.")
+        return ProductionError("A receita usa a si mesma em alguma etapa. Confira a receita em Receitas.")
     if code in _CRAFT_CODES_IN_PORTUGUESE:
         return ProductionError(exc.message)
     # Código que a Produção ainda não traduz: o operador lê o que fazer, e o código
@@ -1523,17 +1523,22 @@ def apply_planned(
             return result
     except Exception as exc:
         translated = _operator_error(exc)
-        if isinstance(translated, (ProductionOrderShortError, ProductionStockShortError)):
-            # A recusa por encomenda ou insumo não grava nada (a transação da célula
-            # volta inteira), mas a posse da ação projetada é gravada à parte. Presa,
-            # ela recusava o "Revisar quantidade" com "Esta ação projetada já foi
-            # consumida por outra tentativa" (WP-F14, P1-13). Solta, a mesma ação
-            # serve à tentativa revisada; o "forçar" da mesma chave a toma de novo.
-            _release_projected_action_attempt(
-                projected_action_proof=projected_action_proof,
-                idempotency_key=str(idempotency_key or ""),
-            )
+        _release_refused_planning_attempt(translated, projected_action_proof, idempotency_key)
         raise translated from (None if translated is exc else exc)
+
+
+def _release_refused_planning_attempt(translated: Exception, projected_action_proof: str, idempotency_key) -> None:
+    """A recusa por encomenda ou insumo não grava nada (a transação da célula volta
+    inteira), mas a posse da ação projetada é gravada à parte. Presa, ela recusava o
+    "Revisar quantidade" com "Esta ação projetada já foi consumida por outra
+    tentativa" (WP-F14, P1-13). Solta, a mesma ação serve à tentativa revisada; o
+    "forçar" da mesma chave a toma de novo.
+    """
+    if isinstance(translated, (ProductionOrderShortError, ProductionStockShortError)):
+        _release_projected_action_attempt(
+            projected_action_proof=projected_action_proof,
+            idempotency_key=str(idempotency_key or ""),
+        )
 
 
 def _zeroing_reason(reason) -> str:
