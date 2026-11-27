@@ -378,7 +378,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
         # O que chegou encerra o pedido que esperava por ele: sem isto o card ficava
         # "aguardando entrega" para sempre e o insumo nunca mais podia ser pedido.
         for material in {line.material.pk: line.material for line in lines}.values():
-            _close_purchase_request(material)
+            _close_purchase_request(material, internal="received")
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
             _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
@@ -1117,10 +1117,17 @@ def send_purchase_request(material_sku: str, *, reviewed: bool, user=None) -> di
         )
 
     with transaction.atomic():
+        # Trava a linha: a Produção pode estar gravando uma solicitação no mesmo insumo
+        # (`internal_requests`), e salvar o metadata lido antes apagaria a dela.
+        material = Material.objects.select_for_update().get(pk=material.pk)
         dispatch = _queue_supplier_purchase_request(material, reviewed=reviewed, user=user)
 
         metadata = dict(material.metadata or {})
         purchase = dict(metadata.get("purchase") or {})
+        # O pedido ao fornecedor atende o que a Produção solicitou: sai do "Comprar".
+        purchase["internal_requests"] = _transition_internal_requests(
+            purchase.get("internal_requests"), from_status=("open",), to_status="ordered"
+        )
         purchase["request_status"] = "sent"
         purchase["request_status_at"] = timezone.now().isoformat()
         purchase["request_ref"] = dispatch["purchase_ref"]
@@ -1146,24 +1153,149 @@ def cancel_purchase_request(material_sku: str) -> dict[str, Any]:
     if not material:
         raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="materialSku", status_code=404)
     with transaction.atomic():
-        _close_purchase_request(material)
+        _close_purchase_request(material, internal="reopen")
     return build_purchase()
 
 
-def _close_purchase_request(material) -> None:
+def _close_purchase_request(material, *, internal: str) -> None:
     """Apaga o estado do pedido (`purchase.request_*`): o insumo volta a "Revisar".
 
     O pedido despachado continua contado na directive de notificação; aqui só
     morava o "em aberto", e encerrado ele não deixa resto no metadata.
+
+    ``internal`` diz o que acontece com as solicitações da Produção
+    (`purchase.internal_requests`): ``"reopen"`` (pedido cancelado: a falta segue,
+    e a solicitação volta ao "Comprar") ou ``"received"`` (o insumo chegou).
+    Roda dentro de uma transação e relê a linha travada, para não apagar uma
+    solicitação gravada entre a leitura e o save.
     """
+    Material = apps.get_model("buyman", "Material")
+    material = Material.objects.select_for_update().get(pk=material.pk)
     metadata = dict(material.metadata or {})
     purchase = dict(metadata.get("purchase") or {})
     kept = {key: value for key, value in purchase.items() if not key.startswith("request_")}
+    if internal == "reopen":
+        moves = (("ordered",), "open")
+    else:
+        moves = (("open", "ordered"), "received")
+    requests = _transition_internal_requests(purchase.get("internal_requests"), from_status=moves[0], to_status=moves[1])
+    if requests or "internal_requests" in kept:
+        kept["internal_requests"] = requests
     if kept == purchase:
         return
     metadata["purchase"] = kept
     material.metadata = metadata
     material.save(update_fields=["metadata", "updated_at"])
+
+
+#: Quantas solicitações encerradas ficam no cadastro, para quem audita. As abertas
+#: ficam todas; as antigas saem pela cauda.
+INTERNAL_REQUESTS_KEPT_CLOSED = 10
+
+
+def _transition_internal_requests(raw: Any, *, from_status: tuple[str, ...], to_status: str) -> list[dict[str, Any]]:
+    """Move as solicitações da Produção de um estado a outro e poda as encerradas."""
+    now = timezone.now().isoformat()
+    requests: list[dict[str, Any]] = []
+    for entry in raw if isinstance(raw, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        entry = dict(entry)
+        if entry.get("status") in from_status:
+            entry["status"] = to_status
+            entry["status_at"] = now
+        requests.append(entry)
+    closed = [entry for entry in requests if entry.get("status") == "received"]
+    drop = {id(entry) for entry in closed[: max(0, len(closed) - INTERNAL_REQUESTS_KEPT_CLOSED)]}
+    return [entry for entry in requests if id(entry) not in drop]
+
+
+@dataclass(frozen=True)
+class ProductionPurchaseRequestItem:
+    """Um insumo que faltou no lote: quanto falta, na unidade do estoque."""
+
+    sku: str
+    quantity: Decimal
+    unit: str
+
+
+def request_purchase_from_production(
+    *,
+    work_order_ref: str,
+    product_name: str,
+    items: list[ProductionPurchaseRequestItem],
+    user,
+) -> list[str]:
+    """A Produção solicita ao Compras o insumo que falta para o lote (decisão do dono, 26/11).
+
+    Quem não opera o Compras não pede ao fornecedor: deixa a solicitação no cadastro
+    de compra do insumo (`Material.metadata.purchase.internal_requests`), que o
+    "Comprar" mostra a quem opera. Nada sai para fora da casa. Uma solicitação
+    aberta por (insumo, lote): pedir de novo atualiza a quantidade e o autor, não
+    duplica. A linha do insumo fica travada durante a escrita, para dois tablets
+    pedindo ao mesmo tempo não se apagarem. Devolve os SKUs solicitados.
+    """
+    Material = apps.get_model("buyman", "Material")
+    username = getattr(user, "get_username", lambda: "")() if user else ""
+    requested_by_name = _first_name(user)
+    now = timezone.now().isoformat()
+    requested: list[str] = []
+    with transaction.atomic():
+        for item in items:
+            if item.quantity <= 0:
+                continue
+            material = Material.objects.select_for_update().filter(sku=item.sku).first()
+            if material is None:
+                continue
+            metadata = dict(material.metadata or {})
+            purchase = dict(metadata.get("purchase") or {})
+            requests = [dict(entry) for entry in purchase.get("internal_requests") or [] if isinstance(entry, dict)]
+            entry = next(
+                (
+                    entry
+                    for entry in requests
+                    if entry.get("status") == "open" and entry.get("work_order_ref") == work_order_ref
+                ),
+                None,
+            )
+            if entry is None:
+                entry = {"work_order_ref": work_order_ref, "status": "open", "status_at": now}
+                requests.append(entry)
+            entry.update(
+                {
+                    "quantity": format(item.quantity.normalize(), "f"),
+                    "unit": item.unit,
+                    "product": product_name,
+                    "requested_by": username,
+                    "requested_by_name": requested_by_name,
+                    "requested_at": now,
+                }
+            )
+            purchase["internal_requests"] = requests
+            metadata["purchase"] = purchase
+            material.metadata = metadata
+            material.save(update_fields=["metadata", "updated_at"])
+            requested.append(material.sku)
+    if requested:
+        logger.info(
+            "production_purchase_requested work_order=%s skus=%s by=%s",
+            work_order_ref,
+            ",".join(requested),
+            username,
+        )
+    return requested
+
+
+def _first_name(user) -> str:
+    """O primeiro nome de quem pediu: a linha do Compras fala como a casa fala."""
+    if user is None:
+        return ""
+    name = (getattr(user, "first_name", "") or "").strip()
+    if not name:
+        name = (getattr(user, "get_full_name", lambda: "")() or "").strip()
+    if not name:
+        name = getattr(user, "get_username", lambda: "")() or ""
+    return name.split()[0] if name else ""
 
 
 def _queue_supplier_purchase_request(material, *, reviewed: bool, user=None) -> dict[str, str]:
