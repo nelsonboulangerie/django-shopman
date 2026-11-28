@@ -1130,6 +1130,30 @@ describe("reorderRows", () => {
     expect(reorderRows([semConsumo], [], [], [])).toEqual([]);
   });
 
+  it("a solicitação da Produção chega ao cartão do Comprar (#3664)", () => {
+    // O servidor já põe a falta como piso do `suggestedQty`; a tela só leva a frase.
+    const line = "Diofer pediu às 14h05: falta 300 g para o lote de Brioche.";
+    const material: Material = {
+      ...semConsumo,
+      suggestedQty: 1,
+      internalRequests: [
+        {
+          workOrderRef: "WO-2026-00022",
+          product: "Brioche",
+          quantity: 0.3,
+          unit: "kg",
+          quantityDisplay: "300 g",
+          requestedByName: "Diofer",
+          requestedAt: "2026-11-26T17:05:00+00:00",
+          line,
+        },
+      ],
+    };
+    const [row] = reorderRows([material], [], [], []);
+    expect(row!.material.internalRequests?.map((request) => request.line)).toEqual([line]);
+    expect(line).not.toContain("—");
+  });
+
   it("mostra a quantidade que o servidor sugeriu, sem recalcular", () => {
     const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
     const rows = reorderRows([material], [], [], []);

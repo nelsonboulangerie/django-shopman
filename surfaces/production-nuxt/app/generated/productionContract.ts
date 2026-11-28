@@ -993,9 +993,9 @@ export interface ProductionNotFoundErrorEnvelope {
   error: ProductionNotFoundErrorBody;
 }
 
-/** ProductionShortagePossibility(kind: "Literal['retry', 'force', 'confirm', 'purchase']", label: 'str', enabled: 'bool', proof: 'str', href: 'str') */
+/** ProductionShortagePossibility(kind: "Literal['retry', 'force', 'confirm', 'purchase', 'request_purchase']", label: 'str', enabled: 'bool', proof: 'str', href: 'str') */
 export interface ProductionShortagePossibility {
-  kind: "retry" | "force" | "confirm" | "purchase";
+  kind: "retry" | "force" | "confirm" | "purchase" | "request_purchase";
   label: string;
   enabled: boolean;
   proof: string;
@@ -1014,6 +1014,12 @@ export interface ProductionShortageAuthorizer {
 export interface ProductionShortageAuthorizationResponse {
   override_proof: string;
   authorizer_name: string;
+}
+
+/** O que ficou solicitado ao Compras: os insumos e a frase de confirmação. */
+export interface ProductionPurchaseRequestResponse {
+  requested_skus: string[];
+  detail: string;
 }
 
 /** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str', shortage_display: 'str', needed_display: 'str', available_display: 'str', produced_here: 'bool') */
@@ -1081,6 +1087,10 @@ export interface ProductionPartitionGroupRequest {
 export interface ProductionQualityReviewBatchItemRequest {
   work_order_id: number;
   expected_rev: number;
+}
+
+export interface ProductionPurchaseRequestRequest {
+  purchase_request_proof: string;
 }
 
 export interface ProductionShortageAuthorizationRequest {
@@ -1302,6 +1312,10 @@ async function postProductionMutation<T>(href: string, body: unknown): Promise<T
     options: { method: "POST"; body: unknown },
   ) => Promise<T>;
   return post(href, { method: "POST", body });
+}
+
+export function requestProductionPurchase(body: ProductionPurchaseRequestRequest): Promise<ProductionPurchaseRequestResponse> {
+  return postProductionMutation<ProductionPurchaseRequestResponse>("/api/v1/backstage/production/purchase-request/", body);
 }
 
 export function authorizeProductionShortage(body: ProductionShortageAuthorizationRequest): Promise<ProductionShortageAuthorizationResponse> {

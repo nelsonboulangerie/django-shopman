@@ -78,6 +78,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
+    ProductionPurchaseRequestSerializer,
     ProductionQualityCorrectionMutationSerializer,
     ProductionQualityReviewBatchMutationSerializer,
     ProductionQualityReviewMutationSerializer,
@@ -378,6 +379,37 @@ def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     )
 
 
+PURCHASE_REQUEST_SALT = "shopman.backstage.production.purchase_request"
+#: A prova da solicitação vale o tempo de alguém ler o aviso e tocar no botão.
+PURCHASE_REQUEST_MAX_AGE_SECONDS = 60 * 60
+
+
+def _purchase_request_proof(exc, produced_here: set[str]) -> str:
+    """Assina o que a recusa mediu: o lote e quanto falta de cada insumo comprado.
+
+    A solicitação grava exatamente isto. Insumo sem cadastro de compra não entra
+    (não há onde o Compras vê-lo); sem nenhum, não há solicitação a oferecer.
+    """
+    from django.apps import apps
+    from django.core import signing
+
+    Material = apps.get_model("buyman", "Material")
+    bought = [item for item in exc.missing if item.sku not in produced_here and item.shortage > 0]
+    known = set(Material.objects.filter(sku__in={item.sku for item in bought}).values_list("sku", flat=True))
+    items = [
+        {
+            "sku": item.sku,
+            "quantity": format(item.shortage.quantize(Decimal("0.001")).normalize(), "f"),
+            "unit": item.unit,
+        }
+        for item in bought
+        if item.sku in known
+    ]
+    if not items:
+        return ""
+    return signing.dumps({"work_order_ref": exc.work_order_ref, "items": items}, salt=PURCHASE_REQUEST_SALT)
+
+
 def _material_display_names(skus: set[str]) -> dict[str, str]:
     """Nome legível de cada insumo em falta: catálogo, compras ou ficha."""
     from shopman.craftsman.models import Recipe
@@ -515,6 +547,20 @@ def _production_error_response(
                     "href": purchase_url,
                 }
             )
+        elif bought_missing:
+            # Quem não opera o Compras não pede ao fornecedor: deixa a solicitação,
+            # que o "Comprar" mostra a quem opera (decisão do dono, 26/11/2026).
+            request_proof = _purchase_request_proof(exc, produced_here)
+            if request_proof:
+                possibilities.append(
+                    {
+                        "kind": "request_purchase",
+                        "label": "Solicitar ao Compras",
+                        "enabled": True,
+                        "proof": request_proof,
+                        "href": "",
+                    }
+                )
         if opening and override_proof:
             possibilities.append(
                 {
@@ -6143,6 +6189,78 @@ def _shortage_auth_refusal(field: str, message: str) -> Response:
         },
         status=400,
     )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Leave a purchase request for the Purchase app (material shortage)",
+        responses={200: OpenApiResponse(description="Purchase request recorded.")},
+    ),
+)
+class ProductionPurchaseRequestView(_ProductionActionBase):
+    """"Solicitar ao Compras": quem não opera o Compras deixa a falta para quem opera.
+
+    Recebe a prova que a recusa da falta devolveu (o lote e quanto falta de cada
+    insumo comprado) e grava a solicitação no cadastro de compra de cada insumo
+    (`purchase.internal_requests`). Nada sai para o fornecedor: o Compras vê a
+    linha no "Comprar" e decide o pedido. Decisão do dono ao aprovar o WP-F11 (26/11).
+    """
+
+    def post(self, request):
+        from django.core import signing
+        from shopman.craftsman.models import WorkOrder
+
+        from shopman.backstage.projections.production import _product_names
+        from shopman.backstage.services.purchase import (
+            ProductionPurchaseRequestItem,
+            request_purchase_from_production,
+        )
+
+        access = getattr(request, "production_access", None)
+        if access is not None and not (access.can_start or access.can_close_qc):
+            return _shortage_auth_refusal("purchase_request_proof", "Quem não abre nem fecha lote não solicita compra.")
+        serializer = ProductionPurchaseRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            field, messages = next(iter(serializer.errors.items()))
+            return _shortage_auth_refusal(field, str(messages[0]))
+        try:
+            snapshot = signing.loads(
+                serializer.validated_data["purchase_request_proof"],
+                salt=PURCHASE_REQUEST_SALT,
+                max_age=PURCHASE_REQUEST_MAX_AGE_SECONDS,
+            )
+        except signing.BadSignature:
+            return _shortage_auth_refusal(
+                "purchase_request_proof", "Este aviso de falta ficou antigo. Tente a ação de novo para ver a falta de agora."
+            )
+        work_order = WorkOrder.objects.select_related("recipe").filter(ref=snapshot.get("work_order_ref")).first()
+        if work_order is None:
+            return _shortage_auth_refusal("purchase_request_proof", "Este lote não existe mais. Atualize o painel.")
+        product = (
+            _product_names({work_order.output_sku}).get(work_order.output_sku)
+            or getattr(work_order.recipe, "name", "")
+            or work_order.output_sku
+        )
+        items = [
+            ProductionPurchaseRequestItem(sku=str(row["sku"]), quantity=Decimal(str(row["quantity"])), unit=str(row["unit"]))
+            for row in snapshot.get("items") or ()
+        ]
+        requested = request_purchase_from_production(
+            work_order_ref=work_order.ref,
+            product_name=product,
+            items=items,
+            user=request.user,
+        )
+        if not requested:
+            return _shortage_auth_refusal("purchase_request_proof", "Nenhum insumo desta falta tem cadastro de compra.")
+        logger.info(
+            "production_purchase_request operator=%s work_order=%s skus=%s",
+            _production_actor(request),
+            work_order.ref,
+            ",".join(requested),
+        )
+        return Response({"requested_skus": requested, "detail": "Solicitado ao Compras."})
 
 
 @extend_schema_view(

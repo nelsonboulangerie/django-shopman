@@ -327,6 +327,7 @@ from .operations import (
     ProductionKDSView,
     ProductionManagementView,
     ProductionMiseEnPlaceView,
+    ProductionPurchaseRequestView,
     ProductionQCView,
     ProductionReportsView,
     ProductionShortageAuthorizationView,
@@ -1379,6 +1380,11 @@ urlpatterns = [
         name="api-backstage-wo-quality-correction",
     ),
     path("production/quick-finish/", WorkOrderQuickFinishView.as_view(), name="api-backstage-wo-quick-finish"),
+    path(
+        "production/purchase-request/",
+        ProductionPurchaseRequestView.as_view(),
+        name="api-backstage-production-purchase-request",
+    ),
     path(
         "production/shortage-authorization/",
         ProductionShortageAuthorizationView.as_view(),
