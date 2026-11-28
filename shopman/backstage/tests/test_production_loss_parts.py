@@ -163,7 +163,7 @@ def test_a_perda_do_dia_soma_as_duas_partes_e_bate_com_o_ledger(recipe):
         "3 un.",
     )
     assert dashboard.loss_display == "5 un."
-    assert dashboard.loss_hint == "2 dos 2 lotes fechados tiveram perda"
+    assert dashboard.loss_hint == "2 dos 2 lotes finalizados tiveram perda"
     assert dashboard.planned_hint == "2 lotes no plano do dia"
     # A gestão do dia usa a MESMA conta dos Relatórios (P2-16).
     assert sum(Decimal(row.qty_loss) for row in reports.history_rows) == Decimal("5")

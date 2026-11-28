@@ -809,7 +809,7 @@ def _board_actions(
                     label="Confirmar previsto",
                     priority=20,
                     enabled=access.can_start,
-                    reason="Sem capacidade para abrir lotes.",
+                    reason="Sem capacidade para confirmar lotes.",
                     href=f"/api/v1/backstage/production/{order.pk}/start/",
                     payload_schema="ProductionStartMutationRequest",
                     expected_rev=order.rev,
@@ -913,7 +913,7 @@ def _qc_actions(
                 label=f"{count} {'lote' if count == 1 else 'lotes'}, nenhuma exceção · Confirmar",
                 priority=15,
                 enabled=all(card.can_correct for card in clean_pending),
-                reason="Somente a gestão pode revisar um lote fechado.",
+                reason="Somente a gestão pode revisar um lote finalizado.",
                 href="/api/v1/backstage/production/quality-review/batch/",
                 payload_schema="ProductionQualityReviewBatchMutationRequest",
                 expected_rev=None,
@@ -929,7 +929,7 @@ def _qc_actions(
                         label="Confirmar qualidade",
                         priority=20,
                         enabled=card.can_correct,
-                        reason="Somente a gestão pode revisar um lote fechado.",
+                        reason="Somente a gestão pode revisar um lote finalizado.",
                         href=f"/api/v1/backstage/production/{card.pk}/quality-review/",
                         payload_schema="ProductionQualityReviewMutationRequest",
                         expected_rev=card.rev,
@@ -944,7 +944,7 @@ def _qc_actions(
                     label="Corrigir qualidade",
                     priority=40,
                     enabled=card.can_correct,
-                    reason="Somente a gestão pode corrigir um lote fechado.",
+                    reason="Somente a gestão pode corrigir um lote finalizado.",
                     href=f"/api/v1/backstage/production/{card.pk}/quality-correction/",
                     payload_schema="ProductionQualityCorrectionMutationRequest",
                     expected_rev=card.rev,
@@ -964,7 +964,7 @@ def _qc_actions(
                 reason=(
                     "Confirme o previsto do lote na Produção antes da Finalização."
                     if card.status == WorkOrder.Status.PLANNED and not access.can_start
-                    else "Sem capacidade para fechar o lote."
+                    else "Sem capacidade para finalizar o lote."
                 ),
                 href=f"/api/v1/backstage/production/{card.pk}/finish/",
                 payload_schema="ProductionFinishMutationRequest",
@@ -1282,7 +1282,7 @@ class QCOrderCardProjection:
     # forno aberto. O timer segue lembrete local; isto é só o fato declarado.
     oven_until_display: str = ""
     # O prometido do produto na data, pela régua das reservas (WP-F08/F10): o
-    # "6 un. encomendadas" do cartão aberto. None no lote fechado e quando a
+    # "6 un. encomendadas" do cartão em produção. None no lote finalizado e quando a
     # data não tem encomenda nem plano do produto.
     promised: ProductionPromisedProjection | None = None
 
@@ -2181,15 +2181,15 @@ def _planned_hint(lots: int) -> str:
 
 
 def _loss_hint(with_loss: int, closed: int) -> str:
-    """Quantos dos lotes fechados tiveram perda (declarada ou rendeu menos)."""
+    """Quantos dos lotes finalizados tiveram perda (declarada ou rendeu menos)."""
     if closed == 0:
-        return "Nenhum lote fechado no dia"
+        return "Nenhum lote finalizado no dia"
     if with_loss == 0:
-        return "Nenhum lote fechado teve perda" if closed > 1 else "O lote fechado não teve perda"
+        return "Nenhum lote finalizado teve perda" if closed > 1 else "O lote finalizado não teve perda"
     if closed == 1:
-        return "O lote fechado teve perda"
+        return "O lote finalizado teve perda"
     verb = "teve" if with_loss == 1 else "tiveram"
-    return f"{with_loss} dos {closed} lotes fechados {verb} perda"
+    return f"{with_loss} dos {closed} lotes finalizados {verb} perda"
 
 
 def _ptbr_number(value: Decimal, max_decimals: int = 2) -> str:
@@ -2495,7 +2495,7 @@ QC_TYPICAL_LOSS_MIN_LOTS = 3
 
 
 def qc_partition_is_clean(partition, *, anchor, default_grade_ref: str) -> bool:
-    """Lote fechado SEM exceção, a regra única do portão de qualidade em lote.
+    """Lote finalizado SEM exceção, a regra única do portão de qualidade em lote.
 
     Estrita de propósito (decisão do dono, 03/10: na dúvida, olha um humano):
     sem perda, sem desconto (markdown congelado do lote = 0), todo grupo no
@@ -2550,7 +2550,7 @@ def _actor_display_names(actors: set[str]) -> dict[str, str]:
 
 
 def _qc_gate_facts(finished_orders: list[WorkOrder], *, selected_date: date) -> dict[int, dict]:
-    """Fatos do portão de qualidade por lote fechado (P19): exceção, quem
+    """Fatos do portão de qualidade por lote finalizado (P19): exceção, quem
     fechou, perda típica da receita e a fila "Me avise" que a confirmação libera."""
     if not finished_orders:
         return {}
@@ -2636,7 +2636,7 @@ def _qc_closed_partitions(
         str,
     ],
 ]:
-    """Partição (a preço cheio, com desconto, perda) por fornada fechada.
+    """Partição (a preço cheio, com desconto, perda) por lote finalizado.
 
     "Com desconto" é o FATO CONGELADO do lote (``Batch.nonconformity_percent``
     gravado no finish) — nunca a tabela de markdown atual: editar o percentual
@@ -5221,7 +5221,7 @@ _FORECAST_STATUS_LABELS = {
     "scheduled": "Planejado",
     "in_progress": "Previsto",
     "delayed": "Atrasado",
-    "arrived": "Fechado",
+    "arrived": "Finalizado",
 }
 
 

@@ -214,7 +214,7 @@ class OperatorAlert(models.Model):
         # Encomenda fechada com mais do que o plano da data cobre: o que passa
         # ficou como demanda sem fornada (#2559). Um aviso por pedido e item.
         ("order_demand_over_plan", "Encomenda acima do plano de produção"),
-        ("production_low_yield", "Lote fechado com aproveitamento baixo"),
+        ("production_low_yield", "Lote finalizado com aproveitamento baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
         # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
         # sub-baixa já commitada — o fechamento consumiu menos insumo que a ficha
@@ -225,13 +225,13 @@ class OperatorAlert(models.Model):
         # croque baixam o insumo da ficha quando vendidos. Faltar insumo não
         # trava a venda, mas o saldo dele ficou acima do real e precisa gritar.
         ("stock_sale_ingredient_short", "Venda baixou menos insumo que a ficha"),
-        # As três faltas de fornada que não são de insumo: a planejada que nunca
-        # começou, a começada que nunca fechou (estoque preso em produção) e a
-        # fechada sem gravar os lotes — sem lote, some o desconto de validade e
+        # As três faltas de lote que não são de insumo: o planejado que nunca
+        # começou, o em produção que nunca finalizou (estoque preso em produção) e o
+        # finalizado sem gravar os lotes — sem lote, some o desconto de validade e
         # a rastreabilidade da partida (ADR-017).
-        ("production_forgotten", "Lote planejado nunca aberto"),
-        ("production_unfinished", "Lote aberto nunca fechado"),
-        ("production_batch_traceability", "Lote fechado sem gravar a rastreabilidade"),
+        ("production_forgotten", "Lote planejado nunca confirmado"),
+        ("production_unfinished", "Lote em produção nunca finalizado"),
+        ("production_batch_traceability", "Lote finalizado sem gravar a rastreabilidade"),
         (
             "production_quality_communication",
             "Qualidade corrigida após comunicação do lote",

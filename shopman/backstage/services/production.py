@@ -73,9 +73,9 @@ def _operator_error(exc: Exception) -> Exception:
         if str(data.get("status") or "") == "void":
             return ProductionConflict("Este lote foi cancelado. Atualize o painel.", data=data)
         if code == "VOID_FROM_DONE":
-            return ProductionConflict("Lote fechado não pode ser cancelado.", data=data)
+            return ProductionConflict("Lote finalizado não pode ser cancelado.", data=data)
         return ProductionConflict(
-            "Este lote já foi fechado em outra tela. Atualize o painel.",
+            "Este lote já foi finalizado em outra tela. Atualize o painel.",
             data=data,
         )
     if code in (
@@ -274,7 +274,7 @@ class ProductionBatchTraceabilityError(ProductionError):
         self.output_sku = output_sku
         self.cause = cause
         super().__init__(
-            "O lote não foi fechado porque a rastreabilidade falhou. Atualize o painel e tente novamente."
+            "O lote não foi finalizado porque a rastreabilidade falhou. Atualize o painel e tente novamente."
         )
 
 
@@ -576,12 +576,12 @@ def _refuse_void_with_deliveries(work_order) -> None:
     if delivered > 0:
         raise ProductionError(
             f"Não dá para cancelar o lote {work_order.ref}: {_qty(delivered)} un. dele já foram entregues. "
-            "Feche o lote com o que ele rendeu."
+            "Finalize o lote com o que ele rendeu."
         )
 
 
 def _refuse_finish_below_delivered(work_order, finished: Decimal) -> None:
-    """Fechar o lote com menos do que já foi entregue dele é recusado com o motivo (#2731).
+    """Finalizar o lote com menos do que já foi entregue dele é recusado com o motivo (#2731).
 
     Com o pedido ainda ativo, a guarda dos pedidos recusa antes, com a frase das
     unidades comprometidas. Com o pedido já concluído, quem recusava era o ledger,
@@ -591,7 +591,7 @@ def _refuse_finish_below_delivered(work_order, finished: Decimal) -> None:
     delivered = _delivered_beyond_other_lots(work_order)
     if delivered > finished:
         raise ProductionError(
-            f"Não dá para fechar o lote {work_order.ref} com {_qty(finished)} un.: "
+            f"Não dá para finalizar o lote {work_order.ref} com {_qty(finished)} un.: "
             f"{_qty(delivered)} un. dele já foram entregues. Confira a contagem: o lote rendeu pelo menos isso."
         )
 
@@ -2010,7 +2010,7 @@ def authorize_formula_deviation(
             return {**payload, "replayed": True}
         if work_order.status not in {WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED}:
             raise ProductionConflict(
-                "Somente uma produção planejada ou aberta pode receber um desvio.",
+                "Somente um lote planejado ou em produção pode receber um desvio.",
                 data={"work_order": work_order.ref, "status": work_order.status},
             )
         if work_order.rev != expected_rev:
@@ -2248,7 +2248,7 @@ def apply_oven_arm(
                     return replay
             if work_order.status != WorkOrder.Status.STARTED:
                 raise ProductionConflict(
-                    "Só é possível enfornar um lote aberto.",
+                    "Só é possível enfornar um lote em produção.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -2267,7 +2267,7 @@ def apply_oven_arm(
             )
             if open_run is not None:
                 raise ProductionConflict(
-                    "Este lote já possui uma enfornada aberta. Retire-a antes de registrar outra.",
+                    "Este lote já está no forno. Retire-o antes de enfornar de novo.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -2359,7 +2359,7 @@ def apply_oven_conclude(
 
             if work_order.status != WorkOrder.Status.STARTED:
                 raise ProductionConflict(
-                    "Só é possível retirar do forno um lote aberto.",
+                    "Só é possível retirar do forno um lote em produção.",
                     code="conflict",
                     data={
                         "work_order": work_order.ref,
@@ -2380,7 +2380,7 @@ def apply_oven_conclude(
                 if expected_rev is not None and work_order.rev != expected_rev:
                     raise StaleRevision(work_order, expected_rev)
                 raise ProductionConflict(
-                    "Nenhuma enfornada aberta foi encontrada. Atualize o painel.",
+                    "Este lote não está no forno. Atualize o painel.",
                     code="oven_run_missing",
                     data={
                         "work_order": work_order.ref,
@@ -3411,7 +3411,7 @@ def apply_quality_correction(
                 return replay
             if work_order.status != WorkOrder.Status.FINISHED:
                 raise ProductionConflict(
-                    "Somente um lote fechado pode ter a qualidade corrigida.",
+                    "Somente um lote finalizado pode ter a qualidade corrigida.",
                     data={"work_order": work_order.ref, "cause": "quality_correction_requires_finished"},
                 )
             if work_order.rev != expected_rev:
@@ -4172,7 +4172,7 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
             [
                 "Operador",
                 "Nome",
-                "Lotes fechados",
+                "Lotes finalizados",
                 "Qtd realizada",
                 "Aproveitamento médio",
                 "Tempo médio (min)",
@@ -4260,9 +4260,9 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                 "Rendeu mais",
                 "Causas",
                 "Aproveitamento",
-                "Fechado por",
-                "Aberta em",
-                "Fechada em",
+                "Finalizado por",
+                "Em produção desde",
+                "Finalizada em",
                 "Duração (min)",
             ]
         )

@@ -127,7 +127,7 @@ def test_finished_row_is_confirmed_with_real_time_and_qty(recipe):
     assert row.status == "arrived"
     # Beta 05/11: "Confirmado" no Letreiro contradizia "Para confirmar" na
     # Qualidade. O lote finalizado é Fechado (suite-vocabulary).
-    assert row.status_label == "Fechado"
+    assert row.status_label == "Finalizado"
     assert row.eta_display == format_clock(finished_at)
     assert row.eta_is_actual is True
     assert row.qty == "10"
