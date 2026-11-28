@@ -4088,7 +4088,8 @@ def _production_suggestions(selected_date: date) -> list:
 #: abaixo dela a sobra não mudou o número, e avisar seria ruído.
 SUGGESTION_WASTE_DISCOUNT_THRESHOLD = Decimal("0.15")
 
-_SEASON_LABELS = {"hot": "estação quente", "cold": "estação fria", "mild": "estação amena"}
+#: "Conta só os dias dos meses quentes": os meses da estação, não a palavra "estação".
+_SEASON_LABELS = {"hot": "meses quentes", "cold": "meses frios", "mild": "meses amenos"}
 
 
 def _plan_carry_notes(selected_date: date) -> dict[str, tuple[PlanCarryNoteProjection, ...]]:

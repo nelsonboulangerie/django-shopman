@@ -147,7 +147,7 @@ describe("PlanReasonCard", () => {
     const w = mountCard(suggestion());
 
     expect(w.text()).toContain("Por que 52");
-    expect(w.text()).toContain("confiança média · 4 sábados de histórico");
+    expect(w.text()).toContain("confiança média · conta feita com 4 sábados");
     const math = w.find('[data-testid="reason-math"]').text();
     expect(math).toContain("média dos sábados");
     expect(math).toContain("encomendas");

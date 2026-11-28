@@ -85,7 +85,7 @@ class TestSuggestionExplainability:
         assert projection.soldout_days == 3
         assert projection.waste_percent == 18
         assert projection.waste_discounted is True
-        assert projection.season_label == "estação quente"
+        assert projection.season_label == "meses quentes"
         assert projection.high_demand_applied is True
 
     def test_comeco_de_estacao_usa_a_anterior_e_diz_qual(self, recipe):
@@ -93,8 +93,8 @@ class TestSuggestionExplainability:
             _suggestion(recipe, season="mild", season_fallback=True, current_season="hot")
         )
         assert projection.season_fallback is True
-        assert projection.season_label == "estação amena"
-        assert projection.current_season_label == "estação quente"
+        assert projection.season_label == "meses amenos"
+        assert projection.current_season_label == "meses quentes"
 
     def test_sobra_abaixo_do_teto_nao_desconta(self, recipe):
         projection = _build_suggestion(_suggestion(recipe, waste_rate=Decimal("0.08")))
