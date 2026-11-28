@@ -575,7 +575,21 @@ def build_plan(root: Path, py: Path, level: str, diff: Diff, workers: int) -> Pl
             "Coverage Gate (agrega seis artefatos de cobertura da CI)",
         ]
     remote.append("PWA e Supply chain das superfícies: rodam na fila")
-    return Plan(level, pr, steps, remote, notes)
+    return Plan(level, pr, once_per_install(steps), remote, notes)
+
+
+def once_per_install(steps: list[Step]) -> list[Step]:
+    """Um ``npm ci`` por diretório: as fases leves e as de navegador montam a matriz
+    separadas, e o do operator-kit entrava duas vezes (medido 28/11, #3357)."""
+    seen: set[str] = set()
+    out = []
+    for step in steps:
+        if step.name.endswith("› npm ci"):
+            if step.cwd in seen:
+                continue
+            seen.add(step.cwd)
+        out.append(step)
+    return out
 
 
 # ── Evidência por passo ───────────────────────────────────────────────────
@@ -995,14 +1009,22 @@ def evidence_line(evidence: dict | None, tree: str) -> str:
 def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run: bool) -> int:
     """Promove o PR à fila só com evidência para o HEAD exato."""
     problems: list[str] = []
-    status = git("status", "--porcelain", cwd=root)
-    if status:
-        problems.append("árvore suja (commite ou descarte antes):\n    " + status.replace("\n", "\n    "))
-    head = git("rev-parse", "HEAD", cwd=root)
-    tree = git("rev-parse", "HEAD^{tree}", cwd=root)
-    info = json.loads(gh("pr", "view", str(pr), "-R", REPO_SLUG, "--json", "headRefOid,isDraft,state,baseRefName,body,mergeable"))
-    if info["headRefOid"] != head:
-        problems.append(f"o PR #{pr} aponta para {info['headRefOid'][:9]}, esta worktree está em {head[:9]} (falta push?)")
+    info = json.loads(gh("pr", "view", str(pr), "-R", REPO_SLUG, "--json", "headRefOid,headRefName,isDraft,state,baseRefName,body,mergeable,author,createdAt"))
+    head = info["headRefOid"]
+    local_head = git("rev-parse", "HEAD", cwd=root)
+    branch = subprocess.run(["git", "branch", "--show-current"], cwd=root, capture_output=True, text=True).stdout.strip()
+    if local_head == head:
+        status = git("status", "--porcelain", cwd=root)
+        if status:
+            problems.append("árvore suja (commite ou descarte antes):\n    " + status.replace("\n", "\n    "))
+    elif branch == info["headRefName"]:
+        problems.append(f"o PR #{pr} aponta para {head[:9]}, esta worktree está em {local_head[:9]} (falta push?)")
+    else:
+        # PR de outra sessão (ou do Dependabot): a evidência é da ÁRVORE e mora na
+        # máquina, então vale de qualquer worktree. Busca o HEAD do PR para achá-la.
+        subprocess.run(["git", "fetch", "-q", "origin", f"pull/{pr}/head"], cwd=root)
+        print(f"ℹ️ PR #{pr} não está nesta worktree: confiro o HEAD dele ({head[:9]}) pela evidência guardada na máquina")
+    tree = git("rev-parse", f"{head}^{{tree}}", cwd=root)
     if info["isDraft"]:
         problems.append(f"o PR #{pr} é draft: `gh pr ready {pr}` primeiro")
     if info["mergeable"] == "CONFLICTING":
@@ -1010,9 +1032,6 @@ def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run:
     evidence = find_evidence(tree)
     if sem_preflight:
         print(f"⚠️ promovendo SEM preflight, por decisão explícita: {sem_preflight}")
-        override = {"pr": pr, "head": head, "tree": tree, "reason": sem_preflight, "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"), "worktree": str(root)}
-        with open(state_dir() / "overrides.jsonl", "a") as fh:
-            fh.write(json.dumps(override, ensure_ascii=False) + "\n")
     elif not evidence:
         problems.append(f"sem evidência para a árvore {tree[:12]}: rode `make preflight` nesta worktree")
     elif evidence["status"] != "pass" or evidence["level"] not in PROMOTABLE:
@@ -1021,16 +1040,19 @@ def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run:
     env = {**os.environ, "PR_BODY": info["body"] or ""}
     for name, cmd in (
         ("Ficou de fora declarado", [str(py), "scripts/check_ficou_de_fora.py", "--pr", str(pr)]),
-        ("Compromissos", [str(py), "scripts/check_commitments.py", "--pr-body-env", "--no-fail-overdue", "--with-issues"]),
+        # Os mesmos argumentos da CI (runtime-gate.yml): sem autor e data, o PR do
+        # Dependabot, que a CI isenta, era barrado aqui (28/11, #3357).
+        ("Compromissos", [str(py), "scripts/check_commitments.py", "--pr-body-env", "--no-fail-overdue", "--with-issues",
+                          "--pr-created", info.get("createdAt") or "", "--author", (info.get("author") or {}).get("login", "")]),
     ):
         proc = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True)
         if proc.returncode:
             problems.append(f"{name} reprova o corpo do PR:\n    " + (proc.stdout + proc.stderr).strip().replace("\n", "\n    "))
     fetch_main(root)
-    behind = int(git("rev-list", "--count", "HEAD..origin/main", cwd=root) or 0)
+    behind = int(git("rev-list", "--count", f"{head}..origin/main", cwd=root) or 0)
     if behind:
-        mine = set(git("diff", "--name-only", f"{git('merge-base', 'HEAD', 'origin/main', cwd=root)}", "HEAD", cwd=root).splitlines())
-        theirs = set(git("diff", "--name-only", "HEAD...origin/main", cwd=root).splitlines())
+        mine = set(git("diff", "--name-only", f"{git('merge-base', head, 'origin/main', cwd=root)}", head, cwd=root).splitlines())
+        theirs = set(git("diff", "--name-only", f"{head}...origin/main", cwd=root).splitlines())
         overlap = sorted(mine & theirs)
         msg = f"o main andou {behind} commit(s) desde a sua base"
         print(f"ℹ️ {msg}" + (f"; e mexeu nos MESMOS arquivos: {', '.join(overlap[:8])} — considere atualizar e rodar o preflight de novo" if overlap else " (sem arquivo em comum)"))
@@ -1047,6 +1069,10 @@ def cmd_ready(root: Path, py: Path, pr: int, sem_preflight: str | None, dry_run:
         print("(dry-run) " + " ".join(cmd))
         return 0
     subprocess.run(cmd, check=True)
+    if sem_preflight:  # só o que de fato foi promovido entra no registro das exceções
+        override = {"pr": pr, "head": head, "tree": tree, "reason": sem_preflight, "at": dt.datetime.now(dt.UTC).isoformat(timespec="seconds"), "worktree": str(root)}
+        with open(state_dir() / "overrides.jsonl", "a") as fh:
+            fh.write(json.dumps(override, ensure_ascii=False) + "\n")
     print(f"✓ PR #{pr} com auto-merge no HEAD {head[:9]}; a fila testa a árvore candidata inteira.")
     return 0
 

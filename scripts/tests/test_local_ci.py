@@ -649,3 +649,10 @@ def test_sem_fase_de_navegador_nao_instala_motor(tmp_path):
     entry = {"id": "pos", "dir": "pos-nuxt", "browser_engines": "chromium"}
     steps = local_ci.surface_steps(tmp_path, [entry], ("unit", "lint"), [], set(), install=False)
     assert not any("navegadores do Playwright" in s.name for s in steps)
+
+
+def test_um_npm_ci_por_diretorio():
+    S = local_ci.Step
+    steps = [S("operator-kit › npm ci", "npm ci", cwd="surfaces/operator-kit"), S("pos-nuxt › unit", "x", cwd="surfaces/pos-nuxt"),
+             S("operator-kit › npm ci", "npm ci", cwd="surfaces/operator-kit"), S("pos-nuxt › browser", "y", cwd="surfaces/pos-nuxt")]
+    assert [s.name for s in local_ci.once_per_install(steps)] == ["operator-kit › npm ci", "pos-nuxt › unit", "pos-nuxt › browser"]
