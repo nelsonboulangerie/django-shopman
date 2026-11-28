@@ -355,6 +355,28 @@ alpha só se lê, e só pela conexão direta 25060; prova de concorrência roda 
 - **Cliente vê:** não deveria; se a frase mudar, o PR fica em draft com a prévia e a pergunta.
   **Tamanho:** G.
 
+#### N9, divisão (levantada em 22/11/2026 sobre o main `d9fde5f83`, antes de codar)
+
+O N9 não cabe numa sessão nem num PR. Ele depende de pré-requisitos que o plano não listava:
+
+| Ordem | PR | Toca | O que destrava |
+|---|---|---|---|
+| 1 | **Framework** (#3197, PR #3200): moldes da casa injetados no `Engine` | `packages/conversational-commerce/` | A Nice fala pelos próprios moldes dentro do motor |
+| 2 | **Adaptador** (#3198): efeito de sacola no `effect_site.py` (que também guarda o texto do executor legado), porta de canal viva, livros duráveis e o `tick` do motor no `maintenance_worker` | `shopman/storefront/concierge/`, `shopman/shop/conversational/` | O motor executa e fala com as portas reais |
+| 3 | **N9a:** `turn_framework.py`, a chave na `Shop` (`conversational_live_enabled` e a lista de classes de ação com escrita, que é o freio) com migração e Admin, o modo framework no `concierge_reply_eval` e no `dialogue_eval`, testes que chamam `turn_framework` direto | sem `service.py` | Ensaio da troca sem mudar o turno vivo |
+| 4 | **N9b:** a troca em `service.run_turn`, no ponto da chamada a `intents_module.run` (fora do `atomic`), com o legado como queda | `service.py` (uma linha) | A Nice dentro do framework, desligada por padrão |
+
+Medido no levantamento:
+- O `concierge_reply_eval` (221 casos) só pontua a triagem, que roda antes do ponto de troca, e o `dialogue_eval` (47) chama a resolução direto. "Sem regressão com a chave ligada e desligada" só prova algo depois de os dois ganharem o modo framework (PR 3).
+- O K40 nas conversas gravadas sai do `concierge_conversation_eval --replay` rodado duas vezes com a chave ligada, comparando candidatos e escolha (não o registro inteiro: o relógio do Shopman gera UUID e hora).
+
+Desconto, acréscimo e cancelamento seguem pelo caminho legado no N9: a spec os define como "só
+precondição" no D1 (spec 02 e 08), e o N9 não traz movimento novo. O teto do desconto tem grandezas
+diferentes nos dois lados (centavos no framework, % na Nice), registrado na #2631 para o degrau que
+ligar o desconto no motor.
+
+O PR 4 espera também o relatório do WP-14 (`docs/reports/concierge-ensaio-pedido.md`): trocar o turno da Nice enquanto o dono ensaia o pedido mistura os dois.
+
 ## 8. Pronto do adaptador
 
 Pela v2 15.2: a suíte comum passa **e** as provas de concorrência e reconciliação rodam no
