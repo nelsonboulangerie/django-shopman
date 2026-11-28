@@ -73,6 +73,14 @@ class StripeNotConfigured(RuntimeError):
     """Gateway de cartão sem credencial — não há como cobrar, e não se finge."""
 
 
+#: Versão da API do Stripe que este adapter fala, fixa de propósito. Cada major do SDK
+#: troca a versão que vai em toda chamada (stripe-python 15 → 2026-08-26.dahlia,
+#: 16 → 2026-09-30.endive), e a versão muda a forma das respostas de PaymentIntent,
+#: Checkout Session e Refund. Fixar aqui desacopla subir o SDK de subir a API: a
+#: troca de API é decisão do dono, com compra real de teste (DEV-2026-098, #1828).
+STRIPE_API_VERSION = "2026-08-26.dahlia"
+
+
 def _get_stripe():
     """Lazy import of stripe SDK.
 
@@ -96,6 +104,7 @@ def _get_stripe():
             "Configure a credencial (sk_test_ no alpha, sk_live_ em produção)."
         )
     stripe.api_key = secret_key
+    stripe.api_version = STRIPE_API_VERSION
     return stripe
 
 
