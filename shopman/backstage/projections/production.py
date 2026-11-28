@@ -208,6 +208,9 @@ class WorkOrderCardProjection:
     # produto no mesmo dia leem o mesmo prometido. None quando nada foi
     # planejado nem encomendado, e no lote cancelado.
     promised: ProductionPromisedProjection | None = None
+    # A sugestão vigente quando o lote foi planejado pela última vez (WP-F17), para
+    # o "Por quê" dizer "Sugerido 42, planejado 36". Vazio sem sugestão gravada.
+    suggested_qty: str = ""
 
 
 @dataclass(frozen=True)
@@ -3157,7 +3160,22 @@ def _build_wo_card(
         created_at_time=(
             timezone.localtime(wo.created_at).strftime("%H:%M") if wo.created_at else ""  # hora-ok: contrato HH:MM, a tela ordena por ele e formata ao exibir
         ),
+        suggested_qty=_recorded_suggested_qty(wo),
     )
+
+
+def _recorded_suggested_qty(wo: WorkOrder) -> str:
+    """A sugestão que o último plano do lote gravou (``meta.formula_basis``), ou ""."""
+    basis = (wo.meta or {}).get("formula_basis")
+    if not isinstance(basis, dict):
+        return ""
+    value = basis.get("suggested_quantity")
+    if value in (None, ""):
+        return ""
+    try:
+        return _qty(Decimal(str(value)))
+    except (ArithmeticError, ValueError):
+        return ""
 
 
 def _position_names() -> dict[str, str]:
@@ -4070,7 +4088,8 @@ def _production_suggestions(selected_date: date) -> list:
 #: abaixo dela a sobra não mudou o número, e avisar seria ruído.
 SUGGESTION_WASTE_DISCOUNT_THRESHOLD = Decimal("0.15")
 
-_SEASON_LABELS = {"hot": "estação quente", "cold": "estação fria", "mild": "estação amena"}
+#: "Conta só os dias dos meses quentes": os meses da estação, não a palavra "estação".
+_SEASON_LABELS = {"hot": "meses quentes", "cold": "meses frios", "mild": "meses amenos"}
 
 
 def _plan_carry_notes(selected_date: date) -> dict[str, tuple[PlanCarryNoteProjection, ...]]:

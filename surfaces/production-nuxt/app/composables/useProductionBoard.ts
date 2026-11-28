@@ -159,11 +159,12 @@ export function useProductionBoard(
       metadata: ProductionMutationMetadata,
       expectedRev: number | null,
     ) => Promise<unknown>,
+    reread = true,
   ): Promise<BoardActResult> {
     if (busy.value.has(key)) return { ok: false };
     busy.value = new Set(busy.value).add(key);
     try {
-      return await authorizedPost(key, intent, actionRef, seenRev, action);
+      return await authorizedPost(key, intent, actionRef, seenRev, action, reread);
     } finally {
       const next = new Set(busy.value);
       next.delete(key);
@@ -181,6 +182,7 @@ export function useProductionBoard(
       metadata: ProductionMutationMetadata,
       expectedRev: number | null,
     ) => Promise<unknown>,
+    reread = true,
   ): Promise<BoardActResult> {
     const authorization = await mutationGuard.authorizeFreshMutation(
       actionRef,
@@ -197,7 +199,9 @@ export function useProductionBoard(
         authorization.metadata,
         authorization.action.expected_rev,
       );
-      await refresh();
+      // Quem envia vários de uma vez ("Planejar os N como sugerido") relê a tela
+      // uma vez só, no fim (WP-F17, P2-02): cada ação da projeção é a sua.
+      if (reread) await refresh();
       attempts.delete(key);
       return { ok: true };
     } catch (err) {
@@ -228,6 +232,7 @@ export function useProductionBoard(
       ProductionPlanMutationRequest,
       "idempotency_key" | keyof ProductionMutationMetadata
     >,
+    { reread = true }: { reread?: boolean } = {},
   ): Promise<BoardActResult> {
     const actionPrefix =
       payload.source === "suggested" ? "plan_suggested" : "plan";
@@ -252,13 +257,19 @@ export function useProductionBoard(
       payload.source ?? "",
       normalizedQuantity,
     ].join("|");
-    return post(key, intent, actionRef, seenRev, (idempotencyKey, metadata, expectedRev) =>
-      planProduction({
-        ...payload,
-        expected_rev: expectedRev,
-        ...metadata,
-        idempotency_key: idempotencyKey,
-      }),
+    return post(
+      key,
+      intent,
+      actionRef,
+      seenRev,
+      (idempotencyKey, metadata, expectedRev) =>
+        planProduction({
+          ...payload,
+          expected_rev: expectedRev,
+          ...metadata,
+          idempotency_key: idempotencyKey,
+        }),
+      reread,
     );
   }
 

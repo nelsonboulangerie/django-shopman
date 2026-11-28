@@ -140,6 +140,7 @@ export interface WorkOrderCardProjection {
   position_name: string;
   created_at_time: string;
   promised: ProductionPromisedProjection | null;
+  suggested_qty: string;
 }
 
 /** Aggregate counts for the production board header. */

@@ -527,19 +527,51 @@ export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
   return formatClock(times.at(-1) ?? "");
 }
 
-/** Planejou exatamente o que a sugestão dizia. */
+/** O número que o dia tem no plano: planejado, ou o aberto, ou o finalizado. */
+function dayPlannedQty(row: ProductionMatrixRowProjection): string {
+  return row.planned_qty !== "0"
+    ? row.planned_qty
+    : row.started_qty !== "0"
+      ? row.started_qty
+      : row.finished_qty;
+}
+
+/**
+ * A sugestão que o plano gravou no lote quando foi planejado (WP-F17), do lote
+ * mais recente que a gravou; "" quando nenhum gravou (planejado antes do WP-F17,
+ * ou numa data sem sugestão para o produto).
+ */
+export function recordedSuggestion(row: ProductionMatrixRowProjection): string {
+  const lots = [...row.planned_orders, ...row.started_orders, ...row.finished_orders]
+    .filter((order) => order.suggested_qty)
+    .sort((a, b) => (a.created_at_time ?? "").localeCompare(b.created_at_time ?? ""));
+  return lots.at(-1)?.suggested_qty ?? "";
+}
+
+/**
+ * Planejou exatamente o que a sugestão dizia. Pela sugestão que o lote gravou ao ser
+ * planejado (WP-F17, P1-05); sem gravação, pela sugestão de agora, que pode ter mudado
+ * depois do plano.
+ */
 export function plannedAsSuggested(row: ProductionMatrixRowProjection): boolean {
-  if (!row.suggestion) return false;
-  const planned =
-    row.planned_qty !== "0"
-      ? row.planned_qty
-      : row.started_qty !== "0"
-        ? row.started_qty
-        : row.finished_qty;
+  const suggested = recordedSuggestion(row) || row.suggestion?.quantity;
+  if (!suggested) return false;
   return (
-    (Number.parseFloat(planned) || 0) ===
-    (Number.parseFloat(row.suggestion.quantity) || 0)
+    (Number.parseFloat(dayPlannedQty(row)) || 0) ===
+    (Number.parseFloat(suggested) || 0)
   );
+}
+
+/**
+ * O porquê que ficou com o lote (WP-F17): "Sugerido 42, planejado 36", quando o
+ * plano gravou a sugestão e a casa planejou outro número. Igual, é "como sugerido";
+ * sem gravação, "".
+ */
+export function lotPlanLine(row: ProductionMatrixRowProjection): string {
+  const suggested = recordedSuggestion(row);
+  if (!suggested || plannedAsSuggested(row)) return "";
+  const show = (value: string) => value.replace(".", ",");
+  return `Sugerido ${show(suggested)}, planejado ${show(dayPlannedQty(row))}`;
 }
 
 // ── Honest board feedback (stale data beats an empty board) ────────────────

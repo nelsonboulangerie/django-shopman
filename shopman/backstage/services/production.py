@@ -14,7 +14,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.conf import settings
 from django.utils import timezone
@@ -1379,6 +1379,16 @@ def apply_planned(
                 "create_new": bool(create_new),
             },
         )
+        # O porquê do plano (WP-F17, P1-05): todo plano grava a sugestão vigente e a
+        # conta dela, normalizados aqui, e o core os leva ao evento do lote.
+        planning_meta = _planning_meta_with_basis(
+            planning_meta,
+            attempt_key=attempt_key,
+            recipe_id=recipe_id,
+            quantity=quantity,
+            target_date_value=target_date_value,
+            source_ref=source_ref,
+        )
         replay = production_core.replay_planned_quantity(
             recipe_id=recipe_id,
             quantity=quantity,
@@ -1525,6 +1535,119 @@ def apply_planned(
         translated = _operator_error(exc)
         _release_refused_planning_attempt(translated, projected_action_proof, idempotency_key)
         raise translated from (None if translated is exc else exc)
+
+
+def _planning_meta_with_basis(
+    planning_meta: dict | None,
+    *,
+    attempt_key: str | None,
+    recipe_id,
+    quantity,
+    target_date_value,
+    source_ref: str,
+) -> dict | None:
+    """O ``planning_meta`` desta tentativa com o porquê do plano em ``formula_basis``.
+
+    Repetição da mesma tentativa (mesma chave) relê o porquê que ela gravou: a
+    sugestão pode ter mudado entre as duas, e o core compara a tentativa inteira.
+    Zerar não planeja nada, e o porquê de quem chama (se houver) prevalece.
+    """
+    if planning_meta and "formula_basis" in planning_meta:
+        return planning_meta
+    if Decimal(str(quantity)) == 0:
+        return planning_meta
+    basis = _frozen_formula_basis(attempt_key)
+    if basis is None:
+        basis = plan_basis(
+            recipe_id=recipe_id,
+            quantity=quantity,
+            target_date_value=target_date_value,
+            source_ref=source_ref,
+        )
+    if not basis:
+        return planning_meta
+    return {**(planning_meta or {}), "formula_basis": basis}
+
+
+def _frozen_formula_basis(attempt_key: str | None) -> dict | None:
+    """O porquê que a tentativa com esta chave já gravou; ``None`` se ela é nova."""
+    if not attempt_key:
+        return None
+    from shopman.craftsman.models import WorkOrderEvent
+    from shopman.orderman.models import IdempotencyKey
+
+    receipt = (
+        IdempotencyKey.objects.filter(scope=production_core.PLANNING_RECEIPT_SCOPE, key=attempt_key)
+        .values_list("response_body", flat=True)
+        .first()
+    )
+    if receipt is None:
+        event = WorkOrderEvent.objects.filter(idempotency_key=attempt_key).values_list("payload", flat=True).first()
+        receipt = event
+    if not isinstance(receipt, dict):
+        return None
+    attempt = receipt.get("attempt")
+    if not isinstance(attempt, dict):
+        return None
+    meta = attempt.get("planning_meta")
+    if not isinstance(meta, dict):
+        return None
+    return meta.get("formula_basis") or {}
+
+
+def plan_basis(*, recipe_id, quantity, target_date_value, source_ref: str) -> dict:
+    """O porquê de um plano, em texto JSON: a sugestão vigente, a conta dela e o planejado.
+
+    ``suggested_quantity`` vazio quando a data não tem sugestão para o produto. A
+    conta é a mesma do "Por quê" da tela: média projetada (arredondada) +
+    encomendas + margem = sugestão. Nada de ``Decimal`` ou ``date`` cru: o
+    ``JSONField`` do lote não tem encoder (P1-05).
+    """
+    from shopman.craftsman.models import Recipe
+
+    recipe = Recipe.objects.filter(pk=recipe_id).only("pk", "ref", "output_sku").first()
+    if recipe is None:
+        return {}
+    planned = Decimal(str(quantity))
+    target_date = production_core._target_date_or_today(target_date_value)
+    basis = {
+        "date": target_date.isoformat(),
+        "output_sku": recipe.output_sku,
+        "recipe_ref": recipe.ref,
+        "planned_quantity": _qty(planned),
+        "source": "suggested" if source_ref == "formula:suggestion" else "manual",
+        "suggested_quantity": "",
+    }
+    try:
+        line = next(
+            (
+                item
+                for item in production_core.suggest_for(target_date, output_skus=[recipe.output_sku])
+                if item.recipe.pk == recipe.pk
+            ),
+            None,
+        )
+    except Exception:
+        logger.warning("production.plan_basis_unavailable recipe=%s", recipe.ref, exc_info=True)
+        line = None
+    if line is None:
+        return basis
+    raw = line.basis or {}
+    suggested = Decimal(str(line.quantity))
+    projected = Decimal(str(raw.get("avg_demand") or 0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    committed = Decimal(str(raw.get("committed") or 0))
+    basis.update(
+        {
+            "suggested_quantity": _qty(suggested),
+            "projected": _qty(projected),
+            "committed": _qty(committed),
+            "margin": _qty(suggested - projected - committed),
+            "confidence": str(raw.get("confidence") or ""),
+            "sample_size": int(raw.get("sample_size") or 0),
+            "as_suggested": planned == suggested,
+        }
+    )
+    return basis
 
 
 def _release_refused_planning_attempt(translated: Exception, projected_action_proof: str, idempotency_key) -> None:

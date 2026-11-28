@@ -461,6 +461,18 @@ describe("ProductionStageGrid — planning authority", () => {
     );
   });
 
+  it("o número da sugestão vai como sugerido, para quem pode aplicá-la (WP-F17)", async () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    await w.find("[data-plan-inline]").trigger("click");
+
+    expect(planSpy).toHaveBeenCalledWith(
+      "PAO-001",
+      expect.objectContaining({ quantity: "8", source: "suggested" }),
+    );
+  });
+
   it("keeps an equal numeric value manual for a planned-only persona", async () => {
     stubBoardAccess({
       ...FULL_ACCESS,
@@ -757,6 +769,12 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     await flushPromises();
 
     expect(planSpy).toHaveBeenCalledTimes(5);
+    // WP-F17 (P2-02): cada envio sem releitura, e a tela relê uma vez só, no fim;
+    // a origem é a verdadeira, "como sugerido" (P1-05).
+    expect(planSpy.mock.calls.map(([, payload, opts]) => [payload.source, opts])).toEqual(
+      Array.from({ length: 5 }, () => ["suggested", { reread: false }]),
+    );
+    expect(boardRefresh).toHaveBeenCalledTimes(1);
     expect(
       planSpy.mock.calls.map(([sku, payload]) => [sku, payload.quantity]),
     ).toEqual([

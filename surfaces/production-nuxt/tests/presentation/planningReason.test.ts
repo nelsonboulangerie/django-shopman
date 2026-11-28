@@ -153,14 +153,14 @@ describe("suggestionHistory: o que a média sozinha não conta", () => {
         soldout_days: 3,
         waste_percent: 18,
         waste_discounted: true,
-        season_label: "estação quente",
+        season_label: "meses quentes",
       }),
       SATURDAY,
     );
     expect(lines.map((line) => line.text)).toEqual([
       "Acabou antes de fechar em 3 dos 4 sábados usados na conta",
       "Sobrou 18% do que vendeu",
-      "Histórico só da estação quente",
+      "Conta só os dias dos meses quentes",
     ]);
     expect(lines[1]!.note).toBe("a média já desconta essa sobra");
   });
@@ -169,13 +169,13 @@ describe("suggestionHistory: o que a média sozinha não conta", () => {
     const lines = suggestionHistory(
       suggestion({
         season_fallback: true,
-        season_label: "estação amena",
-        current_season_label: "estação quente",
+        season_label: "meses amenos",
+        current_season_label: "meses quentes",
       }),
       SATURDAY,
     );
     expect(lines.map((line) => line.text)).toEqual([
-      "Baseado na estação amena, ainda sem histórico da estação quente",
+      "Conta os dias dos meses amenos: dos meses quentes ainda há poucos",
     ]);
   });
 
@@ -185,7 +185,7 @@ describe("suggestionHistory: o que a média sozinha não conta", () => {
       SATURDAY,
     );
     expect(lines.map((line) => line.text)).toEqual([
-      "Baseado na estação anterior, ainda sem histórico desta",
+      "Conta os dias da época anterior: desta ainda há poucos",
     ]);
   });
 
@@ -199,14 +199,20 @@ describe("suggestionHistory: o que a média sozinha não conta", () => {
 
   it("subtítulo com a confiança e a amostra", () => {
     expect(suggestionBasisLine(suggestion(), SATURDAY)).toBe(
-      "confiança média · 4 sábados de histórico",
+      "confiança média · conta feita com 4 sábados",
     );
+    expect(
+      suggestionBasisLine(suggestion({ sample_size: 1 }), "2026-11-30"),
+    ).toBe("confiança média · conta feita com 1 segunda-feira");
+    expect(
+      suggestionBasisLine(suggestion({ sample_size: 4 }), "2026-11-30"),
+    ).toBe("confiança média · conta feita com 4 segundas-feiras");
     expect(
       suggestionBasisLine(
         suggestion({ sample_size: 1, same_weekday: false }),
         SATURDAY,
       ),
-    ).toBe("confiança média · 1 dia de histórico");
+    ).toBe("confiança média · conta feita com 1 dia");
   });
 });
 
