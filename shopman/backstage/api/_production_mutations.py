@@ -130,8 +130,16 @@ class ProductionValidationErrorBody:
 
 @dataclass(frozen=True)
 class ProductionValidationErrorEnvelope:
+    """O dialeto da casa (``docs/reference/errors.md``) por cima do superset.
+
+    ``detail`` é a frase do problema (nunca "Corrija os campos indicados"); ``field``
+    e ``errors`` sobem ao topo quando a recusa é de um campo.
+    """
+
     detail: str
     error: ProductionValidationErrorBody
+    field: str | None = None
+    errors: dict[str, list[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -210,7 +218,7 @@ class ProductionNotFoundErrorEnvelope:
 
 @dataclass(frozen=True)
 class ProductionShortagePossibility:
-    kind: Literal["retry", "force", "confirm", "purchase"]
+    kind: Literal["retry", "force", "confirm", "purchase", "request_purchase"]
     label: str
     enabled: bool
     proof: str
@@ -261,6 +269,14 @@ class ProductionMaterialShortageErrorBody:
 class ProductionShortageAuthorizationResponse:
     override_proof: str
     authorizer_name: str
+
+
+@dataclass(frozen=True)
+class ProductionPurchaseRequestResponse:
+    """O que ficou solicitado ao Compras: os insumos e a frase de confirmação."""
+
+    requested_skus: list[str]
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -325,15 +341,29 @@ class ProductionMutationValidationError(APIException):
 
     def __init__(self, detail) -> None:
         issues = _validation_issues(detail)
-        super().__init__(
-            {
-                "detail": "Corrija os campos indicados e tente novamente.",
-                "error": {
-                    "code": "validation_error",
-                    "issues": issues,
-                },
-            }
-        )
+        super().__init__(validation_error_body(issues))
+        # O normalizador do APIException transforma todo escalar em ErrorDetail e a
+        # lista de ``errors`` em lista de ErrorDetail; o envelope sai como foi escrito.
+        self.detail = validation_error_body(issues)
+
+
+def validation_error_body(issues: list[dict[str, str]]) -> dict:
+    """A recusa de validação da Produção no dialeto da casa (P2-19).
+
+    ``detail`` é a frase do primeiro problema; ``field`` sobe quando ele é de um
+    campo (não para ``non_field_errors``); ``errors`` traz o mapa campo → frases.
+    """
+    detail = next((issue["message"] for issue in issues if issue.get("message")), "") or (
+        "Corrija os campos indicados e tente novamente."
+    )
+    errors: dict[str, list[str]] = {}
+    for issue in issues:
+        errors.setdefault(issue["field"], []).append(issue["message"])
+    field = next((issue["field"] for issue in issues if issue["field"] != "non_field_errors"), None)
+    body: dict = {"detail": detail, "error": {"code": "validation_error", "issues": issues}, "errors": errors}
+    if field:
+        body["field"] = field
+    return body
 
 
 class ProductionProjectionExpiredError(APIException):
@@ -468,6 +498,12 @@ class ProductionShortageAuthorizationSerializer(StrictMutationSerializer):
         if not attrs.get("username") or not attrs.get("pin"):
             raise serializers.ValidationError({"pin": "Escolha quem autoriza e digite o PIN dessa pessoa."})
         return attrs
+
+
+class ProductionPurchaseRequestSerializer(StrictMutationSerializer):
+    """A solicitação ao Compras de quem não opera o Compras: só a prova da falta."""
+
+    purchase_request_proof = serializers.CharField(allow_blank=False, max_length=4096)
 
 
 class ProductionOldDoughMutationSerializer(ExistingWorkOrderMutationSerializer):
@@ -678,6 +714,13 @@ class ProductionActionSpec:
 
 PRODUCTION_ACTION_SPECS = (
     ProductionActionSpec(
+        "requestProductionPurchase",
+        "/api/v1/backstage/production/purchase-request/",
+        "ProductionPurchaseRequestRequest",
+        ProductionPurchaseRequestSerializer,
+        ProductionPurchaseRequestResponse,
+    ),
+    ProductionActionSpec(
         "authorizeProductionShortage",
         "/api/v1/backstage/production/shortage-authorization/",
         "ProductionShortageAuthorizationRequest",
@@ -820,6 +863,7 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionShortagePossibility,
     ProductionShortageAuthorizer,
     ProductionShortageAuthorizationResponse,
+    ProductionPurchaseRequestResponse,
     ProductionMaterialShortageItem,
     ProductionMaterialShortageErrorBody,
     ProductionMaterialShortageErrorEnvelope,

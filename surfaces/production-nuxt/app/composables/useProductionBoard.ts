@@ -141,11 +141,17 @@ export function useProductionBoard(
 
   // a planning POST keys on the output_sku row (one in-flight per row).
   const busy = ref<Set<string>>(new Set());
-  const attempts = new Map<string, string>();
+  // A chave de cada tentativa, com o que ela tentava. A recusa guarda a chave:
+  // "Salvar com justificativa" e "Abrir assim mesmo" repetem a MESMA tentativa (o
+  // mesmo número, mais a prova), e o toque repetido depois de uma falha de rede
+  // também. Outro número é outra tentativa e ganha chave nova: com a velha, o
+  // servidor recusava o número revisado como conflito (WP-F14, P1-13).
+  const attempts = new Map<string, { id: string; intent: string }>();
   const isBusy = (key: string) => busy.value.has(key);
 
   async function post(
     key: string,
+    intent: string,
     actionRef: string,
     seenRev: number | null,
     action: (
@@ -157,7 +163,7 @@ export function useProductionBoard(
     if (busy.value.has(key)) return { ok: false };
     busy.value = new Set(busy.value).add(key);
     try {
-      return await authorizedPost(key, actionRef, seenRev, action);
+      return await authorizedPost(key, intent, actionRef, seenRev, action);
     } finally {
       const next = new Set(busy.value);
       next.delete(key);
@@ -167,6 +173,7 @@ export function useProductionBoard(
 
   async function authorizedPost(
     key: string,
+    intent: string,
     actionRef: string,
     seenRev: number | null,
     action: (
@@ -180,8 +187,10 @@ export function useProductionBoard(
       seenRev,
     );
     if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
-    const attempt = attempts.get(key) ?? newProductionMutationKey();
-    attempts.set(key, attempt);
+    const previous = attempts.get(key);
+    const attempt =
+      previous && previous.intent === intent ? previous.id : newProductionMutationKey();
+    attempts.set(key, { id: attempt, intent });
     try {
       await action(
         attempt,
@@ -234,7 +243,16 @@ export function useProductionBoard(
     // A revisão que o operador viu no diálogo; a do POST vem da projeção
     // assinada, e as duas têm que bater (ver `authorizeFreshMutation`).
     const seenRev = payload.work_order_id ? (payload.expected_rev ?? null) : null;
-    return post(key, actionRef, seenRev, (idempotencyKey, metadata, expectedRev) =>
+    const intent = [
+      "plan",
+      payload.recipe_id,
+      payload.work_order_id ?? "",
+      payload.target_date,
+      payload.position_ref,
+      payload.source ?? "",
+      normalizedQuantity,
+    ].join("|");
+    return post(key, intent, actionRef, seenRev, (idempotencyKey, metadata, expectedRev) =>
       planProduction({
         ...payload,
         expected_rev: expectedRev,
@@ -254,7 +272,7 @@ export function useProductionBoard(
     quantity: string,
     materialShortageProof = "",
   ): Promise<BoardActResult> {
-    return post(key, `start:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
+    return post(key, `start|${woPk}|${quantity}`, `start:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
       startProductionWorkOrder(woPk, {
         quantity,
         expected_rev: expectedRev ?? rev,
@@ -277,7 +295,7 @@ export function useProductionBoard(
     rev: number,
     reason: string,
   ): Promise<BoardActResult> {
-    return post(key, `void:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
+    return post(key, `void|${woPk}`, `void:${woPk}`, rev, (idempotencyKey, metadata, expectedRev) =>
       voidProductionWorkOrder(woPk, {
         reason,
         expected_rev: expectedRev ?? rev,

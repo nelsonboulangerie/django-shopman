@@ -66,6 +66,23 @@ export interface Material {
   /** Códigos de barras conferidos deste insumo: o "Ler EAN" acha o item da caixa. */
   eans?: string[];
   revision?: string;
+  /**
+   * Solicitações abertas da Produção: o insumo faltou num lote e quem não opera
+   * o Compras deixou o pedido aqui. Fecham quando o pedido sai ao fornecedor.
+   */
+  internalRequests?: InternalRequest[];
+}
+
+export interface InternalRequest {
+  workOrderRef: string;
+  product: string;
+  quantity: number;
+  unit: string;
+  quantityDisplay: string;
+  requestedByName: string;
+  requestedAt: string;
+  /** A frase pronta: "Diofer pediu às 14h05: falta 300 g para o lote de Brioche." */
+  line: string;
 }
 
 export interface OpensInto {

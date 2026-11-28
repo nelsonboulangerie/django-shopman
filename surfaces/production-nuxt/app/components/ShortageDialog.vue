@@ -12,6 +12,10 @@
 //     crachá, no `OperatorManagerAuth` de sempre (decisão 3 do dono, D-042; regra
 //     de 28/10). Nada de "quem autorizou" em texto livre: o servidor assina a
 //     prova com o nome de quem autorizou, e o host segue pelo `confirm` de sempre.
+//   - o Compras aparece para todos (decisão do dono, 26/11/2026): quem opera o
+//     Compras vai até ele ("Pedir no Compras"); quem não opera "Solicita ao
+//     Compras", e a falta vira uma solicitação que o "Comprar" mostra. O diálogo
+//     não fecha: a pessoa segue decidindo o lote.
 //
 // Falta de encomenda: "Revisar quantidade" volta ao número digitado. Quando o
 // servidor oferece "confirm" e a tela sabe fechar o lote curto (`allowShortLot`),
@@ -19,13 +23,18 @@
 // quais pedidos ficam descobertos (decisão 1 do dono, 23/11/2026).
 import type { OperatorSession } from "../../../operator-kit/app/types/operator";
 import type { ProductionShortageError } from "~/types/production";
-import { authorizeProductionShortage } from "~/generated/productionContract";
+import {
+  authorizeProductionShortage,
+  requestProductionPurchase,
+} from "~/generated/productionContract";
 import { formatQty } from "~/presentation/production";
 import { materialShortageLine } from "~/presentation/shortage";
 
 const props = defineProps<{
   shortage: ProductionShortageError | null;
   allowShortLot?: boolean;
+  /** A recusa veio do Planejamento: a frase é a do plano, e "Ver encomendas" abre a lista. */
+  planning?: boolean;
 }>();
 // O modal some com animação depois de `shortage` virar null. Título e frase
 // saem do último envelope não nulo, para a saída não piscar outro caso com
@@ -43,6 +52,7 @@ const emit = defineEmits<{
   "close-short-lot": [proof: string];
   "open-anyway": [proof: string];
   review: [];
+  orders: [];
 }>();
 
 const { attrsFor } = useOperatorAppLink();
@@ -61,6 +71,14 @@ const forcePossibility = computed(() => possibility("force"));
 const retryPossibility = computed(() => possibility("retry"));
 const purchasePossibility = computed(() =>
   isMaterial.value ? possibility("purchase") : undefined,
+);
+const requestPurchasePossibility = computed(() =>
+  isMaterial.value
+    ? last.value?.possibilities.find(
+        (candidate) =>
+          candidate.kind === "request_purchase" && candidate.enabled && candidate.proof,
+      )
+    : undefined,
 );
 const openAnywayPossibility = computed(() =>
   opening.value
@@ -123,6 +141,26 @@ const authDetail = computed(() =>
 );
 const authBusy = ref(false);
 const authError = ref("");
+// A solicitação ao Compras: uma por aviso; o botão vira a confirmação.
+const requestBusy = ref(false);
+const requested = ref(false);
+const requestError = ref("");
+
+async function requestPurchase() {
+  const proof = requestPurchasePossibility.value?.proof;
+  if (!proof || requestBusy.value || requested.value) return;
+  requestBusy.value = true;
+  requestError.value = "";
+  try {
+    await requestProductionPurchase({ purchase_request_proof: proof });
+    requested.value = true;
+  } catch (err) {
+    requestError.value = httpErrorMessage(err, "Não deu para solicitar ao Compras. Tente de novo.");
+  } finally {
+    requestBusy.value = false;
+  }
+}
+
 const operatorName = computed(
   () =>
     useNuxtData<OperatorSession>("operator-session").data.value?.operator?.name ??
@@ -136,7 +174,21 @@ watch(
     authOpen.value = false;
     authBusy.value = false;
     authError.value = "";
+    requestBusy.value = false;
+    requested.value = false;
+    requestError.value = "";
   },
+);
+
+// Reduzir o plano abaixo do encomendado (WP-F14, P1-13): as duas travas (a dos pedidos
+// ligados ao lote e a do Core) dizem uma frase só, e onde o servidor não oferece forçar
+// a saída é revisar o número ou ver as encomendas.
+const planRefusal = computed(
+  () =>
+    props.planning &&
+    last.value?.code === "order_shortage" &&
+    !shortLot.value &&
+    !forcePossibility.value,
 );
 
 const title = computed(() => {
@@ -157,6 +209,9 @@ const description = computed(() => {
   }
   if (isMaterial.value && forcePossibility.value) {
     return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
+  }
+  if (planRefusal.value && last.value?.code === "order_shortage") {
+    return `Há ${formatQty(last.value.required)} un. encomendadas para este dia. O plano não pode ficar abaixo disso.`;
   }
   if (isMaterial.value) {
     return boughtMissing.value
@@ -227,6 +282,22 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             <span class="tabular-nums text-muted-foreground">{{ item.detail }}</span>
           </li>
         </ul>
+        <p
+          v-if="material && requested"
+          class="text-sm"
+          role="status"
+          data-shortage-requested
+        >
+          O Compras vê a solicitação no Comprar.
+        </p>
+        <p
+          v-if="material && requestError"
+          class="text-sm text-destructive"
+          role="alert"
+          data-shortage-request-error
+        >
+          {{ requestError }}
+        </p>
         <template v-else-if="shortLot">
           <ul class="divide-y rounded-md border text-sm" data-short-lot-orders>
             <li
@@ -252,11 +323,11 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
               <b class="tabular-nums">{{ last.required }}</b> un. ·
               informado: <b class="tabular-nums">{{ last.requested }}</b> un.
             </p>
-            <p class="mt-1 text-muted-foreground">
+            <p v-if="last.order_refs.length" class="mt-1 text-muted-foreground">
               Pedidos: {{ last.order_refs.join(", ") }}
             </p>
           </div>
-          <p v-if="!forcePossibility" class="text-sm">
+          <p v-if="!forcePossibility && !planRefusal" class="text-sm">
             Confira a contagem e informe pelo menos
             <b class="tabular-nums">{{ last.required }}</b> un. Se saiu mesmo
             menos, nada foi registrado: avise quem cuida das encomendas antes de
@@ -310,6 +381,17 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             data-shortage-purchase
           />
           <NuxtButton
+            v-if="requestPurchasePossibility"
+            color="neutral"
+            variant="outline"
+            :icon="requested ? 'i-lucide-check' : undefined"
+            :label="requested ? 'Solicitado ao Compras' : requestPurchasePossibility.label"
+            :loading="requestBusy"
+            :disabled="requested"
+            data-shortage-request-purchase
+            @click="requestPurchase"
+          />
+          <NuxtButton
             v-if="openAnywayPossibility"
             color="primary"
             :label="openAnywayPossibility.label"
@@ -346,6 +428,15 @@ async function sign(credentials: { username?: string; pin?: string; badge?: stri
             variant="outline"
             :label="retryPossibility ? 'Cancelar' : 'Entendi'"
             @click="emit('update:open', false)"
+          />
+          <NuxtButton
+            v-if="planRefusal"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-shopping-bag"
+            label="Ver encomendas"
+            data-shortage-orders
+            @click="emit('orders')"
           />
           <NuxtButton
             v-if="retryPossibility"
