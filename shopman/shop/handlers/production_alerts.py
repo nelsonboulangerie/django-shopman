@@ -365,7 +365,7 @@ def check_forgotten_planned_orders(*, today=None) -> int:
             continue
         message = (
             f"Lote {work_order.ref} ({work_order.output_sku}) planejado para "
-            f"{work_order.target_date:%d/%m} nunca foi aberto."
+            f"{work_order.target_date:%d/%m} nunca foi confirmado."
         )
         alert_adapter.create(
             "production_forgotten",
@@ -420,8 +420,8 @@ def check_unfinished_started_orders(*, today=None) -> int:
             _stamp_meta(work_order, UNFINISHED_ALERTED_KEY)
             continue
         message = (
-            f"Lote {work_order.ref} ({work_order.output_sku}) aberto para "
-            f"{work_order.target_date:%d/%m} nunca foi fechado. Feche com a "
+            f"Lote {work_order.ref} ({work_order.output_sku}) em produção para "
+            f"{work_order.target_date:%d/%m} nunca foi finalizado. Finalize com a "
             f"quantidade realizada ou cancele para liberar o estoque em produção."
         )
         alert_adapter.create(

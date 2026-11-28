@@ -131,7 +131,7 @@ SCREENS: tuple[_Screen, ...] = (
     _Screen("production", "Produção", "/", "croissant", "lotes"),
     _Screen("production", "Planejamento", "/plan", "calendar-range", "plano sugestao amanha"),
     _Screen("production", "Preparação", "/mise-en-place", "scale", "mise en place insumos"),
-    _Screen("production", "Finalização", "/close", "package-check", "fechar lote"),
+    _Screen("production", "Finalização", "/close", "package-check", "finalizar lote fechar"),
     _Screen("production", "Qualidade", "/quality", "badge-check", "ressalva"),
     _Screen("production", "Receitas", "/recipes", "notebook-text", "ficha tecnica formula"),
     _Screen("production", "Relatórios", "/reports", "file-chart-column", "relatorio"),

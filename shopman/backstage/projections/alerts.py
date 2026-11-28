@@ -179,13 +179,13 @@ def build_operator_alerts_projection(*, alerts, counts, surface: str = "", user=
 #: sistema (exclusão manual no ManyChat, conversa da "outra mesa" do WhatsApp).
 _ALERT_HOMES: dict[str, tuple[str, str, str]] = {
     # Produção: o lote, filtrado, na tela do gesto.
-    "production_late": ("production", "/", "Abrir o lote"),
+    "production_late": ("production", "/", "Ver o lote"),
     "production_low_yield": ("production", "/quality", "Revisar a qualidade do lote"),
-    "production_stock_short": ("production", "/close", "Fechar o lote"),
+    "production_stock_short": ("production", "/close", "Finalizar o lote"),
     "production_stock_shortfall": ("production", "/plan", "Conferir o lote no plano"),
-    "production_forgotten": ("production", "/plan", "Abrir o lote no plano"),
-    "production_unfinished": ("production", "/close", "Fechar o lote"),
-    "production_batch_traceability": ("production", "/close", "Fechar o lote de novo"),
+    "production_forgotten": ("production", "/plan", "Ver o lote no plano"),
+    "production_unfinished": ("production", "/close", "Finalizar o lote"),
+    "production_batch_traceability": ("production", "/close", "Finalizar o lote de novo"),
     "production_quality_communication": ("production", "/quality", "Revisar a qualidade do lote"),
     "production_quality_hold_risk": ("production", "/quality", "Revisar a qualidade do lote"),
     "stock_discrepancy": ("production", "/plan", "Abrir o plano"),

@@ -42,12 +42,12 @@ class QualityGrade(models.Model):
     markdown_percent = models.PositiveSmallIntegerField(
         _("desconto (%)"),
         default=0,
-        help_text=_("Resolvido no fechamento da fornada e congelado no lote."),
+        help_text=_("Resolvido na finalização do lote e congelado nele."),
     )
     is_default = models.BooleanField(
         _("padrão"),
         default=False,
-        help_text=_("O grau pré-selecionado ao fechar a fornada."),
+        help_text=_("O grau pré-selecionado ao finalizar o lote."),
     )
     is_active = models.BooleanField(
         _("ativo"),

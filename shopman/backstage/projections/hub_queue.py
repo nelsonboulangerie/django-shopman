@@ -427,7 +427,7 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
 
 
 def _production(user, base: str, label: str, now: datetime, out: _Collected) -> None:
-    """Produção: lote aberto que passou do tempo da receita (o "atrasado" do painel)."""
+    """Produção: lote em produção que passou do tempo da receita (o "atrasado" do painel)."""
     from shopman.craftsman.models import WorkOrder
 
     from shopman.backstage.projections import production as production_projection
@@ -454,7 +454,7 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
                 app_label=label,
                 kind="work_order_late",
                 title=f"Lote de {recipe_name} passou do tempo",
-                detail=f"{wo.ref} · aberto às {_clock(started_at)} · meta {target} min",
+                detail=f"{wo.ref} · em produção desde {_clock(started_at)} · meta {target} min",
                 waiting_since=_iso(started_at),
                 due_at="",
                 due_label="",
@@ -462,7 +462,7 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
                 due_clock="",
                 time_mode="since",
                 attention=True,
-                action_label="Fechar o lote",
+                action_label="Finalizar o lote",
                 url=_join_url(base, "close", query),
                 slack_seconds=int(target * 60 - elapsed),
             )
