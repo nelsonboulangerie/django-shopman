@@ -1319,7 +1319,7 @@ const canPlanPromised = computed(
 // Sem lote: planeja direto o que falta. Acima do plano: o diálogo de sempre, com
 // o total já escrito, porque é preciso escolher qual lote cresce (ou um novo).
 async function planPromised(item: UnbackedOrder) {
-  if (promisedBusy.value || !canPlanPromised.value) return;
+  if (promisedBusy.value || !canPlanPromised.value || item.lockedNote) return;
   if (item.kind === "over-plan" || item.row.planned_orders.length) {
     openPlan(item.row, "manual");
     if (planOpenFor(item.row) && rowPlanMode(item.row) !== "new-batch") {

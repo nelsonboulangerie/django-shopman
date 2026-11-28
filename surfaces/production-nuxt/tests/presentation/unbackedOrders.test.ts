@@ -118,6 +118,24 @@ describe("unbackedOrders: o que o plano da data não cobre", () => {
     expect(bandOrders([item!])).toHaveLength(1);
   });
 
+  it("acima do plano sem lote planejado: aberto diz 'em produção', fechado diz 'fechado', sem gesto", () => {
+    const over = promised({ planned_qty: "42", ordered_qty: "60", over_plan_qty: "18" });
+    const lot = [{ pk: 1 }] as unknown as ProductionMatrixRowProjection["started_orders"];
+    const [started] = unbackedOrders([row({ started_orders: lot, promised: over })]);
+    expect(started).toMatchObject({
+      kind: "over-plan",
+      lockedNote: "Lote já em produção. A encomenda aparece como Promessa em risco no Gestor.",
+    });
+    expect(bandOrders([started!])).toHaveLength(1);
+    const [closed] = unbackedOrders([row({ finished_orders: lot, promised: over })]);
+    expect(closed!.lockedNote).toBe("Lote já fechado. A encomenda aparece como Promessa em risco no Gestor.");
+    // Com um lote ainda planejado ao lado do aberto, há o que crescer.
+    const [mixed] = unbackedOrders([row({ started_orders: lot, planned_orders: lot, promised: over })]);
+    expect(mixed!.lockedNote).toBe("");
+    // Sem lote nenhum não há trava.
+    expect(unbackedOrders([row({ promised: promised() })])[0]!.lockedNote).toBe("");
+  });
+
   it("peso diz a unidade; vários produtos em ordem alfabética", () => {
     const items = unbackedOrders([
       row({ output_sku: "PCAMP", recipe_name: "Pain de Campagne", output_unit: "kg", promised: promised({ over_plan_qty: "1.5", ordered_qty: "1.5" }) }),

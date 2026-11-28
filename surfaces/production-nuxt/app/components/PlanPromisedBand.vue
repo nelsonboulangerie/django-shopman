@@ -6,7 +6,9 @@
 // nenhuma linha do dia cobre (`bandOrders`): a encomenda que a sugestão da linha já
 // conta fica no chip da linha (decisão da coordenação, 28/11). Planejar cobre a
 // encomenda e a faixa some. A Produção só planeja (D-042, item 2): não há recusar
-// aqui, e quem fala com o cliente é o Gestor ("Promessa em risco").
+// aqui, e quem fala com o cliente é o Gestor ("Promessa em risco"). Com o lote do dia
+// já aberto (ou fechado), não há o que planejar a mais: a faixa diz isso no lugar do
+// botão (`lockedNote`).
 // A conta mora em `presentation/production.ts` (`unbackedOrders`); o envio, na grade.
 import {
   promisedWhen,
@@ -74,6 +76,13 @@ function whoAndWhen(item: UnbackedOrder): string {
         <p class="op-micro text-muted-foreground" data-plan-promised-who>
           {{ whoAndWhen(item) }}
         </p>
+        <p
+          v-if="item.lockedNote"
+          class="op-micro mt-0.5 text-foreground"
+          data-plan-promised-locked
+        >
+          {{ item.lockedNote }}
+        </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <NuxtButton
@@ -85,7 +94,7 @@ function whoAndWhen(item: UnbackedOrder): string {
           @click="emit('orders', item)"
         />
         <NuxtButton
-          v-if="canPlan"
+          v-if="canPlan && !item.lockedNote"
           color="primary"
           variant="solid"
           icon="i-lucide-calendar-plus"

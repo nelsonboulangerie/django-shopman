@@ -1838,6 +1838,35 @@ describe("ProductionStageGrid — pedidos à Produção", () => {
     expect(w.text()).not.toContain("#WO-");
   });
 
+  // Coordenação, 28/11: com o lote do dia já aberto, não há o que crescer (o `adjust`
+  // só aceita lote planejado, e um lote novo passaria da massa batida, #3681). A faixa
+  // diz o fato e quem fala com o cliente, sem "Planejar mais".
+  it("acima do plano com o lote já aberto: diz que está em produção e não oferece Planejar mais", async () => {
+    boardRows.value = [
+      promisedRow(
+        {
+          started_qty: "42",
+          started_orders: [wo({ pk: 9, ref: "WO-009", status: "started", planned_qty: "42", started_qty: "42" })],
+        },
+        "42",
+        "60",
+      ),
+    ];
+    const w = mountGrid("plan");
+    const item = w.get('[data-plan-promised-item][data-sku="CRO"]');
+    expect(item.get("[data-plan-promised-text]").text().replace(/\s+/g, " ")).toBe(
+      "Encomendado acima do plano: Croissant 18",
+    );
+    expect(item.get("[data-plan-promised-locked]").text()).toBe(
+      "Lote já em produção. A encomenda aparece como Promessa em risco no Gestor.",
+    );
+    expect(item.find("[data-plan-promised-plan]").exists()).toBe(false);
+    expect(item.text()).not.toMatch(/Planejar mais|recusar/i);
+    // "Ver encomendas" segue: a Cozinha sabe quem espera.
+    expect(item.find("[data-plan-promised-orders]").exists()).toBe(true);
+    expect(planSpy).not.toHaveBeenCalled();
+  });
+
   it("sem quem planeje à mão, a faixa avisa e não planeja", () => {
     stubBoardAccess({ ...FULL_ACCESS, can_edit_planned: false });
     boardRows.value = [promisedRow()];

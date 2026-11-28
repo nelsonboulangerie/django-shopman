@@ -476,6 +476,24 @@ export interface UnbackedOrder {
   headline: string;
   subject: string;
   actionLabel: string;
+  /**
+   * Por que a Produção não pode crescer o plano, ou "". Acima do plano sem lote
+   * planejado (o lote do dia já foi aberto, ou já fechou), não há quantidade a
+   * ajustar: o `adjust` só aceita lote planejado, e um lote novo sobre a massa já
+   * batida passaria do que a massa comporta (regra do teto, #3681). A faixa diz o
+   * fato e quem fala com o cliente; não oferece "Planejar mais" (coordenação, 28/11).
+   */
+  lockedNote: string;
+}
+
+const GESTOR_TAKES_IT = "A encomenda aparece como Promessa em risco no Gestor.";
+
+/** Acima do plano, sem lote ainda planejado: o lote do dia já está em produção ou fechado. */
+function lockedNote(row: ProductionMatrixRowProjection): string {
+  if (row.planned_orders.length) return "";
+  if (row.started_orders.length) return `Lote já em produção. ${GESTOR_TAKES_IT}`;
+  if (row.finished_orders.length) return `Lote já fechado. ${GESTOR_TAKES_IT}`;
+  return "";
 }
 
 /** A linha do dia tem número próprio que já cobre as encomendas (e nenhum lote ainda). */
@@ -507,6 +525,7 @@ export function unbackedOrders(rows: ProductionMatrixRowProjection[]): UnbackedO
           headline: kind === "no-lot" ? "Encomendado sem lote" : "Encomendado acima do plano",
           subject: `${rowLabel(row)} ${amount}`,
           actionLabel: kind === "no-lot" ? `Planejar ${amount}` : `Planejar mais ${amount}`,
+          lockedNote: kind === "over-plan" ? lockedNote(row) : "",
         },
       ];
     })
