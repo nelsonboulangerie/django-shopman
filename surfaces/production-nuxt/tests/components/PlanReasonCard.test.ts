@@ -87,6 +87,61 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
+// WP-F13: o "Por quê" lista as encomendas da data pela régua das reservas, a mesma
+// da faixa do topo e do chip, com nome e hora; sem dinheiro.
+describe("PlanReasonCard — encomendas da data", () => {
+  function mountWithOrders(planned: string, over: string) {
+    return mount(PlanReasonCard, {
+      props: {
+        suggestion: suggestion(),
+        productName: "Croissant Manteiga",
+        isoDate: "2026-11-29",
+        today: "2026-11-28",
+        unit: "un",
+        purchaseUrl: "",
+        canPlanSuggested: true,
+        canPlanManual: true,
+        promised: {
+          date: "2026-11-29",
+          planned_qty: planned,
+          ordered_qty: "12",
+          free_qty: "0",
+          over_plan_qty: over,
+          orders: [
+            {
+              ref: "PDV-1",
+              customer_first_name: "Clara",
+              due_time: "09:00",
+              fulfillment_type: "pickup",
+              qty: "12",
+              status: "confirmed",
+              status_label: "Confirmado",
+            },
+          ],
+        },
+      },
+      global: { stubs: { ...nuxtUiStubs, Icon: true, OperatorKbd: true } },
+    });
+  }
+
+  it("sem lote: a lista e a frase do que o plano não cobre", () => {
+    const w = mountWithOrders("0", "12");
+    const block = w.get('[data-testid="reason-promised"]');
+    expect(block.text()).toContain("Encomendas de amanhã, dom 29/11, pela hora");
+    expect(block.findAll("[data-reason-promised-order]").map((li) => li.text())).toEqual([
+      "Clara · retirada · 9h · 12 un.",
+    ]);
+    expect(block.get("[data-reason-promised-gap]").text()).toBe("Nenhum lote planejado para esta data.");
+    expect(block.text()).not.toMatch(/R\$/);
+  });
+
+  it("plano que cobre: a lista sem a frase; sem encomenda, o bloco some", () => {
+    const w = mountWithOrders("40", "0");
+    expect(w.find("[data-reason-promised-gap]").exists()).toBe(false);
+    expect(mountCard(suggestion()).find('[data-testid="reason-promised"]').exists()).toBe(false);
+  });
+});
+
 describe("PlanReasonCard", () => {
   it("só a conta, quando não há mais nada a dizer", () => {
     const w = mountCard(suggestion());

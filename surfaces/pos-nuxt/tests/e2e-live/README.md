@@ -150,6 +150,33 @@ mesmo jeito. A jornada roda de novo sem reseed: cada execução é um dispositiv
 as próprias comandas. Use nomes de cliente ou observações únicos por execução se a
 jornada procurar algo pelo texto.
 
+Os gestos da encomenda (abrir, identificar o cliente, escolher o dia pelo calendário,
+montar a comanda) moram em `support/order.ts`, para a J5 e a J-P5 usarem os mesmos.
+
+### J-P5: pedido à Produção (plano da Produção, WP-F13)
+
+`jp5-pedido-a-producao.live.spec.ts` cruza o PDV e a Produção: a Caixa encomenda 30
+croissants para daqui a doze dias, uma data que o seed não planejou, e a encomenda fecha
+sem gerente; a Cozinha, com PIN, abre o Planejamento daquela data no celular e no tablet
+(1024 px) e lê a encomenda no chip da linha do Croissant ("30 un. · <dia> <hora>"), cuja
+sugestão já a conta: a faixa do topo não a repete (a faixa é só para o que nenhuma linha
+cobre). Ela planeja a sugestão pela linha, e o detalhe da encomenda no PDV segue sem
+"Promessa em risco". `JP5_DAYS_AHEAD` escolhe outra data num banco já usado. Pede a
+Produção compilada na pilha, em `PDV_LIVE_PRODUCTION_URL` (o script não a sobe), e pula
+sem ela:
+
+```bash
+(cd surfaces/production-nuxt && NUXT_DJANGO_BASE_URL=<django> NUXT_SHOPMAN_ENVIRONMENT=local npx nuxt build \
+  && NUXT_SHOPMAN_ENVIRONMENT=test SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM=1 NUXT_DJANGO_BASE_URL=<django> \
+     HOST=127.0.0.1 PORT=<porta> node .output/server/index.mjs &)
+```
+
+O filtro padrão do script (`jN-*`) não a pega: rode pelo nome (`scripts/run_pos_e2e_live.sh
+jp5`, com a Produção de pé). O Django precisa da origem da Produção em
+`CSRF_TRUSTED_ORIGINS`. Planeja o croissant da
+data, então roda uma vez por seed (numa segunda passada a data já tem lote e a faixa diz
+"acima do plano").
+
 ### Armadilhas medidas (16/11/2026)
 
 - **`.venv` com `psycopg` 3.3.6 e `psycopg-binary` 3.3.5**: o `migrate` cai com
