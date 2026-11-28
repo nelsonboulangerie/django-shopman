@@ -14,7 +14,16 @@ import {
   suggestionHistory,
   suggestionMath,
 } from "~/presentation/planningReason";
-import type { ProductionSuggestionProjection } from "~/types/production";
+import {
+  promisedGap,
+  promisedOrderLine,
+  rowPromisedOrders,
+} from "~/presentation/production";
+import type {
+  ProductionPromisedProjection,
+  ProductionSuggestionProjection,
+} from "~/types/production";
+import { dayLabel } from "../../../operator-kit/app/presentation/dates";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
@@ -24,6 +33,10 @@ const props = defineProps<{
   purchaseUrl: string;
   canPlanSuggested: boolean;
   canPlanManual: boolean;
+  /** As encomendas da data, pela régua das reservas (WP-F08); a mesma da faixa. */
+  promised?: ProductionPromisedProjection | null;
+  unit?: string;
+  today?: string;
 }>();
 
 const emit = defineEmits<{
@@ -39,6 +52,19 @@ const history = computed(() =>
 );
 const basisLine = computed(() =>
   suggestionBasisLine(props.suggestion, props.isoDate),
+);
+// WP-F13: o "Por quê" lista as encomendas da data pela mesma régua da faixa e do
+// chip, com nome e hora (a conta acima é a da sugestão).
+const promisedOrders = computed(() =>
+  rowPromisedOrders({ promised: props.promised ?? null }),
+);
+const promisedHeading = computed(() =>
+  props.promised
+    ? `Encomendas de ${dayLabel(props.promised.date, props.today ?? props.isoDate).toLowerCase()}, pela hora`
+    : "",
+);
+const promisedShortfall = computed(() =>
+  promisedGap(props.promised, props.unit ?? ""),
 );
 const alternative = computed(() =>
   props.canPlanManual ? fittingAlternative(props.suggestion) : null,
@@ -125,6 +151,32 @@ const HISTORY_TONE = {
         data-testid="reason-margin-note"
       >
         Margem: {{ math.marginNote }}
+      </p>
+    </section>
+
+    <!-- As encomendas da data (WP-F13), pela régua das reservas. -->
+    <section
+      v-if="promisedOrders.length"
+      class="px-4"
+      aria-label="Encomendas da data"
+      data-testid="reason-promised"
+    >
+      <p class="op-label font-semibold">{{ promisedHeading }}</p>
+      <ul class="mt-1 flex flex-col gap-0.5 text-sm">
+        <li
+          v-for="order in promisedOrders"
+          :key="order.ref"
+          data-reason-promised-order
+        >
+          {{ promisedOrderLine(order, unit ?? "") }}
+        </li>
+      </ul>
+      <p
+        v-if="promisedShortfall"
+        class="mt-1 text-sm font-medium text-warning"
+        data-reason-promised-gap
+      >
+        {{ promisedShortfall }}
       </p>
     </section>
 

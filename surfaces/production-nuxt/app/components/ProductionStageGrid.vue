@@ -24,6 +24,7 @@ import LotCommitmentsDialog from "./LotCommitmentsDialog.vue";
 import LotStartPanel from "./LotStartPanel.vue";
 import PlanAdjustDialog from "./PlanAdjustDialog.vue";
 import PlanLens from "./PlanLens.vue";
+import PlanPromisedBand from "./PlanPromisedBand.vue";
 
 import {
   boardDisplay,
@@ -40,6 +41,8 @@ import {
   promisedChipLabel,
   rowLabel,
   rowOrderedUnits,
+  unbackedOrders,
+  type UnbackedOrder,
 } from "~/presentation/production";
 import { suggestionSignal } from "~/presentation/planningReason";
 import {
@@ -1286,6 +1289,37 @@ async function planCleanSet() {
       done === 1 ? "1 produto planejado como sugerido." : `${done} produtos planejados como sugerido.`,
     );
 }
+// O pedido à Produção (WP-F13): a encomenda da data que o plano não cobre, no topo
+// do Planejamento, de todas as linhas (o recorte e a busca não a escondem).
+const unbacked = computed(() => unbackedOrders(rows.value));
+const promisedBusy = ref<string | null>(null);
+// O vazio da Produção numa data com encomenda e sem lote diz o que está esperando.
+const emptyPromisedLine = computed(() =>
+  unbacked.value.length
+    ? `Encomendado sem lote: ${unbacked.value.map((item) => item.subject).join(", ")}.`
+    : undefined,
+);
+const canPlanPromised = computed(
+  () => lens.value.action.editable && access.value?.can_edit_planned === true,
+);
+// Sem lote: planeja direto o que falta. Acima do plano: o diálogo de sempre, com
+// o total já escrito, porque é preciso escolher qual lote cresce (ou um novo).
+async function planPromised(item: UnbackedOrder) {
+  if (promisedBusy.value || !canPlanPromised.value) return;
+  if (item.kind === "over-plan" || item.row.planned_orders.length) {
+    openPlan(item.row, "manual");
+    if (planRow.value === item.row && rowPlanMode(item.row) !== "new-batch")
+      planQty.value = item.targetQty;
+    return;
+  }
+  promisedBusy.value = item.row.output_sku;
+  try {
+    await submitPlan(item.row, { quantity: item.targetQty, source: "manual" });
+  } finally {
+    promisedBusy.value = null;
+  }
+}
+
 const canPlanCleanSet = computed(
   () =>
     planGroups.value.clean.length > 0 &&
@@ -1549,6 +1583,17 @@ const startedDescription = computed(() => {
           <span>Sem atualizar: mostrando o último quadro carregado.</span>
         </div>
 
+        <PlanPromisedBand
+          v-if="stage === 'plan'"
+          class="mb-3"
+          :items="unbacked"
+          :today="todayISO"
+          :can-plan="canPlanPromised"
+          :busy-sku="promisedBusy"
+          @plan="planPromised"
+          @orders="(item) => (commitmentsRow = item.row)"
+        />
+
         <template v-if="!stageRows.length">
           <!-- Busca sem resultado: a frase do fim da seção diz isso. -->
           <template v-if="query.trim()" />
@@ -1582,13 +1627,17 @@ const startedDescription = computed(() => {
             state="empty"
             icon="i-lucide-layout-grid"
             title="Nada planejado para produzir nesta data."
+            :description="emptyPromisedLine"
           >
             <template #actions>
+              <!-- O atalho leva ao Planejamento DESTA data (P1-30): sem ela, o
+                   Planejamento abre em amanhã depois do meio-dia. -->
               <NuxtButton
-                to="/plan"
-                color="neutral"
-                variant="outline"
+                :to="{ path: '/plan', query: { date: selectedDate } }"
+                :color="unbacked.length ? 'primary' : 'neutral'"
+                :variant="unbacked.length ? 'solid' : 'outline'"
                 label="Ir para o Planejamento"
+                data-open-empty-plan
               />
             </template>
           </OperatorScreenState>
@@ -1751,6 +1800,9 @@ const startedDescription = computed(() => {
                       :purchase-url="board?.purchase_url ?? ''"
                       :can-plan-suggested="!!access?.can_edit_suggested"
                       :can-plan-manual="!!access?.can_edit_planned"
+                      :promised="row.promised"
+                      :unit="row.output_unit"
+                      :today="todayISO"
                       @close="closeReason(row.output_sku)"
                       @plan="
                         (quantity, source) =>

@@ -225,9 +225,9 @@ const stubs = {
   OperatorPeriodPicker: true,
   OperatorMoreMenu: OperatorMoreMenuStub,
   OperatorScreenState: {
-    props: ["state", "title", "what"],
+    props: ["state", "title", "what", "description"],
     template:
-      '<div :data-screen-state="state">{{ title }}<slot name="actions" /></div>',
+      '<div :data-screen-state="state">{{ title }}<p v-if="description" data-screen-description>{{ description }}</p><slot name="actions" /></div>',
   },
   NuxtSelect: {
     props: ["modelValue", "items"],
@@ -1711,5 +1711,101 @@ describe("ProductionStageGrid — o painel de abertura (WP-F20)", () => {
     // A 1024 px a ação da linha é só o ícone; o nome fica com a largura.
     expect(line.get("[data-open-confirming]").text().trim()).toBe("");
     expect(line.get("[data-row-name]").text()).toBe("Croissant de manteiga");
+  });
+});
+
+// WP-F13 (P1-04, P1-30): o pedido à Produção. A encomenda da data sem lote (ou
+// acima do plano) aparece no topo do Planejamento com o gesto de planejar; o vazio
+// da Produção diz o que espera e leva ao Planejamento DESTA data.
+describe("ProductionStageGrid — pedidos à Produção", () => {
+  function promisedRow(over: Partial<ProductionMatrixRowProjection> = {}, planned = "0", ordered = "12") {
+    const missing = String(Math.max(0, Number(ordered) - Number(planned)));
+    return row({
+      output_sku: "CRO",
+      recipe_name: "Croissant",
+      promised: {
+        date: "2026-07-07",
+        planned_qty: planned,
+        ordered_qty: ordered,
+        free_qty: "0",
+        over_plan_qty: missing,
+        orders: [
+          {
+            ref: "PDV-1",
+            customer_first_name: "Clara",
+            due_time: "09:00",
+            fulfillment_type: "pickup",
+            qty: ordered,
+            status: "confirmed",
+            status_label: "Confirmado",
+          },
+        ],
+      },
+      ...over,
+    } as Partial<ProductionMatrixRowProjection>);
+  }
+
+  it('no topo: "Encomendado sem lote: Croissant 12", e "Planejar 12" planeja 12 à mão', async () => {
+    boardRows.value = [promisedRow()];
+    const w = mountGrid("plan");
+
+    const band = w.get("[data-plan-promised-band]");
+    expect(band.text().replace(/\s+/g, " ")).toContain("Encomendado sem lote: Croissant 12");
+    expect(band.text()).not.toMatch(/recusar/i);
+    await w.get("[data-plan-promised-plan]").trigger("click");
+    await flushPromises();
+
+    expect(planSpy).toHaveBeenCalledTimes(1);
+    const [sku, payload] = planSpy.mock.calls[0]!;
+    expect(sku).toBe("CRO");
+    expect(payload).toMatchObject({ quantity: "12", source: "manual", target_date: "2026-07-06" });
+  });
+
+  it("o recorte não esconde a faixa", async () => {
+    boardRows.value = [promisedRow()];
+    const w = mountGrid("plan");
+    await w.findAll('[role="tab"]').find((tab) => tab.text().startsWith("Planejados"))!.trigger("click");
+    expect(w.find("[data-plan-promised-band]").exists()).toBe(true);
+  });
+
+  it("acima do plano: abre o diálogo de sempre com o total já escrito", async () => {
+    boardRows.value = [
+      promisedRow(
+        {
+          planned_qty: "12",
+          planned_orders: [wo({ pk: 9, ref: "WO-009", status: "planned", planned_qty: "12" })],
+        },
+        "12",
+        "15",
+      ),
+    ];
+    const w = mountGrid("plan");
+    const action = w.get("[data-plan-promised-plan]");
+    expect(action.text()).toBe("Planejar mais 3");
+    await action.trigger("click");
+    await flushPromises();
+
+    expect(planSpy).not.toHaveBeenCalled();
+    const qty = w.findAll("input").find((input) => (input.element as HTMLInputElement).value === "15");
+    expect(qty).toBeDefined();
+  });
+
+  it("sem quem planeje à mão, a faixa avisa e não planeja", () => {
+    stubBoardAccess({ ...FULL_ACCESS, can_edit_planned: false });
+    boardRows.value = [promisedRow()];
+    const w = mountGrid("plan");
+    expect(w.find("[data-plan-promised-band]").exists()).toBe(true);
+    expect(w.find("[data-plan-promised-plan]").exists()).toBe(false);
+  });
+
+  it("o vazio da Produção diz o que espera e vai ao Planejamento desta data (P1-30)", () => {
+    boardRows.value = [promisedRow()];
+    const w = mountGrid("open");
+
+    expect(w.get("[data-screen-description]").text()).toBe("Encomendado sem lote: Croissant 12.");
+    const shortcut = w
+      .findAllComponents({ name: "NuxtButton" })
+      .find((button) => button.attributes("data-open-empty-plan") !== undefined)!;
+    expect(shortcut.props("to")).toEqual({ path: "/plan", query: { date: "2026-07-06" } });
   });
 });

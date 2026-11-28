@@ -450,6 +450,53 @@ export function promisedGap(
   return `O plano da data fica ${formatQtyUnit(over, unit)} abaixo das encomendas.`;
 }
 
+/**
+ * WP-F13 (P1-04): o pedido à Produção. Encomenda da data que o plano não cobre,
+ * pela régua das reservas (`promised.over_plan_qty`, WP-F08): sem lote nenhum
+ * ("Encomendado sem lote: Croissant 12", "Planejar 12") ou acima do plano
+ * ("Encomendado acima do plano: Croissant 3", "Planejar mais 3"). A Produção só
+ * planeja (D-042, item 2): não há aceitar nem recusar aqui; se a casa não vai
+ * produzir, a encomenda segue em "Promessa em risco" no Gestor.
+ */
+export interface UnbackedOrder {
+  row: ProductionMatrixRowProjection;
+  kind: "no-lot" | "over-plan";
+  /** O que falta planejar para cobrir as encomendas da data. */
+  missing: number;
+  /** O planejado da data depois do gesto: o que vai ao servidor. */
+  targetQty: string;
+  headline: string;
+  subject: string;
+  actionLabel: string;
+}
+
+function qtyString(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
+}
+
+export function unbackedOrders(rows: ProductionMatrixRowProjection[]): UnbackedOrder[] {
+  return rows
+    .flatMap((row): UnbackedOrder[] => {
+      const missing = parseQty(row.promised?.over_plan_qty);
+      if (!row.promised || missing <= 0 || !rowPromisedOrders(row).length) return [];
+      const planned = parseQty(row.promised.planned_qty);
+      const kind = planned > 0 ? "over-plan" : "no-lot";
+      const amount = formatQty(missing, row.output_unit);
+      return [
+        {
+          row,
+          kind,
+          missing,
+          targetQty: qtyString(planned + missing),
+          headline: kind === "no-lot" ? "Encomendado sem lote" : "Encomendado acima do plano",
+          subject: `${rowLabel(row)} ${amount}`,
+          actionLabel: kind === "no-lot" ? `Planejar ${amount}` : `Planejar mais ${amount}`,
+        },
+      ];
+    })
+    .sort((a, b) => rowLabel(a.row).localeCompare(rowLabel(b.row), "pt-BR"));
+}
+
 /** A hora do plano mais recente entre os planejados ("15h12"), ou "". */
 export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
   const times = rows
