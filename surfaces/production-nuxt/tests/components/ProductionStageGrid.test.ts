@@ -565,6 +565,9 @@ describe("ProductionStageGrid — planning authority", () => {
     await plannedAction(w, "Corrigir quantidade")!.trigger("click");
     const input = w.find('input[aria-label="Quantidade planejada"]');
     expect((input.element as HTMLInputElement).value).toBe("20");
+    // O lote se diz pelo planejado, nunca pelo código (WP-F13): "#WO-…" não diz nada à Cozinha.
+    expect(w.text()).toContain("Planejado: 20. Com 0, o lote sai do plano.");
+    expect(w.text()).not.toContain("#WO-");
     await input.setValue("24");
     await input.trigger("keydown", { key: "Enter" });
 
@@ -1830,6 +1833,9 @@ describe("ProductionStageGrid — pedidos à Produção", () => {
     expect(planSpy).not.toHaveBeenCalled();
     const qty = w.findAll("input").find((input) => (input.element as HTMLInputElement).value === "15");
     expect(qty).toBeDefined();
+    // Vindo do "Planejar mais", o diálogo diz o planejado e o encomendado, sem o código do lote.
+    expect(w.text()).toContain("Planejado: 12. Encomendado: 15.");
+    expect(w.text()).not.toContain("#WO-");
   });
 
   it("sem quem planeje à mão, a faixa avisa e não planeja", () => {

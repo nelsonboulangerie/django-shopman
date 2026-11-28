@@ -426,10 +426,15 @@ function bump(field: keyof typeof qtyFields, delta: number) {
   target.value = field === "start" ? startDisplay(value) : value;
 }
 
+// Aberto pelo "Planejar mais N" da faixa: o diálogo diz o encomendado da data ao lado
+// do planejado (WP-F13). Qualquer outra abertura começa sem ele.
+const planOrdered = ref<{ sku: string; qty: string } | null>(null);
+
 function openPlan(
   row: ProductionMatrixRowProjection,
   requestedSource?: "manual" | "suggested",
 ) {
+  planOrdered.value = null;
   const source =
     requestedSource ??
     (access.value?.can_edit_planned ? "manual" : "suggested");
@@ -1317,8 +1322,13 @@ async function planPromised(item: UnbackedOrder) {
   if (promisedBusy.value || !canPlanPromised.value) return;
   if (item.kind === "over-plan" || item.row.planned_orders.length) {
     openPlan(item.row, "manual");
-    if (planOpenFor(item.row) && rowPlanMode(item.row) !== "new-batch")
+    if (planOpenFor(item.row) && rowPlanMode(item.row) !== "new-batch") {
       planQty.value = item.targetQty;
+      planOrdered.value = {
+        sku: item.row.output_sku,
+        qty: formatQty(item.row.promised?.ordered_qty ?? item.targetQty, item.row.output_unit),
+      };
+    }
     return;
   }
   promisedBusy.value = item.row.output_sku;
@@ -2226,6 +2236,7 @@ const startedDescription = computed(() => {
       :row="planRow"
       :title="`${PLAN_TITLE[planMode]} · ${planRow ? rowLabel(planRow) : ''}`"
       :description="planDescription"
+      :ordered="planOrdered && planRow?.output_sku === planOrdered.sku ? planOrdered.qty : undefined"
       :mode="planMode"
       :selected-order="selectedPlannedOrder"
       :source="planSource"
