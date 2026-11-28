@@ -10,18 +10,20 @@
 // no servidor, e só então. Nada de "Separado" no dispositivo.
 //   - item de "Por insumo": `<sku>`;
 //   - ingrediente de "Por preparo": `<recipe_ref>/<sku>`.
-// A tela marca na hora (otimista) e desfaz com aviso se o servidor recusar. O canal
-// `production` do SSE avisa quando outro tablet marca, e a tela relê as marcas.
+// A tela marca na hora (otimista) e desfaz com aviso se o servidor recusar.
+//
+// Tempo real (ADR-016, WP-F15): a lista e as marcas ouvem o MESMO canal da Produção
+// (`useProductionLive`, uma conexão por app). Outro tablet marca, ou a Cozinha
+// planeja e muda a quantidade, e a tela relê as duas leituras; o poll de 60 s fica de
+// reserva.
 import type { Ref } from "vue";
 import type { MiseEnPlaceLineProjection, MiseEnPlaceResponse } from "~/types/production";
-import {
-  openResilientEventSource,
-  type ResilientEventSource,
-} from "../../../operator-kit/app/utils/resilientEventSource";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
+import { useProductionLive } from "~/composables/useProductionLive";
 
 export const PREP_MARKS_PATH = "/api/v1/backstage/production/mise-en-place/marks/";
-const PREP_MARKS_EVENTS = ["backstage-production-update"] as const;
+/** A cadência da Preparação enquanto o canal não está aberto. */
+const PREP_POLL_MS = 60_000;
 
 export interface PrepMark {
   item_ref: string;
@@ -81,9 +83,9 @@ export function useMiseEnPlace(selectedDate: Ref<string>) {
   const projection = computed(() => data.value?.mise_en_place ?? null);
   const lines = computed<MiseEnPlaceLineProjection[]>(() => projection.value?.lines ?? []);
 
-  useAdaptivePoll(refresh, () => 60_000);
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () => PREP_POLL_MS);
 
-  return { projection, lines, expand, pending, error, refresh };
+  return { projection, lines, expand, pending, error, refresh, realtime, fallbackPollMs };
 }
 
 export function usePrepMarks(selectedDate: Ref<string>, onQuantityChanged: () => unknown = () => {}) {
@@ -148,23 +150,7 @@ export function usePrepMarks(selectedDate: Ref<string>, onQuantityChanged: () =>
 
   // SSE primeiro (ADR-016): outro tablet marcou, esta tela relê as marcas. O poll de
   // reserva cobre o canal caído.
-  useAdaptivePoll(refresh, () => 60_000);
-  const config = useRuntimeConfig();
-  let source: ResilientEventSource | null = null;
-  onMounted(() => {
-    source = openResilientEventSource({
-      url: ssePath("/sse/production", config.app.baseURL),
-      events: PREP_MARKS_EVENTS,
-      onEvent: () => refresh(),
-      onOpen: (reconnected) => {
-        if (reconnected) refresh();
-      },
-    });
-  });
-  onBeforeUnmount(() => {
-    source?.close();
-    source = null;
-  });
+  useProductionLive(refresh, () => PREP_POLL_MS);
 
   return { marks, error, refresh, isMarked, markOf, toggle };
 }

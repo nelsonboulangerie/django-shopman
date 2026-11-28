@@ -122,6 +122,9 @@ function installGlobals() {
   }));
   vi.stubGlobal("useRoute", () => ({ query: {} }));
   vi.stubGlobal("useRouter", () => ({ replace: routerReplace }));
+  // O ShortageDialog nomeia quem continua operando na assinatura da falta (WP-F11).
+  vi.stubGlobal("useNuxtData", () => ({ data: ref(null) }));
+  vi.stubGlobal("httpErrorMessage", (_err: unknown, fallback: string) => fallback);
   vi.stubGlobal("useRecipeBookAccess", () => ({ canView: recipeBookCanView }));
   vi.stubGlobal("useProductionBoard", (initialDate: string) => {
     boardInitialDateSpy(initialDate);
@@ -1417,6 +1420,68 @@ describe("ProductionStageGrid — previsto abaixo das encomendas", () => {
     expect(w.find('input[aria-label="Quantidade prevista"]').exists()).toBe(
       false,
     );
+  });
+});
+
+describe("ProductionStageGrid — falta de insumo na abertura é aviso (WP-F11)", () => {
+  const materialShortage = {
+    code: "material_shortage" as const,
+    stage: "start" as const,
+    work_order_ref: "WO-001",
+    idempotency_key: "k",
+    possibilities: [
+      { kind: "retry", label: "Revisar quantidade", enabled: true, proof: "", href: "" },
+      { kind: "purchase", label: "Pedir no Compras", enabled: true, proof: "", href: "https://compras.test" },
+      { kind: "confirm", label: "Abrir assim mesmo", enabled: true, proof: "aviso-assinado", href: "" },
+    ],
+    missing: [
+      {
+        sku: "INS-MANTEIGA",
+        name: "Manteiga",
+        unit: "kg",
+        needed: "1",
+        available: "0.7",
+        shortage: "0.3",
+        shortage_display: "300 g",
+        needed_display: "1000 g",
+        available_display: "700 g",
+        produced_here: false,
+      },
+    ],
+    authorizers: [],
+  };
+
+  it("lê o que falta e abre assim mesmo, na mesma tentativa, com a prova do aviso", async () => {
+    startSpy
+      .mockResolvedValueOnce({ ok: false, shortage: materialShortage })
+      .mockResolvedValueOnce({ ok: true });
+    boardRows.value = [
+      row({
+        planned_qty: "10",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mount(ProductionStageGrid, {
+      props: { stage: "open", title: "Produção" },
+      global: {
+        stubs: { ...stubs, ShortageDialog: false },
+        components: { ShortageDialog },
+      },
+    });
+
+    await w.find('button[aria-label="Confirmar Pão"]').trigger("click");
+    const input = w.find('input[aria-label="Quantidade prevista"]');
+    await input.setValue("10");
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(w.text()).toContain("Falta 300 g de manteiga");
+    expect(w.find("[data-shortage-purchase]").attributes("href")).toBe("https://compras.test");
+    await w.get("[data-shortage-open-anyway]").trigger("click");
+    await flushPromises();
+
+    expect(startSpy).toHaveBeenLastCalledWith("PAO-001", 1, 2, "10", "aviso-assinado");
+    expect(w.text()).not.toContain("Falta 300 g de manteiga");
   });
 });
 

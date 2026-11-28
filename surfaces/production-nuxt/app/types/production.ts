@@ -31,6 +31,8 @@ import type {
 export type {
   BaseRecipeOptionProjection,
   BaseRecipeUsageProjection,
+  DayLossByUnitProjection,
+  LossPartProjection,
   MiseEnPlaceBreakdownProjection,
   MiseEnPlaceLineProjection,
   OperatorProductivityRow,

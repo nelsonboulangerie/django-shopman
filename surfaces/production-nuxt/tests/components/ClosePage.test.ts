@@ -27,6 +27,11 @@ const ovenConcludeEnabled = ref(false);
 const success = vi.fn();
 const remember = vi.fn();
 const selectedDate = ref("");
+// WP-F15: a leitura que falha (Django parado) e o canal da Produção.
+const readError = ref<unknown>(null);
+const kioskGone = ref(false);
+const realtime = ref<"connecting" | "live" | "polling">("live");
+const refreshKiosk = vi.fn();
 
 // A rota é reativa como a do Nuxt; o `navigateTo` do teste a troca.
 const route = reactive<{ path: string; query: Record<string, string>; hash: string }>({
@@ -96,7 +101,7 @@ function installGlobals() {
   }));
   vi.stubGlobal("useSonner", { success, error: sonnerError });
   vi.stubGlobal("useQcKiosk", () => ({
-    kiosk: computed(() => ({
+    kiosk: computed(() => kioskGone.value ? null : ({
       selected_date: "2026-09-28",
       selected_date_display: "Hoje",
       orders: orders.value,
@@ -127,9 +132,11 @@ function installGlobals() {
     })),
     selectedDate,
     pending: ref(false),
-    error: ref(null),
+    error: readError,
+    realtime,
+    fallbackPollMs: computed(() => 30_000),
     submitting: ref(false),
-    refresh: vi.fn(),
+    refresh: refreshKiosk,
     finish,
     quickFinish: vi.fn(),
     reviewQuality,
@@ -179,6 +186,10 @@ beforeEach(() => {
     }),
   ];
   previousOpen.value = { count: 0, date: "" };
+  readError.value = null;
+  kioskGone.value = false;
+  realtime.value = "live";
+  refreshKiosk.mockClear();
   ovenConcludeEnabled.value = false;
   selectedDate.value = "";
   route.query = {};
@@ -202,7 +213,10 @@ afterEach(() => {
 
 const ProductionHeaderStub = {
   name: "ProductionHeader",
-  props: ["title", "count", "countLabel", "progress", "pending", "query", "alerts", "actions", "stale"],
+  props: [
+    "title", "count", "countLabel", "progress", "pending", "query", "alerts", "actions", "stale",
+    "offline", "realtime", "pollMs",
+  ],
   template: "<header><slot name='status' /><slot name='primary' /></header>",
 };
 const OperatorRecordNavStub = {
@@ -230,6 +244,12 @@ const ShortageDialogStub = {
   emits: ["update:open", "confirm", "close-short-lot", "review"],
   template: "<div data-shortage-dialog />",
 };
+const OperatorScreenStateStub = {
+  name: "OperatorScreenState",
+  props: ["state", "what", "description"],
+  emits: ["retry"],
+  template: "<div data-screen-state :data-state='state' />",
+};
 const mountPage = () => {
   const wrapper = shallowMount(ClosePage, {
     global: {
@@ -239,6 +259,7 @@ const mountPage = () => {
         OperatorRecordNav: OperatorRecordNavStub,
         QcCloseScreen: QcCloseScreenStub,
         ShortageDialog: ShortageDialogStub,
+        OperatorScreenState: OperatorScreenStateStub,
       },
     },
   });
@@ -288,6 +309,43 @@ describe("Finalização", () => {
     });
     alerts[0].action.onSelect();
     expect(selectedDate.value).toBe("2026-09-27");
+  });
+});
+
+describe("Finalização — tempo real honesto (WP-F15)", () => {
+  it("entrega ao cabeçalho o estado do canal e a cadência de reserva", () => {
+    realtime.value = "polling";
+    const header = mountPage().findComponent({ name: "ProductionHeader" });
+    expect(header.props("realtime")).toBe("polling");
+    expect(header.props("pollMs")).toBe(30_000);
+    expect(header.props("offline")).toBe(false);
+  });
+
+  it("Django parado na primeira leitura: o erro com Tentar de novo, não a tela em branco", async () => {
+    kioskGone.value = true;
+    readError.value = new Error("502");
+    const wrapper = mountPage();
+    const header = wrapper.findComponent({ name: "ProductionHeader" });
+    expect(header.props("offline")).toBe(true);
+    const state = wrapper.findComponent({ name: "OperatorScreenState" });
+    expect(state.exists()).toBe(true);
+    expect(state.props("state")).toBe("error");
+    state.vm.$emit("retry");
+    expect(refreshKiosk).toHaveBeenCalledTimes(1);
+  });
+
+  it("dado velho vira o aviso do cabeçalho (com X, do kit), antes do lote esquecido", () => {
+    readError.value = new Error("502");
+    previousOpen.value = { count: 1, date: "2026-09-27" };
+    const wrapper = mountPage();
+    const header = wrapper.findComponent({ name: "ProductionHeader" });
+    expect(header.props("stale")).toBe(true);
+    const alerts = header.props("alerts");
+    expect(alerts.map((alert: { id: string }) => alert.id)).toEqual(["stale-read", "previous-open"]);
+    expect(alerts[0].action.label).toBe("Tentar de novo");
+    alerts[0].action.onSelect();
+    expect(refreshKiosk).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).not.toContain("Mostrando o último painel");
   });
 });
 

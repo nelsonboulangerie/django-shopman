@@ -92,7 +92,10 @@ def test_dashboard_never_sums_pieces_with_grams_and_loss_hint_speaks_of_closed_l
 
     assert dashboard.planned_display == "70 un. · 18,72 kg"
     assert dashboard.loss_display == "4 un."
-    assert dashboard.loss_hint == "Realizado 36 un. de 40 un. previstos nos lotes fechados"
+    # A frase não junta grandezas (WP-F18, P2-05): cada uma tem a sua coluna na tabela.
+    assert dashboard.loss_hint == "O lote fechado teve perda"
+    # O número do Planejado soma os três lotes vivos; a frase conta os mesmos três.
+    assert dashboard.planned_hint == "3 lotes no plano do dia"
     # Carga média das fichas (70/100 e 18720/20000), nunca a soma das grandezas.
     assert dashboard.capacity_percent == 81
 

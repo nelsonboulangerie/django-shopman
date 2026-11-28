@@ -71,5 +71,38 @@ export async function proxyEventStream(
   setResponseHeader(event, "connection", "keep-alive");
   // Desliga o buffering de proxies (nginx) para o SSE fluir em tempo real.
   setResponseHeader(event, "x-accel-buffering", "no");
-  return upstream.body as ReadableStream<Uint8Array>;
+  return followUpstream(upstream.body, event, controller);
+}
+
+/**
+ * O corpo do upstream, repassado pedaço a pedaço, que DERRUBA a resposta quando o
+ * upstream morre no meio do stream (Django parado, deploy, rede). Devolver o
+ * `upstream.body` cru não basta: no h3 1.15, o erro do stream não chega ao navegador e
+ * a conexão fica aberta para sempre, muda (medido na pilha real e isolado, 26/11/2026,
+ * WP-F15). O EventSource não via erro, nunca reconectava, e a tela seguia dizendo "Ao
+ * vivo" com o Django fora. Destruída a resposta, o EventSource reconecta, recebe o 502
+ * e o `openResilientEventSource` entrega a tela ao poll. O fim limpo segue igual.
+ */
+function followUpstream(
+  body: ReadableStream<Uint8Array>,
+  event: H3Event,
+  controller: AbortController,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(stream) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) stream.close();
+        else stream.enqueue(value);
+      } catch (err) {
+        stream.error(err);
+        event.node.res.destroy();
+      }
+    },
+    cancel(reason) {
+      controller.abort();
+      return reader.cancel(reason);
+    },
+  });
 }

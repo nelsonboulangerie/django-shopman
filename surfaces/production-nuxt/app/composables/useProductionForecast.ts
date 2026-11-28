@@ -1,8 +1,10 @@
 // O PAINEL — read-side da previsão da produção (estilo aeroporto).
-// GET /api/v1/backstage/production/forecast/ e poll de 30s: o painel fica
-// aberto o dia inteiro numa tela da loja, então ele se atualiza sozinho.
+// GET /api/v1/backstage/production/forecast/: o painel fica aberto o dia inteiro
+// numa tela da loja. O lote que muda chega pelo canal da Produção (ADR-016, WP-F15);
+// o poll de 30 s fica de reserva, só enquanto o canal não está aberto.
 import type { ProductionForecastProjection, ProductionForecastResponse } from "~/types/production";
 import { isoForOffset } from "~/presentation/production";
+import { useProductionLive } from "~/composables/useProductionLive";
 
 export function useProductionForecast() {
   const path = "/api/v1/backstage/production/forecast/";
@@ -18,7 +20,7 @@ export function useProductionForecast() {
   const forecast = computed<ProductionForecastProjection | null>(() => data.value?.forecast ?? null);
   const rows = computed(() => forecast.value?.rows ?? []);
 
-  useAdaptivePoll(refresh, () => 30_000);
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () => 30_000);
 
-  return { forecast, rows, selectedDate, pending, error, refresh };
+  return { forecast, rows, selectedDate, pending, error, refresh, realtime, fallbackPollMs };
 }

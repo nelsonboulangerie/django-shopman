@@ -149,6 +149,41 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     req.emit("close");
     expect(signal?.aborted).toBe(true);
   });
+
+  it("repassa o corpo e termina limpo quando o upstream termina", async () => {
+    const { event, res } = makeEvent();
+    const destroy = vi.spyOn(res, "destroy");
+    const result = (await proxyEventStream(event, "/events/orders/")) as ReadableStream<Uint8Array>;
+    const reader = result.getReader();
+    expect((await reader.read()).value).toEqual(new Uint8Array([1]));
+    expect((await reader.read()).done).toBe(true);
+    expect(destroy).not.toHaveBeenCalled();
+  });
+
+  it("Django morre no meio do stream: derruba a resposta para o EventSource reconectar (WP-F15)", async () => {
+    // O socket do upstream some (Django parado): o corpo erra depois do primeiro evento.
+    let failUpstream: (err: Error) => void = () => {};
+    (fetch as any).mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        body: new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(new Uint8Array([1]));
+            failUpstream = (err) => c.error(err);
+          },
+        }),
+      }),
+    );
+    const { event, res } = makeEvent();
+    const destroy = vi.spyOn(res, "destroy");
+    const result = (await proxyEventStream(event, "/events/production/")) as ReadableStream<Uint8Array>;
+    const reader = result.getReader();
+    expect((await reader.read()).value).toEqual(new Uint8Array([1]));
+    failUpstream(new Error("other side closed"));
+    await expect(reader.read()).rejects.toThrow("other side closed");
+    expect(destroy).toHaveBeenCalled();
+  });
 });
 
 describe("ssePath — caminho same-origin das rotas SSE do BFF", () => {

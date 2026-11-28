@@ -348,6 +348,31 @@ def autonomous_operator_for(terminal_ref: str):
     return conta
 
 
+def is_station_account(user) -> bool:
+    """Esta conta é a de alguma estação? A pergunta é sobre a CONTA, não sobre a requisição.
+
+    Responde ``True`` quando algum terminal ativo declara ``user`` como a conta em
+    cujo nome age (``Terminal.metadata["station"]["operator"]``), qualquer que seja o
+    modo escrito ali. Falha FECHADO de propósito: um modo digitado errado não pode
+    devolver a uma conta de dispositivo o poder de escrever, e alguém que entre por
+    senha com a conta do totem continua sendo o totem.
+
+    Existe para a Produção (WP-F16, P1-27): a conta da estação só lê, qualquer que
+    seja o grupo em que a loja a puser. Ver ``resolve_production_access``.
+    """
+    username = str(getattr(user, "username", "") or "").strip()
+    if not username or not getattr(user, "is_authenticated", False):
+        return False
+
+    from shopman.cashman.models import Terminal
+
+    for metadata in Terminal.objects.filter(is_active=True).values_list("metadata", flat=True):
+        bloco = (metadata or {}).get("station") if isinstance(metadata, dict) else None
+        if isinstance(bloco, dict) and str(bloco.get("operator") or "").strip() == username:
+            return True
+    return False
+
+
 def station_operator(request):
     """A conta em cujo nome uma estação AUTÔNOMA age NESTA requisição, ou ``None``.
 

@@ -683,7 +683,7 @@ def test_reducing_planned_below_linked_orders_requires_force(recipe):
             actor="test",
             idempotency_key="plan-order-shortage-attempt",
         )
-    assert "8 un. comprometidas" in str(exc_info.value)
+    assert str(exc_info.value) == "Há 8 un. encomendadas neste lote. Para planejar menos, é preciso justificar."
     assert "pedido(s)" not in str(exc_info.value)
 
     apply_planned(

@@ -64,6 +64,25 @@ class OpensIntoProjection:
 
 
 @dataclass(frozen=True)
+class InternalRequestProjection:
+    """Uma solicitação da Produção ainda aberta: o insumo faltou para um lote.
+
+    Quem não opera o Compras não pede ao fornecedor; deixa a solicitação no
+    cadastro de compra (`purchase.internal_requests`), e o "Comprar" a mostra.
+    """
+
+    workOrderRef: str
+    product: str
+    quantity: float
+    unit: str
+    quantityDisplay: str
+    requestedByName: str
+    requestedAt: str
+    #: A frase pronta da tela, na voz da casa: "Diofer pediu às 14h05: falta 300 g para o lote de Brioche."
+    line: str
+
+
+@dataclass(frozen=True)
 class MaterialProjection:
     sku: str
     name: str
@@ -110,6 +129,9 @@ class MaterialProjection:
     eans: tuple[str, ...] = ()
     #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
     revision: str = ""
+    #: Solicitações abertas da Produção (falta de insumo num lote). Enquanto
+    #: existem, o insumo entra no "Comprar" com pelo menos o que falta.
+    internalRequests: tuple[InternalRequestProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -635,6 +657,14 @@ def _material_projection(
         replenish_at=replenish_at,
         shelf_life_days=material.shelf_life_days,
     )
+    internal_requests = _internal_requests(meta, unit=material.unit)
+    # A solicitação da Produção é o piso da reposição até o insumo chegar: o que
+    # faltou num lote entra no "Comprar" mesmo acima do mínimo, com pelo menos o que
+    # falta, e continua lá com o pedido enviado ("Aguardando entrega"). A linha da
+    # solicitação só aparece enquanto ela está aberta.
+    requested = _internal_requested_floor(meta, unit=material.unit)
+    if requested > suggested:
+        suggested = requested.to_integral_value(rounding=ROUND_CEILING)
     correction_factor = (
         Decimal("1") / weighted_usable_factor
         if weighted_usable_factor is not None and weighted_usable_factor > 0
@@ -680,7 +710,70 @@ def _material_projection(
         lastDeliveryExpiry=last_delivery_expiry,
         eans=tuple(str(code) for code in (meta.get("eans") or ()) if str(code).strip()),
         revision=material.updated_at.isoformat() if material.updated_at else "",
+        internalRequests=internal_requests,
     )
+
+
+def _internal_requested_floor(meta: dict[str, Any], *, unit: str) -> Decimal:
+    """Quanto a Produção pediu e ainda não chegou (abertas e já pedidas ao fornecedor)."""
+    total = Decimal("0")
+    for entry in meta.get("internal_requests") or ():
+        if not isinstance(entry, dict) or entry.get("status") not in ("open", "ordered"):
+            continue
+        if str(entry.get("unit") or unit) != unit:
+            continue
+        try:
+            quantity = Decimal(str(entry.get("quantity") or "0"))
+        except (InvalidOperation, ValueError):
+            continue
+        if quantity > 0:
+            total += quantity
+    return total
+
+
+def _internal_requests(meta: dict[str, Any], *, unit: str) -> tuple[InternalRequestProjection, ...]:
+    """As solicitações abertas da Produção, da mais antiga para a mais nova."""
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.backstage.projections.production import _preparation_measure
+
+    rows: list[InternalRequestProjection] = []
+    today = timezone.localdate()
+    for entry in meta.get("internal_requests") or ():
+        if not isinstance(entry, dict) or entry.get("status") != "open":
+            continue
+        try:
+            quantity = Decimal(str(entry.get("quantity") or "0"))
+        except (InvalidOperation, ValueError):
+            continue
+        if quantity <= 0:
+            continue
+        item_unit = str(entry.get("unit") or unit)
+        display = _preparation_measure(quantity, item_unit)
+        product = str(entry.get("product") or "").strip()
+        name = str(entry.get("requested_by_name") or "").strip() or "A Produção"
+        at = parse_datetime(str(entry.get("requested_at") or ""))
+        if at is None:
+            when = ""
+        elif timezone.localtime(at).date() == today:
+            when = format_local(at, " às {clock}")
+        else:
+            when = format_local(at, " em %d/%m às {clock}")
+        target = f" para o lote de {product}" if product else ""
+        rows.append(
+            InternalRequestProjection(
+                workOrderRef=str(entry.get("work_order_ref") or ""),
+                product=product,
+                quantity=_number(quantity),
+                unit=item_unit,
+                quantityDisplay=display,
+                requestedByName=name,
+                requestedAt=at.isoformat() if at else "",
+                line=f"{name} pediu{when}: falta {display}{target}.",
+            )
+        )
+    rows.sort(key=lambda row: row.requestedAt)
+    return tuple(rows)
 
 
 def _opens_into(material, material_by_sku: dict) -> OpensIntoProjection | None:

@@ -18,6 +18,7 @@ import {
   type ProductionMutationBlock,
   type ProductionMutationMetadata,
 } from "~/composables/useProductionMutationGuard";
+import { useProductionLive } from "~/composables/useProductionLive";
 
 export interface ActResult<T = unknown> {
   ok: boolean;
@@ -105,8 +106,12 @@ export function useProductionKds() {
   const actionFor = (ref: string): ProductionActionProjection | undefined =>
     kds.value?.actions.find((action) => action.ref === ref);
 
-  // Cadência sobe sob pressão: algo atrasado no chão → 10s; rotina → 30s.
-  useAdaptivePoll(refresh, () => (lateCount.value > 0 ? 10_000 : 30_000));
+  // SSE primeiro (ADR-016, WP-F15): o lote que muda em outro tablet chega pelo canal
+  // da Produção. Sem canal, a cadência sobe sob pressão: algo atrasado no chão → 10s;
+  // rotina → 30s.
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () =>
+    lateCount.value > 0 ? 10_000 : 30_000,
+  );
 
   // per-WO in-flight guard (disables that card's buttons); POST then reconcile.
   const busy = ref<Set<number>>(new Set());
@@ -226,6 +231,8 @@ export function useProductionKds() {
     pending,
     error,
     refresh,
+    realtime,
+    fallbackPollMs,
     actionFor,
     isBusy,
     voidOrder,

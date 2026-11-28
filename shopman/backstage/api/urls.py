@@ -327,8 +327,10 @@ from .operations import (
     ProductionKDSView,
     ProductionManagementView,
     ProductionMiseEnPlaceView,
+    ProductionPurchaseRequestView,
     ProductionQCView,
     ProductionReportsView,
+    ProductionShortageAuthorizationView,
     ProductionWeighingView,
     StationProvisionView,
     WorkOrderFinishView,
@@ -1378,6 +1380,16 @@ urlpatterns = [
         name="api-backstage-wo-quality-correction",
     ),
     path("production/quick-finish/", WorkOrderQuickFinishView.as_view(), name="api-backstage-wo-quick-finish"),
+    path(
+        "production/purchase-request/",
+        ProductionPurchaseRequestView.as_view(),
+        name="api-backstage-production-purchase-request",
+    ),
+    path(
+        "production/shortage-authorization/",
+        ProductionShortageAuthorizationView.as_view(),
+        name="api-backstage-production-shortage-authorization",
+    ),
     path("production/<int:wo_id>/void/", WorkOrderVoidView.as_view(), name="api-backstage-wo-void"),
     # Forno — o timer do kiosk declara; o servidor carimba (ADR-021 §4)
     path("production/<int:wo_id>/oven/arm/", WorkOrderOvenArmView.as_view(), name="api-backstage-wo-oven-arm"),

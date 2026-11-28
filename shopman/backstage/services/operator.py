@@ -217,6 +217,27 @@ def verify_manager_pin(user, raw_pin: str) -> bool:
     return _verify_with_perm(user, raw_pin, ADJUST_SHIFT)
 
 
+#: Quem assina o fechamento de um lote com falta de insumo (decisão 3 do dono,
+#: D-042): a Gerente e o Dono, escolhidos da lista, cada um com o próprio PIN.
+OVERRIDE_PRODUCTION_SHORTAGE = "backstage.override_production_shortage"
+
+
+def shortage_authorizers() -> list[dict]:
+    """A lista de quem pode autorizar a falta de insumo, para o operador escolher."""
+    return [operator_card(user) for user in eligible_operators(perm=OVERRIDE_PRODUCTION_SHORTAGE)]
+
+
+def shortage_authorizer(username: str):
+    """O usuário que ainda pode autorizar a falta, ou ``None``."""
+    user = User.objects.filter(username=str(username or "").strip()).first()
+    return user if _eligible(user, OVERRIDE_PRODUCTION_SHORTAGE) else None
+
+
+def verify_shortage_authorizer_pin(user, raw_pin: str) -> bool:
+    """True se ``user`` pode autorizar a falta e o PIN é o dele."""
+    return _verify_with_perm(user, raw_pin, OVERRIDE_PRODUCTION_SHORTAGE)
+
+
 # ── PIN self-service (change) + manager reset ────────────────────────────────
 
 MANAGE_OPERATORS = "cashman.manage_operators"

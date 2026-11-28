@@ -50,6 +50,14 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
       .toBe(`Desconto acima de ${formatBRL(500)}.`);
   });
 
+  it("fechar o lote com falta de insumo diz o que falta, não a política (WP-F11)", () => {
+    expect(managerAuthTitle("production_shortage")).toBe("Autorizar fechar com falta");
+    expect(
+      managerAuthReason({ action: "production_shortage", detail: "Falta 300 g de manteiga." }),
+    ).toBe("Falta 300 g de manteiga.");
+    expect(managerAuthReason({ action: "production_shortage" })).toBe("Falta insumo para fechar o lote.");
+  });
+
   it("fechar o dia com produção aberta nomeia o ato e diz o que segue aberto", () => {
     expect(managerAuthTitle("day_closing_production")).toBe("Autorizar fechar o dia");
     expect(

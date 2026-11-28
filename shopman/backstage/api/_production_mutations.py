@@ -130,8 +130,16 @@ class ProductionValidationErrorBody:
 
 @dataclass(frozen=True)
 class ProductionValidationErrorEnvelope:
+    """O dialeto da casa (``docs/reference/errors.md``) por cima do superset.
+
+    ``detail`` é a frase do problema (nunca "Corrija os campos indicados"); ``field``
+    e ``errors`` sobem ao topo quando a recusa é de um campo.
+    """
+
     detail: str
     error: ProductionValidationErrorBody
+    field: str | None = None
+    errors: dict[str, list[str]] | None = None
 
 
 @dataclass(frozen=True)
@@ -210,10 +218,22 @@ class ProductionNotFoundErrorEnvelope:
 
 @dataclass(frozen=True)
 class ProductionShortagePossibility:
-    kind: Literal["retry", "force", "confirm"]
+    kind: Literal["retry", "force", "confirm", "purchase", "request_purchase"]
     label: str
     enabled: bool
     proof: str
+    #: Para onde a ação leva ("Pedir no Compras"); "" nas ações que voltam ao servidor.
+    href: str
+
+
+@dataclass(frozen=True)
+class ProductionShortageAuthorizer:
+    """Quem pode assinar a falta de insumo (Gerente e Dono, D-042)."""
+
+    id: int
+    username: str
+    name: str
+    pin_digits: int | None
 
 
 @dataclass(frozen=True)
@@ -224,15 +244,39 @@ class ProductionMaterialShortageItem:
     needed: str
     available: str
     shortage: str
+    #: A medida da bancada: "300 g", nunca "0,3 kg" (a mesma do aviso da sugestão).
+    shortage_display: str
+    needed_display: str
+    available_display: str
+    #: A casa produz este item (massa, recheio): não se pede ao Compras.
+    produced_here: bool
 
 
 @dataclass(frozen=True)
 class ProductionMaterialShortageErrorBody:
     code: Literal["material_shortage"]
+    #: "start": aviso na abertura; "finish": trava no fechamento (WP-F11).
+    stage: Literal["start", "finish"]
     work_order_ref: str
     idempotency_key: str
     possibilities: tuple[ProductionShortagePossibility, ...]
     missing: tuple[ProductionMaterialShortageItem, ...]
+    #: A lista de quem assina a falta no fechamento; vazia na abertura.
+    authorizers: tuple[ProductionShortageAuthorizer, ...]
+
+
+@dataclass(frozen=True)
+class ProductionShortageAuthorizationResponse:
+    override_proof: str
+    authorizer_name: str
+
+
+@dataclass(frozen=True)
+class ProductionPurchaseRequestResponse:
+    """O que ficou solicitado ao Compras: os insumos e a frase de confirmação."""
+
+    requested_skus: list[str]
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -297,15 +341,29 @@ class ProductionMutationValidationError(APIException):
 
     def __init__(self, detail) -> None:
         issues = _validation_issues(detail)
-        super().__init__(
-            {
-                "detail": "Corrija os campos indicados e tente novamente.",
-                "error": {
-                    "code": "validation_error",
-                    "issues": issues,
-                },
-            }
-        )
+        super().__init__(validation_error_body(issues))
+        # O normalizador do APIException transforma todo escalar em ErrorDetail e a
+        # lista de ``errors`` em lista de ErrorDetail; o envelope sai como foi escrito.
+        self.detail = validation_error_body(issues)
+
+
+def validation_error_body(issues: list[dict[str, str]]) -> dict:
+    """A recusa de validação da Produção no dialeto da casa (P2-19).
+
+    ``detail`` é a frase do primeiro problema; ``field`` sobe quando ele é de um
+    campo (não para ``non_field_errors``); ``errors`` traz o mapa campo → frases.
+    """
+    detail = next((issue["message"] for issue in issues if issue.get("message")), "") or (
+        "Corrija os campos indicados e tente novamente."
+    )
+    errors: dict[str, list[str]] = {}
+    for issue in issues:
+        errors.setdefault(issue["field"], []).append(issue["message"])
+    field = next((issue["field"] for issue in issues if issue["field"] != "non_field_errors"), None)
+    body: dict = {"detail": detail, "error": {"code": "validation_error", "issues": issues}, "errors": errors}
+    if field:
+        body["field"] = field
+    return body
 
 
 class ProductionProjectionExpiredError(APIException):
@@ -410,6 +468,12 @@ class ProductionStartMutationSerializer(ExistingWorkOrderMutationSerializer):
         allow_blank=False,
         max_length=4096,
     )
+    # "Abrir assim mesmo" (WP-F11): a prova que o aviso de falta de insumo devolveu.
+    material_shortage_proof = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=4096,
+    )
     quantity = serializers.DecimalField(
         max_digits=12,
         decimal_places=3,
@@ -418,6 +482,28 @@ class ProductionStartMutationSerializer(ExistingWorkOrderMutationSerializer):
     position_id = serializers.CharField(required=False, allow_blank=True, max_length=100)
     operator_ref = serializers.CharField(required=False, allow_blank=True, max_length=100)
     note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class ProductionShortageAuthorizationSerializer(StrictMutationSerializer):
+    """A assinatura da falta de insumo: a prova da recusa e quem assina (PIN ou crachá)."""
+
+    override_proof = serializers.CharField(allow_blank=False, max_length=4096)
+    username = serializers.CharField(required=False, allow_blank=False, max_length=150)
+    pin = serializers.CharField(required=False, allow_blank=False, max_length=32, trim_whitespace=False)
+    badge = serializers.CharField(required=False, allow_blank=False, max_length=256)
+
+    def validate(self, attrs):
+        if attrs.get("badge"):
+            return attrs
+        if not attrs.get("username") or not attrs.get("pin"):
+            raise serializers.ValidationError({"pin": "Escolha quem autoriza e digite o PIN dessa pessoa."})
+        return attrs
+
+
+class ProductionPurchaseRequestSerializer(StrictMutationSerializer):
+    """A solicitação ao Compras de quem não opera o Compras: só a prova da falta."""
+
+    purchase_request_proof = serializers.CharField(allow_blank=False, max_length=4096)
 
 
 class ProductionOldDoughMutationSerializer(ExistingWorkOrderMutationSerializer):
@@ -628,6 +714,20 @@ class ProductionActionSpec:
 
 PRODUCTION_ACTION_SPECS = (
     ProductionActionSpec(
+        "requestProductionPurchase",
+        "/api/v1/backstage/production/purchase-request/",
+        "ProductionPurchaseRequestRequest",
+        ProductionPurchaseRequestSerializer,
+        ProductionPurchaseRequestResponse,
+    ),
+    ProductionActionSpec(
+        "authorizeProductionShortage",
+        "/api/v1/backstage/production/shortage-authorization/",
+        "ProductionShortageAuthorizationRequest",
+        ProductionShortageAuthorizationSerializer,
+        ProductionShortageAuthorizationResponse,
+    ),
+    ProductionActionSpec(
         "planProduction",
         "/api/v1/backstage/production/plan/",
         "ProductionPlanMutationRequest",
@@ -761,6 +861,9 @@ PRODUCTION_MUTATION_DATACLASSES = (
     ProductionNotFoundErrorBody,
     ProductionNotFoundErrorEnvelope,
     ProductionShortagePossibility,
+    ProductionShortageAuthorizer,
+    ProductionShortageAuthorizationResponse,
+    ProductionPurchaseRequestResponse,
     ProductionMaterialShortageItem,
     ProductionMaterialShortageErrorBody,
     ProductionMaterialShortageErrorEnvelope,

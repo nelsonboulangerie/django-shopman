@@ -253,6 +253,27 @@ describe("useProductionBoard — plan/start writes", () => {
     expect(env.sonner.error).not.toHaveBeenCalled();
   });
 
+  // WP-F14 (P1-13): depois da recusa, "Salvar com justificativa" repete a MESMA
+  // tentativa (mesma chave); "Revisar quantidade" com outro número é outra tentativa.
+  // Com a chave velha, o servidor recusava o número revisado como conflito.
+  it("após a recusa, o mesmo número repete a chave e outro número ganha chave nova", async () => {
+    env.fetchData.value = boardPayload();
+    env.fetchMock.mockRejectedValueOnce({ data: { error: { code: "order_shortage", possibilities: [] } } });
+    const { plan } = useProductionBoard();
+    const base = { recipe_id: 5, target_date: "2026-07-06", position_ref: "forno", expected_rev: null };
+
+    await plan("PAO-001", { ...base, quantity: "8" });
+    await plan("PAO-001", { ...base, quantity: "8", force: true, reason: "ok", override_proof: "p" });
+    await plan("PAO-001", { ...base, quantity: "12" });
+
+    const keys = env.fetchMock.mock.calls
+      .filter(([url]) => url === "/api/v1/backstage/production/plan/")
+      .map(([, init]) => (init as { body: { idempotency_key: string } }).body.idempotency_key);
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
+  });
+
   it("toasts a friendly message on a generic failure", async () => {
     env.fetchData.value = boardPayload();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Banco fora do ar" } });
