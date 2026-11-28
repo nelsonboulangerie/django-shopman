@@ -113,7 +113,7 @@ const productionModeOptions = computed(() => props.execution?.production_mode_op
             data-testid="execution-production-mode"
           />
         </NuxtFormField>
-        <NuxtFormField label="Tempo máximo de lote aberto (min)" description="Vazio usa o padrão da loja.">
+        <NuxtFormField label="Tempo máximo de lote em produção (min)" description="Vazio usa o padrão da loja.">
           <NuxtInput v-model="form.maxStartedMinutes" inputmode="numeric" class="w-full" :ui="{ base: 'bg-muted' }" />
         </NuxtFormField>
         <NuxtFormField label="Capacidade por dia" description="Vazio deixa a ocupação sem teto próprio.">

@@ -80,7 +80,7 @@ function selectVersion(version: RecipeVersionProjection) {
 const subtitle = computed(() => (entry.value && selected.value ? `Versão ${selected.value.number}` : ""));
 const stale = computed(() => isStale({ error: !!error.value, hasData: !!entry.value }));
 const isCurrent = computed(() => !!selected.value && selected.value.number === entry.value?.current_version_number);
-// A reputação da versão (#2387, fatia 2): os lotes fechados com ela, já contados no servidor.
+// A reputação da versão (#2387, fatia 2): os lotes finalizados com ela, já contados no servidor.
 const usage = computed(() => entry.value?.usage ?? null);
 const selectedUsage = computed(() => versionUsage(usage.value, selected.value?.number));
 const editAction = computed(() =>
@@ -258,7 +258,7 @@ const publishDiff = computed(() => [
       @refresh="refresh()"
     >
       <!-- Anterior e próxima dentro da lista de onde a pessoa veio (com o recorte dela).
-           Aberta por link, sem trilha: o par não aparece. -->
+           Vinda por link, sem trilha: o par não aparece. -->
       <template #status>
         <OperatorRecordNav
           trail="production-recipes"
@@ -505,7 +505,7 @@ const publishDiff = computed(() => [
                     </li>
                   </ul>
                 </template>
-                <p v-else class="mt-1 text-sm text-muted-foreground">Nenhum lote fechado com esta versão.</p>
+                <p v-else class="mt-1 text-sm text-muted-foreground">Nenhum lote finalizado com esta versão.</p>
               </NuxtCard>
               <RecipeVersionRating
                 :version="selected"

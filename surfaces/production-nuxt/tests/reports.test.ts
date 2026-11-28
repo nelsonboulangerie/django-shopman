@@ -128,7 +128,7 @@ describe("Histórico — a língua da casa", () => {
   it("chama o lote de Lote e quem fechou pelo nome", () => {
     const headers = REPORT_HISTORY_COLUMNS.map((column) => column.header);
     expect(headers[0]).toBe("Lote");
-    expect(headers).toContain("Fechado por");
+    expect(headers).toContain("Finalizado por");
     expect(headers).toContain("Duração");
     expect(headers).not.toContain("OP");
     expect(headers.join(" ")).not.toMatch(/\(min\)/);

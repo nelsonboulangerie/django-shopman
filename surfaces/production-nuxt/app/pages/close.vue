@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Finalização = o lote fica pronto já classificado (ADR-017 §9 / QC-FORNADA §5):
-// painel de LOTES abertos do dia (o lote traz forno, horário e previsto; é o
-// previsto que fecha o lote normal em poucos toques) e a tela de finalização com
-// partição (QcCloseScreen). A revisão do gestor sobre o lote já fechado mora na
+// painel de LOTES em produção do dia (o lote traz forno, horário e previsto; é o
+// previsto que finaliza o lote normal em poucos toques) e a tela de finalização com
+// partição (QcCloseScreen). A revisão do gestor sobre o lote já finalizado mora na
 // aba Qualidade (/quality). No formato das demais telas: ProductionHeader +
 // rail; o miolo é o quiosque.
 import type {
@@ -35,7 +35,7 @@ import {
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 import { staleReadAlert } from "~/presentation/liveSeal";
 
-// A trilha da lista de lotes abertos (`OperatorRecordNav` no lote).
+// A trilha da lista de lotes em produção (`OperatorRecordNav` no lote).
 const CLOSE_LOTS_TRAIL = "production-close-lots";
 
 const route = useRoute();
@@ -55,7 +55,7 @@ const {
 
 // Tolerante a dado velho: poll falhou com painel na tela = chip de degradação
 // (dado velho visível > painel em branco). No quiosque isso importa dobrado:
-// fechar fornada com painel velho é fechar a fornada errada.
+// finalizar fornada com painel velho é finalizar a fornada errada.
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
 );
@@ -93,7 +93,7 @@ const period = computed<PeriodSelection>({
 // O lote avulso (a exceção) mora no ⋯ do cabeçalho, fora de evidência.
 
 // ── Navegação interna (painel ⇄ finalização) ─────────────────────────────────
-// O lote aberto mora na URL (`?lot=<pk>`, com o dia e a busca): o voltar do
+// O lote escolhido mora na URL (`?lot=<pk>`, com o dia e a busca): o voltar do
 // navegador volta ao painel, e o anterior e o próximo do lote são links de
 // verdade. O lote avulso (receita sem previsto) não é registro: fica na tela.
 const selectedOrder = ref<QCOrderCardProjection | null>(null);
@@ -138,7 +138,7 @@ const matches = (order: QCOrderCardProjection) => {
 const openOrders = computed(() =>
   (kiosk.value?.orders ?? []).filter((o) => !o.closed && matches(o)),
 );
-// A próxima a vencer ganha moldura: a primeira aberta (started primeiro).
+// A próxima a vencer ganha moldura: a primeira em produção (started primeiro).
 const nextPk = computed(() => openOrders.value[0]?.pk ?? null);
 
 function projectedAction(ref: string) {
@@ -222,7 +222,7 @@ const scannerOpen = ref(false);
 function onLotCode(code: string) {
   const order = matchLotCode(code, openOrders.value);
   if (!order) {
-    useSonner.error("Nenhum lote aberto com este código nesta data.");
+    useSonner.error("Nenhum lote em produção com este código nesta data.");
     return;
   }
   scannerOpen.value = false;
@@ -292,7 +292,7 @@ async function onConfirm(
         )
       : { ok: false };
   if (result.ok) {
-    // Fornada fechada leva o timer junto — senão ele fica órfão no
+    // Fornada finalizada leva o timer junto — senão ele fica órfão no
     // localStorage e alarma depois, num card que nem existe mais.
     if (closingOrder) oven.clear(ovenKey(closingOrder));
     // A tela volta à LISTA (P2-11): o próximo lote só abre se a pessoa tocar.
@@ -366,13 +366,13 @@ function shortDate(iso: string): string {
   return match ? `${match[2]}/${match[1]}` : "";
 }
 const closeAlerts = computed<OperatorScreenAlert[]>(() => {
-  // Dado velho primeiro: fechar lote com o painel velho é fechar o lote errado.
+  // Dado velho primeiro: finalizar lote com o painel velho é finalizar o lote errado.
   const staleAlerts = stale.value
     ? [
         staleReadAlert(
           "os lotes",
           refresh,
-          "Confira antes de fechar: outro tablet pode ter mudado um lote.",
+          "Confira antes de finalizar: outro tablet pode ter mudado um lote.",
         ),
       ]
     : [];
@@ -387,7 +387,7 @@ const closeAlerts = computed<OperatorScreenAlert[]>(() => {
       id: "previous-open",
       color: "warning",
       icon: "i-lucide-history",
-      title: `${count} ${count === 1 ? "lote aberto" : "lotes abertos"} de dias anteriores`,
+      title: `${count} ${count === 1 ? "lote em produção" : "lotes em produção"} de dias anteriores`,
       action: {
         label: day ? `Ver os lotes de ${day}` : "Ver os lotes",
         onSelect: () => {
@@ -463,7 +463,7 @@ function syncLotFromRoute() {
   );
   if (!order && pending.value) return;
   if (!order || !finishAvailable(order)) {
-    // Lote fechado, de outro dia ou sem permissão: volta ao painel.
+    // Lote finalizado, de outro dia ou sem permissão: volta ao painel.
     selectedOrder.value = null;
     leaveLot();
     return;
@@ -626,13 +626,6 @@ function onTimerKeydown(event: KeyboardEvent) {
     <ProductionHeader
       v-model:query="query"
       title="Finalização"
-      :count="openOrders.length"
-      count-label="para finalizar"
-      :progress="
-        kiosk && kiosk.total_count > 0
-          ? Math.round((kiosk.closed_count / kiosk.total_count) * 100)
-          : null
-      "
       :pending="pending"
       :stale="stale"
       :offline="offline"
@@ -643,7 +636,7 @@ function onTimerKeydown(event: KeyboardEvent) {
       :alerts="closeAlerts"
       @refresh="refresh"
     >
-      <!-- Anterior e próximo DENTRO do painel de onde a pessoa veio. Aberto por
+      <!-- Anterior e próximo DENTRO do painel de onde a pessoa veio. Vindo por
            link, sem trilha: o par não aparece. -->
       <template v-if="selectedOrder" #status>
         <OperatorRecordNav
@@ -720,9 +713,6 @@ function onTimerKeydown(event: KeyboardEvent) {
         Nenhum lote aguardando finalização.
       </p>
 
-      <p v-if="openOrders.length" class="op-eyebrow text-muted-foreground">
-        Para finalizar <span class="tnum">{{ openOrders.length }}</span>
-      </p>
       <!-- Uma coluna em todo tamanho (dono, 28/11): a lista se lê de cima
            para baixo, na ordem do forno, sem zigue-zague entre colunas. -->
       <div class="grid gap-2.5" data-close-open-list>
@@ -732,8 +722,9 @@ function onTimerKeydown(event: KeyboardEvent) {
         <div
           v-for="order in openOrders"
           :key="order.pk"
-          class="flex min-w-0 items-stretch justify-between gap-3 rounded-xl border border-border bg-card p-4 text-left transition"
+          class="flex min-w-0 items-stretch justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition"
           :class="[
+            order.started_at_display ? '' : 'opacity-60',
             ovenFactAvailable(order) ? 'hover:bg-accent' : '',
             ovenMode(order) === 'ringing'
               ? 'qc-ringing border-destructive/60'
@@ -758,21 +749,17 @@ function onTimerKeydown(event: KeyboardEvent) {
             <div class="pointer-events-none relative z-10">
               <p class="truncate op-title">
                 {{ order.recipe_name }}
-                <span class="font-mono op-micro font-normal text-muted-foreground">{{
-                  order.output_sku
-                }}</span>
               </p>
-              <!-- "Forno 2 · aberto às 05:10 · 6 un. encomendadas" (R17/R18; WP-F10: a régua das reservas): o forno pelo
-                   nome, sem o código do lote quebrando a linha (ele fica no ⋯ do
-                   Finalizar e no leitor). -->
+              <!-- "em produção desde 5h10 · 6 un. encomendadas" (R17/R18; WP-F10: a
+                   régua das reservas). KISS (dono, 28/11): sem o SKU, sem a posição
+                   (a casa tem uma área só) e sem o código do lote (ele fica no ⋯ do
+                   Finalizar e no leitor). O lote que ainda não passou pelo Confirmar
+                   aparece esmaecido, "a confirmar". -->
               <p class="op-label text-muted-foreground" data-close-card-line>
-                <template v-if="order.position_name || order.position_ref"
-                  >{{ order.position_name || order.position_ref }} ·
-                </template>
                 <template v-if="order.started_at_display"
-                  >aberto às {{ order.started_at_display }}</template
+                  >em produção desde {{ order.started_at_display }}</template
                 >
-                <template v-else>ainda não aberto</template>
+                <template v-else>a confirmar</template>
                 <template v-if="orderedUnits(order.promised) > 0">
                   ·
                   <span class="text-primary" data-close-card-ordered
@@ -781,7 +768,7 @@ function onTimerKeydown(event: KeyboardEvent) {
                 </template>
               </p>
               <p
-                v-if="ovenFactAvailable(order)"
+                v-if="ovenFactAvailable(order) && (ovenMode(order) !== 'idle' || inOven(order))"
                 class="mt-2 inline-flex min-h-12 items-center gap-2 rounded-lg border border-dashed border-border px-3"
                 :class="
                   ovenMode(order) === 'ringing'
@@ -825,7 +812,6 @@ function onTimerKeydown(event: KeyboardEvent) {
                   data-close-in-oven
                   >{{ inOvenLabel(order) }}</span
                 >
-                <template v-else>Iniciar timer</template>
               </p>
               <!-- Som desligado: o timer daqui vai tocar sem som até alguém
                    tocar na tela (o navegador exige). O toque aqui já liga. -->
@@ -859,7 +845,7 @@ function onTimerKeydown(event: KeyboardEvent) {
             variant="outline"
             :active="order.pk === nextPk"
             active-variant="solid"
-            class="h-20 w-28 shrink-0 flex-col justify-center gap-1 self-center"
+            class="h-16 w-28 shrink-0 flex-col justify-center gap-1 self-center"
             :data-close-finish-next="order.pk === nextPk ? '' : undefined"
             :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
             :aria-busy="ovenFacts.isPending(order.pk)"

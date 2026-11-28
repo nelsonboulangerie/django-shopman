@@ -142,7 +142,7 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(exceptions).toHaveLength(1);
     expect(exceptions[0]!.text()).toContain("Croissant");
     expect(exceptions[0]!.text()).toContain("Perda 2");
-    expect(exceptions[0]!.text()).toContain("fechado por Rafael 7h");
+    expect(exceptions[0]!.text()).toContain("finalizado por Rafael 7h");
 
     const buttons = exceptions[0]!.findAll("button");
     await buttons.find((button) => button.text().includes("Confirmar assim"))!.trigger("click");
@@ -155,7 +155,7 @@ describe("QualityGatePanel — qualidade em lote", () => {
     const wrapper = mountPanel(ORDERS());
     const open = wrapper.find("[data-quality-open]");
 
-    expect(open.text()).toContain("1 lote ainda no forno ou sem fechar. Entra aqui depois da Finalização.");
+    expect(open.text()).toContain("1 lote ainda no forno ou sem finalizar. Entra aqui depois da Finalização.");
     await open.find("button").trigger("click");
     expect(wrapper.emitted("go-close")).toHaveLength(1);
   });

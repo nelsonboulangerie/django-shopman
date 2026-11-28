@@ -28,7 +28,6 @@ import PlanPromisedBand from "./PlanPromisedBand.vue";
 
 import {
   boardDisplay,
-  dayContextLine,
   formatQty,
   formatQtyUnit,
   fullDateLabel,
@@ -47,7 +46,6 @@ import {
 } from "~/presentation/production";
 import { suggestionSignal } from "~/presentation/planningReason";
 import {
-  cleanPreview,
   openRowGroups,
   openRowPending,
   planRowGroups,
@@ -198,7 +196,7 @@ const stageRows = computed<ProductionMatrixRowProjection[]>(() => {
       r.base_usages.some((usage) => usage.output_sku === baseFilter.value),
     );
   }
-  // O lote fechado continua na lista (P2-13): sem ele a linha sumia ao fechar e o
+  // O lote finalizado continua na lista (P2-13): sem ele a linha sumia ao finalizar e o
   // progresso do dia encolhia ("5 de 8" virava "4 de 7").
   if (props.stage === "open") {
     return base.filter(
@@ -246,7 +244,7 @@ const selectedPlannedPk = ref<number | null>(null);
 // depois do start ela sai do "planejado" e um novo plano cria OUTRO lote):
 //   · plan      — nada na data ainda: planeja a primeira quantidade;
 //   · adjust    — existe WO planejada: SUBSTITUI a quantidade (0 remove);
-//   · new-batch — a produção já assumiu (aberto/fechado): cria lote que
+//   · new-batch — a produção já assumiu (em produção/finalizado): cria lote que
 //                 SOMA ao dia — explícito, nunca silencioso.
 type PlanMode = "plan" | "adjust" | "new-batch";
 const planMode = computed<PlanMode>(() => {
@@ -686,7 +684,7 @@ async function confirmStart() {
       selectedStartPk.value = null;
       kds.refresh();
       useSonner.success(
-        `Lote aberto: ${rowLabel(row)} × ${formatQtyUnit(startQty.value.trim(), row.output_unit)}`,
+        `Em produção: ${rowLabel(row)} × ${formatQtyUnit(startQty.value.trim(), row.output_unit)}`,
       );
     } else if (res.shortage) {
       // Confirmar abaixo das encomendas nunca é forçável (o servidor não
@@ -723,7 +721,7 @@ async function openAnyway(proof: string) {
   if (res.ok) {
     lastStartAttempt.value = null;
     kds.refresh();
-    useSonner.success(`Lote aberto: ${rowLabel(row)} × ${attempt.quantity}`);
+    useSonner.success(`Em produção: ${rowLabel(row)} × ${attempt.quantity}`);
   } else if (res.shortage) {
     shortage.value = res.shortage;
   }
@@ -781,7 +779,7 @@ function closeShortage() {
   lastStartAttempt.value = null;
 }
 
-// O lote já aberto abre só para conferência e cancelamento, nada de gerir
+// O lote em produção abre só para conferência e cancelamento, nada de gerir
 // etapa por aqui (a decisão de 16/09 tirou a máquina de estados da bancada).
 function openStarted(row: ProductionMatrixRowProjection) {
   startedRow.value = row;
@@ -797,7 +795,7 @@ async function confirmVoid() {
   const wo = selectedStartedOrder.value;
   const reason = voidReason.value.trim();
   if (!row || !wo || !reason || voidSubmitting.value) return;
-  // A ação vem da matriz do dia, que traz o lote planejado e o aberto (#2957). A
+  // A ação vem da matriz do dia, que traz o lote planejado e o em produção (#2957). A
   // recusa (permissão, números velhos, outra tela mexeu) chega pelo aviso do guarda,
   // com a causa e o "Atualizar os números", e o diálogo fica aberto.
   voidSubmitting.value = true;
@@ -812,7 +810,7 @@ async function confirmVoid() {
     voidConfirming.value = false;
     voidReason.value = "";
     refresh();
-    // O lote aberto também sai do quadro da bancada.
+    // O lote em produção também sai do quadro da bancada.
     kds.refresh();
     useSonner.success(`Lote cancelado: ${rowLabel(row)}`);
   }
@@ -955,8 +953,9 @@ const docked = computed(
   () => gridMounted.value && touchPointer.value && !screen.belowLg.value,
 );
 // Com o painel encaixado a lista estreita, e ela encolhe por colunas, nunca pelo nome
-// (P1-06, `EV/02`): a Situação vira um ponto antes do nome, o Planejado desce para a
-// linha do SKU ("· 42 planejadas") e, abaixo de 1280 px, a ação da linha é só o ícone.
+// (P1-06, `EV/02`): a Situação sai (a lista é a do que falta confirmar), o Planejado
+// desce para a segunda linha ("42 planejadas") e, abaixo de 1280 px, a ação da linha é
+// só o ícone.
 // Ficam Produto, Previsto e Ação.
 // Sem o painel, as colunas de número e a da ação têm a largura do que mostram ("A
 // confirmar", o número, "Confirmar" e o ⋯): fixas, para alinhar de uma linha para a
@@ -974,7 +973,7 @@ const openCols = computed(() =>
     : "lg:grid-cols-[minmax(0,1fr)_120px_96px_96px_156px]",
 );
 
-// A situação da linha da Produção: a confirmar, aberto ou fechado. O lote fechado
+// A situação da linha da Produção: a confirmar, em produção ou finalizado. O lote finalizado
 // fica na lista com o previsto que teve (P2-13).
 type OpenSituation = "pending" | "opened" | "closed";
 function openSituation(row: ProductionMatrixRowProjection): OpenSituation {
@@ -984,13 +983,13 @@ function openSituation(row: ProductionMatrixRowProjection): OpenSituation {
 }
 const OPEN_SITUATION: Record<
   OpenSituation,
-  { label: string; color: "warning" | "success" | "neutral"; dot: string }
+  { label: string; color: "warning" | "success" | "neutral" }
 > = {
-  pending: { label: "A confirmar", color: "warning", dot: "bg-warning" },
-  opened: { label: "Aberto", color: "success", dot: "bg-success" },
-  closed: { label: "Fechado", color: "neutral", dot: "bg-muted-foreground" },
+  pending: { label: "A confirmar", color: "warning" },
+  opened: { label: "Em produção", color: "success" },
+  closed: { label: "Finalizado", color: "neutral" },
 };
-// O previsto da linha soma os lotes abertos e os fechados: fechar não apaga o número.
+// O previsto da linha soma os lotes em produção e os finalizados: finalizar não apaga o número.
 function rowForecastQty(row: ProductionMatrixRowProjection): string {
   const total = [...row.started_orders, ...row.finished_orders].reduce(
     (sum, order) => sum + qtyNumber(order.started_qty || "0"),
@@ -1069,28 +1068,6 @@ const planActionAllowed = computed(() =>
     : access.value?.can_edit_planned === true,
 );
 
-// Progresso do dia, no cabeçalho: "4 de 28 planejados" (Planejamento) ou "5 de 8
-// abertos" (Produção), com a barra do quanto o dia andou. Conta produtos (linhas),
-// como a prévia v4: o número e a barra falam da mesma coisa.
-const headerCount = computed(() => {
-  if (props.stage === "plan") {
-    const { done, all } = planGroups.value.counts;
-    return {
-      count: done,
-      total: all,
-      label: "planejados",
-      pct: all ? Math.round((done / all) * 100) : null,
-    };
-  }
-  const { opened, all } = openGroups.value.counts;
-  return {
-    count: opened,
-    total: all,
-    label: "abertos",
-    pct: all ? Math.round((opened / all) * 100) : null,
-  };
-});
-
 // ── V4: a linha decide (stepper + "Planejar N"), o conjunto e os planejados ────
 // Prévia v4 `plano-porque4.html`: uma primária por linha com o número; o stepper na
 // linha; mudou, a sugestão mostra "você mudou de 30 · voltar". O diálogo continua para
@@ -1113,6 +1090,21 @@ const planGroups = computed(() =>
 const openGroups = computed(() =>
   openRowGroups(stageRows.value, openFilter.value),
 );
+// KISS (dono, 28/11): a tela mostra o que falta fazer; o que já foi feito vira uma
+// linha ("✓ 28 planejados · Ver", "✓ 25 em produção · Ver"). No recorte "Em
+// produção" a lista é o próprio pedido e aparece inteira.
+const plannedExpanded = ref(false);
+const startedExpanded = ref(false);
+const pendingOpenRows = computed(() =>
+  openFilter.value === "opened"
+    ? openGroups.value.rows
+    : openGroups.value.rows.filter((row) => openSituation(row) === "pending"),
+);
+const startedOpenRows = computed(() =>
+  openFilter.value === "opened"
+    ? []
+    : openGroups.value.rows.filter((row) => openSituation(row) !== "pending"),
+);
 const visibleRowCount = computed(() =>
   props.stage === "plan"
     ? planGroups.value.focus.length +
@@ -1131,7 +1123,7 @@ const PLAN_FILTERS: Array<{ key: PlanFilter; label: string }> = [
 const OPEN_FILTERS: Array<{ key: OpenFilter; label: string }> = [
   { key: "all", label: "Todos" },
   { key: "pending", label: "A confirmar" },
-  { key: "opened", label: "Abertos" },
+  { key: "opened", label: "Em produção" },
 ];
 // O filtro único da suíte (dono, 04/11/2026): a situação da linha e a ficha-base são
 // as dimensões do painel, cada uma de escolha única, com a contagem ao lado. Some o
@@ -1344,14 +1336,6 @@ const canPlanCleanSet = computed(
     planGroups.value.clean.length > 0 &&
     (inlineSource.value === "manual" || access.value?.can_edit_suggested === true),
 );
-const cleanSummary = computed(() =>
-  cleanPreview(planGroups.value.clean, rowLabel),
-);
-const manualSummary = computed(() => {
-  const names = planGroups.value.manual.map(rowLabel);
-  const head = names.slice(0, 4).join(", ");
-  return names.length > 4 ? `${head} e mais ${names.length - 4}` : head;
-});
 
 function plannedQtyLabel(row: ProductionMatrixRowProjection): string {
   if (row.planned_qty !== "0") return row.planned_qty;
@@ -1397,7 +1381,7 @@ const activeFilters = computed(() => {
 });
 function plannedStateLabel(row: ProductionMatrixRowProjection): string {
   if (row.planned_qty !== "0") return "Planejado";
-  return row.started_qty !== "0" ? "Aberto" : "Fechado";
+  return row.started_qty !== "0" ? "Em produção" : "Finalizado";
 }
 
 const signalClass = {
@@ -1405,28 +1389,6 @@ const signalClass = {
   warning: "bg-warning/15 text-warning",
 } as const;
 
-// "Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na conta)".
-const dayLine = computed(() => {
-  if (switchingDay.value) return "";
-  const sameWeekday = rows.value.some((row) => row.suggestion?.same_weekday);
-  const weekday = weekdayPlural(selectedDate.value);
-  return dayContextLine(
-    board.value?.day_context ?? null,
-    sameWeekday && weekday
-      ? ["sábados", "domingos"].includes(weekday)
-        ? `como os ${weekday} usados na conta`
-        : `como as ${weekday} usadas na conta`
-      : "",
-  );
-});
-function weekdayPlural(iso: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!match) return "";
-  const day = new Date(Date.UTC(+match[1]!, +match[2]! - 1, +match[3]!));
-  return ["domingos", "segundas", "terças", "quartas", "quintas", "sextas", "sábados"][
-    day.getUTCDay()
-  ] ?? "";
-}
 // O ⋯ da linha dos planejados: o rótulo do grupo e um item por produto planejado.
 const plannedLineMenu = computed(() => [
   { type: "label" as const, label: "Corrigir um planejado" },
@@ -1494,17 +1456,14 @@ const startedDescription = computed(() => {
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <!-- Cabeçalho do kit: título, ao vivo, busca e o ⋯ na barra; na toolbar, o dia,
-         os recortes e, no fim, "4 de 28 planejados" com a barra. -->
+    <!-- Cabeçalho do kit: título, ao vivo, busca e o ⋯ na barra; na toolbar, o dia e
+         os recortes. KISS (dono, 28/11): sem o "4 de 28" com a barra, os recortes já
+         contam. -->
     <ProductionHeader
       v-model:query="query"
       :title="title"
       :active-filters="activeFilters"
       search-label="filtrando os produtos"
-      :count="headerCount.count"
-      :total="headerCount.total"
-      :count-label="headerCount.label"
-      :progress="headerCount.pct"
       :pending="pending"
       :stale="stale"
       @refresh="
@@ -1556,15 +1515,6 @@ const startedDescription = computed(() => {
           data-open-filters
           @update:model-value="(value) => (openFilter = (Array.isArray(value) ? value[0] : value) as OpenFilter)"
         />
-        <!-- A ocasião e o clima do dia planejado, à direita dos recortes (v4 pino 8). -->
-        <p
-          v-if="stage === 'plan' && dayLine"
-          class="ml-auto inline-flex min-w-0 items-center gap-1.5 op-label text-muted-foreground max-md:hidden"
-          data-plan-day-context
-        >
-          <Icon name="lucide:sun" class="size-4 shrink-0" aria-hidden="true" />
-          <span class="truncate">{{ dayLine }}</span>
-        </p>
       </template>
     </ProductionHeader>
 
@@ -1669,15 +1619,6 @@ const startedDescription = computed(() => {
           :class="FLOOR_TARGETS"
           data-plan-table
         >
-          <div
-            class="hidden h-10 items-center gap-4 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] xl:grid-cols-[minmax(0,1fr)_250px_168px_176px]"
-            aria-hidden="true"
-          >
-            <span>Produto</span>
-            <span>{{ lens.read.visible ? "Sugestão" : "" }}</span>
-            <span>{{ lens.action.visible ? "Quantidade" : "" }}</span>
-            <span />
-          </div>
 
           <div
             v-for="row in planGroups.focus"
@@ -1710,9 +1651,6 @@ const startedDescription = computed(() => {
                 data-row-name
               >
                 {{ rowLabel(row) }}
-                <span class="font-mono op-micro font-normal text-muted-foreground">{{
-                  row.output_sku
-                }}</span>
               </p>
               <NuxtButton
                 v-if="rowOrderedUnits(row) > 0"
@@ -1915,8 +1853,6 @@ const startedDescription = computed(() => {
           <PlanLens
             :clean-count="planGroups.clean.length"
             :manual-count="planGroups.manual.length"
-            :clean-summary="cleanSummary"
-            :manual-summary="manualSummary"
             :can-plan-clean-set="canPlanCleanSet"
             :bulk-submitting="bulkSubmitting"
             :inline-busy="inlineSubmitting != null"
@@ -1925,30 +1861,41 @@ const startedDescription = computed(() => {
             @plan-clean="planCleanSet()"
           />
 
-          <!-- Planejado vira estado; corrigir e ver encomendas descem para o menu. -->
+          <!-- Planejado vira estado; corrigir e ver encomendas descem para o menu.
+               KISS (dono, 28/11): o que já foi feito é uma linha só, "✓ 28 planejados
+               às 11h16 · Ver"; a lista dos produtos abre no Ver. -->
           <template v-if="planGroups.planned.length">
-            <div
-              class="flex h-9 items-center gap-2 border-b border-border bg-muted/60 px-4"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              block
+              class="min-h-12 justify-start gap-2 rounded-none bg-success/5 px-4 text-left op-body"
+              :aria-expanded="plannedExpanded"
+              data-planned-toggle
+              @click="plannedExpanded = !plannedExpanded"
             >
-              <span class="op-eyebrow text-muted-foreground">Planejados</span>
-              <span class="op-micro tnum text-muted-foreground">{{
-                planGroups.planned.length
-              }}</span>
-            </div>
-            <!-- Uma linha só, como a prévia v4 (pino 8): o estado, depois cada produto com
-                 o número; tocar no produto abre Corrigir, Novo lote e Ver encomendas. -->
+              <Icon name="lucide:check" class="size-4 text-success" aria-hidden="true" />
+              <b class="tnum">{{
+                planGroups.planned.length === 1 ? "1 planejado" : `${planGroups.planned.length} planejados`
+              }}</b>
+              <span v-if="plannedTime" class="text-muted-foreground"
+                >às <span class="tnum" data-planned-time>{{ plannedTime }}</span></span
+              >
+              <span class="ml-auto inline-flex items-center gap-1 op-label text-muted-foreground"
+                >{{ plannedExpanded ? "Ocultar" : "Ver"
+                }}<Icon
+                  :name="plannedExpanded ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+                  class="size-4"
+                  aria-hidden="true"
+              /></span>
+            </NuxtButton>
+            <!-- Aberto no Ver: cada produto com o número; tocar no produto abre Corrigir,
+                 Novo lote e Ver encomendas. -->
             <div
+              v-if="plannedExpanded"
               class="flex flex-wrap items-center gap-x-1 gap-y-1 bg-success/5 px-4 py-2"
               data-planned-line
             >
-              <span
-                class="mr-2 inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-success/12 px-3 op-label font-semibold text-success"
-              >
-                <Icon name="lucide:check" class="size-4" />
-                Planejado<template v-if="plannedTime">
-                  <span class="tnum" data-planned-time>{{ plannedTime }}</span></template
-                >
-              </span>
               <!-- O "·" anda colado ao fim do item: quando a linha quebra ele fica no fim
                    da linha, nunca sozinho no começo dela; no celular, um item por vez,
                    ele some (R07). -->
@@ -2019,16 +1966,17 @@ const startedDescription = computed(() => {
           :class="FLOOR_TARGETS"
           data-open-table
         >
+          <!-- O cabeçalho das colunas só existe onde há colunas de número: a mesa com
+               mouse. No tablet encaixado ficava "Produto · Ação", ruído (KISS, 28/11). -->
           <div
+            v-if="!docked"
             class="hidden h-10 items-center gap-4 border-b border-border bg-muted/60 px-4 op-eyebrow text-muted-foreground lg:grid"
             :class="openCols"
             aria-hidden="true"
           >
             <span>Produto</span>
-            <template v-if="!docked">
-              <span>Situação</span>
-              <span class="text-right">{{ lens.read.visible ? lens.read.label : "" }}</span>
-            </template>
+            <span>Situação</span>
+            <span class="text-right">{{ lens.read.visible ? lens.read.label : "" }}</span>
             <span class="text-right">{{
               lens.action.visible ? lens.action.label : ""
             }}</span>
@@ -2037,7 +1985,7 @@ const startedDescription = computed(() => {
           <!-- Segurar a linha (toque) ou o clique direito (mouse) abre o MESMO menu do ⋯:
                as ações da linha são uma lista só (`openRowMenu`). -->
           <NuxtContextMenu
-            v-for="row in openGroups.rows"
+            v-for="row in pendingOpenRows"
             :key="row.output_sku"
             :items="moreMenuGroups(openRowMenu(row))"
             :data-open-row-context="row.output_sku"
@@ -2046,7 +1994,6 @@ const startedDescription = computed(() => {
               class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-2.5 last:border-b-0 lg:min-h-14 lg:py-2"
               :class="[
                 openCols,
-                openSituation(row) === 'opened' ? 'bg-success/5' : '',
                 docked && startRow?.output_sku === row.output_sku
                   ? 'shadow-[inset_4px_0_0_var(--primary)] bg-primary/5'
                   : '',
@@ -2059,15 +2006,12 @@ const startedDescription = computed(() => {
                      palavra, nunca no meio dela ("Coelhinh o", #2959); o que não couber
                      nas 2 linhas termina em reticências. -->
                 <!-- Sem a coluna Situação (celular, tablet em pé, painel encaixado), a
-                     situação é o ponto antes do nome. -->
+                     situação fica só para o leitor de tela: a lista já é a do que falta
+                     confirmar (KISS, dono 28/11). -->
                 <div class="flex items-start gap-2">
-                  <span
-                    class="mt-[0.45em] size-2.5 shrink-0 rounded-full"
-                    :class="[OPEN_SITUATION[openSituation(row)].dot, docked ? '' : 'lg:hidden']"
-                    data-open-situation-dot
+                  <span class="sr-only" :class="docked ? '' : 'lg:hidden'" data-open-situation
+                    >{{ OPEN_SITUATION[openSituation(row)].label }}</span
                   >
-                    <span class="sr-only">{{ OPEN_SITUATION[openSituation(row)].label }}</span>
-                  </span>
                   <p
                     class="line-clamp-2 min-w-0 break-normal hyphens-none op-title"
                     :title="rowLabel(row)"
@@ -2077,7 +2021,6 @@ const startedDescription = computed(() => {
                   </p>
                 </div>
                 <p class="mt-0.5 flex items-center gap-1.5 op-micro text-muted-foreground">
-                  <span class="truncate font-mono">{{ row.output_sku }}</span>
                   <!-- Celular, tablet em pé e painel encaixado: sem a coluna Planejado, o
                        número vem aqui. -->
                   <span
@@ -2085,7 +2028,7 @@ const startedDescription = computed(() => {
                     class="shrink-0 tabular-nums"
                     :class="docked ? '' : 'lg:hidden'"
                     data-open-planned-compact
-                    >· {{ formatQty(row.planned_qty, row.output_unit) }} planejadas</span
+                    >{{ formatQty(row.planned_qty, row.output_unit) }} planejadas</span
                   >
                   <NuxtButton
                     v-if="rowOrderedUnits(row) > 0"
@@ -2116,18 +2059,12 @@ const startedDescription = computed(() => {
                 >
                 <span v-else class="hidden lg:block" />
               </template>
-              <!-- Previsto: o número abre a conferência e o cancelamento do lote aberto. -->
+              <!-- Previsto: o número abre a conferência e o cancelamento do lote em produção. -->
               <span v-if="lens.action.visible" class="hidden justify-end lg:flex">
                 <span
                   v-if="rowForecastQty(row) !== '0'"
-                  class="inline-flex items-center gap-1.5 text-lg font-semibold tabular-nums"
-                  >{{ formatQty(rowForecastQty(row), row.output_unit) }}
-                  <Icon name="lucide:circle-check" class="size-4 text-success"
-                /></span>
-                <span
-                  v-else
-                  class="text-lg font-semibold tabular-nums text-muted-foreground"
-                  >—</span
+                  class="text-lg font-semibold tabular-nums"
+                  >{{ formatQty(rowForecastQty(row), row.output_unit) }}</span
                 >
               </span>
               <span v-else class="hidden lg:block" />
@@ -2137,9 +2074,8 @@ const startedDescription = computed(() => {
                   v-if="rowForecastQty(row) !== '0' && lens.action.visible"
                   class="inline-flex h-8 items-center gap-1.5 px-1 text-base font-semibold tabular-nums lg:hidden"
                   data-open-started-compact
-                  >{{ formatQty(rowForecastQty(row), row.output_unit) }}
-                  <Icon name="lucide:circle-check" class="size-4 text-success"
-                /></span>
+                  >{{ formatQty(rowForecastQty(row), row.output_unit) }}</span
+                >
                 <!-- Confirmando: o painel encaixado está aberto nesta linha (tablet deitado). -->
                 <NuxtButton
                   v-if="docked && startRow?.output_sku === row.output_sku"
@@ -2177,6 +2113,43 @@ const startedDescription = computed(() => {
               </div>
             </div>
           </NuxtContextMenu>
+          <!-- O que já passou pelo Confirmar: uma linha só; o Ver abre os produtos com o
+               previsto de cada um. As ações de cada lote seguem no recorte "Em produção". -->
+          <template v-if="startedOpenRows.length">
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              block
+              class="min-h-12 justify-start gap-2 rounded-none border-t border-border bg-success/5 px-4 text-left op-body first:border-t-0"
+              :aria-expanded="startedExpanded"
+              data-open-started-toggle
+              @click="startedExpanded = !startedExpanded"
+            >
+              <Icon name="lucide:check" class="size-4 text-success" aria-hidden="true" />
+              <b class="tnum">{{ startedOpenRows.length }} em produção</b>
+              <span class="ml-auto inline-flex items-center gap-1 op-label text-muted-foreground"
+                >{{ startedExpanded ? "Ocultar" : "Ver"
+                }}<Icon
+                  :name="startedExpanded ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+                  class="size-4"
+                  aria-hidden="true"
+              /></span>
+            </NuxtButton>
+            <div
+              v-if="startedExpanded"
+              class="flex flex-wrap gap-x-4 gap-y-1 bg-success/5 px-4 pb-3 op-body"
+              data-open-started-list
+            >
+              <span
+                v-for="row in startedOpenRows"
+                :key="row.output_sku"
+                class="whitespace-nowrap"
+                data-open-started-item
+                >{{ rowLabel(row) }}
+                <b class="tnum">{{ formatQty(rowForecastQty(row), row.output_unit) }}</b></span
+              >
+            </div>
+          </template>
           <p
             v-if="!openGroups.rows.length"
             class="p-6 text-center op-body text-muted-foreground"
@@ -2184,14 +2157,6 @@ const startedDescription = computed(() => {
             Nenhum produto neste recorte.
           </p>
         </div>
-        <p
-          v-if="stage === 'open' && docked && openGroups.rows.length"
-          class="mt-2.5 flex items-center gap-2 op-micro text-muted-foreground"
-          data-open-press-hint
-        >
-          <Icon name="lucide:pointer" class="size-4" />
-          Pressione e segure uma linha: Detalhes do lote · Ver encomendas · Cancelar lote.
-        </p>
         <p
           v-if="query && !stageRows.length"
           class="mt-3 text-center op-body text-muted-foreground"

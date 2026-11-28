@@ -28,6 +28,8 @@ const STAKES = /\d+ un\. encomendadas?: \d+ pedidos?$/;
 async function openPlanning(page: Page) {
   await page.goto("/plan");
   await settled(page);
+  // KISS (dono, 28/11): os planejados são uma linha só; o Ver abre os produtos.
+  await page.locator("[data-planned-toggle]").click();
 }
 
 /** O item planejado do produto, no Planejamento: abre o menu "corrigir, novo lote…". */

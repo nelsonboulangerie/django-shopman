@@ -2,7 +2,7 @@
 //
 // Leitura da lista (GET /api/v1/backstage/production/mise-en-place/):
 //   - expand=false (padrão): ingredientes imediatos, com a quebra por receita;
-//   - expand=true: pré-preparos abertos até a matéria-prima.
+//   - expand=true: pré-preparos desdobrados até a matéria-prima.
 //
 // O "Separado" mora no servidor e vale para a bancada inteira (D-042, item 5;
 // WP-F09a): GET/POST em /production/mise-en-place/marks/. A marca é presa ao item,

@@ -119,7 +119,7 @@ function oneReleased(order: QCOrderCardProjection): number {
 }
 
 function closedLine(order: QCOrderCardProjection): string {
-  const who = order.closed_by ? ` · fechado por ${order.closed_by}` : "";
+  const who = order.closed_by ? ` · finalizado por ${order.closed_by}` : "";
   const when = order.closed_at_display ? ` ${formatClock(order.closed_at_display)}` : "";
   return `Lote ${order.ref}${who}${when}`;
 }
@@ -214,7 +214,7 @@ function closedLine(order: QCOrderCardProjection): string {
               class="rounded-lg border border-border p-3"
               data-quality-closers
             >
-              <p class="text-xs text-muted-foreground">Fechados por</p>
+              <p class="text-xs text-muted-foreground">Finalizados por</p>
               <p class="font-semibold">{{ closers.names }}</p>
               <p v-if="closers.window" class="text-sm text-muted-foreground">
                 {{ closers.window }}
@@ -275,7 +275,7 @@ function closedLine(order: QCOrderCardProjection): string {
           Nenhum lote sem exceção esperando confirmação.
         </p>
 
-        <!-- Lote não fechado não entra no portão; o atalho leva aonde se fecha. -->
+        <!-- Lote não finalizado não entra no portão; o atalho leva à Finalização. -->
         <div
           v-if="gate.openCount"
           class="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border p-4"
@@ -287,8 +287,8 @@ function closedLine(order: QCOrderCardProjection): string {
               {{
                 plural(
                   gate.openCount,
-                  "lote ainda no forno ou sem fechar. Entra",
-                  "lotes ainda no forno ou sem fechar. Entram",
+                  "lote ainda no forno ou sem finalizar. Entra",
+                  "lotes ainda no forno ou sem finalizar. Entram",
                 )
               }}
               aqui depois da Finalização.

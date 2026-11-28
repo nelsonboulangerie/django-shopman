@@ -17,7 +17,7 @@
 // Recortes: Todos (os três grupos), A planejar (tudo sem plano, um a um), Com ressalva
 // (só o que tem sinal) e Planejados.
 //
-// Produção: A confirmar (há lote planejado esperando o previsto) e Abertos (o previsto
+// Produção: A confirmar (há lote planejado esperando o previsto) e Em produção (o previsto
 // já foi dito e o lote segue para a Finalização).
 import type { ProductionMatrixRowProjection } from "~/types/production";
 import { rowOrderedUnits } from "~/presentation/production";
@@ -122,19 +122,6 @@ export function planRowGroups(
     planned,
     counts,
   };
-}
-
-/** "Pain de Campagne 34, Kuro Pan 12, Baguete 30, Focaccia 10 e mais 12". */
-export function cleanPreview(
-  rows: ProductionMatrixRowProjection[],
-  label: (row: ProductionMatrixRowProjection) => string,
-  shown = 4,
-): string {
-  const head = rows
-    .slice(0, shown)
-    .map((row) => `${label(row)} ${row.suggestion?.quantity ?? ""}`.trim());
-  const rest = rows.length - head.length;
-  return rest > 0 ? `${head.join(", ")} e mais ${rest}` : head.join(", ");
 }
 
 // ── Produção ───────────────────────────────────────────────────────────────

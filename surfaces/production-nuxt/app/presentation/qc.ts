@@ -252,7 +252,7 @@ export function buildPartition(state: QcEntryState): QcPartitionGroup[] {
 // ── A unidade do lote (P1-22) ───────────────────────────────────────────────
 // Pão se conta por peça; massa e creme se pesam, com vírgula. A tela recebe a
 // unidade do lote e escreve cada quantidade com ela. Sem conversão de escala:
-// o número digitado é o número mostrado, na unidade em que o lote foi aberto.
+// o número digitado é o número mostrado, na unidade em que o lote foi confirmado.
 
 const COUNT_UNITS = new Set(["", "un", "un.", "und", "pc", "pç", "unidade"]);
 

@@ -42,7 +42,7 @@ export function timerTone(status: ProductionTimerStatusCode): TimerTone {
   return timeTone("on_time");
 }
 
-/** O painel mantém Planejado, Previsto e Fechado neutros; só Atrasado é tempo vermelho. */
+/** O painel mantém Planejado, Previsto e Finalizado neutros; só Atrasado é tempo vermelho. */
 export function forecastTimeTone(status: ForecastStatus): TimerTone {
   return timeTone(status === "delayed" ? "late" : "on_time");
 }
@@ -289,30 +289,6 @@ export function formatQtyUnit(value: string | number, unit = ""): string {
     : formatQty(value, normalized);
 }
 
-/** A linha do dia no cabeçalho do Planejamento (R04): ocasião e clima.
- *  "Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na
- *  conta)". Vazio quando o servidor não sabe nada do dia. */
-export function dayContextLine(
-  context:
-    | { occasion: string; weather: string; weather_kind: string }
-    | null
-    | undefined,
-  sampleNote = "",
-): string {
-  if (!context) return "";
-  const parts: string[] = [];
-  if (context.occasion) parts.push(context.occasion);
-  if (context.weather) {
-    parts.push(
-      context.weather_kind === "forecast"
-        ? `previsão ${context.weather}`
-        : context.weather,
-    );
-  }
-  const line = parts.join(" · ");
-  return line && sampleNote ? `${line} (${sampleNote})` : line;
-}
-
 // ── Etiqueta do lote (R19) ───────────────────────────────────────────────────
 // A etiqueta de preparo leva um QR com `shopman-lote:<SKU>` (impressa pelo relay
 // em ESC/POS e pelo navegador). A Finalização lê e abre o lote daquele produto.
@@ -324,7 +300,7 @@ export function lotLabelPayload(outputSku: string): string {
   return `${LOT_LABEL_PREFIX}${outputSku}`;
 }
 
-/** O lote aberto que o código lido identifica, ou `null`. */
+/** O lote em produção que o código lido identifica, ou `null`. */
 export function matchLotCode<T extends { ref: string; output_sku: string }>(
   rawCode: string,
   orders: readonly T[],
@@ -488,11 +464,11 @@ export interface UnbackedOrder {
 
 const GESTOR_TAKES_IT = "A encomenda aparece como Promessa em risco no Gestor.";
 
-/** Acima do plano, sem lote ainda planejado: o lote do dia já está em produção ou fechado. */
+/** Acima do plano, sem lote ainda planejado: o lote do dia já está em produção ou finalizado. */
 function lockedNote(row: ProductionMatrixRowProjection): string {
   if (row.planned_orders.length) return "";
   if (row.started_orders.length) return `Lote já em produção. ${GESTOR_TAKES_IT}`;
-  if (row.finished_orders.length) return `Lote já fechado. ${GESTOR_TAKES_IT}`;
+  if (row.finished_orders.length) return `Lote já finalizado. ${GESTOR_TAKES_IT}`;
   return "";
 }
 

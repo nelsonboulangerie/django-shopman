@@ -11,7 +11,7 @@ import { capture, cast, device, settled } from "./support/stack";
 
 // WP-F15 (#3364): tempo real honesto. Dois tablets da bancada: a Cozinha confirma o
 // previsto de um lote no tablet A (a grade), e o cartão do lote na Finalização do tablet
-// B passa de "ainda não aberto" para "aberto às …" em menos de 3 s, sem recarregar (o canal `backstage-production` refaz o GET canônico).
+// B passa de "a confirmar" para "em produção desde …" em menos de 3 s, sem recarregar (o canal `backstage-production` refaz o GET canônico).
 // O selo do tablet B diz "Ao vivo" só enquanto o canal está aberto.
 //
 // Com `OPERATOR_DJANGO_STOP` e `OPERATOR_DJANGO_START` (comandos de shell que param e
@@ -60,13 +60,13 @@ test("Tempo real: o lote confirmado num tablet aparece na Finalização do outro
   const product = ((await open.getAttribute("aria-label")) ?? (await open.innerText()))
     .replace(/^Confirmar /, "")
     .trim();
-  // A Finalização lista o lote planejado como "ainda não aberto".
+  // A Finalização lista o lote planejado como "a confirmar".
   const cardLine = tabletB
     .locator("[data-close-card]")
     .filter({ has: tabletB.getByRole("button", { name: `Finalizar o lote de ${product}` }) })
     .first()
     .locator("[data-close-card-line]");
-  await expect(cardLine).toContainText("ainda não aberto");
+  await expect(cardLine).toContainText("a confirmar");
   await open.click();
   const panel = tabletA.getByRole("complementary", { name: "Confirmar o previsto" });
   await expect(panel).toBeVisible();
@@ -75,7 +75,7 @@ test("Tempo real: o lote confirmado num tablet aparece na Finalização do outro
   // O relógio corre do toque em Confirmar até o lote aparecer no tablet B.
   const started = Date.now();
   await panel.getByRole("button", { name: /^Confirmar \d/ }).click();
-  await expect(cardLine).toContainText(/aberto às/, { timeout: 10_000 });
+  await expect(cardLine).toContainText(/em produção desde/, { timeout: 10_000 });
   const elapsed = Date.now() - started;
   testInfo.annotations.push({
     type: "tempo-real",

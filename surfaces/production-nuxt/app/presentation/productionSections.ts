@@ -26,7 +26,7 @@ export interface ProductionSectionsInput {
   timersActive?: number;
   /** Timers tocando agora: vira o ponto de atenção do item Timers. */
   timersRinging?: number;
-  /** Lotes fechados esperando a revisão da Qualidade (só quando a tela sabe). */
+  /** Lotes finalizados esperando a revisão da Qualidade (só quando a tela sabe). */
   qualityPending?: number;
   canViewRecipes?: boolean;
   canViewReports?: boolean;

@@ -763,7 +763,7 @@ export function compareSides(compare: RecipeCompareProjection): CompareSide[] {
   ];
 }
 
-/** O que a casa produziu com uma versão (lotes fechados), ou `null` sem lote. */
+/** O que a casa produziu com uma versão (lotes finalizados), ou `null` sem lote. */
 export function versionUsage(
   usage: RecipeUsageProjection | null | undefined,
   number: number | null | undefined,

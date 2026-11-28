@@ -18,7 +18,7 @@
 //     não fecha: a pessoa segue decidindo o lote.
 //
 // Falta de encomenda: "Revisar quantidade" volta ao número digitado. Quando o
-// servidor oferece "confirm" e a tela sabe fechar o lote curto (`allowShortLot`),
+// servidor oferece "confirm" e a tela sabe finalizar o lote curto (`allowShortLot`),
 // o lote fecha com o que rendeu: a tela diz quanto falta para as encomendas e
 // quais pedidos ficam descobertos (decisão 1 do dono, 23/11/2026).
 import type { OperatorSession } from "../../../operator-kit/app/types/operator";
@@ -193,7 +193,7 @@ const planRefusal = computed(
 
 const title = computed(() => {
   if (isMaterial.value) {
-    return opening.value ? "Falta insumo para este lote" : "Falta insumo para fechar";
+    return opening.value ? "Falta insumo para este lote" : "Falta insumo para finalizar";
   }
   return shortLot.value ? "Rendeu menos que o encomendado" : "Quantidade não cobre pedidos";
 });
@@ -204,11 +204,11 @@ const description = computed(() => {
   }
   if (isMaterial.value && opening.value) {
     return boughtMissing.value
-      ? "Dá para abrir assim mesmo. Para fechar o lote, o Compras dá entrada no que falta ou a Gerente ou o Dono autoriza."
-      : "Dá para abrir assim mesmo. Para fechar o lote, o que falta entra no estoque ou a Gerente ou o Dono autoriza.";
+      ? "Dá para confirmar assim mesmo. Para finalizar o lote, o Compras dá entrada no que falta ou a Gerente ou o Dono autoriza."
+      : "Dá para confirmar assim mesmo. Para finalizar o lote, o que falta entra no estoque ou a Gerente ou o Dono autoriza.";
   }
   if (isMaterial.value && forcePossibility.value) {
-    return "O estoque não tem o que este lote consome. Para fechar assim, a Gerente ou o Dono autoriza com o PIN.";
+    return "O estoque não tem o que este lote consome. Para finalizar assim, a Gerente ou o Dono autoriza com o PIN.";
   }
   if (planRefusal.value && last.value?.code === "order_shortage") {
     return `Há ${formatQty(last.value.required)} un. encomendadas para este dia. O plano não pode ficar abaixo disso.`;

@@ -268,7 +268,7 @@ const mountPage = () => {
 };
 
 describe("Finalização", () => {
-  it("mostra só os lotes abertos, sem a revisão de qualidade", () => {
+  it("mostra só os lotes em produção, sem a revisão de qualidade", () => {
     const wrapper = mountPage();
 
     expect(wrapper.text()).toContain("Baguete aberta");
@@ -280,13 +280,13 @@ describe("Finalização", () => {
     );
   });
 
-  it("o cabeçalho diz Finalização e conta os lotes para finalizar", () => {
+  it("o cabeçalho diz Finalização, sem contador: a lista é a contagem (KISS, 28/11)", () => {
     const wrapper = mountPage();
     const header = wrapper.findComponent({ name: "ProductionHeader" });
 
     expect(header.props("title")).toBe("Finalização");
-    expect(header.props("count")).toBe(2);
-    expect(header.props("countLabel")).toBe("para finalizar");
+    expect(header.props("count")).toBeUndefined();
+    expect(wrapper.text()).not.toContain("Para finalizar");
   });
 
   it("a lista Para finalizar é uma coluna só, em todo tamanho (dono, 28/11)", () => {
@@ -297,10 +297,11 @@ describe("Finalização", () => {
     expect(list.classes().some((name) => /grid-cols-/.test(name))).toBe(false);
   });
 
-  it("o lote ainda não aberto diz isso, sem chamar de produzido", () => {
+  it("o lote que ainda não passou pelo Confirmar diz a confirmar, sem chamar de produzido", () => {
     const wrapper = mountPage();
 
-    expect(wrapper.text()).toContain("ainda não aberto");
+    expect(wrapper.text()).toContain("a confirmar");
+    expect(wrapper.find("[data-close-card]").classes()).toContain("opacity-60");
     expect(wrapper.text()).not.toMatch(/produzid/i);
   });
 
@@ -312,7 +313,7 @@ describe("Finalização", () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatchObject({
       color: "warning",
-      title: "2 lotes abertos de dias anteriores",
+      title: "2 lotes em produção de dias anteriores",
       action: { label: "Ver os lotes de 27/09" },
     });
     alerts[0].action.onSelect();
