@@ -44,7 +44,7 @@ const period = computed<PeriodSelection>({
 
 useOperatorLock("backstage.operate_production");
 
-const { projection, lines, expand, pending, error, refresh } =
+const { projection, lines, expand, pending, error, refresh, realtime, fallbackPollMs } =
   useMiseEnPlace(selectedDate);
 const weighing = useWeighing(selectedDate);
 // A quantidade mudou enquanto a pessoa olhava (409): relê as duas lentes.
@@ -209,6 +209,9 @@ function refreshAll() {
         :count="mode === 'insumos' ? lines.length : visibleTickets.length"
         :count-label="mode === 'insumos' ? 'insumos' : 'preparos'"
         :pending="isPending"
+        :stale="staleIngredients || staleWeighing"
+        :realtime="realtime"
+        :poll-ms="fallbackPollMs"
         @refresh="refreshAll()"
       >
         <template #primary>

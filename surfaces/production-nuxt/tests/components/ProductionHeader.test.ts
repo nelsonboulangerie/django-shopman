@@ -49,7 +49,7 @@ const OperatorPageHeaderStub = defineComponent({
 const stubs = {
   OperatorPageHeader: OperatorPageHeaderStub,
   OperatorLiveStatus: {
-    props: ["tone", "time", "label"],
+    props: ["tone", "time", "label", "shortLabel"],
     template: '<span data-live :data-tone="tone">{{ label }}</span>',
   },
   OperatorSuiteSearch: {
@@ -158,6 +158,25 @@ describe("ProductionHeader — toolbar e estado", () => {
     const live = wrapper.find("[data-status] [data-live]");
     expect(live.attributes("data-tone")).toBe("late");
     expect(live.text()).toBe("Sem atualizar");
+  });
+
+  it("Ao vivo só com o canal da Produção aberto (WP-F15)", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Finalização", realtime: "polling", pollMs: 30_000 });
+    const live = wrapper.find("[data-status] [data-live]");
+    expect(live.attributes("data-tone")).toBe("calm");
+    expect(live.text()).toBe("Atualiza sozinho a cada 30 s");
+    wrapper.unmount();
+    wrapper = mountHeader({ title: "Finalização", realtime: "live", pollMs: 30_000 });
+    expect(wrapper.find("[data-status] [data-live]").text()).toBe("Ao vivo");
+  });
+
+  it("Django parado sem dado: Sem conexão", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Finalização", offline: true, realtime: "live" });
+    const live = wrapper.find("[data-status] [data-live]");
+    expect(live.attributes("data-tone")).toBe("off");
+    expect(live.text()).toBe("Sem conexão");
   });
 
   it("a tela acrescenta ao #status o que é dela (o anterior e o próximo do lote)", () => {
