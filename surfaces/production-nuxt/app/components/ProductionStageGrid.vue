@@ -24,6 +24,7 @@ import LotCommitmentsDialog from "./LotCommitmentsDialog.vue";
 import LotStartPanel from "./LotStartPanel.vue";
 import PlanAdjustDialog from "./PlanAdjustDialog.vue";
 import PlanLens from "./PlanLens.vue";
+import PlanPromisedBand from "./PlanPromisedBand.vue";
 
 import {
   boardDisplay,
@@ -39,6 +40,9 @@ import {
   promisedChipLabel,
   rowLabel,
   rowOrderedUnits,
+  bandOrders,
+  unbackedOrders,
+  type UnbackedOrder,
 } from "~/presentation/production";
 import { suggestionSignal } from "~/presentation/planningReason";
 import {
@@ -420,10 +424,15 @@ function bump(field: keyof typeof qtyFields, delta: number) {
   target.value = field === "start" ? startDisplay(value) : value;
 }
 
+// Aberto pelo "Planejar mais N" da faixa: o diálogo diz o encomendado da data ao lado
+// do planejado (WP-F13). Qualquer outra abertura começa sem ele.
+const planOrdered = ref<{ sku: string; qty: string } | null>(null);
+
 function openPlan(
   row: ProductionMatrixRowProjection,
   requestedSource?: "manual" | "suggested",
 ) {
+  planOrdered.value = null;
   const source =
     requestedSource ??
     (access.value?.can_edit_planned ? "manual" : "suggested");
@@ -443,6 +452,14 @@ function openPlan(
   if (!row.planned_orders.length || selectedPlannedPk.value != null) {
     focusQty(planDialog);
   }
+}
+
+/** O diálogo de planejar abriu para esta linha. Pelo SKU, nunca por `===`: o `useFetch`
+ *  entrega a linha crua e o `planRow` (ref profundo) a guarda num proxy, então a
+ *  comparação por identidade era sempre falsa na pilha (medido no WP-F13: o "Planejar
+ *  mais 18" abria com o planejado do lote, não com o total). */
+function planOpenFor(row: ProductionMatrixRowProjection): boolean {
+  return planRow.value?.output_sku === row.output_sku;
 }
 
 function selectPlannedWorkOrder(workOrder: WorkOrderCardProjection) {
@@ -497,7 +514,7 @@ function planFromReason(
 ) {
   reasonSku.value = null;
   openPlan(row, source);
-  if (planRow.value === row) planQty.value = quantity;
+  if (planOpenFor(row)) planQty.value = quantity;
 }
 
 async function confirmPlan() {
@@ -1238,7 +1255,7 @@ async function planInline(row: ProductionMatrixRowProjection) {
   const draft = draftOf(row).trim();
   if (outsizedQuantityWarning(draft, row.suggestion?.quantity, "a sugestão")) {
     openPlan(row, "manual");
-    if (planRow.value === row) planQty.value = draft;
+    if (planOpenFor(row)) planQty.value = draft;
     return;
   }
   inlineSubmitting.value = row.output_sku;
@@ -1278,6 +1295,42 @@ async function planCleanSet() {
       done === 1 ? "1 produto planejado como sugerido." : `${done} produtos planejados como sugerido.`,
     );
 }
+// O pedido à Produção (WP-F13): a encomenda da data que o plano não cobre, no topo
+// do Planejamento, de todas as linhas (o recorte e a busca não a escondem).
+const unbacked = computed(() => unbackedOrders(rows.value));
+const promisedBusy = ref<string | null>(null);
+// O vazio da Produção numa data com encomenda e sem lote diz o que está esperando.
+const emptyPromisedLine = computed(() =>
+  unbacked.value.length
+    ? `Encomendado sem lote: ${unbacked.value.map((item) => item.subject).join(", ")}.`
+    : undefined,
+);
+const canPlanPromised = computed(
+  () => lens.value.action.editable && access.value?.can_edit_planned === true,
+);
+// Sem lote: planeja direto o que falta. Acima do plano: o diálogo de sempre, com
+// o total já escrito, porque é preciso escolher qual lote cresce (ou um novo).
+async function planPromised(item: UnbackedOrder) {
+  if (promisedBusy.value || !canPlanPromised.value || item.lockedNote) return;
+  if (item.kind === "over-plan" || item.row.planned_orders.length) {
+    openPlan(item.row, "manual");
+    if (planOpenFor(item.row) && rowPlanMode(item.row) !== "new-batch") {
+      planQty.value = item.targetQty;
+      planOrdered.value = {
+        sku: item.row.output_sku,
+        qty: formatQty(item.row.promised?.ordered_qty ?? item.targetQty, item.row.output_unit),
+      };
+    }
+    return;
+  }
+  promisedBusy.value = item.row.output_sku;
+  try {
+    await submitPlan(item.row, { quantity: item.targetQty, source: "manual" });
+  } finally {
+    promisedBusy.value = null;
+  }
+}
+
 const canPlanCleanSet = computed(
   () =>
     planGroups.value.clean.length > 0 &&
@@ -1499,6 +1552,17 @@ const startedDescription = computed(() => {
           <span>Sem atualizar: mostrando o último quadro carregado.</span>
         </div>
 
+        <PlanPromisedBand
+          v-if="stage === 'plan'"
+          class="mb-3"
+          :items="bandOrders(unbacked)"
+          :today="todayISO"
+          :can-plan="canPlanPromised"
+          :busy-sku="promisedBusy"
+          @plan="planPromised"
+          @orders="(item) => (commitmentsRow = item.row)"
+        />
+
         <template v-if="!stageRows.length">
           <!-- Busca sem resultado: a frase do fim da seção diz isso. -->
           <template v-if="query.trim()" />
@@ -1532,13 +1596,17 @@ const startedDescription = computed(() => {
             state="empty"
             icon="i-lucide-layout-grid"
             title="Nada planejado para produzir nesta data."
+            :description="emptyPromisedLine"
           >
             <template #actions>
+              <!-- O atalho leva ao Planejamento DESTA data (P1-30): sem ela, o
+                   Planejamento abre em amanhã depois do meio-dia. -->
               <NuxtButton
-                to="/plan"
-                color="neutral"
-                variant="outline"
+                :to="{ path: '/plan', query: { date: selectedDate } }"
+                :color="unbacked.length ? 'primary' : 'neutral'"
+                :variant="unbacked.length ? 'solid' : 'outline'"
                 label="Ir para o Planejamento"
+                data-open-empty-plan
               />
             </template>
           </OperatorScreenState>
@@ -1568,8 +1636,11 @@ const startedDescription = computed(() => {
                  colunas da sugestão, da quantidade e da ação ficam com a largura do que
                  mostram (até 145, 136 e 158 px, medidos), e o nome ganha o resto: com as
                  larguras da mesa, sobravam 92 px e o nome acabava em reticências (#2966). -->
+            <!-- O chip das encomendas quebra para baixo do nome quando não cabe ao
+                 lado: com o dia escrito ("24 un. · seg 14/12 9h") ele espremia o nome
+                 a "Cr M." no tablet (prévia do WP-F13). -->
             <div
-              class="flex w-full min-w-0 items-center gap-2.5 lg:w-auto"
+              class="flex w-full min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 lg:w-auto"
               data-row-product
             >
               <!-- O nome é o que o padeiro lê: quebra em 2 linhas antes de
@@ -1689,6 +1760,9 @@ const startedDescription = computed(() => {
                       :purchase-url="board?.purchase_url ?? ''"
                       :can-plan-suggested="!!access?.can_edit_suggested"
                       :can-plan-manual="!!access?.can_edit_planned"
+                      :promised="row.promised"
+                      :unit="row.output_unit"
+                      :today="todayISO"
                       @close="closeReason(row.output_sku)"
                       @plan="
                         (quantity, source) =>
@@ -2127,6 +2201,7 @@ const startedDescription = computed(() => {
       :row="planRow"
       :title="`${PLAN_TITLE[planMode]} · ${planRow ? rowLabel(planRow) : ''}`"
       :description="planDescription"
+      :ordered="planOrdered && planRow?.output_sku === planOrdered.sku ? planOrdered.qty : undefined"
       :mode="planMode"
       :selected-order="selectedPlannedOrder"
       :source="planSource"
