@@ -1312,6 +1312,15 @@ const canPlanPromised = computed(
 );
 // Sem lote: planeja direto o que falta. Acima do plano: o diálogo de sempre, com
 // o total já escrito, porque é preciso escolher qual lote cresce (ou um novo).
+// "Ir para a linha": a linha do produto vai para a linha de foco. O recorte e a busca
+// que a escondiam saem antes, senão não há linha para onde ir.
+const { reveal } = useNextFocus();
+function goToPlanRow(item: UnbackedOrder) {
+  planFilter.value = "all";
+  query.value = "";
+  reveal(`plan-row-${item.row.output_sku}`);
+}
+
 async function planPromised(item: UnbackedOrder) {
   if (promisedBusy.value || !canPlanPromised.value) return;
   if (item.kind === "over-plan" || item.row.planned_orders.length) {
@@ -1600,6 +1609,7 @@ const startedDescription = computed(() => {
           :busy-sku="promisedBusy"
           @plan="planPromised"
           @orders="(item) => (commitmentsRow = item.row)"
+          @line="goToPlanRow"
         />
 
         <template v-if="!stageRows.length">
@@ -1679,6 +1689,7 @@ const startedDescription = computed(() => {
             "
             data-plan-row
             :data-sku="row.output_sku"
+            :data-focus-target="`plan-row-${row.output_sku}`"
           >
             <!-- Produto: nome, SKU e o chip das encomendas. No tablet (1024 a 1279 px) as
                  colunas da sugestão, da quantidade e da ação ficam com a largura do que

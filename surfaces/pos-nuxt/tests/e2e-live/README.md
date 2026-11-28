@@ -158,8 +158,10 @@ montar a comanda) moram em `support/order.ts`, para a J5 e a J-P5 usarem os mesm
 `jp5-pedido-a-producao.live.spec.ts` cruza o PDV e a Produção: a Caixa encomenda 30
 croissants para daqui a doze dias, uma data que o seed não planejou, e a encomenda fecha
 sem gerente; a Cozinha, com PIN, abre o Planejamento daquela data no celular e no tablet
-(1024 px) e lê "Encomendado sem lote: Croissant Manteiga 30" com "Planejar 30"; planeja,
-a faixa some, e o detalhe da encomenda no PDV segue sem "Promessa em risco". Pede a
+(1024 px) e lê "Croissant Manteiga: 30 encomendadas, já contadas na sugestão de N", sem
+"Planejar" próprio na faixa (a linha do dia já tem o seu); "Ir para a linha" traz a linha,
+ela planeja a sugestão, a faixa some, e o detalhe da encomenda no PDV segue sem "Promessa
+em risco". `JP5_DAYS_AHEAD` escolhe outra data num banco já usado. Pede a
 Produção compilada na pilha, em `PDV_LIVE_PRODUCTION_URL` (o script não a sobe), e pula
 sem ela:
 

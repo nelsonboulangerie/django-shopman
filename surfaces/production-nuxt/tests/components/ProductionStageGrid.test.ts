@@ -94,6 +94,7 @@ const kdsVoidSpy = vi.fn().mockResolvedValue({ ok: true });
 const startSpy = vi.fn().mockResolvedValue({ ok: true });
 const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
+const revealSpy = vi.fn();
 const boardInitialDateSpy = vi.fn();
 const routerReplace = vi.fn();
 const productionRail = ref<{ qualityPending: number; viewedDate?: string }>({ qualityPending: 0 });
@@ -120,6 +121,7 @@ function installGlobals() {
   vi.stubGlobal("useOperatorAppLink", () => ({
     attrsFor: () => ({ target: "_self" }),
   }));
+  vi.stubGlobal("useNextFocus", () => ({ reveal: revealSpy }));
   vi.stubGlobal("useRoute", () => ({ query: {} }));
   vi.stubGlobal("useRouter", () => ({ replace: routerReplace }));
   // O ShortageDialog nomeia quem continua operando na assinatura da falta (WP-F11).
@@ -1759,6 +1761,27 @@ describe("ProductionStageGrid — pedidos à Produção", () => {
     const [sku, payload] = planSpy.mock.calls[0]!;
     expect(sku).toBe("CRO");
     expect(payload).toMatchObject({ quantity: "12", source: "manual", target_date: "2026-07-06" });
+  });
+
+  // Decisão da coordenação (28/11): com a linha do dia na tela ("Planejar 196"), a faixa
+  // não oferece "Planejar 12": tocar nele fechava o dia com 12. Diz o fato e leva à linha.
+  it("com linha no dia, a faixa não tem número próprio: Ir para a linha leva até ela", async () => {
+    revealSpy.mockClear();
+    boardRows.value = [promisedRow({ suggestion: { ...suggestion, output_sku: "CRO", quantity: "196" } })];
+    const w = mountGrid("plan");
+    await w.findAll('[role="tab"]').find((tab) => tab.text().startsWith("Planejados"))!.trigger("click");
+
+    const band = w.get("[data-plan-promised-band]");
+    expect(band.text().replace(/\s+/g, " ")).toContain("Croissant: 12 encomendadas, já contadas na sugestão de 196");
+    expect(band.find("[data-plan-promised-plan]").exists()).toBe(false);
+    expect(band.text()).not.toMatch(/Planejar 12/);
+
+    await w.get("[data-plan-promised-line]").trigger("click");
+    await flushPromises();
+    expect(planSpy).not.toHaveBeenCalled();
+    expect(revealSpy).toHaveBeenCalledWith("plan-row-CRO");
+    // O recorte que escondia a linha sai, e a linha está lá para receber o foco.
+    expect(w.find('[data-focus-target="plan-row-CRO"]').exists()).toBe(true);
   });
 
   it("o recorte não esconde a faixa", async () => {

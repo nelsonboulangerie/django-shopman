@@ -465,9 +465,33 @@ export interface UnbackedOrder {
   missing: number;
   /** O planejado da data depois do gesto: o que vai ao servidor. */
   targetQty: string;
+  /**
+   * A sugestão da linha do dia, quando ela já conta as encomendas ("196"); "" quando
+   * não há linha com número próprio. Com linha, a faixa não oferece um número seu: dois
+   * "Planejar" com números diferentes para o mesmo produto eram uma armadilha (tocar
+   * "Planejar 12" fechava o dia com 12 em vez de 196, decisão da coordenação, 28/11).
+   */
+  coveredBy: string;
   headline: string;
   subject: string;
   actionLabel: string;
+}
+
+/** "12 encomendadas, já contadas", "1 encomendada, já contada", "1,5 kg encomendados, já contados". */
+function countedLabel(amount: number, unit: string): string {
+  const normalized = (unit ?? "").trim().toLowerCase();
+  const count = COUNT_UNITS.has(normalized);
+  const plural = !count || amount !== 1;
+  const word = count ? "encomendada" : "encomendado";
+  const counted = count ? "contada" : "contado";
+  return `${formatQty(amount, unit)} ${word}${plural ? "s" : ""}, já ${counted}${plural ? "s" : ""}`;
+}
+
+/** A linha do dia tem número próprio que já cobre as encomendas (e nenhum lote ainda). */
+function lineCovers(row: ProductionMatrixRowProjection, ordered: number): string {
+  if (!row.suggestion || row.planned_orders.length) return "";
+  const suggested = parseQty(row.suggestion.quantity);
+  return suggested > 0 && suggested >= ordered ? row.suggestion.quantity : "";
 }
 
 function qtyString(value: number): string {
@@ -482,12 +506,28 @@ export function unbackedOrders(rows: ProductionMatrixRowProjection[]): UnbackedO
       const planned = parseQty(row.promised.planned_qty);
       const kind = planned > 0 ? "over-plan" : "no-lot";
       const amount = formatQty(missing, row.output_unit);
+      const coveredBy = kind === "no-lot" ? lineCovers(row, missing) : "";
+      if (coveredBy) {
+        return [
+          {
+            row,
+            kind,
+            missing,
+            targetQty: qtyString(planned + missing),
+            coveredBy,
+            headline: rowLabel(row),
+            subject: `${countedLabel(missing, row.output_unit)} na sugestão de ${formatQty(coveredBy, row.output_unit)}`,
+            actionLabel: "Ir para a linha",
+          },
+        ];
+      }
       return [
         {
           row,
           kind,
           missing,
           targetQty: qtyString(planned + missing),
+          coveredBy: "",
           headline: kind === "no-lot" ? "Encomendado sem lote" : "Encomendado acima do plano",
           subject: `${rowLabel(row)} ${amount}`,
           actionLabel: kind === "no-lot" ? `Planejar ${amount}` : `Planejar mais ${amount}`,

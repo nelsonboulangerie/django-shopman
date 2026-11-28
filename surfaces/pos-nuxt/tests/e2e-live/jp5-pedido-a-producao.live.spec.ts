@@ -5,8 +5,11 @@
 // encomenda fecha sem gerente, como pedido à Produção. Data futura sem lote ainda não é
 // "Promessa em risco" (`order_promise._gap_cause`: é assim que toda encomenda feita com
 // antecedência nasce); o lugar dela é o Planejamento. A Cozinha (Diofer), com o PIN dela,
-// abre o Planejamento daquela data e lê, no topo, "Encomendado sem lote: Croissant 30"
-// com "Planejar 30"; planeja, e a faixa some. De volta ao PDV, a encomenda segue sem
+// abre o Planejamento daquela data e lê, no topo, que as 30 encomendadas "já contadas na
+// sugestão" do Croissant: a linha do dia tem número próprio, e a faixa não oferece outro
+// (decisão da coordenação, 28/11: dois "Planejar" com números diferentes eram armadilha).
+// "Ir para a linha" leva à linha; ela planeja a sugestão, e a faixa some. De volta ao
+// PDV, a encomenda segue sem
 // risco, agora com o plano da data cobrindo a reserva (a régua do aviso é a mesma do
 // Gestor, `order_promise`; a reserva se ancora no lote quando ele fecha, no Stockman).
 //
@@ -28,9 +31,11 @@ const PRODUCT = "Croissant";
 /** O nome do mesmo produto na Produção: o da receita. */
 const RECIPE = "Croissant Manteiga";
 const QTY = "30";
-/** "Encomendado sem lote: Croissant Manteiga 30"; mais, se outra passada no mesmo banco já
- *  encomendou para a data (a jornada lê o número em vez de supor). */
-const NO_LOT = new RegExp(`^Encomendado sem lote: ${RECIPE} (\\d+)$`);
+/** "Croissant Manteiga: 30 encomendadas, já contadas na sugestão de 239"; mais, se outra
+ *  passada no mesmo banco já encomendou para a data (a jornada lê o número). */
+const COUNTED = new RegExp(`^${RECIPE}: (\\d+) encomendadas, já contadas na sugestão de (\\d+)$`);
+/** A data: daqui a doze dias (`JP5_DAYS_AHEAD` escolhe outra num banco já usado). */
+const DAYS_AHEAD = Number(process.env.JP5_DAYS_AHEAD || 12);
 const CUSTOMER = { name: "Ana Ferreira", phone: "43995555555" };
 
 test.describe.configure({ mode: "serial" });
@@ -39,7 +44,7 @@ test.use({ device: "counter" });
 test("J-P5: a encomenda de data sem lote vira pedido à Produção, e planejar cobre a reserva", async ({ browser, cashierAtCounter: pos }, testInfo) => {
   test.skip(!productionUrl, "a J-P5 pede a Produção na pilha (PDV_LIVE_PRODUCTION_URL)");
   test.setTimeout(10 * 60_000);
-  const target = daysAhead(12);
+  const target = daysAhead(DAYS_AHEAD);
 
   // 1 · A Caixa monta a encomenda no PDV: 30 croissants para a data sem lote.
   await opensOrder(pos);
@@ -72,11 +77,14 @@ test("J-P5: a encomenda de data sem lote vira pedido à Produção, e planejar c
   await lockDevice(phone);
   await unlocksProductionWithPin(phone, cast.kitchen);
   await opensPlanning(phone, target.iso);
-  const phoneItem = phone.locator("[data-plan-promised-item]").filter({ hasText: `Encomendado sem lote: ${RECIPE}` });
-  await expect(phoneItem.locator("[data-plan-promised-text]")).toHaveText(NO_LOT, { timeout: 60_000 });
-  const ordered = Number(NO_LOT.exec((await phoneItem.locator("[data-plan-promised-text]").innerText()).trim())![1]);
+  const phoneItem = phone.locator("[data-plan-promised-item]").filter({ hasText: `${RECIPE}:` });
+  await expect(phoneItem.locator("[data-plan-promised-text]")).toHaveText(COUNTED, { timeout: 60_000 });
+  const [, orderedText, suggestedText] = COUNTED.exec((await phoneItem.locator("[data-plan-promised-text]").innerText()).replace(/\s+/g, " ").trim())!;
+  const ordered = Number(orderedText);
   expect(ordered, "a faixa conta a encomenda desta passada").toBeGreaterThanOrEqual(Number(QTY));
-  await expect(phoneItem.locator("[data-plan-promised-plan]")).toHaveText(`Planejar ${ordered}`);
+  // Um "Planejar" só por produto: o da linha.
+  await expect(phoneItem.locator("[data-plan-promised-plan]")).toHaveCount(0);
+  await expect(phoneItem.locator("[data-plan-promised-line]")).toHaveText("Ir para a linha");
   await capture(phone, testInfo, "producao-375-pedido-a-producao");
 
   const tabletContext = await browser.newContext({
@@ -92,16 +100,21 @@ test("J-P5: a encomenda de data sem lote vira pedido à Produção, e planejar c
   await unlocksProductionWithPin(tablet, cast.kitchen);
   await opensPlanning(tablet, target.iso);
   const band = tablet.locator("[data-plan-promised-band]");
-  const item = band.locator("[data-plan-promised-item]").filter({ hasText: `Encomendado sem lote: ${RECIPE} ${ordered}` });
+  const item = band.locator("[data-plan-promised-item]").filter({ hasText: `${RECIPE}: ${ordered} encomendadas` });
   await expect(item).toBeVisible({ timeout: 60_000 });
   await expect(item.locator("[data-plan-promised-who]")).toContainText(CUSTOMER.name.split(" ")[0]!);
   await expect(band).not.toContainText(/recusar/i);
   await expect(band).toBeInViewport();
   await capture(tablet, testInfo, "producao-1024-pedido-a-producao");
 
-  // 4 · Planeja: a faixa some e a linha fica planejada.
+  // 4 · "Ir para a linha": a linha do Croissant vem para a vista, e ela planeja a sugestão,
+  //     que já conta as encomendas. A faixa some.
+  await item.locator("[data-plan-promised-line]").click();
+  const line = tablet.locator('[data-plan-row][data-sku="CRO"]');
+  await expect(line).toBeInViewport({ timeout: 10_000 });
+  await capture(tablet, testInfo, "producao-1024-ir-para-a-linha");
   const planned = tablet.waitForResponse((r) => /\/production\/.*plan/.test(r.url()) && r.request().method() === "POST", { timeout: 60_000 });
-  await item.locator("[data-plan-promised-plan]").click();
+  await line.getByRole("button", { name: `Planejar ${suggestedText}`, exact: true }).click();
   expect((await planned).ok(), "o plano foi aceito").toBe(true);
   await expect(item).toBeHidden({ timeout: 60_000 });
   await capture(tablet, testInfo, "producao-1024-planejado");
