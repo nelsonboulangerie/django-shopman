@@ -130,7 +130,7 @@ def test_the_sweep_actually_reads_something() -> None:
 # Quando a produção termina, o lote, o produto e as unidades FICAM PRONTOS. Vale para
 # todo tempo do verbo ("sai", "saiu", "saíram", "saindo do forno", "acabou de sair do
 # forno", "saída do forno"). O forno continua tendo nome: "Só é possível retirar do
-# forno um lote aberto." segue certo, porque quem age ali é o operador.
+# forno um lote em produção." segue certo, porque quem age ali é o operador.
 #
 # ## O sujeito desta regra é o texto de OPERADOR, e por isso o alcance é outro
 #
@@ -213,7 +213,7 @@ def test_the_out_of_oven_detector_knows_the_forms() -> None:
     ):
         assert OUT_OF_OVEN.search(text), text
     for text in (
-        "Só é possível retirar do forno um lote aberto.",
+        "Só é possível retirar do forno um lote em produção.",
         "Esta tentativa de forno já pertence a outro lote.",
         "Saiu para entrega",
         "Produto ficou pronto",

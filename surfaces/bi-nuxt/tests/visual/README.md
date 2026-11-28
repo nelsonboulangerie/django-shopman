@@ -18,7 +18,7 @@ O mock troca de cenário por `GET /__visual/scenario?set=<nome>`:
 
 - `normal`: o gravado, como veio do Django.
 - `empty`: a mesma forma de cada leitura do B.I., com as listas vazias e os números
-  zerados. É o estado vazio de cada tela ("sem lote fechado", "sem venda").
+  zerados. É o estado vazio de cada tela ("sem lote finalizado", "sem venda").
 - `error`: 500 em toda leitura de `/api/v1/backstage/bi/`, para ver o "Tentar de novo".
 
 Sessão, posto, avisos e nome da casa seguem o gravado nos três, porque o que se quer

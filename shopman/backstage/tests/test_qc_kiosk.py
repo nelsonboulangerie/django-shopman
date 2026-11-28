@@ -282,7 +282,7 @@ def test_finishing_the_same_batch_with_other_numbers_is_a_clean_conflict(client,
     )
     assert second.status_code == 409
     payload = second.json()
-    assert "fechado em outra tela" in payload["detail"]
+    assert "finalizado em outra tela" in payload["detail"]
     assert payload["error"]["code"] == "conflict"
 
 

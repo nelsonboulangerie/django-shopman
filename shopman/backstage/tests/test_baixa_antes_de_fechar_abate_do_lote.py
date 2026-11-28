@@ -408,7 +408,7 @@ def test_fechar_abaixo_do_ja_entregue_recusa_com_o_motivo(lote, caixa, django_ca
         _fechar(lote, "3", yield_deviation_confirmed=True, yield_deviation_reason="Contagem conferida.")
 
     assert str(error.value) == (
-        f"Não dá para fechar o lote {lote.ref} com 3 un.: 4 un. dele já foram entregues. "
+        f"Não dá para finalizar o lote {lote.ref} com 3 un.: 4 un. dele já foram entregues. "
         "Confira a contagem: o lote rendeu pelo menos isso."
     )
     lote.refresh_from_db()
@@ -683,7 +683,7 @@ def test_cancelar_o_lote_que_ja_entregou_e_recusado_e_nada_muda(lote, caixa, dja
         _vender_no_balcao(caixa, 4)
     antes = (_saldo("em_producao"), _vendido_no_ledger())
 
-    with pytest.raises(ProductionError, match=r"4 un\. dele já foram entregues\. Feche o lote com o que ele rendeu"):
+    with pytest.raises(ProductionError, match=r"4 un\. dele já foram entregues\. Finalize o lote com o que ele rendeu"):
         _cancelar(lote)
 
     lote.refresh_from_db()

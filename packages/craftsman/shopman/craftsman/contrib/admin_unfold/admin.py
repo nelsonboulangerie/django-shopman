@@ -160,11 +160,11 @@ class RecipeAdminForm(forms.ModelForm):
         help_text=_("Uma etapa por linha, na ordem operacional."),
     )
     max_started_minutes = forms.IntegerField(
-        label=_("Tempo máximo de lote aberto (min)"),
+        label=_("Tempo máximo de lote em produção (min)"),
         required=False,
         min_value=1,
         widget=UnfoldAdminIntegerFieldWidget(),
-        help_text=_("Após esse tempo um lote aberto passa a aparecer como atrasado."),
+        help_text=_("Após esse tempo um lote em produção passa a aparecer como atrasado."),
     )
     capacity_per_day = forms.DecimalField(
         label=_("Capacidade por dia"),
@@ -708,7 +708,7 @@ class WorkOrderAdmin(BaseModelAdmin):
 
     @display(description=_("Realizado"), ordering="finished")
     def produced_display(self, obj):
-        """Quantidade realizada (``finished``), declarada no Fechamento."""
+        """Quantidade realizada (``finished``), declarada na Finalização."""
         if obj.finished is not None:
             return _format_work_order_units(obj.finished)
         return "-"
@@ -825,7 +825,7 @@ class WorkOrderAdmin(BaseModelAdmin):
     @display(description=_("Conciliação de estoque"))
     def reconciliation_state_display(self, obj):
         if obj.status != WorkOrder.Status.FINISHED:
-            return _("Não aplicável enquanto a fornada está aberta")
+            return _("Não aplicável enquanto o lote está em produção")
         meta = obj.meta or {}
         consumed = bool(meta.get("stock_consumed_at"))
         realized = bool(meta.get("stock_realized_at"))

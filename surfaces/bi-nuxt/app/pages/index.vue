@@ -434,7 +434,7 @@ const csv = computed(() => overShortCsv(filtered.value));
         <OperatorScreenState v-if="dayError" state="error" what="a leitura do dia" @retry="dayRefresh()" />
 
         <NuxtCard v-if="day && explainOpen" title="Como é calculado" class="text-sm leading-6" data-bi-explain>
-          <p><b>Fez</b>: o realizado dos lotes fechados do dia. <b>Vendeu</b>: as vendas do dia, de todos os canais.</p>
+          <p><b>Fez</b>: o realizado dos lotes finalizados do dia. <b>Vendeu</b>: as vendas do dia, de todos os canais.</p>
           <p><b>Acabou às</b>: a hora da venda em que o vendido alcançou o feito. <b>Vendas perdidas</b>: o ritmo até acabar, estendido até o fechamento{{ day.closes_at ? ` (${day.closes_at})` : "" }}, com teto de 2× o vendido. É a mesma conta que a sugestão do Planejamento usa.</p>
           <p><b>Faltou</b>: acabou antes da última hora. <b>Na medida</b>: acabou na última hora, sobrou até 2, ou vendeu mais do que fez (havia estoque de antes). <b>Sobrou</b>: sobrou mais que isso. A comparação é a média dos últimos {{ day.compare_days.length || 4 }} dias iguais com a loja aberta.</p>
           <p><b>Custo</b>: a ficha técnica ativa vezes o custo do fornecedor preferencial de cada insumo. Insumo sem custo deixa o produto sem custo (nada é estimado).</p>
@@ -500,7 +500,7 @@ const csv = computed(() => overShortCsv(filtered.value));
             :row-label="(row: BIOverShortRow) => row.name"
             caption="Sobrou ou faltou, produto a produto"
             :empty-icon="rows.length ? 'i-lucide-filter-x' : 'i-lucide-chef-hat'"
-            :empty-title="rows.length ? 'Nenhum produto neste recorte' : 'Nenhum lote fechado neste dia'"
+            :empty-title="rows.length ? 'Nenhum produto neste recorte' : 'Nenhum lote finalizado neste dia'"
             :empty-description="rows.length ? 'Troque o veredito, a coleção ou a busca para ver os outros produtos.' : 'A leitura começa quando a Produção fecha o primeiro lote.'"
           >
             <template #product-cell="{ row }">

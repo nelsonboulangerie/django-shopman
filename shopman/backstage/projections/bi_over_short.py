@@ -7,7 +7,7 @@ cedo), onde sobrou e onde ficou na medida, contra o mesmo dia da semana nas
 
 Fontes, todas já existentes:
 
-- **fez**: o realizado dos lotes fechados do dia (``WorkOrder.finished`` por
+- **fez**: o realizado dos lotes finalizados do dia (``WorkOrder.finished`` por
   ``output_sku`` e ``target_date``), a mesma base do aproveitamento;
 - **vendeu**: as linhas de venda conciliadas do B.I. (``canonical.read_sales``:
   nativo, e o histórico onde o nativo não vendeu), com a hora de cada venda;
@@ -79,10 +79,10 @@ WEEKDAY_LABELS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "
 
 @dataclass(frozen=True)
 class BIOverShortLot:
-    """Um lote fechado do produto no dia: o registro de onde o "fez" saiu."""
+    """Um lote finalizado do produto no dia: o registro de onde o "fez" saiu."""
 
     ref: str
-    #: Hora local em que o lote foi fechado ("06:30"); vazio sem registro.
+    #: Hora local em que o lote foi finalizado ("06:30"); vazio sem registro.
     finished_at: str
     qty: str
 
@@ -146,7 +146,7 @@ class BIOverShortRow:
     sales_by_hour: tuple[BIOverShortHour, ...]
     #: Os dias de ``history``, na mesma ordem ("Os 4 sábados" abre cada um).
     history_days: tuple[str, ...]
-    #: O que o plano do dia previa: quantidade e lotes (fechados ou não, fora os cancelados).
+    #: O que o plano do dia previa: quantidade e lotes (finalizados ou não, fora os cancelados).
     planned: str
     planned_lots: int
     #: Pedidos do dia com o produto (o "Abrir os N pedidos" do Gestor).
@@ -369,7 +369,7 @@ def _read_day(day: date, window: tuple[time, time] | None) -> _DayRead:
     ):
         if not wo.output_sku:
             continue
-        # O plano do dia: todo lote que não foi cancelado, fechado ou não ("Sem 3º
+        # O plano do dia: todo lote que não foi cancelado, finalizado ou não ("Sem 3º
         # lote: o plano dizia 44").
         planned[wo.output_sku] += wo.quantity or Decimal(0)
         planned_lots[wo.output_sku] += 1

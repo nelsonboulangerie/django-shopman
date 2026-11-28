@@ -187,7 +187,7 @@ export function coverageLabel(measured: number, finished: number): string {
 }
 
 /**
- * Dica do aproveitamento (realizado ÷ previsto). Lote fechado sem abertura
+ * Dica do aproveitamento (realizado ÷ previsto). Lote finalizado sem confirmação
  * declarada tem o previsto ASSUMIDO igual ao planejado (UX-PROD-AF): a dica diz
  * quantos foram, em vez de apresentar o número como declarado.
  */

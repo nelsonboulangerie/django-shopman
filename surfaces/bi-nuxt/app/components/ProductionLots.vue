@@ -108,7 +108,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
     <template v-if="report">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <OperatorMetric
-          title="Lotes fechados"
+          title="Lotes finalizados"
           :value="formatInt(report.batches_finished)"
           :delta="delta(report.batches_finished, report.previous.batches_finished)"
         />
@@ -144,7 +144,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
           :points="finished"
           :format="formatInt"
               :max-ticks="maxTicks"
-          empty-title="Nenhum lote fechado no período"
+          empty-title="Nenhum lote finalizado no período"
         />
       </OperatorReadingCard>
 
@@ -160,7 +160,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
           :points="yields"
           :format="formatPercentValue"
               :max-ticks="maxTicks"
-          empty-title="Nenhum lote fechado no período"
+          empty-title="Nenhum lote finalizado no período"
         />
       </OperatorReadingCard>
 
@@ -204,7 +204,7 @@ const ovenScaleByOven = computed(() => ovenScale(ovens.value));
           class="max-h-96"
           caption="Produção dia a dia"
           empty-icon="i-lucide-chef-hat"
-          empty-title="Nenhum lote fechado no período"
+          empty-title="Nenhum lote finalizado no período"
         />
       </OperatorReadingCard>
 

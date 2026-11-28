@@ -1022,7 +1022,7 @@ const FORECAST_POPULATED = {
     ...FORECAST.forecast,
     generated_at_display: "6h42",
     rows: [
-      forecastRow("WO-0101", "Pão francês", "240", "un", "5h30", "arrived", "Fechado"),
+      forecastRow("WO-0101", "Pão francês", "240", "un", "5h30", "arrived", "Finalizado"),
       forecastRow("WO-0102", "Massa de croissant", "18500", "g", "6h", "delayed", "Atrasado"),
       forecastRow("WO-0103", "Croissant Manteiga", "120", "un", "7h", "in_progress", "Previsto"),
       forecastRow("WO-0104", "Baguete", "60", "un", "7h30", "in_progress", "Previsto"),
