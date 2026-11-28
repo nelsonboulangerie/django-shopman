@@ -88,21 +88,21 @@ const ORDERS = () => [
 ];
 
 describe("QualityGatePanel — qualidade em lote", () => {
-  it("junta os lotes sem exceção num cartão com a soma, a consequência e um ato", async () => {
+  it("junta os lotes sem exceção num cartão: o número, a consequência e um ato", async () => {
     const wrapper = mountPanel(ORDERS());
     const clean = wrapper.find("[data-quality-clean]");
 
-    expect(clean.text()).toContain("6 lotes de hoje sem exceção");
-    expect(clean.text()).toContain("60 peças, todas no padrão · perda 0 · desconto 0");
-    expect(clean.text()).toContain("+2");
-    expect(wrapper.find("[data-quality-closers]").text()).toContain("Rafael");
+    // KISS (28/11): o número e o gesto; a soma, quem finalizou e a lista saem da vista.
+    expect(clean.text()).toContain("6 lotes sem exceção");
+    expect(clean.text()).not.toContain("perda 0");
+    expect(clean.text()).not.toContain("Receita 1");
+    expect(wrapper.find("[data-quality-closers]").exists()).toBe(false);
     // 4 produtos com fila de 2 pessoas cada (o SKU-1 repetido conta uma vez).
     expect(wrapper.find("[data-quality-released]").text()).toContain(
-      "até 8 clientes avisados",
+      "até 8 clientes do “Me avise” são avisados",
     );
-    expect(wrapper.find("[data-quality-released]").text()).toContain("“Me avise” de 4 produtos");
     const confirm = wrapper.find("[data-quality-confirm-batch]");
-    expect(confirm.text()).toContain("6 lotes, nenhuma exceção · Confirmar");
+    expect(confirm.text()).toBe("Confirmar os 6");
     expect(clean.text()).toContain("Fica registrado com seu nome.");
 
     await confirm.trigger("click");
@@ -120,18 +120,15 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(wrapper.find("[data-quality-confirm-batch]").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Você confirma como responsável");
     expect(wrapper.text()).not.toContain("Confirmar assim");
+    // Uma vez, no topo: os cartões não repetem (KISS, 28/11).
     const hints = wrapper.findAll("[data-quality-manager-only]").map((hint) => hint.text());
-    expect(hints.length).toBeGreaterThan(0);
-    expect(hints[0]).toBe("Quem confirma a qualidade é o gerente. Chame quem está de turno.");
+    expect(hints).toEqual(["Quem confirma a qualidade é o gerente. Chame quem está de turno."]);
   });
 
-  it("mostra todos os lotes limpos só quando pedido", async () => {
+  it("mostra os lotes limpos só quando pedido, no Ver", async () => {
     const wrapper = mountPanel(ORDERS());
     expect(wrapper.find("[data-quality-clean]").text()).not.toContain("Receita 6");
-    await wrapper
-      .findAll("button")
-      .find((button) => button.text().includes("Ver os 6 lotes"))!
-      .trigger("click");
+    await wrapper.get("[data-quality-clean-toggle]").trigger("click");
     expect(wrapper.find("[data-quality-clean]").text()).toContain("Receita 6");
   });
 

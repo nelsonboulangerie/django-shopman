@@ -12,7 +12,6 @@ import { isStale } from "~/presentation/production";
 import {
   PRODUCTION_MODE_ALL,
   PRODUCTION_MODE_FILTER_OPTIONS,
-  PRODUCTION_MODE_MADE_TO_ORDER,
   favoriteActionHint,
   favoriteToggleLabel,
   filterEntries,
@@ -90,24 +89,22 @@ const sortItems = [
   { value: "name", label: "Nome" },
   { value: "kind", label: "Tipo e nome" },
 ];
+// KISS (28/11): a barra tem no máximo 5 controles. Ficam à vista os dois recortes de
+// toda hora; "Sem SKU" e "Com rascunho" moram no painel de Filtros. "Não conferidas"
+// e "Receitas a conferir" eram o MESMO conjunto em dois controles: o recorte fica, e a
+// passada uma a uma (/recipes/review) aparece só com ele ligado.
 const quickItems = [
   { key: "favorites", label: "Favoritas", icon: "i-lucide-star" },
   { key: "unreviewed", label: "Não conferidas", icon: "i-lucide-badge-alert" },
-  { key: "without_sku", label: "Sem SKU", icon: "i-lucide-tag" },
-  { key: "with_draft", label: "Com rascunho", icon: "i-lucide-file-pen-line" },
 ] satisfies QuickFilterItem[];
 const quickSelection = computed<string[]>({
   get: () => [
     ...(onlyFavorites.value ? ["favorites"] : []),
     ...(onlyUnreviewed.value ? ["unreviewed"] : []),
-    ...(onlyWithoutSku.value ? ["without_sku"] : []),
-    ...(onlyWithDraft.value ? ["with_draft"] : []),
   ],
   set: (next) => {
     onlyFavorites.value = next.includes("favorites");
     onlyUnreviewed.value = next.includes("unreviewed");
-    onlyWithoutSku.value = next.includes("without_sku");
-    onlyWithDraft.value = next.includes("with_draft");
   },
 });
 const panelDimensions = computed<FilterDimension[]>(() => [
@@ -118,17 +115,23 @@ const panelDimensions = computed<FilterDimension[]>(() => [
     type: "single-select",
     options: modeItems.filter((option) => option.value !== PRODUCTION_MODE_ALL),
   },
+  { id: "without_sku", label: "Sem SKU", type: "boolean", options: [] },
+  { id: "with_draft", label: "Com rascunho", type: "boolean", options: [] },
   { id: "archived", label: "Arquivadas", type: "boolean", options: [] },
 ]);
 const panelFilters = computed<ActiveFilters>({
   get: () => ({
     ...(kind.value ? { kind: [kind.value] } : {}),
     ...(mode.value !== PRODUCTION_MODE_ALL ? { mode: [mode.value] } : {}),
+    ...(onlyWithoutSku.value ? { without_sku: ["true"] } : {}),
+    ...(onlyWithDraft.value ? { with_draft: ["true"] } : {}),
     ...(archived.value ? { archived: ["true"] } : {}),
   }),
   set: (next) => {
     kind.value = next.kind?.[0] ?? "";
     mode.value = next.mode?.[0] ?? PRODUCTION_MODE_ALL;
+    onlyWithoutSku.value = next.without_sku?.[0] === "true";
+    onlyWithDraft.value = next.with_draft?.[0] === "true";
     archived.value = next.archived?.[0] === "true";
   },
 });
@@ -149,6 +152,16 @@ const activeFilters = computed(() => {
     key: "mode",
     label: modeItems.find((option) => option.value === mode.value)?.label ?? mode.value,
     remove: () => { mode.value = PRODUCTION_MODE_ALL; },
+  });
+  if (onlyWithoutSku.value) filters.push({
+    key: "without_sku",
+    label: "Sem SKU",
+    remove: () => { onlyWithoutSku.value = false; },
+  });
+  if (onlyWithDraft.value) filters.push({
+    key: "with_draft",
+    label: "Com rascunho",
+    remove: () => { onlyWithDraft.value = false; },
   });
   if (archived.value) filters.push({
     key: "archived",
@@ -221,11 +234,13 @@ watch(
       </template>
       <template #filters>
         <NuxtButton
+          v-if="onlyUnreviewed"
           to="/recipes/review"
           color="neutral"
           variant="outline"
           icon="i-lucide-badge-check"
-          label="Receitas a conferir"
+          label="Conferir uma a uma"
+          data-recipe-review-pass
         />
         <NuxtSelect
           v-model="sort"
@@ -309,25 +324,31 @@ watch(
         <div
           v-for="entry in visible"
           :key="entry.ref"
-          class="relative grid h-full grid-rows-[1fr_auto] overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/40 focus-within:border-primary/40"
+          class="relative h-full overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/40 focus-within:border-primary/40"
           :class="!entry.is_active ? 'opacity-70' : ''"
           data-recipe-card
         >
-          <!-- A estrela mora AO LADO do link, na mesma faixa: nenhuma parte do link fica sob ela. -->
-          <div class="flex min-w-0 items-start">
+          <!-- A estrela e o Editar moram AO LADO do link, numa coluna à direita: nenhuma
+               parte do link fica sob eles, e o Editar divide a linha das etiquetas em vez
+               de ganhar um rodapé (KISS, 28/11: o dobro de receitas na tela). -->
+          <div class="flex h-full min-w-0 items-stretch">
             <NuxtLink
               :to="`/recipes/${entry.ref}`"
               class="grid min-w-0 flex-1 grid-cols-1 content-start gap-2 self-stretch p-3 transition hover:bg-accent/30"
             >
               <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="truncate font-bold">{{ entry.name }}</p>
-                  <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
-                </div>
+                <p class="min-w-0 truncate font-bold">{{ entry.name }}</p>
                 <NuxtBadge color="neutral" class="shrink-0" :label="entry.kind_label" />
               </div>
 
-              <p class="flex items-center gap-1.5 text-sm">
+              <!-- KISS (dono, 28/11): o cartão é o nome, o tipo e o que pede atenção. O
+                   produto só aparece quando não é o mesmo nome da receita (ou falta);
+                   o código interno, a versão e a data moram na receita. -->
+              <p
+                v-if="!entry.output_sku || (entry.output_name && entry.output_name !== entry.name)"
+                class="flex items-center gap-1.5 text-sm"
+                data-recipe-output
+              >
                 <Icon name="lucide:tag" class="size-3.5 shrink-0 text-muted-foreground" />
                 <template v-if="entry.output_sku">
                   <span class="truncate">{{ entry.output_name || entry.output_sku }}</span>
@@ -339,11 +360,7 @@ watch(
               </p>
 
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span v-if="entry.current_version_number" class="tabular-nums">
-                  Versão atual <b class="text-foreground">{{ entry.current_version_number }}</b>
-                  <span v-if="entry.version_count > 1"> de {{ entry.version_count }}</span>
-                </span>
-                <span v-else>Sem versão publicada</span>
+                <span v-if="!entry.current_version_number">Sem versão publicada</span>
                 <span v-if="entry.hydration_display" class="tabular-nums">
                   Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
                 </span>
@@ -359,12 +376,6 @@ watch(
                   color="warning"
                   :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
                 />
-                <NuxtBadge
-                  v-if="entry.production_mode === PRODUCTION_MODE_MADE_TO_ORDER"
-                  color="primary"
-                  icon="i-lucide-coffee"
-                  :label="entry.production_mode_label"
-                />
                 <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
                 <!-- O selo é curto (sai em sentença); quem tomou o SKU vai na frase ao lado. -->
                 <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
@@ -376,11 +387,8 @@ watch(
                   :title="entry.provenance_label"
                 />
               </div>
-
-              <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
-                Atualizada {{ entry.updated_at_display }}
-              </p>
             </NuxtLink>
+            <div class="flex shrink-0 flex-col items-end justify-between gap-1 p-1">
             <NuxtButton
               color="neutral"
               variant="ghost"
@@ -388,7 +396,7 @@ watch(
               :active="entry.is_favorite"
               active-color="primary"
               active-variant="ghost"
-              class="mr-1 mt-1 shrink-0 pointer-coarse:size-control pointer-coarse:justify-center"
+              class="shrink-0 pointer-coarse:size-control pointer-coarse:justify-center"
               :aria-pressed="entry.is_favorite"
               :aria-label="favoriteToggleLabel(entry.name)"
               :title="favoriteActionHint(entry.is_favorite)"
@@ -397,9 +405,8 @@ watch(
             >
               <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
             </NuxtButton>
-          </div>
-          <div v-if="canEdit && entry.is_active" class="flex justify-end border-t border-border px-2 py-1.5">
             <NuxtButton
+              v-if="canEdit && entry.is_active"
               :to="`/recipes/${entry.ref}/edit`"
               color="neutral"
               variant="ghost"
@@ -408,6 +415,7 @@ watch(
               :aria-label="`Editar ${entry.name}`"
               data-recipe-edit
             />
+            </div>
           </div>
         </div>
       </div>

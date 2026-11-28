@@ -3,8 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   alertsReleased,
   batchConfirmLabel,
-  cleanSummary,
-  closersSummary,
   exceptionBadge,
   exceptionReference,
   exceptionSegments,
@@ -80,26 +78,9 @@ describe("qualityGate", () => {
     expect(gate.openCount).toBe(1);
   });
 
-  it("soma as peças e escreve o ato com o fato", () => {
-    expect(cleanSummary([card(1), card(2, { full_price_qty: "24" })])).toBe(
-      "84 peças, todas no padrão · perda 0 · desconto 0",
-    );
-    expect(cleanSummary([card(1, { full_price_qty: "1" })])).toBe(
-      "1 peça, todas no padrão · perda 0 · desconto 0",
-    );
-    expect(batchConfirmLabel(6)).toBe("6 lotes, nenhuma exceção · Confirmar");
-    expect(batchConfirmLabel(1)).toBe("1 lote, nenhuma exceção · Confirmar");
-  });
-
-  it("diz quem fechou e a janela de horário", () => {
-    expect(
-      closersSummary([
-        card(1, { closed_by: "Rafael", closed_at_display: "13:40" }),
-        card(2, { closed_by: "Joana", closed_at_display: "06:10" }),
-        card(3, { closed_by: "Rafael", closed_at_display: "09:00" }),
-      ]),
-    ).toEqual({ names: "Rafael · Joana", window: "entre 6h10 e 13h40" });
-    expect(closersSummary([card(1)])).toEqual({ names: "Rafael", window: "às 7h25" });
+  it("o botão do conjunto é o verbo e a contagem (o título já diz sem exceção)", () => {
+    expect(batchConfirmLabel(6)).toBe("Confirmar os 6");
+    expect(batchConfirmLabel(1)).toBe("Confirmar o lote");
   });
 
   it("soma o 'Me avise' por produto e cala quando a fila não foi lida", () => {
@@ -162,31 +143,6 @@ describe("qualityGate", () => {
     expect(
       exceptionBadge(card(3, { full_price_qty: "62", quality_exception: true })),
     ).toBe("Contagem 62 de 60");
-  });
-
-  it("nunca soma gramas com peças: agrupa por grandeza (seed Nelson)", () => {
-    const clean = [
-      card(1, { recipe_name: "Yudane", output_unit: "g", full_price_qty: "3453.659" }),
-      card(2, { recipe_name: "Pasta Autolizada", output_unit: "g", full_price_qty: "17073.914" }),
-      card(3, { recipe_name: "Massa Tradição", output_unit: "g", full_price_qty: "18480" }),
-      card(4, { recipe_name: "Baguette", full_price_qty: "120" }),
-      card(5, { recipe_name: "Croissant", full_price_qty: "192" }),
-    ];
-
-    expect(cleanSummary(clean)).toBe(
-      "312 peças e 39 kg, tudo no padrão · perda 0 · desconto 0",
-    );
-    expect(cleanSummary(clean.slice(0, 3))).toBe(
-      "39 kg, tudo no padrão · perda 0 · desconto 0",
-    );
-    expect(
-      cleanSummary([
-        card(1, { output_unit: "kg", full_price_qty: "2.5" }),
-        card(2, { output_unit: "g", full_price_qty: "400" }),
-        card(3, { output_unit: "L", full_price_qty: "1.5" }),
-        card(4, { full_price_qty: "10" }),
-      ]),
-    ).toBe("10 peças, 2,9 kg e 1,5 L, tudo no padrão · perda 0 · desconto 0");
   });
 
   it("escreve cada lote na sua unidade, com vírgula decimal", () => {
