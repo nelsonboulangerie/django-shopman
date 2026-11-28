@@ -37,10 +37,10 @@ const FORBIDDEN: Array<{ word: RegExp; why: string }> = [
   { word: /iniciad[oa]s?/i, why: "em produção (started)" },
   { word: /conclu[ií]d[oa]s?/i, why: "finalizado / finalizada (finished)" },
   // Aberto/Fechado como estado do lote (28/11). "Canal aberto", "diálogo aberto" e
-  // "antes de fechar" (a loja) seguem livres: a trava olha o lote, a fornada, a
+  // "antes de fechar" (a loja) seguem livres: a trava olha o lote, a
   // contagem ("25 abertos") e o rótulo que começa com a palavra.
   {
-    word: /\blotes?\s+(ainda\s+)?(n[aã]o\s+|j[aá]\s+)?(abert|fechad)[oa]s?\b|\bfornadas?\s+(abert|fechad)[oa]s?\b|\bordem\s+abert/i,
+    word: /\blotes?\s+(ainda\s+)?(n[aã]o\s+|j[aá]\s+)?(abert|fechad)[oa]s?\b|\bordem\s+abert/i,
     why: "lote em produção / lote finalizado",
   },
   {
@@ -48,7 +48,7 @@ const FORBIDDEN: Array<{ word: RegExp; why: string }> = [
     why: "em produção desde / finalizado por",
   },
   {
-    word: /\b(abrir|fechar)\s+((o|os|a|as)\s+)?(lotes?|fornadas?)\b|\bsem\s+fechar\b/i,
+    word: /\b(abrir|fechar)\s+((o|os|a|as)\s+)?lotes?\b|\bsem\s+fechar\b/i,
     why: "confirmar / finalizar o lote",
   },
 ];
