@@ -25,6 +25,8 @@ const props = defineProps<{
   qtyValid: boolean;
   actionAllowed: boolean;
   removes: boolean;
+  /** Aberto pelo "Planejar mais N" da faixa (WP-F13): o encomendado da data ("60"). */
+  ordered?: string;
 }>();
 
 const qty = defineModel<string>("qty", { required: true });
@@ -101,9 +103,10 @@ defineExpose({
           v-if="mode === 'adjust' && selectedOrder"
           class="text-sm text-muted-foreground"
         >
-          Substitui #{{ selectedOrder.ref }} ({{
-            selectedOrder.planned_qty
-          }}). Com 0, o lote sai do plano.
+          <!-- Sem o código do lote: "#WO-2026-00046" não diz nada à Cozinha. -->
+          Planejado: {{ selectedOrder.planned_qty }}.
+          <template v-if="ordered">Encomendado: {{ ordered }}.</template>
+          <template v-else>Com 0, o lote sai do plano.</template>
         </p>
         <p
           v-else-if="mode === 'new-batch'"

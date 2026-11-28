@@ -426,6 +426,93 @@ export function promisedGap(
   return `O plano da data fica ${formatQtyUnit(over, unit)} abaixo das encomendas.`;
 }
 
+/**
+ * WP-F13 (P1-04): o pedido à Produção. Encomenda da data que o plano não cobre,
+ * pela régua das reservas (`promised.over_plan_qty`, WP-F08): sem lote nenhum
+ * ("Encomendado sem lote: Croissant 12", "Planejar 12") ou acima do plano
+ * ("Encomendado acima do plano: Croissant 3", "Planejar mais 3"). A Produção só
+ * planeja (D-042, item 2): não há aceitar nem recusar aqui; se a casa não vai
+ * produzir, a encomenda segue em "Promessa em risco" no Gestor.
+ */
+export interface UnbackedOrder {
+  row: ProductionMatrixRowProjection;
+  kind: "no-lot" | "over-plan";
+  /** O que falta planejar para cobrir as encomendas da data. */
+  missing: number;
+  /** O planejado da data depois do gesto: o que vai ao servidor. */
+  targetQty: string;
+  /**
+   * A sugestão da linha do dia, quando ela já conta as encomendas ("196"); "" quando
+   * não há linha com número próprio. Coberta numa linha, a encomenda NÃO vai para a
+   * faixa (decisão da coordenação, 28/11): a linha já diz tudo (o chip e o número), e um
+   * segundo "Planejar" com outro número era armadilha (tocar "Planejar 12" fechava o dia
+   * com 12 em vez de 196). Só o vazio da Produção, que não tem linha, ainda a lista.
+   */
+  coveredBy: string;
+  headline: string;
+  subject: string;
+  actionLabel: string;
+  /**
+   * Por que a Produção não pode crescer o plano, ou "". Acima do plano sem lote
+   * planejado (o lote do dia já foi aberto, ou já fechou), não há quantidade a
+   * ajustar: o `adjust` só aceita lote planejado, e um lote novo sobre a massa já
+   * batida passaria do que a massa comporta (regra do teto, #3681). A faixa diz o
+   * fato e quem fala com o cliente; não oferece "Planejar mais" (coordenação, 28/11).
+   */
+  lockedNote: string;
+}
+
+const GESTOR_TAKES_IT = "A encomenda aparece como Promessa em risco no Gestor.";
+
+/** Acima do plano, sem lote ainda planejado: o lote do dia já está em produção ou fechado. */
+function lockedNote(row: ProductionMatrixRowProjection): string {
+  if (row.planned_orders.length) return "";
+  if (row.started_orders.length) return `Lote já em produção. ${GESTOR_TAKES_IT}`;
+  if (row.finished_orders.length) return `Lote já fechado. ${GESTOR_TAKES_IT}`;
+  return "";
+}
+
+/** A linha do dia tem número próprio que já cobre as encomendas (e nenhum lote ainda). */
+function lineCovers(row: ProductionMatrixRowProjection, ordered: number): string {
+  if (!row.suggestion || row.planned_orders.length) return "";
+  const suggested = parseQty(row.suggestion.quantity);
+  return suggested > 0 && suggested >= ordered ? row.suggestion.quantity : "";
+}
+
+function qtyString(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
+}
+
+export function unbackedOrders(rows: ProductionMatrixRowProjection[]): UnbackedOrder[] {
+  return rows
+    .flatMap((row): UnbackedOrder[] => {
+      const missing = parseQty(row.promised?.over_plan_qty);
+      if (!row.promised || missing <= 0 || !rowPromisedOrders(row).length) return [];
+      const planned = parseQty(row.promised.planned_qty);
+      const kind = planned > 0 ? "over-plan" : "no-lot";
+      const amount = formatQty(missing, row.output_unit);
+      return [
+        {
+          row,
+          kind,
+          missing,
+          targetQty: qtyString(planned + missing),
+          coveredBy: kind === "no-lot" ? lineCovers(row, missing) : "",
+          headline: kind === "no-lot" ? "Encomendado sem lote" : "Encomendado acima do plano",
+          subject: `${rowLabel(row)} ${amount}`,
+          actionLabel: kind === "no-lot" ? `Planejar ${amount}` : `Planejar mais ${amount}`,
+          lockedNote: kind === "over-plan" ? lockedNote(row) : "",
+        },
+      ];
+    })
+    .sort((a, b) => rowLabel(a.row).localeCompare(rowLabel(b.row), "pt-BR"));
+}
+
+/** O que vai para a faixa do Planejamento: só o que nenhuma linha do dia cobre. */
+export function bandOrders(items: UnbackedOrder[]): UnbackedOrder[] {
+  return items.filter((item) => !item.coveredBy);
+}
+
 /** A hora do plano mais recente entre os planejados ("15h12"), ou "". */
 export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
   const times = rows
