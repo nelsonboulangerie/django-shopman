@@ -1791,9 +1791,11 @@ const startedDescription = computed(() => {
                KISS (dono, 28/11): o que já foi feito é uma linha só, "✓ 28 planejados
                às 11h16 · Ver"; a lista dos produtos abre no Ver. -->
           <template v-if="planGroups.planned.length">
-            <button
-              type="button"
-              class="flex min-h-12 w-full items-center gap-2 bg-success/5 px-4 text-left op-body"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              block
+              class="min-h-12 justify-start gap-2 rounded-none bg-success/5 px-4 text-left op-body"
               :aria-expanded="plannedExpanded"
               data-planned-toggle
               @click="plannedExpanded = !plannedExpanded"
@@ -1812,7 +1814,7 @@ const startedDescription = computed(() => {
                   class="size-4"
                   aria-hidden="true"
               /></span>
-            </button>
+            </NuxtButton>
             <!-- Aberto no Ver: cada produto com o número; tocar no produto abre Corrigir,
                  Novo lote e Ver encomendas. -->
             <div
@@ -2040,9 +2042,11 @@ const startedDescription = computed(() => {
           <!-- O que já passou pelo Confirmar: uma linha só; o Ver abre os produtos com o
                previsto de cada um. As ações de cada lote seguem no recorte "Em produção". -->
           <template v-if="startedOpenRows.length">
-            <button
-              type="button"
-              class="flex min-h-12 w-full items-center gap-2 border-t border-border bg-success/5 px-4 text-left op-body first:border-t-0"
+            <NuxtButton
+              color="neutral"
+              variant="ghost"
+              block
+              class="min-h-12 justify-start gap-2 rounded-none border-t border-border bg-success/5 px-4 text-left op-body first:border-t-0"
               :aria-expanded="startedExpanded"
               data-open-started-toggle
               @click="startedExpanded = !startedExpanded"
@@ -2056,7 +2060,7 @@ const startedDescription = computed(() => {
                   class="size-4"
                   aria-hidden="true"
               /></span>
-            </button>
+            </NuxtButton>
             <div
               v-if="startedExpanded"
               class="flex flex-wrap gap-x-4 gap-y-1 bg-success/5 px-4 pb-3 op-body"
