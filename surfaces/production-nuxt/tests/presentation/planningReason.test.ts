@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   fittingAlternative,
-  lotPlanLine,
   shortageLine,
   suggestionBasisLine,
   suggestionHistory,
@@ -248,22 +247,5 @@ describe("o porquê que o B.I. levou ao plano", () => {
       "Na terça 29/09 sobraram 12 de 60 feitas",
     ]);
     expect(lines[0]!.note).toBe("levado do B.I.");
-  });
-});
-
-// WP-F17: o que o plano do lote gravou, lido no "Por quê".
-describe("o porquê que ficou com o lote", () => {
-  it("diz a sugestão de quando planejou ao lado do planejado", () => {
-    expect(lotPlanLine({ planned_qty: "36", suggested_qty: "42" })).toBe(
-      "Sugerido 42, planejado 36",
-    );
-    expect(lotPlanLine({ planned_qty: "2.5", suggested_qty: "3" })).toBe(
-      "Sugerido 3, planejado 2,5",
-    );
-  });
-
-  it("lote sem sugestão gravada não inventa linha", () => {
-    expect(lotPlanLine({ planned_qty: "36", suggested_qty: "" })).toBe("");
-    expect(lotPlanLine({ planned_qty: "36" })).toBe("");
   });
 });

@@ -32,6 +32,7 @@ import {
   formatQtyUnit,
   fullDateLabel,
   latestPlanTime,
+  lotPlanLine,
   plannedAsSuggested,
   isoForOffset,
   isStale,
@@ -1426,10 +1427,14 @@ const plannedLineMenu = computed(() => [
     onSelect: () => onAction(row),
   })),
 ]);
-// Tocar num produto planejado: o estado dele e o que dá para fazer.
+// Tocar num produto planejado: o estado dele e o que dá para fazer. O porquê do
+// lote (WP-F17) mora aqui: "Sugerido 42, planejado 36" quando a casa planejou outro
+// número, lido do que o plano gravou, não da sugestão de agora.
 function plannedItemMenu(row: ProductionMatrixRowProjection) {
+  const lotLine = row.planned_qty !== "0" ? lotPlanLine(row) : "";
   const state = [
-    `${plannedStateLabel(row)} ${formatQty(plannedQtyLabel(row), row.output_unit)}`,
+    lotLine ||
+      `${plannedStateLabel(row)} ${formatQty(plannedQtyLabel(row), row.output_unit)}`,
     plannedNote(row),
     plannedAsSuggested(row) ? "como sugerido" : "",
   ]
@@ -1790,7 +1795,6 @@ const startedDescription = computed(() => {
                       :promised="row.promised"
                       :unit="row.output_unit"
                       :today="todayISO"
-                      :lots="[...row.planned_orders, ...row.started_orders]"
                       @close="closeReason(row.output_sku)"
                       @plan="
                         (quantity, source) =>
