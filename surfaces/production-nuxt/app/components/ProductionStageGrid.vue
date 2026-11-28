@@ -32,6 +32,7 @@ import {
   formatQtyUnit,
   fullDateLabel,
   latestPlanTime,
+  lotPlanLine,
   plannedAsSuggested,
   isoForOffset,
   isStale,
@@ -556,6 +557,8 @@ async function submitPlan(
     workOrder?: WorkOrderCardProjection | null;
     newBatch?: boolean;
     quiet?: boolean;
+    /** Falso no envio em conjunto: a tela relê uma vez só, no fim. */
+    reread?: boolean;
     /** O motivo de quem tirou o lote do plano (zero sobre lote existente). */
     reason?: string;
   },
@@ -579,7 +582,7 @@ async function submitPlan(
     target_date: board.value.selected_date,
     expected_rev: opts.workOrder?.rev ?? null,
     position_ref: positionRef,
-    source: opts.source,
+    source: truePlanSource(row, opts),
     ...(opts.reason ? { reason: opts.reason } : {}),
   };
   const label = opts.newBatch ? "Novo lote planejado" : "Planejado";
@@ -588,7 +591,10 @@ async function submitPlan(
       ? `${rowLabel(row)} saiu do plano.`
       : `${label}: ${rowLabel(row)} × ${opts.quantity}`;
   lastPlanAttempt.value = { key: row.output_sku, payload, successMessage };
-  const res = await plan(row.output_sku, payload);
+  const res =
+    opts.reread === false
+      ? await plan(row.output_sku, payload, { reread: false })
+      : await plan(row.output_sku, payload);
   if (res.ok) {
     lastPlanAttempt.value = null;
     drafts.delete(row.output_sku);
@@ -598,6 +604,25 @@ async function submitPlan(
     shortage.value = res.shortage;
   }
   return res;
+}
+
+/**
+ * A origem verdadeira do plano (WP-F17, P1-05): o número da sugestão, num lote
+ * que não é extra, é "como sugerido", venha da linha, do diálogo ou do conjunto.
+ * Antes quem podia editar o planejado mandava sempre "manual", e o B.I. lia
+ * "a casa discordou" onde ela concordou. Só quem pode aplicar a sugestão a
+ * aplica: sem essa capacidade, o número igual continua manual.
+ */
+function truePlanSource(
+  row: ProductionMatrixRowProjection,
+  opts: { quantity: string; source: "manual" | "suggested"; newBatch?: boolean },
+): "manual" | "suggested" {
+  if (opts.source === "suggested") return "suggested";
+  if (opts.newBatch || !row.suggestion || access.value?.can_edit_suggested !== true)
+    return "manual";
+  return qtyNumber(opts.quantity) === qtyNumber(row.suggestion.quantity)
+    ? "suggested"
+    : "manual";
 }
 
 // Recusa por números que mudaram: o diálogo passa a mostrar a linha atual e
@@ -1270,7 +1295,8 @@ async function planInline(row: ProductionMatrixRowProjection) {
 }
 
 // "Planejar os 16 como sugerido": um sim para o conjunto, um a um no servidor (cada
-// plano é um evento próprio). Parou numa recusa? A recusa aparece e o resto espera.
+// plano é um evento próprio), e a tela relê uma vez só, no fim (WP-F17, P2-02: eram
+// cerca de 4 s por produto). Parou numa recusa? A recusa aparece e o resto espera.
 async function planCleanSet() {
   if (bulkSubmitting.value) return;
   const targets = [...planGroups.value.clean];
@@ -1283,11 +1309,13 @@ async function planCleanSet() {
         quantity: row.suggestion!.quantity,
         source: inlineSource.value,
         quiet: true,
+        reread: false,
       });
       if (!res?.ok) break;
       done += 1;
     }
   } finally {
+    if (done) await refresh();
     bulkSubmitting.value = false;
   }
   if (done)
@@ -1399,10 +1427,14 @@ const plannedLineMenu = computed(() => [
     onSelect: () => onAction(row),
   })),
 ]);
-// Tocar num produto planejado: o estado dele e o que dá para fazer.
+// Tocar num produto planejado: o estado dele e o que dá para fazer. O porquê do
+// lote (WP-F17) mora aqui: "Sugerido 42, planejado 36" quando a casa planejou outro
+// número, lido do que o plano gravou, não da sugestão de agora.
 function plannedItemMenu(row: ProductionMatrixRowProjection) {
+  const lotLine = row.planned_qty !== "0" ? lotPlanLine(row) : "";
   const state = [
-    `${plannedStateLabel(row)} ${formatQty(plannedQtyLabel(row), row.output_unit)}`,
+    lotLine ||
+      `${plannedStateLabel(row)} ${formatQty(plannedQtyLabel(row), row.output_unit)}`,
     plannedNote(row),
     plannedAsSuggested(row) ? "como sugerido" : "",
   ]

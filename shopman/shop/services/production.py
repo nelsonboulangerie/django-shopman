@@ -866,7 +866,10 @@ def set_planned_quantity(
             )
             return recipe.output_sku, "", qty, "cleared"
 
-        adjusted = work_order.quantity != qty or bool(extra_meta)
+        # O porquê do plano (``formula_basis``, WP-F17) é registro, não ajuste: o
+        # mesmo número confirmado segue "unchanged", e o porquê vai no evento da
+        # confirmação (``attempt.planning_meta``) e no meta abaixo.
+        adjusted = work_order.quantity != qty or any(key != "formula_basis" for key in extra_meta)
         if adjusted:
             CraftPlanning.adjust(
                 work_order,

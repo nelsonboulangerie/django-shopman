@@ -93,6 +93,27 @@ const WEEKDAY_PLURAL = [
   "sábados",
 ] as const;
 
+// Por extenso, para a amostra da conta: "1 segunda" se lê como "1 segundo".
+const WEEKDAY_FULL_SINGULAR = [
+  "domingo",
+  "segunda-feira",
+  "terça-feira",
+  "quarta-feira",
+  "quinta-feira",
+  "sexta-feira",
+  "sábado",
+] as const;
+
+const WEEKDAY_FULL_PLURAL = [
+  "domingos",
+  "segundas-feiras",
+  "terças-feiras",
+  "quartas-feiras",
+  "quintas-feiras",
+  "sextas-feiras",
+  "sábados",
+] as const;
+
 function weekdayIndex(isoDate: string): number | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
   if (!match) return null;
@@ -243,20 +264,21 @@ export function suggestionHistory(
   }
   if (s.season_fallback) {
     // Começo de estação: a corrente ainda não juntou dias suficientes e a
-    // conta usou a anterior. Dizer as duas, senão "estação amena" em outubro
+    // conta usou a anterior. Dizer as duas, senão "meses amenos" em outubro
     // parece engano.
     lines.push({
       kind: "season",
       text:
         s.season_label && s.current_season_label
-          ? `Baseado na ${s.season_label}, ainda sem histórico da ${s.current_season_label}`
-          : "Baseado na estação anterior, ainda sem histórico desta",
+          ? `Conta os dias dos ${s.season_label}: dos ${s.current_season_label} ainda há poucos`
+          : "Conta os dias da época anterior: desta ainda há poucos",
       note: "",
     });
   } else if (s.season_label) {
+    // A conta só usa os dias dos meses da mesma estação da data planejada.
     lines.push({
       kind: "season",
-      text: `Histórico só da ${s.season_label}`,
+      text: `Conta só os dias dos ${s.season_label}`,
       note: "",
     });
   }
@@ -284,16 +306,20 @@ export function carriedNoteText(note: PlanCarryNoteProjection): string {
   return `${when} sobraram ${display(note.leftover)} de ${display(note.made)} feitas`;
 }
 
-/** "confiança média · 4 sábados de histórico" (o subtítulo do detalhe). */
+/** "confiança média · conta feita com 4 segundas-feiras" (o subtítulo do detalhe). */
 export function suggestionBasisLine(
   s: ProductionSuggestionProjection,
   isoDate: string,
 ): string {
-  const days = sampleDaysWord(s, isoDate);
+  const index = weekdayIndex(isoDate);
+  const days =
+    s.same_weekday && index != null
+      ? { one: WEEKDAY_FULL_SINGULAR[index]!, many: WEEKDAY_FULL_PLURAL[index]! }
+      : { one: "dia", many: "dias" };
   const parts = [`confiança ${s.confidence.toLowerCase()}`];
   if (s.sample_size > 0) {
     parts.push(
-      `${s.sample_size} ${s.sample_size === 1 ? days.one : days.many} de histórico`,
+      `conta feita com ${s.sample_size} ${s.sample_size === 1 ? days.one : days.many}`,
     );
   }
   return parts.join(" · ");

@@ -10,6 +10,7 @@ import {
   latestPlanTime,
   lotLabelPayload,
   matchLotCode,
+  lotPlanLine,
   plannedAsSuggested,
 } from "~/presentation/production";
 import { suggestionHistory } from "~/presentation/planningReason";
@@ -110,6 +111,26 @@ describe("R06: Planejado 15h12 · como sugerido", () => {
     const suggestion = { quantity: "52" } as ProductionSuggestionProjection;
     expect(plannedAsSuggested(row({ suggestion, planned_qty: "52" }))).toBe(true);
     expect(plannedAsSuggested(row({ suggestion, planned_qty: "50" }))).toBe(false);
+  });
+
+  // WP-F17 (P1-05): o "como sugerido" é o que o plano gravou, não a sugestão de agora.
+  it("como sugerido pela sugestão que o lote gravou, mesmo que a de agora tenha mudado", () => {
+    const now = { quantity: "50" } as ProductionSuggestionProjection;
+    const lot = [order({ planned_qty: "42", suggested_qty: "42" })];
+    expect(plannedAsSuggested(row({ suggestion: now, planned_qty: "42", planned_orders: lot }))).toBe(true);
+    expect(lotPlanLine(row({ suggestion: now, planned_qty: "42", planned_orders: lot }))).toBe("");
+  });
+
+  it("o lote corrigido diz Sugerido 42, planejado 36", () => {
+    const lot = [order({ planned_qty: "36", suggested_qty: "42" })];
+    const planned = row({ suggestion: { quantity: "42" } as ProductionSuggestionProjection, planned_qty: "36", planned_orders: lot });
+    expect(plannedAsSuggested(planned)).toBe(false);
+    expect(lotPlanLine(planned)).toBe("Sugerido 42, planejado 36");
+  });
+
+  it("lote sem sugestão gravada não inventa a frase", () => {
+    const lot = [order({ planned_qty: "36", suggested_qty: "" })];
+    expect(lotPlanLine(row({ planned_qty: "36", planned_orders: lot }))).toBe("");
   });
 });
 
