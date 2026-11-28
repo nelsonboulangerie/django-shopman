@@ -277,6 +277,41 @@ def unplanned_on(skus, day) -> set[str]:
     return {sku for sku in batch if sku not in planned}
 
 
+def over_plan_approved_skus(order, day) -> set[str]:
+    """Os SKUs que o gerente liberou acima do plano de ``day`` NESTE pedido (D-041).
+
+    O PDV grava a liberação em ``session.data["preorder_over_plan"]`` (``pos.
+    build_session_ops``), e o commit a sela inteira em ``Order.snapshot["data"]``.
+    Só vale a linha da mesma data: liberar 60 para segunda não libera terça.
+    """
+    if day is None:
+        return set()
+    sealed = ((getattr(order, "snapshot", None) or {}).get("data") or {}).get("preorder_over_plan")
+    if not isinstance(sealed, dict) or not sealed.get("approved_by"):
+        return set()
+    return {
+        str(line.get("sku") or "")
+        for line in sealed.get("lines") or ()
+        if isinstance(line, dict) and line.get("sku") and str(line.get("date") or "") == day.isoformat()
+    }
+
+
+def plan_locked_skus(order, skus, day) -> set[str]:
+    """Os SKUs cuja encomenda para ``day`` não pode passar do plano da data.
+
+    O plano é o teto da venda (dono, 28/11/2026: "o sistema de disponibilidade,
+    que considera o planejado, deve travar"): com lote planejado para a data, o
+    que passa dele não vira demanda sem lote, em canal nenhum. A única saída é a
+    liberação do gerente no PDV (``over_plan_approved_skus``). Data SEM lote fica
+    de fora: ali a encomenda é pedido à Produção (D2, 16/11/2026), e a regra dela
+    espera o dono.
+    """
+    planned = plan_backing_on(list(skus or ()), day)
+    if not planned:
+        return set()
+    return set(planned) - over_plan_approved_skus(order, day)
+
+
 def over_plan_lines(lines, day, *, channel_ref: str | None = None) -> list[dict]:
     """As linhas da encomenda que passam do plano da data, com os números.
 
@@ -602,9 +637,16 @@ def hold(order, *, require_all: bool = False) -> None:
                         unmet_qty -= part_qty
                     if unmet_qty <= 0:
                         continue
-                    result = adapter.create_hold(
-                        sku=comp_sku, qty=unmet_qty, allow_demand=True, **order_hold_kwargs,
-                    )
+                    if comp_sku in plan_locked_skus(order, [comp_sku], target_date):
+                        # A data TEM lote planejado e ele acabou: o plano é o teto
+                        # da venda (dono, 28/11/2026). O que passa dele não vira
+                        # demanda; a recusa é a mesma do Stockman. Só a encomenda
+                        # que o gerente liberou no PDV passa (``preorder_over_plan``).
+                        result = {"success": False, "error_code": ReserveRefusal.INSUFFICIENT_SUPPLY}
+                    else:
+                        result = adapter.create_hold(
+                            sku=comp_sku, qty=unmet_qty, allow_demand=True, **order_hold_kwargs,
+                        )
             else:
                 result = adapter.create_hold(sku=comp_sku, qty=unmet_qty, **order_hold_kwargs)
             if not result.get("success") and require_all and (

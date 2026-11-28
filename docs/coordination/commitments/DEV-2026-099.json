@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-099",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "muito antes de chegar em Promessa em risco, o sistema de disponibilidade, que considera o planejado, deve travar!!!",
+  "dono": "Engenharia",
+  "criado": "2026-11-28",
+  "revisar_em": "2026-12-05",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

@@ -3313,6 +3313,31 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
                 "path": "payment.house_account_over_limit",
                 "value": {**account_excess.as_dict(), "approved_by": approved_by},
             })
+        # Encomenda acima do plano da data: o plano é o teto da venda, e só esta
+        # liberação deixa o excedente virar demanda na reserva
+        # (``stock.plan_locked_skus``). Grava o motivo (as linhas que passaram,
+        # com os números que o gerente viu) e quem liberou.
+        over_plan = _payload_over_plan(payload, channel_ref=None)
+        if over_plan:
+            ops.append({
+                "op": "set_data",
+                "path": "preorder_over_plan",
+                "value": {
+                    "reason": "preorder_over_plan",
+                    "lines": [
+                        {
+                            "date": line["date"],
+                            "sku": line["sku"],
+                            "requested_qty": str(line["requested_qty"]),
+                            "planned_qty": str(line["planned_qty"]),
+                            "unclaimed_qty": str(line["unclaimed_qty"]),
+                        }
+                        for line in over_plan
+                    ],
+                    "approved_by": approved_by,
+                    "approved_at": timezone.now().isoformat(),
+                },
+            })
 
     # EMITIR OU NÃO NÃO É ESCOLHA DE QUEM ESTÁ NO CAIXA. Havia um toggle "Emitir
     # nota fiscal" na tela, e ele não era só ruído: como o CPF só virava
