@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, defineComponent, h, reactive, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, h, reactive, ref, shallowRef, watch, type PropType } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
 import LotStartPanel from "../../app/components/LotStartPanel.vue";
@@ -1769,7 +1769,29 @@ describe("ProductionStageGrid — pedidos à Produção", () => {
   });
 
   it("acima do plano: abre o diálogo de sempre com o total já escrito", async () => {
-    boardRows.value = [
+    // As linhas chegam cruas, como o `useFetch` entrega (o `planRow` as guarda num
+    // proxy): a conta que escreve o total não pode depender de identidade de objeto.
+    const rawRows = shallowRef<ProductionMatrixRowProjection[]>([]);
+    vi.stubGlobal("useProductionBoard", () => ({
+      board: ref({
+        access: FULL_ACCESS,
+        base_recipes: [],
+        selected_date: "2026-07-06",
+        selected_position_ref: "",
+        default_position_pk: 7,
+        positions: [{ pk: 7, ref: "forno", name: "Forno", is_default: true }],
+      }),
+      rows: rawRows,
+      counts: ref(null),
+      selectedDate: ref("2026-07-06"),
+      pending: ref(false),
+      error: ref(null),
+      refresh: boardRefresh,
+      isBusy: () => false,
+      plan: planSpy,
+      start: startSpy,
+    }));
+    rawRows.value = [
       promisedRow(
         {
           planned_qty: "12",

@@ -96,6 +96,13 @@ describe("PlanPromisedBand", () => {
     );
   });
 
+  it("quem encomendou duas vezes aparece uma vez", () => {
+    const w = mountBand([
+      croissant([order({ ref: "A", qty: "12" }), order({ ref: "B", qty: "12" })]),
+    ]);
+    expect(w.get("[data-plan-promised-who]").text()).toBe("Clara · amanhã 9h");
+  });
+
   it("planejando: o botão diz isso e nenhum outro dispara", () => {
     const w = mountBand([croissant([order()])], { busySku: "CRO" });
     const button = w.get("[data-plan-promised-plan]");

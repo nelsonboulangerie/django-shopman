@@ -450,6 +450,14 @@ function openPlan(
   }
 }
 
+/** O diálogo de planejar abriu para esta linha. Pelo SKU, nunca por `===`: o `useFetch`
+ *  entrega a linha crua e o `planRow` (ref profundo) a guarda num proxy, então a
+ *  comparação por identidade era sempre falsa na pilha (medido no WP-F13: o "Planejar
+ *  mais 18" abria com o planejado do lote, não com o total). */
+function planOpenFor(row: ProductionMatrixRowProjection): boolean {
+  return planRow.value?.output_sku === row.output_sku;
+}
+
 function selectPlannedWorkOrder(workOrder: WorkOrderCardProjection) {
   selectedPlannedPk.value = workOrder.pk;
   if (planSource.value === "manual") planQty.value = workOrder.planned_qty;
@@ -502,7 +510,7 @@ function planFromReason(
 ) {
   reasonSku.value = null;
   openPlan(row, source);
-  if (planRow.value === row) planQty.value = quantity;
+  if (planOpenFor(row)) planQty.value = quantity;
 }
 
 async function confirmPlan() {
@@ -1249,7 +1257,7 @@ async function planInline(row: ProductionMatrixRowProjection) {
   const draft = draftOf(row).trim();
   if (outsizedQuantityWarning(draft, row.suggestion?.quantity, "a sugestão")) {
     openPlan(row, "manual");
-    if (planRow.value === row) planQty.value = draft;
+    if (planOpenFor(row)) planQty.value = draft;
     return;
   }
   inlineSubmitting.value = row.output_sku;
@@ -1308,7 +1316,7 @@ async function planPromised(item: UnbackedOrder) {
   if (promisedBusy.value || !canPlanPromised.value) return;
   if (item.kind === "over-plan" || item.row.planned_orders.length) {
     openPlan(item.row, "manual");
-    if (planRow.value === item.row && rowPlanMode(item.row) !== "new-batch")
+    if (planOpenFor(item.row) && rowPlanMode(item.row) !== "new-batch")
       planQty.value = item.targetQty;
     return;
   }
@@ -1676,8 +1684,11 @@ const startedDescription = computed(() => {
                  colunas da sugestão, da quantidade e da ação ficam com a largura do que
                  mostram (até 145, 136 e 158 px, medidos), e o nome ganha o resto: com as
                  larguras da mesa, sobravam 92 px e o nome acabava em reticências (#2966). -->
+            <!-- O chip das encomendas quebra para baixo do nome quando não cabe ao
+                 lado: com o dia escrito ("24 un. · seg 14/12 9h") ele espremia o nome
+                 a "Cr M." no tablet (prévia do WP-F13). -->
             <div
-              class="flex w-full min-w-0 items-center gap-2.5 lg:w-auto"
+              class="flex w-full min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 lg:w-auto"
               data-row-product
             >
               <!-- O nome é o que o padeiro lê: quebra em 2 linhas antes de

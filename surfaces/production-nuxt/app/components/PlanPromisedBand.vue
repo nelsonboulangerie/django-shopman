@@ -26,9 +26,14 @@ const emit = defineEmits<{
 
 /** Quem encomendou e quando: "Clara · amanhã 9h", "Marina e Bruno · amanhã, das 8h30 às 11h". */
 function whoAndWhen(item: UnbackedOrder): string {
-  const names = rowPromisedOrders(item.row).map(
-    (order) => order.customer_first_name || order.ref,
-  );
+  // Quem encomendou duas vezes aparece uma vez ("Ana", nunca "Ana e Ana").
+  const names = [
+    ...new Set(
+      rowPromisedOrders(item.row).map(
+        (order) => order.customer_first_name || order.ref,
+      ),
+    ),
+  ];
   const who =
     names.length <= 2
       ? names.join(" e ")
