@@ -111,6 +111,7 @@ const FORECAST = {
         output_sku: "PAO-FRANCES",
         recipe_name: "Pão francês",
         qty: "40",
+        unit: "un",
         eta_display: "06:30",
         eta_is_actual: false,
         status: "delayed",
@@ -149,7 +150,14 @@ const QC = {
         partition: [],
         correction_count: 0,
         last_correction_at_display: "",
-        committed_qty: "12",
+        promised: {
+          date: "2026-11-24",
+          planned_qty: "40",
+          ordered_qty: "12",
+          free_qty: "28",
+          over_plan_qty: "0",
+          orders: [],
+        },
         full_price_qty: "0",
         discounted_qty: "0",
         loss_qty: "0",
@@ -256,8 +264,6 @@ function workOrder(pk, recipe, status, qty) {
     started_at_display: status === "planned" ? "" : "06:30",
     created_at_display: "05/07 18:00",
     progress_pct: status === "finished" ? 100 : status === "started" ? 50 : 0,
-    committed_qty: "0",
-    order_commitments: [],
     can_void: status === "planned",
     position_name: "Forno",
     created_at_time: "18:00",
@@ -429,7 +435,7 @@ const QC_POPULATED = {
   },
 };
 
-const RECIPE_ACCESS = { can_view: true, can_edit: true, capture_available: false };
+const RECIPE_ACCESS = { can_view: true, can_edit: true, capture_available: false, purchase_url: "http://compras.e2e.test" };
 const PRODUCTION_MODE_OPTIONS = [
   { value: "batch", label: "Em lote" },
   { value: "made_to_order", label: "Na hora" },
@@ -539,7 +545,7 @@ const RECIPE_BOOK = {
 };
 const RECIPE_DRAFTS = new Set();
 
-function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
+function lensItem(sku, name, role, roleLabel, grams, pct, anchor, note = "") {
   return {
     ref: `ingredient-${sku || name}`,
     sku,
@@ -556,6 +562,7 @@ function lensItem(sku, name, role, roleLabel, grams, pct, anchor) {
     composition: "additional",
     composition_label: "Adicional",
     quantity_rule_display: "Exata",
+    note,
   };
 }
 const LENS = {
@@ -568,7 +575,7 @@ const LENS = {
   total_mass_display: "1.700 g",
   ingredients: [
     lensItem("FARINHA-T65", "Farinha T65", "flour", "Farinha", 1000, "100%", true),
-    lensItem("AGUA", "Água", "liquid", "Líquido", 660, "66%", false),
+    lensItem("AGUA", "Água", "liquid", "Líquido", 660, "66%", false, "A conferir: no inverno a massa pede 680 g."),
     lensItem("SAL", "Sal", "salt", "Sal", 20, "2%", false),
     lensItem("FERMENTO", "Fermento biológico", "leavening", "Fermento", 20, "2%", false),
   ],
@@ -589,6 +596,28 @@ const LENS = {
     },
   ],
   warnings: [],
+};
+
+function formulaItem(ref, sku, name, role, grams, note = "") {
+  return {
+    ref,
+    sku,
+    name,
+    role,
+    quantity: { kind: "fixed", minimum: grams, target: grams, maximum: grams, unit: "g" },
+    composition: "additional",
+    ...(note ? { note } : {}),
+  };
+}
+const FORMULA = {
+  anchor: { kind: "flour" },
+  basis_g: 1000,
+  standardized: true,
+  ingredients: [
+    formulaItem("ingredient-flour", "FARINHA-T65", "Farinha T65", "flour", 1000),
+    formulaItem("ingredient-water", "AGUA", "Água", "liquid", 660, "A conferir: no inverno a massa pede 680 g."),
+    formulaItem("ingredient-salt", "SAL", "Sal", "salt", 20),
+  ],
 };
 
 function recipeVersion(number, status, statusLabel) {
@@ -612,7 +641,8 @@ function recipeVersion(number, status, statusLabel) {
       { name: "Assar", instructions: "Forno com vapor.", target_seconds: 1200, target_display: "20 min", temperature_celsius: 230, note: "" },
     ],
     lens: LENS,
-    formula: {},
+    // A suíte cria a fórmula do zero no editor; a prévia (MOCK_RECIPE_FORMULA=1) abre com ela.
+    formula: process.env.MOCK_RECIPE_FORMULA ? FORMULA : {},
     origin: {},
     provenance_kind: "agent",
     provenance_label: "Do cadastro inicial",
@@ -667,7 +697,7 @@ function recipeDetail(card) {
         date_to: "2026-07-06",
         bake_loss_basis: "",
         caveats: [],
-        versions: [],
+        versions: card.current_version_number ? [recipeVersionUsage(2, 12, "96%"), recipeVersionUsage(1, 30, "93%")] : [],
         unversioned: null,
       },
       external_references: [],
@@ -695,7 +725,7 @@ function weighingIngredient(sku, name, grams, annotation = "", isSubrecipe = fal
   };
 }
 
-function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null) {
+function weighingTicket(ref, name, sku, blindCode, ingredients) {
   const total = ingredients.reduce((sum, ing) => sum + Number(ing.target_g), 0);
   return {
     ticket_ref: `prep-${ref}`,
@@ -716,12 +746,11 @@ function weighingTicket(ref, name, sku, blindCode, ingredients, oldDough = null)
     expiry_display: "07/07",
     validity_configured: true,
     validity_source: "recipe",
-    old_dough: oldDough,
   };
 }
 
-// Massa com teto de massa velha (20%) e massa sem teto: a mistura final no teto
-// encolhe cada linha por 0,8 e a massa velha cobre o resto, com o mesmo total.
+// Duas massas do dia, cada uma com a sua ficha. A massa velha, quando a ficha usa,
+// é um ingrediente com lote (ADR-027) e vem na lista como os outros.
 const WEIGHING_POPULATED = {
   weighing: {
     selected_date: "2026-07-06",
@@ -741,18 +770,6 @@ const WEIGHING_POPULATED = {
           weighingIngredient("SAL-REFINADO", "Sal refinado", 80),
           weighingIngredient("LEVAIN", "Levain", 800, "", true),
         ],
-        {
-          cap_pct: "20",
-          cap_display: "20%",
-          old_dough_display: "1536 g",
-          old_dough_g: "1536",
-          lines: [
-            { sku: "FARINHA-T55", target_display: "3200 g", target_g: "3200" },
-            { sku: "AGUA-FILTRADA", target_display: "2240 g", target_g: "2240" },
-            { sku: "SAL-REFINADO", target_display: "64 g", target_g: "64" },
-            { sku: "LEVAIN", target_display: "640 g", target_g: "640" },
-          ],
-        },
       ),
       weighingTicket("massa-brioche", "Massa Brioche", "MASSA-BRIOCHE", "S5", [
         weighingIngredient("FARINHA-T55", "Farinha T55", 2000),
@@ -900,11 +917,99 @@ function sheetResponse(req, url, body) {
   return null;
 }
 
+function recipeVersionUsage(number, batches, yieldDisplay) {
+  return {
+    version_ref: `v@${number}`,
+    version_number: number,
+    is_versioned: true,
+    label: `Versão ${number}`,
+    batches,
+    batches_display: `${batches} lotes`,
+    planned_display: "",
+    finished_display: "",
+    loss_display: "",
+    yield_pct: "",
+    yield_display: yieldDisplay,
+    started_assumed_batches: 0,
+    avg_loss: "",
+    avg_loss_display: "",
+    loss_pct_display: "",
+    summary_display: `${batches} lotes; aproveitamento médio ${yieldDisplay}`,
+    quality: [],
+  };
+}
+
+/** Duas versões lado a lado: a 2 é a publicada e em uso, a 1 foi substituída. */
+function recipeCompare(url) {
+  const query = new URL(url, "http://mock").searchParams;
+  const side = (value) => {
+    const [ref, raw] = String(value || "").split("@");
+    const number = Number(raw || 0);
+    const published = number === 2;
+    const name = RECIPE_CARDS.find((entry) => entry.ref === ref)?.name ?? ref;
+    return {
+      title: `${name} (versão ${number})`,
+      status: published ? "published" : "superseded",
+      status_label: published ? "Publicada" : "Substituída",
+      is_current: published,
+      when: published ? "publicada 04/07/2026" : "publicada 01/06/2026",
+    };
+  };
+  const a = side(query.get("a"));
+  const b = side(query.get("b"));
+  return {
+    compare: {
+      a_title: a.title, a_status: a.status, a_status_label: a.status_label, a_is_current: a.is_current, a_when_display: a.when,
+      b_title: b.title, b_status: b.status, b_status_label: b.status_label, b_is_current: b.is_current, b_when_display: b.when,
+      rows: [
+        { name: "Farinha T65", sku: "FARINHA-T65", role_label: "Farinha", a_display: "1.000 g", b_display: "1.000 g", delta_display: "0 g", delta_pct_display: "0%", tone: "muted" },
+        { name: "Água", sku: "AGUA", role_label: "Líquido", a_display: "640 g", b_display: "660 g", delta_display: "+20 g", delta_pct_display: "+3%", tone: "ok" },
+      ],
+      metrics: [{ label: "Hidratação", a_display: "64%", b_display: "66%", delta_display: "+2%", tone: "ok" }],
+    },
+  };
+}
+
 /** A resposta do cenário povoado para esta URL, ou `null` para seguir o mock de base. */
+// O Letreiro de uma manhã cheia (WP-F04): peça em UN, massa medida em grama (a TV
+// lê em quilo), um atrasado, um fechado, nomes do curto ao mais longo do catálogo.
+function forecastRow(ref, recipe_name, qty, unit, eta_display, status, status_label) {
+  return {
+    ref,
+    output_sku: ref,
+    recipe_name,
+    qty,
+    unit,
+    eta_display,
+    eta_is_actual: status === "arrived",
+    status,
+    status_label,
+    history_days: 30,
+  };
+}
+const FORECAST_POPULATED = {
+  forecast: {
+    ...FORECAST.forecast,
+    generated_at_display: "6h42",
+    rows: [
+      forecastRow("WO-0101", "Pão francês", "240", "un", "5h30", "arrived", "Fechado"),
+      forecastRow("WO-0102", "Massa de croissant", "18500", "g", "6h", "delayed", "Atrasado"),
+      forecastRow("WO-0103", "Croissant Manteiga", "120", "un", "7h", "in_progress", "Previsto"),
+      forecastRow("WO-0104", "Baguete", "60", "un", "7h30", "in_progress", "Previsto"),
+      forecastRow("WO-0105", "Pão de Forma Artesanal", "24", "un", "8h", "scheduled", "Planejado"),
+      forecastRow("WO-0106", "Levain", "3250", "g", "8h30", "scheduled", "Planejado"),
+      forecastRow("WO-0107", "Pão de fermentação natural com castanhas", "12", "un", "9h", "scheduled", "Planejado"),
+      forecastRow("WO-0108", "Ciabatta", "40", "un", "10h30", "scheduled", "Planejado"),
+      forecastRow("WO-0109", "Mini Focaccia Cebola, Bacon e Tomilho", "16", "un", "11h", "scheduled", "Planejado"),
+    ],
+  },
+};
+
 function populatedResponse(url) {
   if (/\/production\/qc\/?(\?|$)/.test(url)) return QC_POPULATED;
   if (/\/production\/weighing\/?(\?|$)/.test(url)) return WEIGHING_POPULATED;
   if (/\/recipes\/review\/?(\?|$)/.test(url)) return RECIPE_REVIEW;
+  if (/\/recipes\/compare\/?(\?|$)/.test(url)) return recipeCompare(url);
   if (/\/recipes\/ingredients\/?(\?|$)/.test(url)) return recipeIngredients(url);
   if (/\/recipes\/reference\/?(\?|$)/.test(url)) return RECIPE_REFERENCE;
   const detail = url.match(/\/recipes\/([\w-]+)\/?(\?|$)/);
@@ -913,7 +1018,36 @@ function populatedResponse(url) {
   if (/\/recipes\/access\/?(\?|$)/.test(url)) return { access: RECIPE_ACCESS };
   if (/\/recipes\/?(\?|$)/.test(url)) return RECIPE_BOOK;
   if (/\/production\/?(\?|$)/.test(url)) return BOARD_POPULATED;
+  if (/\/production\/forecast\/?(\?|$)/.test(url)) return FORECAST_POPULATED;
   return null;
+}
+
+const PREP_MARKS = new Map();
+
+function prepMarks(req, res, url) {
+  const date = new URL(url, "http://mock").searchParams.get("date") || "2026-07-06";
+  const listFor = (day) => [...PREP_MARKS.values()].filter((mark) => mark.date === day).map(({ date: _d, ...mark }) => mark);
+  if (req.method !== "POST") return json(res, 200, { date, marks: listFor(date) });
+  let raw = "";
+  req.on("data", (chunk) => (raw += chunk));
+  req.on("end", () => {
+    const body = JSON.parse(raw || "{}");
+    const key = `${body.date}:${body.item_ref}`;
+    if (body.checked) {
+      PREP_MARKS.set(key, {
+        date: body.date,
+        item_ref: body.item_ref,
+        quantity: body.quantity,
+        marked_by: "Ana",
+        marked_at: new Date().toISOString(),
+      });
+    } else {
+      PREP_MARKS.delete(key);
+    }
+    const mark = PREP_MARKS.get(key);
+    const { date: _d, ...visible } = mark || {};
+    json(res, 200, { date: body.date, mark: mark ? visible : null, marks: listFor(body.date) });
+  });
 }
 
 function json(res, status, body) {
@@ -987,11 +1121,17 @@ const server = createServer((req, res) => {
     RECIPE_DRAFTS.add(card.ref);
     return json(res, 200, { outcome: "applied", version: recipeVersion(3, "draft", "Rascunho") });
   }
+  // A conexão do Letreiro cai (WP-F04): o quadro lido fica, o aviso diz de quando.
+  if (cookie.includes("e2e_forecast=down") && /\/production\/forecast\/?(\?|$)/.test(url)) {
+    return json(res, 503, { detail: "Sem conexão com o servidor." });
+  }
   const populatedBody = populated ? populatedResponse(url) : null;
   if (populatedBody) return json(res, 200, populatedBody);
   if (/\/production\/forecast\/?(\?|$)/.test(url)) return json(res, 200, FORECAST);
   if (/\/production\/kds\/?(\?|$)/.test(url)) return json(res, 200, KDS);
   if (/\/production\/qc\/?(\?|$)/.test(url)) return json(res, 200, QC);
+  // O "Separado" da bancada (WP-F09b): vive no dublê, como viveria no servidor.
+  if (/\/production\/mise-en-place\/marks\/?(\?|$)/.test(url)) return prepMarks(req, res, url);
   if (/\/production\/mise-en-place\/?(\?|$)/.test(url)) return json(res, 200, MISE);
   if (
     /\/production\/reports\/?\?/.test(url) &&

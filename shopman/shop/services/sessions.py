@@ -7,6 +7,10 @@ clearest representation boundary.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+
 from django.db import models, transaction
 from shopman.orderman.exceptions import SessionError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
@@ -340,6 +344,62 @@ def assign_customer(
 
 
 @transaction.atomic
+def release_customer(*, session_key: str, channel_ref: str) -> bool:
+    """O avesso de ``assign_customer``: a sacola aberta volta a ser de ninguém.
+
+    Roda no logout (OC-09). A sacola sobrevive ao sair, mas o bloco ``customer``
+    (ref, grupos e o que mais a cliente deixou nele) é dela e sai junto com ela:
+    sem isto, o próximo a usar o mesmo navegador lia o preço da anterior até
+    outro login. Devolve ``True`` quando havia identidade a tirar; quem chama
+    reprecifica.
+    """
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key, channel_ref=channel_ref, state="open")
+        .first()
+    )
+    if session is None or "customer" not in (session.data or {}):
+        return False
+    data = dict(session.data or {})
+    data.pop("customer")
+    session.data = data
+    session.save(update_fields=["data"])
+    return True
+
+
+@transaction.atomic
+def assign_experience(
+    *,
+    session_key: str,
+    channel_ref: str,
+    mark: dict,
+) -> bool:
+    """Grava em ``Session.data["experience"]`` de qual versão da loja a sacola veio (OC-22).
+
+    ``mark`` é o ``experience.order_mark`` da requisição. Vazio tira a chave
+    (nenhum experimento valendo). Não mexe em linha, preço nem revisão: é marcação,
+    e o commit a copia para ``Order.data``. Devolve ``True`` quando gravou.
+    """
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key, channel_ref=channel_ref, state="open")
+        .first()
+    )
+    if session is None:
+        return False
+    data = dict(session.data or {})
+    if data.get("experience") == (mark or None):
+        return False
+    if mark:
+        data["experience"] = dict(mark)
+    else:
+        data.pop("experience", None)
+    session.data = data
+    session.save(update_fields=["data"])
+    return True
+
+
+@transaction.atomic
 def assign_handle(
     *,
     session_key: str,
@@ -411,3 +471,95 @@ def abandon_session(*, session_key: str, channel_ref: str) -> bool:
 
         release_session_holds(session_key)
     return bool(updated)
+
+
+@dataclass(frozen=True)
+class OpenSessionElsewhere:
+    """Uma sacola aberta do mesmo cliente em outro canal (OC-17, C06).
+
+    ``session_key`` e ``revision`` são para quem oferece a passagem
+    (``session_transfer.offer``) e nunca saem para a superfície: a chave da
+    sacola de outro canal não é dado de tela. ``items_count`` soma as
+    quantidades como a sacola conta as dela (int quando inteiro);
+    ``subtotal_q`` soma as linhas, sem a entrega.
+    """
+
+    channel_ref: str
+    channel_name: str
+    session_key: str
+    revision: int
+    lines_count: int
+    items_count: int | Decimal
+    subtotal_q: int
+    updated_at: datetime
+
+
+def open_sessions_for_customer(
+    customer_ref: str,
+    *,
+    exclude_channel: str,
+) -> tuple[OpenSessionElsewhere, ...]:
+    """As sacolas abertas, com itens, deste cliente nos OUTROS canais (OC-17, C06).
+
+    Leitura pura: não grava, não trava, não reprecifica e não sincroniza nada.
+    O canal que pergunta avisa que a outra sacola existe; trazer é a oferta do
+    serviço de transferência, nunca esta função. O dono é o ``customer_ref``
+    gravado na sacola (``Session.data["customer"]["ref"]``), nunca o telefone:
+    número coincidente não abre a sacola de outra pessoa (X7). Mais recente
+    primeiro.
+    """
+    if not customer_ref:
+        return ()
+    candidates = (
+        Session.objects.filter(state="open", data__customer__ref=customer_ref)
+        .exclude(channel_ref=exclude_channel)
+        .order_by("-updated_at", "-pk")
+    )
+    return _summaries(candidates)
+
+
+def open_session_summary(channel_ref: str, session_key: str) -> OpenSessionElsewhere | None:
+    """Uma sacola aberta, com itens, contada como em ``open_sessions_for_customer``.
+
+    Para a Nice dizer onde está a sacola que a conversa mandou ao site (OC-18, §4.4),
+    sem abrir as linhas dela. Leitura pura.
+    """
+    if not (channel_ref and session_key):
+        return None
+    found = _summaries(Session.objects.filter(state="open", channel_ref=channel_ref, session_key=session_key))
+    return found[0] if found else None
+
+
+def _summaries(candidates) -> tuple[OpenSessionElsewhere, ...]:
+    found = []
+    for session in candidates:
+        if session.is_anonymized:
+            continue
+        lines = [
+            item
+            for item in (session.items or [])
+            if item.get("sku") != "__DELIVERY_FEE__"
+            and (item.get("meta") or {}).get("type") != "delivery_fee"
+        ]
+        if not lines:
+            continue
+        units = sum((Decimal(str(item.get("qty") or 0)) for item in lines), Decimal(0))
+        found.append((session, lines, int(units) if units == units.to_integral_value() else units))
+    if not found:
+        return ()
+    names = dict(
+        Channel.objects.filter(ref__in={session.channel_ref for session, _, _ in found}).values_list("ref", "name")
+    )
+    return tuple(
+        OpenSessionElsewhere(
+            channel_ref=session.channel_ref,
+            channel_name=names.get(session.channel_ref) or session.channel_ref,
+            session_key=session.session_key,
+            revision=session.rev,
+            lines_count=len(lines),
+            items_count=units,
+            subtotal_q=sum(int(item.get("line_total_q") or 0) for item in lines),
+            updated_at=session.updated_at,
+        )
+        for session, lines, units in found
+    )

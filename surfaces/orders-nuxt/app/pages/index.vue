@@ -918,10 +918,17 @@ const shortcutHint = (key: string) =>
 // que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
 // A Fila também recebe o pedido em negociação no iFood, inclusive o já entregue (o
 // cliente reclama depois): ele espera uma resposta como qualquer outro (dono, 07/10).
+// O pedido que só espera o Pix ou o cartão (DEV-2026-091) sai da coluna Novos, mas a
+// Fila o recebe para a faixa "Aguardando pagamento" (o `QueueView` o tira da lista).
+const awaitingCards = computed<OrderCardProjection[]>(() => {
+  const intake = zones.value.find((zone) => zone.key === "intake");
+  return intake?.awaiting?.length ? triaged({ ...intake, cards: intake.awaiting }) : [];
+});
 const queueCards = computed<OrderCardProjection[]>(() => {
   const cards = [
     ...tableRows.value.map((row) => row.card),
     ...triagedPreorders.value.flatMap((group) => group.cards),
+    ...awaitingCards.value,
   ];
   const seen = new Set(cards.map((card) => card.ref));
   return [

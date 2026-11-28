@@ -20,7 +20,8 @@ from shopman.shop.services import access as access_service
 from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
 from shopman.shop.services import storefront_links
-from shopman.storefront.constants import HAS_AUTH
+from shopman.shop.services.session_transfer import CART_ONLY_METADATA_KEY
+from shopman.storefront.constants import HAS_AUTH, STOREFRONT_CHANNEL_REF
 from shopman.storefront.identity import (
     IDENTITY_DEVICE,
     IDENTITY_NUMBER,
@@ -114,6 +115,11 @@ class LogoutView(APIView):
         if hasattr(request, "session"):
             for key, value in preserved.items():
                 request.session[key] = value
+            # A sacola fica; o preço de quem saiu, não (OC-09): o próximo a usar este
+            # navegador lê o preço público.
+            from shopman.storefront.cart import CartService
+
+            CartService.release_customer_pricing(request)
 
         response = Response(_session_payload(None))
         auth_service.revoke_current_device(request=request, response=response)
@@ -219,6 +225,31 @@ def _access_link_redirect(metadata: dict | None) -> str:
     return storefront_links.path_home()
 
 
+def _login_redirect(metadata: dict | None, browser_destination: str) -> str:
+    """O destino depois da troca: o do link, ou o que este navegador guardou ao entrar.
+
+    O pedido de um link (``order_ref``) e o destino que veio com a referência NB-… do
+    site ganham sempre: são o contexto daquela entrada. Sem eles, o ``next`` do link é o
+    genérico de quem o pediu (o ``"/menu"`` do ManyChat), e o destino guardado por este
+    navegador ao começar a entrar (``access.remember_login_destination``) diz melhor
+    para onde a pessoa ia: foi ela que tocou em Finalizar (DEV-2026-092).
+    """
+    meta = metadata if isinstance(metadata, dict) else {}
+    if browser_destination and not meta.get("order_ref") and not access_service.link_carries_site_context(meta):
+        return browser_destination
+    return _access_link_redirect(metadata)
+
+
+def _browser_cart_has_items(request) -> bool:
+    try:
+        from shopman.storefront.cart import CartService
+
+        return bool(CartService.has_items(request))
+    except Exception:  # silêncio-deliberado: sem a leitura da sacola o aviso de sacola que não veio continua saindo, como antes
+        logger.debug("access_link_browser_cart_check_degraded", exc_info=True)
+        return False
+
+
 def _access_link_metadata_for_customer(metadata: dict | None, customer) -> dict | None:
     if not isinstance(metadata, dict):
         return metadata
@@ -277,8 +308,15 @@ def exchange_access_token(request, token: str) -> Response:
         return Response({"ok": True, "redirect": storefront_links.path_home(), **_session_payload(None)})
 
     metadata = access_service.token_metadata(token)
+    if isinstance(metadata, dict) and metadata.get(CART_ONLY_METADATA_KEY) is True:
+        return _exchange_cart_only(request, token, metadata)
     # Antes do resgate: depois dele o token está gasto e a origem já não se lê.
     source = access_service.token_source(token)
+    # E antes do login, que pode trocar a sessão: o destino que ESTE navegador guardou ao
+    # começar a entrar pelo WhatsApp (DEV-2026-092). Só a resposta do WhatsApp o usa.
+    browser_destination = (
+        access_service.pop_login_destination(request) if source == "manychat" else ""
+    )
     result = access_service.exchange_token(token, request)
     if not result.success:
         # ⚠️ Token gasto NÃO significa porta fechada. É o segundo toque na mesma
@@ -297,7 +335,7 @@ def exchange_access_token(request, token: str) -> Response:
             return Response({
                 "ok": True,
                 "already_authenticated": True,
-                "redirect": _access_link_redirect(redirect_metadata),
+                "redirect": _login_redirect(redirect_metadata, browser_destination),
                 "identity_strength": identity_strength(request),
                 **_session_payload(already),
             })
@@ -311,10 +349,16 @@ def exchange_access_token(request, token: str) -> Response:
         request.session["origin_channel"] = access_service.resolve_origin(result)
         _record_identity_strength(request, metadata, customer=result.customer)
 
-    # Access link vindo do site: o código NB carregou a sacola anônima na metadata.
-    cart_ref = str(metadata.get("cart_session_key") or "") if isinstance(metadata, dict) else ""
-    if cart_ref and hasattr(request, "session"):
-        _adopt_carried_cart(request, cart_ref)
+    customer = None
+    try:
+        if result.customer:
+            customer = auth_service.customer_by_uuid(result.customer.subject_id)
+    except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
+        logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
+
+    # A sacola que o link carrega: a da própria loja (código NB, travessia do
+    # navegador) ou a oferta de outro canal (a conversa com a Nice).
+    cart_transfer = _adopt_carried_cart(request, metadata, customer) if hasattr(request, "session") else None
 
     redirect_metadata = _access_link_metadata_for_customer(metadata, result.customer)
     order_ref = str(metadata.get("order_ref") or "") if isinstance(metadata, dict) else ""
@@ -323,20 +367,16 @@ def exchange_access_token(request, token: str) -> Response:
 
         order_service.grant_order_access(request, order_ref)
 
-    customer = None
-    try:
-        if result.customer:
-            customer = auth_service.customer_by_uuid(result.customer.subject_id)
-    except Exception:  # silêncio-deliberado: sem cliente o payload sai anônimo; o link já foi trocado e o log guarda o traceback
-        logger.debug("access_link_exchange: customer lookup degraded", exc_info=True)
     _declare_adult(request, customer)
 
     payload = {
         "ok": True,
-        "redirect": _access_link_redirect(redirect_metadata),
+        "redirect": _login_redirect(redirect_metadata, browser_destination),
         "identity_strength": identity_strength(request),
         **_session_payload(customer),
     }
+    if cart_transfer is not None:
+        payload["cart_transfer"] = cart_transfer
     response = Response(payload)
 
     # ⚠️ Link nascido de uma MENSAGEM que a pessoa enviou (`source=manychat`) prova posse
@@ -344,7 +384,23 @@ def exchange_access_token(request, token: str) -> Response:
     # também confia: é o que faz a confirmação valer para sempre naquele celular, em vez
     # de virar pedágio semanal. Link que NÓS empurramos (`internal`, campanha) não
     # confia: mensagem se encaminha.
-    if source == "manychat" and result.customer is not None:
+    #
+    # ⚠️ Mas só enquanto o número tem prova recente NESTA conta (D3b): número sem uso
+    # verificado há mais de 12 meses pode ter mudado de dono, e a mensagem prova o chip,
+    # não a pessoa. Aí a sessão nasce sabendo só o número (dado pessoal reduzido) e o
+    # aparelho não é confiado; a confirmação por código, que a tela já oferece, renova.
+    number_lapsed = (
+        source == "manychat"
+        and result.customer is not None
+        and auth_service.number_proof_expired(
+            customer_uuid=result.customer.subject_id,
+            phone=getattr(customer, "phone", "") or "",
+        )
+    )
+    if number_lapsed:
+        request.session[IDENTITY_SESSION_KEY] = IDENTITY_NUMBER
+        payload["identity_strength"] = IDENTITY_NUMBER
+    elif source == "manychat" and result.customer is not None:
         request.session[IDENTITY_SESSION_KEY] = IDENTITY_DEVICE
         try:
             auth_service.trust_device(
@@ -355,7 +411,13 @@ def exchange_access_token(request, token: str) -> Response:
             logger.warning("access_link_trust_failed", exc_info=True)
     # Handoff do site que expirou: entrou logado, mas a sacola não veio. Avisamos com
     # gentileza (copy configurável), sem bloquear a entrada. Ver ACCESS-LINK-UNIFICATION.
-    if isinstance(metadata, dict) and metadata.get("handoff_expired"):
+    # Mas a sacola que mora NESTE navegador não ficou para trás: quem começou a entrar aqui
+    # continua com ela, e o aviso diria o contrário do que a tela mostra (DEV-2026-092).
+    if (
+        isinstance(metadata, dict)
+        and metadata.get("handoff_expired")
+        and not (browser_destination and _browser_cart_has_items(request))
+    ):
         from shopman.shop.omotenashi import resolve_copy
 
         payload["handoff_expired"] = True
@@ -364,37 +426,75 @@ def exchange_access_token(request, token: str) -> Response:
     return response
 
 
-def _adopt_carried_cart(request, cart_ref: str) -> None:
-    """Adota a sacola que viajou no link. Ela GANHA de uma sacola local.
+def _exchange_cart_only(request, token: str, metadata: dict) -> Response:
+    """O convite da Nice que leva SÓ a sacola (OC-18, #3529): o link se gasta e ninguém entra.
 
-    ⚠️ **A premissa antiga era falsa, e custava a sacola do cliente.** A guarda
-    era ``not request.session.get("cart_session_key")``, apoiada no comentário
-    "a in-app browser que abre o link é sessão nova (sem sacola)". Não é: o
-    webview do WhatsApp tem pote de cookie PRÓPRIO e PERSISTENTE, então ele
-    chega carregando o ``cart_session_key`` de uma visita anterior. A guarda dava
-    falso, a adoção era pulada, e a pessoa que acabou de montar a sacola no
-    navegador do sistema aterrissava numa sacola de dias atrás — a dela,
-    descartada em silêncio. Pior: o handoff de volta ao navegador de verdade
-    então levava adiante a chave velha.
-
-    Quem ganha é a que viajou, porque ela é o CONTEXTO EXPLÍCITO deste login: a
-    pessoa tocou em "entrar" com aquela sacola na mão, segundos atrás. A local é
-    resíduo de sessão anterior. A guarda que sobra é só contra desperdício: uma
-    ref que não aponta para sacola aberta com itens não vale a troca.
+    Saiu pela autoridade de sacola (ADR-050), então não prova quem abre: a troca não abre
+    sessão, não confia no dispositivo e não devolve dado de pessoa. A sacola chega sem dono
+    e só com itens e quantidades (``session_transfer`` ``items_only``); quem já estava
+    neste navegador continua como estava. A prova de quem é acontece no site, no fechamento.
     """
-    from shopman.storefront.cart import CartService
+    if not access_service.redeem_without_session(token):
+        return Response({"detail": "Este link expirou ou já foi usado."}, status=status.HTTP_400_BAD_REQUEST)
+    customer = get_authenticated_customer(request)
+    cart_transfer = _adopt_carried_cart(request, metadata, customer) if hasattr(request, "session") else None
+    payload = {
+        "ok": True,
+        "redirect": _access_link_redirect(metadata),
+        "identity_strength": identity_strength(request),
+        **_session_payload(customer),
+    }
+    if cart_transfer is not None:
+        payload["cart_transfer"] = cart_transfer
+    return Response(payload)
 
-    current = str(request.session.get("cart_session_key") or "")
-    if current == cart_ref:
-        return
-    if not CartService.session_has_items(cart_ref):
-        # Sacola que viajou já foi consumida ou esvaziou: manter o que existe
-        # localmente é melhor do que trocar por nada.
-        logger.info("access_link_cart_carried_empty")
-        return
-    request.session["cart_session_key"] = cart_ref
-    if current:
+
+def _adopt_carried_cart(request, metadata, customer) -> dict | None:
+    """Aceita a sacola que o link carrega, pelo serviço de transferência (OC-15).
+
+    Quem decide tudo (autorização, revisão, conflito, reserva, diferenças) é
+    ``shop.services.session_transfer.accept``; aqui só se lê o pedido e se aponta o
+    navegador para a sacola que o recibo devolve. A sacola da própria loja é adotada
+    no mesmo canal e ganha da sacola velha do navegador (o porquê está em
+    ``session_transfer._adopt_in_place``).
+
+    Devolve o resumo para a resposta só quando a sacola veio de OUTRO canal:
+    ``{"status": "accepted", "differences": [...]}`` ou ``{"status": "refused",
+    "code": ...}``. Recusa nunca impede a entrada: a pessoa entra, e a sacola de
+    origem segue onde estava.
+    """
+    from shopman.shop.services import session_transfer
+
+    try:
+        carried = session_transfer.carried_offer(metadata, channel_ref=STOREFRONT_CHANNEL_REF)
+    except session_transfer.TransferRefused as refused:
+        logger.warning("access_link_cart_transfer_invalid code=%s", refused.code)
+        return {"status": "refused", "code": refused.code}
+    if carried is None:
+        return None
+    if carried.dest_channel != STOREFRONT_CHANNEL_REF:
+        # Uma oferta para a conversa (ou outro canal) nunca vira sacola deste navegador.
+        logger.warning("access_link_cart_transfer_wrong_destination")
+        return {"status": "refused", "code": "invalid_offer"}
+    destination = session_transfer.TransferDestination(
+        customer_ref=str(getattr(customer, "ref", "") or ""),
+        identity_strength=identity_strength(request),
+        session_key=str(request.session.get("cart_session_key") or ""),
+        origin_channel=str(request.session.get("origin_channel") or ""),
+    )
+    try:
+        receipt = session_transfer.accept(carried, dest_context=destination, actor="storefront")
+    except session_transfer.TransferRefused as refused:
+        logger.info("access_link_cart_transfer_refused code=%s same_channel=%s", refused.code, carried.same_channel)
+        if carried.same_channel:
+            return None
+        return {"status": "refused", "code": refused.code}
+    if destination.session_key and destination.session_key != receipt.dest_session_key:
         logger.info("access_link_cart_replaced_stale_local")
+    request.session["cart_session_key"] = receipt.dest_session_key
+    if carried.same_channel:
+        return None
+    return {"status": "accepted", "differences": receipt.differences}
 
 
 def _normalize_payload_phone(payload: dict) -> str:

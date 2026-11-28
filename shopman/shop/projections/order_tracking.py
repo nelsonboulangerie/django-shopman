@@ -340,6 +340,9 @@ class TrackingData:
     # A nota fiscal chega ao cliente pela página do pedido (decisão do dono,
     # 25/09/2026): a loja online não imprime nem pede e-mail.
     fiscal_note: TrackingFiscalNoteData | None = None
+    # Encomenda paga e não retirada: o recibo do valor que a loja reteve (#3538),
+    # a mesma leitura do papel do balcão (``no_show.RetentionReceipt``).
+    retention_receipt: Any = None
     # A conta e o que o cliente informou no checkout, para o Resumo do pedido
     # contar o mesmo que a revisão contou (beta 06/11): os descontos selados no
     # commit (vazio quando o pedido foi editado depois: a conta selada já não é
@@ -351,6 +354,18 @@ class TrackingData:
     tax_id: str = ""
     customer_notes: str = ""
     delivery_address: str = ""
+    # Como esta tela foi aberta (DEV-2026-093): ``full`` (quem fez o pedido, a conta
+    # dona, staff) ou ``capability`` (só o link do aviso). Na capacidade, o endereço
+    # sai abreviado e as ações que pedem entrada saem da lista; ``login_required_for``
+    # diz quais saíram, para a tela convidar a entrar no lugar delas.
+    access_mode: str = "full"
+    login_required_for: tuple[str, ...] = ()
+
+
+#: O que o link do aviso NÃO faz sem entrar (DEV-2026-093): cancelar, pedir de novo,
+#: avaliar e confirmar a vaga da fila. Pagar, falar com a loja e confirmar o
+#: recebimento continuam. A API recusa as mesmas no servidor (``tracking.py``).
+CAPABILITY_WITHHELD_ACTIONS = ("cancel_order", "reorder", "rate_order")
 
 
 @dataclass(frozen=True)
@@ -403,8 +418,57 @@ def as_customer_sees(order):
     return held
 
 
-def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
-    """Build the full tracking data projection for an order."""
+def build_tracking(order, *, is_debug: bool = False, access_mode: str = "full") -> TrackingData:
+    """Build the full tracking data projection for an order.
+
+    ``access_mode="capability"`` (aberto só pelo link do aviso, DEV-2026-093): o
+    endereço de entrega sai abreviado (rua e bairro) e cancelar, pedir de novo e
+    avaliar saem das ações. Decidido aqui, no servidor; a tela só desenha.
+    """
+    data = _build_tracking(order, is_debug=is_debug)
+    if access_mode != customer_orders.ACCESS_CAPABILITY:
+        return data
+    return _as_capability_view(order, data)
+
+
+def _as_capability_view(order, data: TrackingData) -> TrackingData:
+    withheld = [action.ref for action in data.actions if action.ref in CAPABILITY_WITHHELD_ACTIONS]
+    withheld += [
+        action.ref for action in data.promise.actions
+        if action.ref in CAPABILITY_WITHHELD_ACTIONS and action.ref not in withheld
+    ]
+    if data.waitlist_state == "confirming":
+        withheld.append("waitlist_confirm")
+    return replace(
+        data,
+        actions=tuple(a for a in data.actions if a.ref not in CAPABILITY_WITHHELD_ACTIONS),
+        promise=replace(
+            data.promise,
+            actions=tuple(a for a in data.promise.actions if a.ref not in CAPABILITY_WITHHELD_ACTIONS),
+        ),
+        delivery_address=abbreviated_delivery_address(order) if data.delivery_address else "",
+        access_mode=customer_orders.ACCESS_CAPABILITY,
+        login_required_for=tuple(withheld),
+    )
+
+
+def abbreviated_delivery_address(order) -> str:
+    """Rua e bairro, sem número nem complemento: o que a tela aberta pelo link mostra.
+
+    Só do endereço estruturado: o texto livre não separa o número com segurança, e
+    sem estrutura a tela não mostra endereço nenhum (o "Entrega" continua).
+    """
+    structured = (order.data or {}).get("delivery_address_structured") or {}
+    if not isinstance(structured, dict):
+        return ""
+    parts = [
+        str(structured.get("route") or "").strip(),
+        str(structured.get("neighborhood") or "").strip(),
+    ]
+    return ", ".join(part for part in parts if part)
+
+
+def _build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     from shopman.shop.services import order_composition
 
     order = as_customer_sees(order)
@@ -536,6 +600,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
         fiscal_note=_fiscal_note(order_data),
+        retention_receipt=_retention_receipt(order),
         discount_lines=_sealed_discount_lines(order),
         is_gift=bool(order_data.get("is_gift")),
         gift_recipient_name=str((order_data.get("recipient") or {}).get("name") or "").strip(),
@@ -567,6 +632,13 @@ def _sealed_discount_lines(order) -> tuple[Any, ...]:
     discount = dict(pricing.get("discount") or {})
     discount["items"] = [d for d in discount.get("items") or [] if isinstance(d, dict) and d.get("type") == "coupon"]
     return _discount_lines(discount, pricing)
+
+
+def _retention_receipt(order):
+    """O recibo do valor retido de um pedido não retirado, ou ``None`` (#3538)."""
+    from shopman.shop.services import no_show
+
+    return no_show.retention_receipt(order)
 
 
 def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
@@ -806,6 +878,7 @@ def _action(
     payload_schema: dict | None = None,
     idempotency: str = "required",
     confirmation: dict | None = None,
+    value: str = "",
 ) -> Action:
     return Action(
         ref=ref,
@@ -819,6 +892,7 @@ def _action(
         payload_schema=payload_schema or {},
         idempotency=idempotency,
         confirmation=confirmation or {},
+        value=value,
     )
 
 
@@ -1221,6 +1295,9 @@ def _build_promise(
                         kind="copy",
                         label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código Pix"),
                         idempotency="none",
+                        # O código que o rótulo promete: a conversa o entrega em
+                        # mensagem própria, a página o tem no bloco de pagamento.
+                        value=str(pix_copy or ""),
                     ),
                 ),
                 payment_method="pix",
@@ -2379,8 +2456,9 @@ def _cancellation_customer_text(order_data: dict) -> str:
     if reason is None or reason.key == cancel_reasons.OTHER:
         return ""
     # Pela função, não pelo campo: o "Não retirado" completa a frase com o
-    # destino do dinheiro (``order.data["no_show"]``).
-    return cancel_reasons.customer_text(order_data)
+    # destino do dinheiro (``order.data["no_show"]``). Sem a frase do recibo:
+    # nesta página ele aparece inteiro (``retention_receipt``).
+    return cancel_reasons.customer_text(order_data, receipt_hint=False)
 
 
 def _note_says_card_hold_released(order_data: dict, money_outcome) -> bool:

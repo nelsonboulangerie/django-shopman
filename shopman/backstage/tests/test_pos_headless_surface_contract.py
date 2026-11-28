@@ -21,6 +21,7 @@ from shopman.backstage.tests.pos_test_runtime import with_screen_total
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 
 def _grant_pos_perm(user) -> None:
@@ -43,7 +44,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -189,7 +190,12 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         for state in invalid_states:
-            with self.subTest(state=state):
+            # Rótulo em texto: sob xdist o pytest 9 serializa o relatório de
+            # CADA subteste (verde também) do worker para o controlador, e
+            # `datetime.date` não serializa — o teste "reprovava" sem asserção
+            # nenhuma falhar (#3637).
+            label = {k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in state.items()}
+            with self.subTest(state=label):
                 for field, value in state.items():
                     setattr(listing, field, value)
                 listing.save(update_fields=[*state])

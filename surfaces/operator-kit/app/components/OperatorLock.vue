@@ -41,8 +41,40 @@ const {
   lostBadgeError,
   operator,
   mustChange,
+  locked,
   busy,
 } = useOperatorLock(props.perm);
+
+// A troca forçada é de quem ESTÁ operando. Com o dispositivo travado, quem ficou
+// logado não está aqui: a trava mostra a escolha de usuário, e a troca forçada
+// chega a quem destravar com o PIN de hoje (P0 de 23/11, depois do #3337).
+const forcedChange = computed(() => Boolean(mustChange.value && operator.value && !locked.value));
+
+// Onde o gerente redefine o PIN: o Admin, Credenciais PIN ("Resetar PIN").
+const runtime = useRuntimeConfig().public;
+const pinResetHref = computed(() => {
+  // A porta humana do Admin onde o app a declara (Gestor, PDV); nos outros, a base
+  // do Django, onde o /admin também responde. Nenhuma das duas: sem link.
+  const base = String(runtime.adminBaseUrl || runtime.djangoBaseUrl || "").replace(/\/$/, "");
+  return base ? `${base}/admin/doorman/pincredential/` : "";
+});
+
+// "Não é você?": encerra a sessão de quem ficou logado e volta à entrada.
+const { forgetSignedIn } = useOperatorSession();
+const switchingUser = ref(false);
+async function switchUser() {
+  if (switchingUser.value) return;
+  switchingUser.value = true;
+  try {
+    await $fetch("/api/v1/backstage/operator/logout/", { method: "POST", credentials: "same-origin" });
+  } catch (err) {
+    switchingUser.value = false;
+    useSonner.error(httpErrorMessage(err, "Não foi possível trocar de usuário. Tente de novo."));
+    return;
+  }
+  forgetSignedIn();
+  window.location.reload();
+}
 
 // Quem está escolhido no `OperatorIdentify`, AGORA (o evento `pick`). Guardado
 // aqui porque a troca voluntária de PIN precisa saber de QUEM é o PIN que está
@@ -210,13 +242,15 @@ async function submitForcedChange(payload: {
       <div class="grid gap-5 [@media(max-height:43.75rem)]:gap-3">
       <!-- Forced change: manager reset the operator's PIN; rotate before operating. -->
       <OperatorPinChange
-        v-if="mustChange && operator"
+        v-if="forcedChange && operator"
         :operator-name="operator.name"
         forced
-        :busy="busy"
+        :busy="busy || switchingUser"
         :error="changeError"
+        :reset-href="pinResetHref"
         @submit="submitForcedChange"
         @cancel="() => {}"
+        @switch-user="switchUser"
       />
 
       <!-- Voluntary change: the picked operator rotates their own PIN. -->
@@ -333,7 +367,7 @@ async function submitForcedChange(payload: {
           variant="subtle"
           icon="i-lucide-wifi-off"
           title="Não foi possível carregar os operadores."
-          :actions="alertActions('error', [{ label: 'Tentar de novo', onClick: loadEligible }])"
+          :actions="alertActions('error', [{ label: 'Tentar de novo', onClick: () => loadEligible() }])"
           data-operator-lock-eligible-error
         />
 
@@ -354,7 +388,7 @@ async function submitForcedChange(payload: {
           ref="identify"
           :people="eligible"
           :busy="busy"
-          :badge-enabled="!changing && !mustChange && !lostBadge"
+          :badge-enabled="!changing && !forcedChange && !lostBadge"
           :error="unlockError"
           prompt="Quem está operando?"
           change-label="Trocar operador"

@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-095",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "o problema era só no desktop! No caso do mobile, o padding deve ficar zerado (eliminar aquela faixa clara entre a faixa em latão e a foto do carrossel)",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "Coordenação 25/11, captura do dono no celular",
+  "estado": "EM_EXECUCAO",
+  "prova": "-"
+}

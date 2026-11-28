@@ -15,6 +15,7 @@ IMPORTANTE — Não-determinismo deliberado:
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 import uuid
@@ -1209,6 +1210,13 @@ class Command(BaseCommand):
         # Marca da casa nos feitos aqui, do fabricante na revenda: a mesma
         # tabela que o `apply_product_brands` aplica num banco que já roda.
         apply_brands(apply=True)
+        # As palavras-chave aprovadas pelo dono para a Concierge (24/11/2026), as mesmas
+        # que o `concierge_keywords --write` gravou no ar: "madalena" acha a Madeleine.
+        # Só nos publicados, como no ar; depois da Mercearia, porque a proposta também fala
+        # da água e do camembert.
+        from io import StringIO
+
+        call_command("concierge_keywords", "--write", stdout=StringIO())
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
@@ -1746,6 +1754,9 @@ class Command(BaseCommand):
                 "menu": {
                     "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
                 },
+                # Não retirado (DEV-2026-089, dono, 24/11/2026): a loja retém 40% do valor
+                # dos itens feitos para a encomenda; provisório até medir o custo real.
+                "no_show": {"retention": {"percent": 40, "decided_at": "2026-11-24", "provisional": True}},
                 "notifications": {"backend": "console"},
                 "rules": {
                     # Políticas de pedido/entrega em centavos. 0 = desligada.
@@ -1966,6 +1977,14 @@ class Command(BaseCommand):
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
+
+        # A nota fiscal dos pedidos de exemplo (D-037, #3428) vai junto com eles.
+        # O FiscalDocument não tem FK para o pedido (um Core não importa outro),
+        # então apagar os pedidos não a leva: sem esta linha, a segunda passada
+        # achava a nota órfã do pedido apagado.
+        from shopman.fiscalman.models import FiscalDocument
+
+        FiscalDocument.objects.all().delete()
 
         # Marketing é um ledger protegido e precisa sair antes de cliente, catálogo e
         # usuário. Não basta apagar ``Announcement`` no fim: snapshots ainda ligados a
@@ -2262,7 +2281,7 @@ class Command(BaseCommand):
             ("TRADI", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
             ("CPG", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 0, True,
-             f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
+             f"{IMG}/cgo.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 0, True,
              f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
@@ -6750,6 +6769,10 @@ class Command(BaseCommand):
             )
             if price_tier is not None:
                 c.price_tiers.set([price_tier])
+            # Clientes da casa que já falaram com a loja pelo WhatsApp: o número
+            # está provado pelo canal. Sem a prova, o número não abre a conta
+            # (D4, OC-08), e quem entra como estes clientes (o harness E2E, o
+            # teste no ambiente de testes) ficaria trancado fora do código.
             ContactPoint.objects.update_or_create(
                 customer=c,
                 type="whatsapp",
@@ -6757,6 +6780,9 @@ class Command(BaseCommand):
                 defaults={
                     "is_primary": True,
                     "value_display": phone,
+                    "is_verified": True,
+                    "verification_method": ContactPoint.VerificationMethod.CHANNEL_ASSERTED,
+                    "verified_at": timezone.now(),
                 },
             )
             customers[ref] = c
@@ -7251,9 +7277,11 @@ class Command(BaseCommand):
 
         # Chave de acesso NFC-e (44 dígitos): cUF(41=PR)+AAMM+CNPJ+mod(65)+série+nNF+
         # tpEmis(2=homolog)+cNF+cDV. Formato realista; exemplo de homologação.
+        # O cNF sai do pedido: a chave é única no FiscalDocument, e um seed rodado
+        # de novo que escolha outro pedido não pode repetir a chave do anterior.
         now = timezone.now()
-        chave = f"41{now:%y%m}99999999000191650010000012342{'87654321'}0"
-        chave = "".join(ch for ch in chave if ch.isdigit())[:44].ljust(44, "0")
+        cnf = int(hashlib.sha256(order.ref.encode()).hexdigest(), 16) % 10**8
+        chave = f"41{now:%y%m}99999999000191650010000012342{cnf:08d}0"
         # O exemplo não é autorizado na SEFAZ. Não fabrique uma consulta com
         # hash fictício: só uma emissão real do provedor fornece esse QR.
 
@@ -7261,18 +7289,34 @@ class Command(BaseCommand):
         data.setdefault("fiscal", {})["issue_document"] = True
         data.setdefault("customer", {}).setdefault("name", "Consumidor Final")
         data.setdefault("payment", {})["method"] = data.get("payment", {}).get("method") or "pix"
-        data.update({
-            "nfce_access_key": chave,
-            "nfce_number": 1234,
-            "nfce_series": "1",
-            "nfce_protocol": f"141{now:%y}0000012345",
-            "nfce_status": "autorizado",
-            "nfce_danfe_url": f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
-            "nfce_qrcode_url": "",
-            "nfce_xml_url": f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
-        })
         order.data = data
         order.save(update_fields=["data", "updated_at"])
+
+        # A nota mora no FiscalDocument (D-037, #3428), gravada pelo mesmo serviço
+        # da emissão; as chaves ``nfce_*`` do pedido são o espelho dela, e só o
+        # ``fiscal_mirror`` as escreve.
+        from django.db import transaction
+        from shopman.fiscalman import services as fiscal_documents
+        from shopman.fiscalman.contracts import FiscalDocumentResult
+
+        from shopman.shop.services import fiscal_mirror
+
+        with transaction.atomic():
+            # Seed rodado de novo sobre o mesmo pedido: a nota que ele já tem fica.
+            document = fiscal_documents.document_for(order.ref) or fiscal_documents.record_authorized(
+                order.ref,
+                FiscalDocumentResult(
+                    success=True,
+                    access_key=chave,
+                    document_number=1234,
+                    document_series=1,
+                    protocol_number=f"141{now:%y}0000012345",
+                    danfe_url=f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
+                    xml_url=f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
+                    status="authorized",
+                ),
+            )
+            fiscal_mirror.write(order, document)
         self.stdout.write(f"  🧾 NFC-e exemplo (homologação) no pedido {order.ref} — /fiscal/danfe/{order.ref}/")
 
     def _seed_security_reliability_edges(self, products, customers, channels):

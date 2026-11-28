@@ -9,6 +9,9 @@ efeito pendente; idempotência por (escopo, chave) com conferência do
 from __future__ import annotations
 
 import dataclasses
+import re
+from collections.abc import Mapping
+from datetime import date as calendar_date
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from conversational_commerce.contracts import (
@@ -36,11 +39,47 @@ from conversational_commerce.ports import commerce_read as read_port
 
 from .base import FakeBase
 from .faults import Fault
-from .synthetic_domain import CUSTOMERS, KNOWLEDGE, POLICIES, SyntheticState
+from .synthetic_domain import CLOSING, CUSTOMERS, DAY_WINDOW, KNOWLEDGE, OPENING, POLICIES, SyntheticState
 
 FACT_VALIDITY_SECONDS = 300
 TERMS_VALIDITY_SECONDS = 1800
 RECONCILIATION_SECONDS = 900
+
+# O comando ``set_fulfillment``: os campos que ele aceita e a forma de cada um.
+FULFILLMENT_FIELDS = ("date", "mode", "time")
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+CLOCK_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def fulfillment_problem(parameters, *, today: str, modes) -> ErrorCode | None:
+    """Por que o recebimento pedido não se aplica; ``None`` quando se aplica.
+
+    ``invalid_content``: campo desconhecido, nenhum campo, data que não é ISO
+    real, hora fora de ``HH:MM``, modo fora de ``pickup``/``delivery``.
+    ``fulfillment_unavailable``: bem formado, mas a casa não atende (modo que ela
+    não oferece, dia que já passou, hora fora do expediente).
+    """
+    fields = dict(parameters)
+    if not fields or set(fields) - set(FULFILLMENT_FIELDS) or not all(isinstance(v, str) for v in fields.values()):
+        return ErrorCode.INVALID_CONTENT
+    if "date" in fields:
+        if not ISO_DATE.match(fields["date"]):
+            return ErrorCode.INVALID_CONTENT
+        try:
+            calendar_date.fromisoformat(fields["date"])
+        except ValueError:
+            return ErrorCode.INVALID_CONTENT
+    if "time" in fields and not CLOCK_TIME.match(fields["time"]):
+        return ErrorCode.INVALID_CONTENT
+    if "mode" in fields and fields["mode"] not in ("pickup", "delivery"):
+        return ErrorCode.INVALID_CONTENT
+    if "mode" in fields and fields["mode"] not in modes:
+        return ErrorCode.FULFILLMENT_UNAVAILABLE
+    if "date" in fields and fields["date"] < today:
+        return ErrorCode.FULFILLMENT_UNAVAILABLE
+    if "time" in fields and not OPENING <= fields["time"] < CLOSING:
+        return ErrorCode.FULFILLMENT_UNAVAILABLE
+    return None
 
 
 class FakeCommerceRead(FakeBase):
@@ -111,6 +150,9 @@ class FakeCommerceRead(FakeBase):
         owner = self.state.cart_owner.get(cart_ref)
         if ctx.subject is not None and owner != ctx.subject:
             raise PortError("object_forbidden", "carrinho de outro sujeito")
+        if not cart:
+            # Carrinho vazio não tem termos: fato indisponível, como no sistema de registro (nunca um erro cru).
+            raise PortError("fact_unavailable", "carrinho vazio: não há termos a cotar")
         items, total = [], 0
         for ref, qty in sorted(cart.items()):
             item = self.state.items[ref]
@@ -126,7 +168,10 @@ class FakeCommerceRead(FakeBase):
             items=items,
             total={"amount_minor": total, "currency": items[0]["unit_price"].currency},
             recipient={"subject_ref": owner or "unknown-subject"},
-            fulfillment={"mode": "pickup"},
+            fulfillment={"mode": self.state.fulfillment.get(cart_ref, {}).get("mode", "pickup"),
+                         **({"address_ref": self.state.address[cart_ref]["ref"]}
+                            if cart_ref in self.state.address else {})},
+            conditions=self._conditions(cart_ref),
             valid_until=self.clock.at(TERMS_VALIDITY_SECONDS),
         ))
         self.quotes[terms.hash] = terms
@@ -140,16 +185,85 @@ class FakeCommerceRead(FakeBase):
             self.state.versions[cart_ref] = version + 1
         return terms
 
+    def _conditions(self, cart_ref: str) -> list[dict]:
+        """O dia, a janela e a hora combinados e a forma de pagamento, como o sistema de registro os declara.
+
+        A janela é a da grade da casa quando o mundo a conhece (``window``); sem ela, a hora dita. A hora dita
+        vai também à parte (``fulfillment_time``): o resumo a ecoa. Sem o dia e a janela, o resumo dizia só
+        "Retirada", e o do sistema de registro diz o quando (ensaio, 24/11).
+        """
+        chosen = self.state.fulfillment.get(cart_ref, {})
+        found = []
+        if chosen.get("date"):
+            found.append({"code": "fulfillment_date", "value": chosen["date"]})
+            window = chosen.get("window") or chosen.get("time")
+            if window:
+                found.append({"code": "fulfillment_window", "value": window})
+            if chosen.get("time"):
+                found.append({"code": "fulfillment_time", "value": chosen["time"]})
+        if chosen.get("mode") == "delivery" and cart_ref in self.state.address:
+            # O endereço da entrega, pela referência (o texto é da casa, no envio), como o sistema de registro.
+            found.append({"code": "delivery_address", "value": self.state.address[cart_ref]["ref"]})
+        if cart_ref in self.state.payment:
+            found.append({"code": "payment_method", "value": self.state.payment[cart_ref]})
+        return found
+
     def read_order(self, ctx: TrustedContext, ref: str) -> Fact:
         order = self.state.orders.get(ref)
         if order is not None and ctx.subject is not None and order["subject"] != ctx.subject:
             raise PortError("object_forbidden", "pedido de outro sujeito")
+        terms = self.quotes.get(order.get("terms_hash")) if order is not None else None
+        if terms is not None:
+            # O total do pedido é o dos termos confirmados (o executor grava o pedido por eles).
+            order = {**order, "total": {"price_minor": terms.total.amount_minor, "currency": terms.total.currency}}
         return self._fact("read_order", order, "fake-orders")
 
     def read_customer(self, ctx: TrustedContext, ref: str) -> Fact:
         if ctx.subject is not None and ref != ctx.subject:
             raise PortError("object_forbidden", "cliente lê só o próprio cadastro")
         return self._fact("read_customer", CUSTOMERS.get(ref), "fake-customers")
+
+    def requirements(self, ctx: TrustedContext, cart_ref: str) -> Fact:
+        """O que os termos ainda exigem: a forma de pagamento, quando há mais de uma e nenhuma escolhida."""
+        owner = self.state.cart_owner.get(cart_ref)
+        if cart_ref not in self.state.carts or (ctx.subject is not None and owner != ctx.subject):
+            raise PortError("object_forbidden", "carrinho inexistente ou de outro sujeito")
+        methods = list(self.state.payment_methods)
+        value: dict = {"missing": []}
+        if self.state.pickup_slots:
+            # O quando, na ordem do fechamento: o dia, retirar ou entregar, e o horário da retirada.
+            chosen = self.state.fulfillment.get(cart_ref, {})
+            if not chosen.get("date"):
+                value["missing"].append("fulfillment_date")
+            if chosen.get("mode") not in self.state.fulfillment_modes:
+                value["missing"].append("fulfillment_type")
+                value["fulfillment_type"] = list(self.state.fulfillment_modes)
+            if chosen.get("mode") == "pickup" and chosen.get("date") and not chosen.get("time"):
+                value["missing"].append("delivery_time_slot")
+                value["delivery_time_slot"] = list(self.state.pickup_slots)
+        if self.state.fulfillment.get(cart_ref, {}).get("mode") == "delivery":
+            # A ordem do fechamento: o endereço (e o que falta nele) antes do pagamento.
+            address = self.state.address.get(cart_ref)
+            saved = self.state.saved_addresses.get(cart_ref) or []
+            if address is None and saved:
+                # Quem tem cadastro ouve primeiro o endereço do cadastro (sim ou não), por referência opaca.
+                value["missing"].append("delivery_address_saved")
+                # A referência leva um resumo do endereço (a loja usa um hash): o cadastro mudado não casa mais.
+                value["delivery_address_saved"] = [f"saved:{cart_ref}:{n}:{_digest(text)}"
+                                                   for n, text in enumerate(saved)]
+            elif address is None:
+                value["missing"].append("delivery_address")
+                value["delivery_address"] = []
+            elif address["missing"]:
+                value["missing"].append("delivery_address_details")
+                value["delivery_address_details"] = list(address["missing"])
+            elif self.state.delivery_windows and not self.state.fulfillment.get(cart_ref, {}).get("time"):
+                value["missing"].append("delivery_window")  # a janela, depois do endereço completo
+                value["delivery_window"] = list(self.state.delivery_windows)
+        if not self.state.payment.get(cart_ref) and len(methods) > 1:
+            value["missing"].append("payment_method")
+        value["payment_method"] = methods
+        return self._fact("requirements", value, "fake-channel")
 
     def read_policy(self, ctx: TrustedContext, policy_id: str) -> Fact:
         return self._fact("read_policy", POLICIES.get(policy_id), "fake-policies")
@@ -178,6 +292,8 @@ class FakeCommerceExecute(FakeBase):
         self.by_key: dict[tuple[str, str], tuple[str, ActionReceipt]] = {}
         # comando → efeito aplicado (para reconciliar depois de queda ou resposta perdida)
         self.applied: dict[str, str] = {}
+        # comando → o que o recibo de sucesso aponta além do efeito (o recebimento depois do efeito)
+        self.applied_refs: dict[str, dict[str, str]] = {}
         # Época de posse vigente por episódio (o teste muda quando a pessoa assume).
         self.epochs = epochs if epochs is not None else {}
         self.effects = 0
@@ -208,7 +324,27 @@ class FakeCommerceExecute(FakeBase):
             return order_ref
         if command.action == "change_cart":
             cart = self.state.carts.setdefault(command.targets[0], {})
-            cart[command.parameters["item"]] = command.parameters["quantity"]
+            for line in command.parameters["lines"]:
+                cart[line["item"]] = line["quantity"]
+        if command.action == "set_payment":
+            self.state.payment[command.targets[0]] = command.parameters["method"]
+            self.applied_refs[command.command_id] = {"method": command.parameters["method"]}
+        if command.action == "set_delivery_address":
+            # O sistema de registro lê o texto pela referência; um número na fala é o endereço inteiro,
+            # sem número falta o número (a régua sintética do que falta). O recibo leva só a referência.
+            cart = command.targets[0]
+            text = self._address_text(cart, command.parameters["source"])
+            ref = f"addr-{cart}"
+            self.state.address[cart] = {"text": text, "ref": ref,
+                                        "missing": [] if any(ch.isdigit() for ch in text) else ["number"]}
+            self.applied_refs[command.command_id] = {"address_ref": ref}
+        if command.action == "set_fulfillment":
+            current = self.state.fulfillment.setdefault(command.targets[0], {})
+            current.update(command.parameters)
+            refs = dict(current)
+            if "date" in refs and "time" not in refs:
+                refs["window"] = DAY_WINDOW  # o dia sem hora: a casa diz a janela dela
+            self.applied_refs[command.command_id] = refs
         for target in command.targets:
             self.state.versions[target] = self.state.versions.get(target, 0) + 1
             self.state.current_terms.pop(target, None)  # mudou o alvo: termos velhos não valem
@@ -238,6 +374,12 @@ class FakeCommerceExecute(FakeBase):
                                     error={"code": refused.code.value, "retry": "never"})
             self.by_key[key] = (command.content_hash, receipt)
             return receipt
+        problem = self._refusal(command)
+        if problem is not None:
+            receipt = self._receipt(ctx, command, status="failure", effect="not_applied",
+                                    error={"code": problem.value, "retry": "never"})
+            self.by_key[key] = (command.content_hash, receipt)
+            return receipt
         if fault is Fault.EFFECT_PENDING:
             receipt = self._pending(ctx, command, "pending")
             self.by_key[key] = (command.content_hash, receipt)
@@ -245,7 +387,7 @@ class FakeCommerceExecute(FakeBase):
             return receipt
         ref = self._apply(command)
         self.applied[command.command_id] = ref
-        receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs={"effect": ref},
+        receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs=self._refs(command, ref),
                                 observed_versions={t: self.state.versions.get(t, 0) for t in command.targets})
         # Efeito, chave e recibo na mesma unidade atômica do provedor.
         self.by_key[key] = (command.content_hash, receipt)
@@ -253,6 +395,48 @@ class FakeCommerceExecute(FakeBase):
             # O efeito existe; a resposta se perdeu. A mesma chave acha o recibo.
             raise PortError(ErrorCode.EFFECT_UNKNOWN, "caiu depois do efeito; reconcilie com a mesma chave")
         return receipt
+
+    def _address_text(self, cart: str, source) -> str:
+        """O endereço pela fonte: o texto da fala, ou o do cadastro (``saved:<carrinho>:<n>``) só deste carrinho."""
+        source = str(source or "")
+        if source.startswith(f"saved:{cart}:"):
+            saved = self.state.saved_addresses.get(cart) or []
+            index, _, digest = source[len(f"saved:{cart}:"):].partition(":")
+            if not index.isdigit() or int(index) >= len(saved):
+                return ""
+            text = saved[int(index)]
+            return text if _digest(text) == digest else ""  # o endereço mudou desde a oferta: não vale
+        return _content(source)
+
+    def _refusal(self, command: ActionCommand) -> ErrorCode | None:
+        """O conteúdo do comando que o sistema de registro recusa, antes de qualquer efeito."""
+        if command.action == "set_payment":
+            method = command.parameters.get("method")
+            return None if method in self.state.payment_methods else ErrorCode.INVALID_CONTENT
+        if command.action == "set_delivery_address":
+            if set(command.parameters) != {"source"} or \
+                    not self._address_text(command.targets[0], command.parameters.get("source")):
+                return ErrorCode.INVALID_CONTENT
+            mode = self.state.fulfillment.get(command.targets[0], {}).get("mode")
+            if mode != "delivery":
+                return ErrorCode.FACT_UNAVAILABLE  # sem entrega combinada, o endereço não tem onde cair
+            text = self._address_text(command.targets[0], command.parameters["source"])
+            if "nowhere" in text:
+                return ErrorCode.INVALID_CONTENT  # não se localiza (sintético)
+            return ErrorCode.FULFILLMENT_UNAVAILABLE if "far away" in text else None  # fora da área (sintético)
+        if command.action == "change_cart":
+            lines = command.parameters.get("lines")
+            good = isinstance(lines, (list, tuple)) and lines and all(
+                isinstance(line, Mapping) and line.get("item") and str(line.get("quantity", "")).isdigit()
+                for line in lines)
+            return None if good else ErrorCode.INVALID_CONTENT
+        if command.action != "set_fulfillment":
+            return None
+        return fulfillment_problem(command.parameters, today=self.clock.now()[:10],
+                                   modes=self.state.fulfillment_modes)
+
+    def _refs(self, command: ActionCommand, ref: str) -> dict[str, str]:
+        return {"effect": ref, **self.applied_refs.get(command.command_id, {})}
 
     def complete_pending(self, command_id: str) -> str:
         """O provedor conclui um efeito que tinha aceitado (``EFFECT_PENDING``). A guarda já foi chamada."""
@@ -272,7 +456,8 @@ class FakeCommerceExecute(FakeBase):
         stored = self.by_key.get(key)
         if command.command_id in self.applied:
             ref = self.applied[command.command_id]
-            receipt = self._receipt(ctx, command, status="success", effect="applied", domain_refs={"effect": ref},
+            receipt = self._receipt(ctx, command, status="success", effect="applied",
+                                    domain_refs=self._refs(command, ref),
                                     supersedes=stored[1].id if stored else None)
         elif stored is not None and stored[1].status in ("pending", "unknown"):
             receipt = self._pending(ctx, command, "pending")
@@ -283,3 +468,13 @@ class FakeCommerceExecute(FakeBase):
                                     error={"code": "provider_unavailable", "retry": "never"})
         self.by_key[key] = (command.content_hash, receipt)
         return receipt
+
+
+def _digest(text: str) -> str:
+    """Um resumo do texto do endereço (no mundo falso, as letras e números; a loja usa um hash)."""
+    return "".join(ch for ch in text.lower() if ch.isalnum())
+
+
+def _content(source) -> str:
+    """O texto da fala pela referência protegida (no mundo falso, ``text:<fala>``)."""
+    return source[len("text:"):].strip() if isinstance(source, str) and source.startswith("text:") else ""

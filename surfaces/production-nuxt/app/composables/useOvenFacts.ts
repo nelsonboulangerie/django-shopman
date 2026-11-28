@@ -2,8 +2,9 @@
 // retirou; o Django carimba a hora no recebimento, como started_at/finished_at
 // da WO — sem relógio de cliente. O countdown/alarme continua 100% local
 // (useFloorTimers): aqui se DECLARAM os dois momentos com retry idempotente.
-// A UI só altera o timer local depois da confirmação do servidor e mantém erro
-// reconciliável no diálogo. Pausa, retomar e +N são UX local: não declaram nada.
+// A UI só altera o timer local depois da confirmação do servidor, e a recusa
+// fica escrita na tela (no diálogo do timer ao armar; no cartão do lote ao
+// retirar). Pausa, retomar e +N são UX local: não declaram nada.
 
 import {
   armProductionOven,
@@ -17,6 +18,13 @@ import {
   useProductionMutationGuard,
   type ProductionMutationMetadata,
 } from "~/composables/useProductionMutationGuard";
+
+// A frase quando o servidor não diz o porquê: o que não ficou registrado e o
+// gesto que tenta de novo, sem jargão ("fato do forno" é palavra do código).
+const OVEN_FACT_FALLBACK = {
+  arm: "Não deu para registrar que o lote entrou no forno. Toque em Iniciar de novo.",
+  conclude: "Não deu para registrar a retirada do forno. Toque em Finalizar de novo.",
+} as const;
 
 export function useOvenFacts(
   projection: MaybeRefOrGetter<QCKioskProjection | null | undefined>,
@@ -77,10 +85,7 @@ export function useOvenFacts(
       attempts.delete(attemptRef);
       return true;
     } catch (error) {
-      const message = httpErrorMessage(
-        error,
-        "Não foi possível confirmar o fato do forno. Tente novamente.",
-      );
+      const message = httpErrorMessage(error, OVEN_FACT_FALLBACK[action]);
       errors.value = new Map(errors.value).set(workOrderPk, message);
       if (mutationGuard.handleMutationError(error)) return false;
       void reportClientError(error, {
@@ -106,7 +111,11 @@ export function useOvenFacts(
       }),
     );
 
-  /** Declara "retirou" ao abrir o QC. ``Visto`` no timer nunca mede. */
+  /**
+   * Declara "retirou". Um gesto só chama isto: o toque em Finalizar no cartão
+   * do lote (ou a etiqueta lida, que é o mesmo pedido). Navegar entre lotes
+   * nunca declara, e ``Visto`` no timer nunca mede.
+   */
   const concluded = (workOrderPk: number, rev: number) =>
     declare(
       "conclude",

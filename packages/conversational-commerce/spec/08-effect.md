@@ -24,6 +24,7 @@ necessidade → cotação (TermsDocument, com hash) → termos apresentados (Off
 | Elo | Quem | Onde |
 |---|---|---|
 | Cotação | a porta de comércio (`quote`), lida com passo do teto | `Engine._quote` |
+| Leitura depois do efeito | o turno, depois do recibo de sucesso: termos novos do carrinho mudado, o pedido fechado | `Engine._after_effects` |
 | Termos no ar | o turno, quando `present_terms` é escolhido e a mensagem não foi segurada | `authority.Offer`, em `dialogue_state["terms_offer"]` |
 | Concessão | o núcleo, nunca o modelo | `authority.issue_grant`, `authority.issue_line_grant` |
 | Comando | o núcleo | `authority.build_command` |
@@ -98,8 +99,8 @@ e leva o episódio a `active` (recibo terminal) ou a `awaiting_handoff` (prazo v
 
 Para o movimento de efeito escolhido (módulo com `EFFECT = True` e `effect(state, need)`):
 
-1. a concessão: por confirmação (`commit_order`) ou pela linha do perfil (`change_cart`, A2,
-   reversível);
+1. a concessão: por confirmação (`commit_order`) ou pela linha do perfil (`change_cart` e
+   `set_fulfillment`, A2, reversíveis);
 2. o comando, registrado no livro;
 3. **uma gravação** com a concessão, o comando e a intenção de execução na caixa de saída,
    com o episódio em `waiting_effect` (N13). Só depois o executor é chamado;
@@ -112,23 +113,138 @@ Recusado no ponto de efeito (ou na concessão), decide-se de novo: uma decisão 
 concessão vencida e confirmação anterior aos termos pedem termos novos (`present_terms`), com
 uma confirmação nova (K07). Outras recusas dizem a limitação.
 
-Um efeito por turno: o segundo movimento de efeito escolhido fica recusado
-(`one_effect_per_turn`). Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`),
-e a resposta que afirmaria o efeito é segurada pela verificação.
+Um efeito por vez. [DECIDIDO] A máquina do episódio tem UMA espera de efeito (`waiting_effect`) e
+UMA reconciliação aberta por vez: a concessão, o comando e a intenção de execução são gravados
+juntos antes do efeito (N13), e um recibo pendente ou desconhecido abre a reconciliação daquele
+comando. Daí as três regras:
+
+- **Várias linhas do carrinho são uma mudança só**: a primeira necessidade de mudança leva um
+  `change_cart` com todas as linhas (`parameters={"lines": [{item, quantity}, ...]}`), atômico e
+  com um recibo; as outras são levadas por ela (`carried_by`), herdam a elegibilidade do grupo e
+  recebem o mesmo recibo, e a resposta sai uma vez. A levada nunca executa sem a líder
+  (`carried_without_lead`), e o mesmo item em duas linhas não vira comando.
+- **Efeitos A2 reversíveis diferentes saem em SEQUÊNCIA declarada** (`EFFECT_SEQUENCE`: o
+  `set_fulfillment`, o `set_delivery_address`, o `change_cart` e o `set_payment`, nessa ordem: o
+  recebimento, o endereço, a sacola, que mede a data combinada, e a forma por último). Toda mudança dessas é material (`MATERIAL_CHANGES`): depois dela, os termos
+  de antes não valem. Cada efeito tem a
+  própria concessão, o próprio comando (chave própria), a intenção gravada antes e o próprio recibo;
+  o recibo terminal de um devolve o episódio a `active` antes do próximo, e a sequência **para no
+  primeiro recibo que não é sucesso** (`sequence_stopped`). Assim há no máximo uma espera de efeito
+  e uma reconciliação aberta por vez. Cada parte da resposta cita o próprio recibo (K24). A parte
+  que a sequência não tentou não foi impossível: sai no molde `inform_limitation.not_attempted`
+  ("fica para depois de acertar o passo anterior"), nunca na limitação genérica. **Com o primeiro
+  efeito pendente, a sacola dita no turno não fica guardada**: o cliente a repete depois que o
+  recebimento se resolver (o motor não guarda uma intenção para depois).
+- **Fora disso, um efeito por turno**: o segundo efeito escolhido fica recusado
+  (`one_effect_per_turn`) e a decisão refeita diz a limitação. O `commit_order` (A3) nunca entra
+  em sequência, e o "sim" com uma mudança do mesmo carrinho no mesmo turno ("sim, e põe quatro", em
+  qualquer ordem) **não grava o pedido**: os termos confirmados deixaram de ser os do carrinho (v2
+  4.7, propriedade 2).
+
+Em `shadow` nada se executa (`shadow:effect_not_executed:<movimento>`), e a resposta que afirmaria
+o efeito é segurada pela verificação.
 
 O adaptador diz quem fala e qual é o carrinho dele por `Engine.subject_of(ctx, event) ->
 Subject`, a partir do contexto confiável, nunca do texto. Sem carrinho, nenhuma mudança nem
-cotação é proposta.
+cotação é proposta. Depois do recibo de sucesso de um `change_cart`, o sujeito é relido (o efeito
+pode ter criado o carrinho) antes da nova cotação.
+
+### O fato dos termos
+
+Os termos apresentados são o documento canônico inteiro (v2 4.7), e o "sim" responde ao que o
+cliente viu. O fato `terms.<carrinho>` (`engine/turn.py`, `terms_fact`) leva, do documento selado:
+`terms_id`, `total`, `items` (`ref`, `quantity`, `unit`, `unit_price`, `line_total` e, quando o
+fato do item o dá, `name`), `adjustments`, `fulfillment` (`mode`, `window_start`, `window_end`)
+e `conditions` (código → valor). **O destinatário fica de fora** (dado pessoal), e o
+`address_ref` do recebimento também. Dinheiro vai como `{price_minor, currency}`. O nome de cada
+item é lido como fato (`item.<ref>`, com passo do teto), nunca resolvido por quem formata; sem o
+fato, a linha mostra a referência.
+
+### Depois do efeito
+
+- **Carrinho mudado** (`change_cart` com sucesso): o carrinho é cotado de novo, mesmo que ninguém
+  peça termos (v2 4.7, propriedade 2: mudança material gera novos termos). A resposta do
+  `change_cart` mostra o carrinho por esses termos.
+- **Pedido fechado** (`commit_order` com sucesso): o pedido é lido pela porta (`read_order`), no
+  fato `order.<referência>`, e o total da resposta sai dele.
+
+**A leitura que falha nunca segura o efeito feito.** Como no `set_fulfillment`, a resposta é o
+molde mais completo que o lastro sustenta: sem os termos novos (carrinho vazio, cotação que falha),
+`change_cart.done_receipt` diz só o efeito; sem o total do pedido (leitura que falha, ou fato sem
+`total`), `commit_order.done_order` diz o pedido e onde acompanhar.
+
+**"Não" aos termos.** O `deny` que responde à pergunta dos termos ("deixa pra lá") invalida a
+autorização e não grava nada, sem ato próprio. A resposta `acknowledge.terms_declined` ("nada foi
+registrado, o carrinho ficou como estava") só sai quando NENHUM efeito foi escolhido no turno
+(`TurnState.effect_chosen`); com uma mudança junto, ela seria falsa, e vale o molde comum.
+
+**Mudança com termos no ar.** Se o carrinho muda (recibo de sucesso do `change_cart`) enquanto a
+pergunta dos termos está no ar ("pode fechar" → resumo → "na verdade 4"), os termos de antes deixam
+de valer (v2 4.7, propriedade 2). A decisão é refeita, ligada à anterior (N14): a necessidade da
+mudança passa a ser atendida pelo `present_terms`, com os termos cotados depois do efeito, e o
+`change_cart` não é proposto de novo. O "sim" seguinte responde ao documento novo
+(`TurnState.changed_under_offer`). O mesmo vale para o "sim" dito junto com a mudança ("sim, e põe
+quatro", em qualquer ordem): a mudança executa, o pedido NÃO é gravado pelos termos de antes, e o
+turno apresenta os termos novos uma vez só (as duas necessidades, a mesma parte). Três cuidados:
+
+- a nova cotação descarta os termos de antes ANTES de ler; se ela falha, nada é apresentado sobre o
+  documento velho: a mudança é dita pelo degrau de baixo (`change_cart.done_receipt`) e a pergunta
+  dos termos sai do ar (o "sim" seguinte não confirma os termos velhos);
+- se a mudança junto do "sim" falha ou fica pendente, o "sim" não foi impossível: sai
+  `inform_limitation.confirm_after_change` (o pedido espera a sacola), nunca a limitação genérica;
+- só uma mudança ELEGÍVEL segura o "sim" (linhas absolutas, sem item repetido): "põe mais um,
+  sim", com a linha relativa inelegível, deixa o "sim" seguir pelos termos confirmados.
+
+**Termos apresentados no turno de uma mudança.** Se o mesmo turno muda o carrinho e apresenta os
+termos ("põe mais um e fecha"), a decisão é refeita sobre os termos cotados depois do efeito,
+ligada à anterior (`parent_decision_id`, N14), como depois de uma recusa. A decisão gravada e a
+pergunta no ar citam o MESMO documento.
 
 ## 6. Movimentos
 
 | Movimento | Nível | No D1 |
 |---|---|---|
-| `present_terms` | A1 | cota e mostra o total por espaço travado; episódio a `waiting_authorization` |
-| `change_cart` | A2 | executa: quantidade absoluta, evento com identidade estável, reversível |
+| `present_terms` | A1 | cota e mostra os termos inteiros por espaço travado (itens, total, recebimento, condições); episódio a `waiting_authorization` |
+| `change_cart` | A2 | executa: as linhas do turno num comando só (`lines`), quantidade absoluta, evento com identidade estável, reversível |
+| `set_payment` | A2 | executa: a forma de pagamento, uma das do canal (`payment_method_offered`); sobe a versão do carrinho |
+| `set_delivery_address` | A2 | executa: o endereço da entrega, lido pelo executor no texto original (`address_by_reference`); só a referência viaja; sobe a versão do carrinho |
+| `set_fulfillment` | A2 | executa: o recebimento (dia, retirada ou entrega, hora) dito em forma absoluta, evento com identidade estável, reversível |
 | `commit_order` | A3 | executa: só o "sim" que responde à pergunta dos termos, na mesma época |
 | `cancel_order`, `amend_order` | A3 | só precondição; com a linha do perfil; nenhuma jornada os executa |
 | `grant_discount` | A4 | só precondição; teto da linha `commerce.discount_cap_minor` (`within_cap`) |
+
+`set_fulfillment` (`engine/moves/set_fulfillment.py`) responde ao ato `choose_fulfillment`
+com uma leitura só e o carrinho do sujeito. Aplica o que foi dito e nada além: só data, só
+modo, ou tudo, e o comando leva só os campos ditos (`EffectPlan(action="set_fulfillment",
+target=<carrinho>, parameters={date?, mode?, time?})`, concessão pela linha). Nenhum
+campo dito, nenhuma proposta. Data que não é ISO real, hora fora de `HH:MM`, modo fora de
+`pickup`/`delivery` ou `relative: true` deixam a ação inelegível
+(`absolute_fulfillment` → `relative_fulfillment`), e a resposta é a limitação; duas leituras
+perguntam antes. O executor confere de novo e recusa com os códigos da seção 7 do
+`02-catalog-profile.md` (porta: `03-ports.md`, seção 2). A resposta é o molde mais completo
+que o recibo sustenta, todos com lastro em recibo de sucesso:
+
+| Molde | Espaços (campo do recibo) | Quando |
+|---|---|---|
+| `set_fulfillment.done` | `mode`, `date`, `window` | dia sem hora: a casa dá a janela no recibo |
+| `set_fulfillment.done_time` | `mode`, `date`, `time` | hora no lugar da janela |
+| `set_fulfillment.done_day` | `mode`, `date` | sem janela nem hora |
+| `set_fulfillment.done_date` | `date` | só o dia |
+| `set_fulfillment.done_mode` | `mode` | só o modo |
+| `set_fulfillment.updated` | `ref` (`effect`) | nenhum dos de cima (recibo só com o efeito) |
+
+A casa troca a frase (`house_templates`) e formata os valores pelos formatadores dos espaços
+(`date`, `mode`, `window`, `time`): a data na língua dela, o rótulo da janela pela referência.
+
+**Por que `set_fulfillment` e `set_delivery_address` são dois movimentos.** O recebimento diz QUANDO e
+COMO, com valores fechados que o motor confere antes do efeito (data ISO, hora `HH:MM`, modo da lista):
+a leitura carrega os campos e a precondição os julga. O endereço diz ONDE, e é dado pessoal (P17): não vai
+ao modelo, não entra em contrato, e só o sistema de registro sabe lê-lo (rua, número, CEP, geocodificação,
+o que falta para a nota). Juntar os dois obrigaria o comando do recebimento a carregar texto pessoal, ou o
+motor a julgar o que não pode ver. Separados, cada um tem a concessão, o recibo e a recusa dele; a
+sequência os aplica na ordem (o modo antes do endereço), e o endereço dado sem entrega combinada é
+recusado (`fact_unavailable`). A resposta do endereço é `set_delivery_address.done`
+(`{address}`, campo `address_ref` do recibo), e o texto sai do formatador de referência da casa (spec 06).
 
 O ato `place_order` entrou na lista fechada (`engine/acts.py`). `inform_limitation` só é
 proposto quando nenhum movimento elegível faz o pedido, e `acknowledge` não responde ao "sim"
@@ -153,6 +269,7 @@ aos termos: é confirmação, não cortesia.
 | K15 concessão vence entre a decisão e a execução | `adapter` |
 | K16 chave vencida com efeito desconhecido: nunca executa de novo; vai a pessoa | `adapter` |
 | Sem a linha da concessão, nada se executa; sombra decide e não executa | núcleo |
+| Recebimento (`test_set_fulfillment.py`): data, modo e hora; só data; só modo; o dito antes fica; dia que já passou recusado com código estável; relativo e ambíguo não se aplicam; o mesmo evento não aplica duas vezes; o arnês reprova executor que aceita qualquer forma | núcleo e `adapter` |
 
 K11, K12 e K14 são `real_mechanism`: aqui é simulação sobre os falsos; só valem rodados no
 mecanismo do adaptador (transação e fila de verdade).

@@ -17,6 +17,10 @@ const serverEntry = `${nitroOutputDir}/server/index.mjs`;
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.spec.ts",
+  // Pasta própria: o Playwright LIMPA o outputDir ao começar, e a geometria roda ao
+  // mesmo tempo que esta suíte (concurrentPhases em surfaces/contracts.json, DEV-2026-098)
+  // gravando em test-results/geometry. Com o padrão `test-results`, um apagaria o outro.
+  outputDir: "./test-results/e2e",
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,

@@ -3,7 +3,7 @@
 Este arquivo não se executa sozinho. Cada app tem o seu brief (`EXCELENCIA-<app>.md`), que
 aponta para cá e diz o perímetro, as fronteiras e o foco daquele app.
 
-Compromisso: DEV-2026-028. Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
+Compromisso: o que o brief do app dá (DEV-2026-028 para PDV, Gestor e Storefront). Modelo: Fable 5.2, esforço `high`. Nenhum código de produção.
 
 ## O objetivo
 
@@ -74,7 +74,8 @@ da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
 1. **Laudo**: os achados P0, P1 e P2, cada um com a lente, a prova e a causa no código.
 2. **O salto**: até cinco ideias que tiram o app do "correto" para o "uau", cada uma com o
    ganho para o usuário e o custo.
-3. **WPs**, cada um cabendo numa sessão Opus 5.5, um branch e um PR, com:
+3. **WPs**, cada um cabendo numa sessão Opus 5.5 com esforço médio (decisão do dono, 23/11: o
+   Fable revisa e planeja, o Opus médio implementa), um branch e um PR, com:
    - objetivo em uma frase;
    - achados que fecha;
    - dependências;
@@ -86,7 +87,7 @@ da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
        dono dela;
    - se muda tela (se sim, o WP inclui prévia local ao dono antes de enfileirar);
    - tamanho;
-   - um brief para a sessão Opus, que aponta o que ler e não copia o CLAUDE.md. O brief manda
+   - um brief para a sessão Opus 5.5 (esforço médio), que aponta o que ler e não copia o CLAUDE.md. O brief manda
      seguir a seção "Teste como um operador de verdade" deste arquivo.
 4. **Jornadas a canonizar**: a lista, cada uma com o papel, os passos e o WP que a escreve.
 5. **Ondas**: o que corre em paralelo. Dois WPs da mesma onda nunca tocam o mesmo arquivo.
@@ -99,8 +100,8 @@ da pessoa. O plano lista quais jornadas canonizar e em que WP cada uma nasce.
 O trabalho é **só do app do brief**. O que pertence a outro app, ao `operator-kit`, aos
 services do `shop` ou ao Core (`packages/`) não vira WP deste plano. Vira uma seção
 **Fronteiras**: o que é, por que afeta este app, de quem é e quais outros apps sente a mudança.
-Três revisões irmãs rodam em paralelo (PDV, Gestor de pedidos, Storefront), cada uma no seu
-perímetro.
+Revisões irmãs de outros apps podem estar rodando ao mesmo tempo, cada uma no seu perímetro e
+nas portas do seu brief (`docs/coordination/ROUNDS/EXCELENCIA-*.md`).
 
 ## Limites
 

@@ -88,6 +88,233 @@ class CartDateMismatchError(CartUnavailableError):
         self.item_date = item_date
 
 
+class CartDateRefused(Exception):
+    """O dia escolhido no cardápio não pode ser combinado: passado, além do máximo, fechado.
+
+    ``message`` é a frase da recusa (``preorder_dates.date_refusal``), para a tela.
+    """
+
+    error_code = "date_refused"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _apply_chosen_date(session: Session, chosen: date, *, sku: str, qty: int) -> None:
+    """O dia do "Para quando?" do cardápio vira o dia da sacola (OC-33 B1).
+
+    É o mesmo ``delivery_date`` que a concierge grava ao combinar o dia, e o que
+    ``_cart_date`` já lê: a reserva cai nesse dia. Escrito na sessão travada, antes
+    da reserva, pela mutação da sacola que já existe.
+
+    - Hoje (ou antes) é o cardápio de sempre (X13): a sacola fica sem data
+      escolhida, e a reserva segue a régua de sempre.
+    - Dia que a casa não combina: recusa com a frase (:class:`CartDateRefused`).
+    - Sacola que já tem reserva para OUTRO dia: um pedido, uma data (decisão do
+      dono, 01/10/2026): o item é de outro pedido (:class:`CartDateMismatchError`),
+      sem reservar nada.
+    """
+    from shopman.shop.services.preorder_dates import date_refusal
+
+    today = timezone.localdate()
+    held = availability.session_hold_dates(session.session_key)
+    data = dict(session.data or {})
+    if chosen <= today:
+        if held and min(held) > today:
+            raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=min(held), item_date=today)
+        if parse_commitment_date(data.get("delivery_date")) is not None:
+            data.pop("delivery_date", None)
+            session.data = data
+            session.save(update_fields=["data"])
+        return
+    refusal = date_refusal(chosen, today=today)
+    if refusal:
+        raise CartDateRefused(refusal)
+    if held and min(held) != chosen:
+        raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=min(held), item_date=chosen)
+    if data.get("delivery_date") != chosen.isoformat():
+        data["delivery_date"] = chosen.isoformat()
+        session.data = data
+        session.save(update_fields=["data"])
+
+
+class CartDayChangeRefused(Exception):
+    """A troca de dia deixaria item de fora: nada mudou (OC-33 B1, o "Trocar").
+
+    ``items`` são os que não dão no dia novo, ``[{sku, name, requested_qty,
+    available_qty}]``; ``title``/``detail`` são a frase da casa
+    (``policies.preorder_date.cart_day_change_refusal``).
+    """
+
+    error_code = "cart_day_change_refused"
+
+    def __init__(self, *, day: date, day_label: str, items: list[dict], title: str, detail: str):
+        super().__init__(detail)
+        self.day = day
+        self.day_label = day_label
+        self.items = items
+        self.title = title
+        self.detail = detail
+
+
+def _is_lot_line(item: dict) -> bool:
+    """A linha tem PREÇO de lote: o desconto de lote estampado, ou um lote com desconto.
+
+    É a linha que não muda de dia (a sobra de hoje não lastreia outro dia, e o preço
+    do lote não viaja). Linha que só guarda o lote de onde a reserva saiu, sem
+    desconto nenhum, muda de dia sem ele (:func:`_without_lot`).
+    """
+    meta = item.get("meta") or {}
+    if (meta.get("_disc") or {}).get("type") == "lot_discount":
+        return True
+    batch_ref = str(meta.get("batch_ref") or "")
+    return bool(batch_ref) and lot_pricing.percent_for_lot(batch_ref) > 0
+
+
+def _without_lot(items: list[dict]) -> list[dict] | None:
+    """As linhas sem a marca de lote da reserva antiga; ``None`` quando nenhuma tinha.
+
+    A reserva do dia novo não é a do lote antigo: a linha não leva o ``batch_ref``
+    para o outro dia, e o ``LotDiscountModifier`` nunca o lê lá.
+    """
+    changed = False
+    out: list[dict] = []
+    for item in items:
+        meta = item.get("meta") or {}
+        if meta.get("batch_ref"):
+            item = {**item, "meta": {k: v for k, v in meta.items() if k != "batch_ref"}}
+            changed = True
+        out.append(item)
+    return out if changed else None
+
+
+class _DayChangeRollback(Exception):
+    """Interno: desfaz a troca inteira (savepoint) e leva a recusa para fora."""
+
+    def __init__(self, refusal: CartDayChangeRefused):
+        super().__init__(str(refusal))
+        self.refusal = refusal
+
+
+@transaction.atomic
+def change_cart_day(
+    *,
+    session_key: str,
+    channel_ref: str,
+    chosen: date,
+    without_skus: tuple[str, ...] | list[str] = (),
+) -> Session | None:
+    """Passa a sacola INTEIRA para ``chosen``: um comando, efeito único (OC-33 B1, X4).
+
+    O "Trocar" do cardápio e da sacola. Ou a sacola toda muda de dia (todas as
+    reservas soltas e refeitas no dia novo, ``delivery_date`` regravada), ou nada
+    muda:
+
+    - dia que a casa não combina: :class:`CartDateRefused`, sacola intacta;
+    - item que não dá no dia novo: :class:`CartDayChangeRefused` nomeando cada um,
+      sacola intacta (a transação desfaz o que foi solto e refeito);
+    - ``without_skus``: "seguir sem esse item". Cada referência é o ``ref`` que a
+      recusa devolveu (o SKU, ou a ``line_id`` da linha de lote); esses itens saem
+      da sacola na mesma escrita, e o resto vai para o dia novo;
+    - linha com preço de lote nunca vai para outro dia (a sobra de hoje não
+      lastreia outro dia): ela volta nomeada na recusa, como item que não dá. A
+      que só guarda o lote da reserva antiga vai, sem ele.
+
+    Hoje é a régua de sempre para dizer "dá?" (o pronto e a fornada de hoje), e a
+    escolha de dia sai da sessão. ``None`` = não há sacola aberta.
+    """
+    from shopman.shop.policies.preorder_date import cart_day_change_refusal, cart_day_refusal
+    from shopman.shop.projections.ready_promise import day_label_for
+
+    today = timezone.localdate()
+    refusal = cart_day_refusal(chosen, today=today)
+    if refusal:
+        raise CartDateRefused(refusal)
+    session = Session.objects.select_for_update().filter(
+        session_key=session_key, channel_ref=channel_ref, state="open",
+    ).first()
+    if session is None:
+        return None
+
+    dropped = {str(ref) for ref in without_skus if ref}
+    lines = [
+        item for item in (session.items or [])
+        if item.get("sku") and item.get("sku") != "__DELIVERY_FEE__"
+        and (item.get("meta") or {}).get("type") != "delivery_fee"
+    ]
+
+    def leaves(item) -> bool:
+        return str(item["sku"]) in dropped or str(item.get("line_id") or "") in dropped
+
+    wanted: dict[str, Decimal] = {}
+    names: dict[str, str] = {}
+    # A linha de LOTE (o "Ontem" de balcão, ou qualquer preço ou desconto atrelado a
+    # lote) nunca vai para outro dia: a sobra de hoje não lastreia outro dia (dono,
+    # 18/11/2026), e o preço do lote não viaja. Ela é "não dá nesse dia", nomeada
+    # pela linha, e sai em "Seguir sem esse item".
+    lot_lines: list[dict] = []
+    for item in lines:
+        sku = str(item["sku"])
+        if leaves(item):
+            continue
+        if _is_lot_line(item):
+            lot_lines.append(item)
+            continue
+        wanted[sku] = wanted.get(sku, Decimal("0")) + Decimal(str(item.get("qty") or 0))
+        names.setdefault(sku, str(item.get("name") or sku))
+
+    try:
+        with transaction.atomic():
+            availability.release_session_holds(session_key)
+            missing: list[dict] = [
+                {
+                    "ref": str(item.get("line_id") or item["sku"]),
+                    "sku": str(item["sku"]),
+                    "name": str(item.get("name") or item["sku"]),
+                    "requested_qty": _whole(Decimal(str(item.get("qty") or 0))),
+                    "available_qty": 0,
+                }
+                for item in lot_lines
+            ]
+            for sku, qty in wanted.items():
+                if qty <= 0:
+                    continue
+                result = availability.reserve(
+                    sku, qty, session_key=session_key, channel_ref=channel_ref, target_date=chosen,
+                )
+                if not result["ok"]:
+                    missing.append({
+                        "ref": sku,
+                        "sku": sku,
+                        "name": names[sku],
+                        "requested_qty": _whole(qty),
+                        "available_qty": _whole(Decimal(str(result.get("available_qty") or 0))),
+                    })
+            if missing:
+                label = day_label_for(chosen, today=today)
+                copy = cart_day_change_refusal(day_label=label, names=[m["name"] for m in missing])
+                raise _DayChangeRollback(CartDayChangeRefused(
+                    day=chosen, day_label=label, items=missing, title=copy["title"], detail=copy["detail"],
+                ))
+            data = dict(session.data or {})
+            if chosen > today:
+                data["delivery_date"] = chosen.isoformat()
+            else:
+                data.pop("delivery_date", None)
+            session.data = data
+            session.save(update_fields=["data"])
+            stripped = _without_lot(list(session.items or []))
+            if stripped is not None:
+                session.update_items(stripped)
+    except _DayChangeRollback as rollback:
+        raise rollback.refusal from None
+
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
+    ops = [{"op": "remove_line", "line_id": item["line_id"]} for item in lines if leaves(item)]
+    return session_service.modify_session(session_key=session_key, channel_ref=channel_ref, ops=ops)
+
+
 def _refuse_a_second_date(*, session_key: str, sku: str, requested_qty: int, new_hold_id: str | None) -> None:
     """Loja online: um pedido, uma data (decisão do dono, 01/10/2026).
 
@@ -183,8 +410,13 @@ def add_item(
     name: str = "",
     options: list[dict] | None = None,
     product=None,
+    chosen_date: date | None = None,
 ) -> tuple[Session, str]:
     """Reserve stock and add or merge a cart line.
+
+    ``chosen_date`` é o dia que a cliente escolheu no "Para quando?" do cardápio
+    (OC-33 B1): vira o dia da sacola antes da reserva (:func:`_apply_chosen_date`).
+    ``None`` = a superfície não escolheu dia, e nada muda.
 
     ``options`` é a escolha do cliente no produto, ``[{group, ref}]`` e nada
     mais (``shopman.shop.product_options``). Ela é conferida contra o cadastro
@@ -214,6 +446,8 @@ def add_item(
     )
 
     session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
+    if chosen_date is not None:
+        _apply_chosen_date(session, chosen_date, sku=sku, qty=qty)
     existing = next(
         (
             item
@@ -314,14 +548,20 @@ def update_qty(
     qty: int,
     sku: str | None = None,
     whole_product: bool = False,
+    chosen_date: date | None = None,
 ) -> Session:
     """Reconcile holds and update a cart line quantity in one local commit.
 
     ``whole_product``: ``qty`` é o total da linha do produto, contando a parte que
     o rateio do desconto partiu dela (#3240); a parte sai na mesma escrita e o
     preço a refaz se ainda couber. É a conta do stepper por SKU, que mostra a soma.
+
+    ``chosen_date``: o dia do "Para quando?" (OC-33 B1), como em :func:`add_item`.
+    Quem chama só o passa no acréscimo: tirar da sacola nunca depende do dia.
     """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    if chosen_date is not None:
+        _apply_chosen_date(session, chosen_date, sku=str(sku or ""), qty=qty)
     parts = tuple(_split_parts(session, line_id)) if whole_product else ()
     line_sku = sku
     if line_sku is None:

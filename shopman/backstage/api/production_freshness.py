@@ -143,10 +143,15 @@ def override_attempt_digest(body: dict) -> str:
         if key
         not in {
             "_approved_shortage_snapshot",
+            "_approved_short_lot_snapshot",
+            "_approved_material_shortage_snapshot",
+            "_authorized_by",
             "_committed_replay",
             "force",
             "reason",
             "override_proof",
+            "short_lot_proof",
+            "material_shortage_proof",
         }
     }
     payload = json.dumps(
@@ -202,6 +207,35 @@ def validate_override_proof(
     ):
         return {"override_proof": ("A autorização de exceção pertence a outra ação ou tentativa.")}
     return {}
+
+
+def authorized_override_proof(override_proof: str, *, authorized_by: str) -> str | None:
+    """A mesma prova de falta, agora assinada por quem autorizou (WP-F11, D-042).
+
+    Quem autoriza conferiu o PIN no servidor antes; esta prova carrega o nome dele
+    para a tentativa que fecha o lote, que não precisa reenviar o PIN. ``None``
+    quando a prova recebida não é uma prova de falta válida.
+    """
+    try:
+        actual = signing.loads(override_proof, salt=_OVERRIDE_SIGNING_SALT)
+    except (ValueError, signing.BadSignature):
+        return None
+    if not isinstance(actual, dict) or not isinstance(actual.get("shortage_snapshot"), dict):
+        return None
+    return signing.dumps(
+        {**actual, "authorized_by": str(authorized_by)},
+        salt=_OVERRIDE_SIGNING_SALT,
+        compress=True,
+    )
+
+
+def override_authorizer(override_proof: str) -> str:
+    """O usuário que assinou a prova de falta, ou ``""``."""
+    try:
+        actual = signing.loads(override_proof, salt=_OVERRIDE_SIGNING_SALT)
+    except (ValueError, signing.BadSignature):
+        return ""
+    return str(actual.get("authorized_by") or "") if isinstance(actual, dict) else ""
 
 
 def override_shortage_snapshot(override_proof: str) -> dict | None:

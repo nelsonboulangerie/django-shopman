@@ -295,11 +295,63 @@ class FiscalNoteProjection:
 
 
 @dataclass(frozen=True)
+class RetentionReceiptLineProjection:
+    name: str
+    qty_display: str
+    value_display: str
+    #: "40% de R$ 89,00": o cálculo que dá ``retained_display``.
+    calculation_display: str
+    retained_display: str
+
+
+@dataclass(frozen=True)
+class RetentionReceiptRowProjection:
+    label: str
+    value_display: str
+
+
+@dataclass(frozen=True)
+class RetentionReceiptProjection:
+    """O recibo do valor que a loja reteve de uma encomenda não retirada (#3538).
+
+    O mesmo conteúdo do papel do balcão, escrito para a tela: quem emite (razão
+    social e CNPJ), o pedido, o que ficou com a loja, o dinheiro e o que o valor
+    é (multa, sem nota fiscal).
+    """
+
+    title: str
+    issuer_lines: tuple[str, ...]
+    order_line: str
+    commitment_display: str
+    closed_display: str
+    lines: tuple[RetentionReceiptLineProjection, ...]
+    money_rows: tuple[RetentionReceiptRowProjection, ...]
+    retained_label: str
+    retained_display: str
+    nature: str
+    not_fiscal: str
+
+
+@dataclass(frozen=True)
 class TrackingDiscountLineProjection:
     """Uma linha de desconto da conta do pedido ("Cupom BEMVINDO", "- R$ 3,00")."""
 
     label: str
     amount_display: str
+
+
+@dataclass(frozen=True)
+class TrackingLoginInviteProjection:
+    """O convite para entrar no lugar do que o link do aviso não faz (DEV-2026-093).
+
+    A tela aberta só pelo link vê o pedido, paga, fala com a loja e confirma o
+    recebimento. Cancelar, avaliar e pedir de novo pedem a entrada: no lugar desses
+    botões, a frase diz o que falta e o botão leva a ``/entrar`` e volta ao pedido.
+    """
+
+    message: str
+    cta_label: str
+    href: str
 
 
 @dataclass(frozen=True)
@@ -373,6 +425,7 @@ class OrderTrackingProjection:
     cancellation_contact: CancellationContactProjection | None = None
     rating_followup: RatingFollowupProjection | None = None
     fiscal_note: FiscalNoteProjection | None = None
+    retention_receipt: RetentionReceiptProjection | None = None
     # O Resumo conta o que a revisão do checkout contou (beta 06/11): a conta
     # inteira (subtotal de etiqueta, descontos, entrega, total) e o que o
     # cliente informou. ``schedule_display`` é o combinado (data e janela)
@@ -384,6 +437,11 @@ class OrderTrackingProjection:
     tax_id_display: str = ""
     customer_notes: str = ""
     delivery_address: str = ""
+    # ``full`` ou ``capability`` (aberto só pelo link do aviso). Na capacidade, o
+    # endereço já vem abreviado e o convite para entrar ocupa o lugar das ações que
+    # pedem a entrada (DEV-2026-093).
+    access_mode: str = "full"
+    login_invite: TrackingLoginInviteProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -404,11 +462,14 @@ class OrderTrackingStatusProjection:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def build_order_tracking(order) -> OrderTrackingProjection:
-    """Build the full tracking page projection for an Order."""
+def build_order_tracking(order, *, access_mode: str = "full") -> OrderTrackingProjection:
+    """Build the full tracking page projection for an Order.
+
+    ``access_mode="capability"``: aberto só pelo link do aviso (DEV-2026-093).
+    """
     from django.conf import settings
 
-    return present_tracking(build_tracking(order, is_debug=settings.DEBUG))
+    return present_tracking(build_tracking(order, is_debug=settings.DEBUG, access_mode=access_mode))
 
 
 def build_order_tracking_status(order) -> OrderTrackingStatusProjection:
@@ -509,6 +570,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         ),
         mock_payment_enabled=data.can_mock_confirm_payment,
         fiscal_note=_present_fiscal_note(data.fiscal_note),
+        retention_receipt=_present_retention_receipt(data.retention_receipt),
         subtotal_display=f"R$ {format_money(_list_subtotal_q(data))}",
         discount_lines=tuple(
             TrackingDiscountLineProjection(
@@ -526,6 +588,35 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         tax_id_display=_masked_tax_id(data.tax_id),
         customer_notes=data.customer_notes,
         delivery_address=data.delivery_address,
+        access_mode=data.access_mode,
+        login_invite=_login_invite(data, copy=copy),
+    )
+
+
+#: O gesto de cada ação retida, como a frase do convite o diz.
+_LOGIN_INVITE_GESTURES = {
+    "cancel_order": "cancelar o pedido",
+    "rate_order": "avaliar",
+    "reorder": "pedir de novo",
+    "waitlist_confirm": "confirmar a vaga",
+}
+
+
+def _login_invite(data: TrackingData, *, copy: CopyCatalog) -> TrackingLoginInviteProjection | None:
+    """O convite para entrar, só quando o link do aviso reteve alguma ação."""
+    gestures = [_LOGIN_INVITE_GESTURES[ref] for ref in data.login_required_for if ref in _LOGIN_INVITE_GESTURES]
+    if not gestures:
+        return None
+    joined = gestures[0] if len(gestures) == 1 else ", ".join(gestures[:-1]) + " ou " + gestures[-1]
+    template = copy.message("TRACKING_LOGIN_INVITE", "Para {gestures}, entre com seu telefone.")
+    try:
+        message = template.format(gestures=joined)
+    except (KeyError, IndexError, ValueError):
+        message = f"Para {joined}, entre com seu telefone."
+    return TrackingLoginInviteProjection(
+        message=message,
+        cta_label=copy.title("TRACKING_LOGIN_INVITE", "Entrar com meu telefone"),
+        href=f"/entrar?{urlencode({'next': f'/pedido/{data.order_ref}'})}",
     )
 
 
@@ -615,6 +706,58 @@ def _share_summary(data: TrackingData, *, copy: CopyCatalog) -> str:
     if where:
         lines.append(f"Endereço: {where}")
     return "\n".join(lines)
+
+
+def _present_retention_receipt(receipt) -> RetentionReceiptProjection | None:
+    if receipt is None:
+        return None
+
+    def money(value_q: int) -> str:
+        return f"R$ {format_money(int(value_q or 0))}"
+
+    issuer = tuple(
+        line
+        for line in (receipt.legal_name or receipt.store_name, f"CNPJ {receipt.tax_id}" if receipt.tax_id else "")
+        if line
+    )
+    if receipt.mixed:
+        rows = [RetentionReceiptRowProjection("Valor do pedido", money(receipt.paid_q))]
+        if receipt.from_account_q:
+            rows.append(RetentionReceiptRowProjection("Saiu da sua conta na loja", money(receipt.from_account_q)))
+        rows.append(RetentionReceiptRowProjection("Devolvido a você", money(receipt.refund_q)))
+        if receipt.debt_left_q:
+            rows.append(RetentionReceiptRowProjection("Continua na sua conta na loja", money(receipt.debt_left_q)))
+    else:
+        rows = [
+            RetentionReceiptRowProjection("Pago", money(receipt.paid_q)),
+            RetentionReceiptRowProjection("Devolvido a você", money(receipt.refund_q)),
+        ]
+    return RetentionReceiptProjection(
+        title=receipt.title,
+        issuer_lines=issuer,
+        order_line=f"Pedido {receipt.order_ref}",
+        commitment_display=(
+            f"Dia combinado: {receipt.commitment_day:%d/%m/%Y}" if receipt.commitment_day else ""
+        ),
+        closed_display=(
+            f"Encerrado em {format_local(receipt.closed_at)}" if receipt.closed_at else ""
+        ),
+        lines=tuple(
+            RetentionReceiptLineProjection(
+                name=line.name,
+                qty_display=f"Quantidade: {line.qty}",
+                value_display=money(line.value_q),
+                calculation_display=f"{line.percent}% de {money(line.value_q)}",
+                retained_display=money(line.retained_q),
+            )
+            for line in receipt.lines
+        ),
+        money_rows=tuple(rows),
+        retained_label="Ficou com a loja",
+        retained_display=money(receipt.retained_q),
+        nature=receipt.nature,
+        not_fiscal="Não é documento fiscal.",
+    )
 
 
 def _present_fiscal_note(note) -> FiscalNoteProjection | None:

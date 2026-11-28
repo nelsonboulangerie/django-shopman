@@ -36,7 +36,6 @@ function card(
     partition: [{ quantity: "10", quality_grade_ref: "standard", quality_defect_ref: "", loss: false }],
     correction_count: 0,
     last_correction_at_display: "",
-    committed_qty: "",
     full_price_qty: "10",
     discounted_qty: "0",
     loss_qty: "0",

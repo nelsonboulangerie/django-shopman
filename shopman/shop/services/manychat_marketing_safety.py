@@ -153,6 +153,9 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     # A resposta da equipe que chegou fora da janela de 24 horas (WP-16, Concierge): o
     # modelo não tem variável; a resposta sai na próxima mensagem do cliente.
     "concierge_answer_ready": (),
+    # "Confirme que este número é seu" (D4, OC-08): o modelo `confirmar_numero` não
+    # tem variável; sem nome, porque o número pode ter sido digitado errado.
+    "phone_confirmation_requested": (),
     "order_received_outside_hours": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_accepted": (*_ORDER_BUTTON, "total", "order_total_display"),
     # Variante do `order_accepted` na encomenda (`pedido_encomenda_confirmada`):

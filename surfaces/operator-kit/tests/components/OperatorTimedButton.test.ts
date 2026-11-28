@@ -39,7 +39,12 @@ describe("OperatorTimedButton", () => {
     const fill = button.get("[data-timed-fill]");
     expect(fill.attributes("aria-hidden")).toBe("true");
     expect(fill.attributes("style")).toContain("animation-duration: 5000ms");
-    expect(delayMs(fill.attributes("style"))).toBeLessThan(250);
+    // O relógio de teste anda junto com o real (`shouldAdvanceTime`): o atraso é o tempo
+    // que a montagem levou, e esse tempo depende da carga da máquina (260 ms medidos em
+    // 26/11 com a suíte inteira rodando, #3641). Começar CHEIO é atraso entre zero e o
+    // tempo que passou de verdade desde a janela abrir, nunca um número fixo.
+    expect(delayMs(fill.attributes("style"))).toBeGreaterThanOrEqual(0);
+    expect(delayMs(fill.attributes("style"))).toBeLessThanOrEqual(Date.now() - T0);
     expect(button.find("[data-timed-count]").exists()).toBe(false);
   });
 
@@ -47,8 +52,9 @@ describe("OperatorTimedButton", () => {
     vi.setSystemTime(T0 + 3000);
     const button = await mountTimed();
     const delay = delayMs(button.get("[data-timed-fill]").attributes("style"));
+    // De onde a janela está quando montou: 3 s mais o que a montagem levou (ver acima).
     expect(delay).toBeGreaterThanOrEqual(3000);
-    expect(delay).toBeLessThan(3250);
+    expect(delay).toBeLessThanOrEqual(Date.now() - T0);
   });
 
   it("rótulo fixo para o leitor de tela; o tempo vai na descrição, sem mudar a cada segundo", async () => {

@@ -108,6 +108,10 @@ class KDSTicketProjection:
     # gestor) and the customer's checkout note (order_notes). Empty when absent.
     kitchen_note: str = ""
     customer_note: str = ""
+    # Venda de balcão: "Consumir aqui" ou "Para levar" (#3193), o que o PDV marcou
+    # na comanda. É a linha de cima do card no lugar de "Retirada": a cozinha sabe
+    # se monta no prato ou embala. Vazio fora do balcão, ou se o balcão não disse.
+    service_label: str = ""
     # Pedido de teste da homologação do iFood NÃO vira ticket (``kds.dispatch``
     # o suprime). O crachá existe para o que já está no painel: ticket criado
     # antes desta trava, ou disparado por outro caminho. Vazio no pedido de
@@ -711,6 +715,18 @@ class KitchenPaperProjection:
     fired_at_display: str
 
 
+#: O que o balcão marcou na comanda (``Session.data.pos.counter_service``, #3193).
+_COUNTER_SERVICE_LABELS = {"here": "Consumir aqui", "to_go": "Para levar"}
+
+
+def counter_service_label(source_data: dict) -> str:
+    """"Consumir aqui" / "Para levar" da venda de balcão; vazio fora dela."""
+    pos_data = source_data.get("pos") or {}
+    if (pos_data.get("sales_mode") or "counter") != "counter":
+        return ""
+    return _COUNTER_SERVICE_LABELS.get(str(pos_data.get("counter_service") or ""), "")
+
+
 def build_kitchen_paper(ticket) -> KitchenPaperProjection:
     """O que a Via Cozinha deste ticket imprime (``receipt_escpos.kitchen_ticket``)."""
     from shopman.shop.models import Channel
@@ -728,6 +744,9 @@ def build_kitchen_paper(ticket) -> KitchenPaperProjection:
     fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
     if fulfillment_type == "delivery":
         fulfillment_label = "ENTREGA"
+    elif card.service_label:
+        # O papel diz o mesmo que o card: no balcão, comer aqui ou levar (#3193).
+        fulfillment_label = card.service_label.upper()
     elif fulfillment_type == "pickup":
         fulfillment_label = "RETIRADA"
     else:
@@ -1295,6 +1314,7 @@ def _build_ticket(
         completed_at_display=_format_time(ticket.completed_at),
         kitchen_note=str(source_data.get("kitchen_note", "") or ""),
         customer_note=str(source_data.get("order_notes", "") or ""),
+        service_label=counter_service_label(source_data),
         test_order_label=_test_order_label(source) if source is not None else "",
         is_preorder=_is_preorder(source),
         due_time_display=_due_time_display(source, promised, is_delivery=is_delivery),
@@ -1438,11 +1458,18 @@ def _ticket_status_label(status: str) -> str:
 
 
 def _add_stock_warnings(items: list[dict]) -> list[dict]:
-    """Add stock_warning to items where physical stock is low or zero."""
+    """Avisa no item da Cozinha quando o estoque físico zerou ou está acabando.
+
+    "Acabando" é a régua única do balcão e da Cozinha (DEV-2026-077,
+    ``shop/services/running_low.py``): a porcentagem do SKU sobre o que o dia
+    teve. O ``StockAlert.min_quantity`` do Stockman NÃO entra aqui: ele é o
+    alerta de reposição do painel, outro significado.
+    """
     try:
-        from shopman.stockman.models import Quant, StockAlert
+        from shopman.stockman.models import Quant
     except ImportError:
         return items
+    from shopman.shop.services.running_low import running_low_skus
 
     skus = [item.get("sku") for item in items if item.get("sku")]
     if not skus:
@@ -1456,9 +1483,7 @@ def _add_stock_warnings(items: list[dict]) -> list[dict]:
     )
     stock_by_sku = {row["sku"]: row["total"] for row in quant_qs}
 
-    alert_mins: dict[str, Decimal] = {}
-    for alert in StockAlert.objects.filter(sku__in=skus, is_active=True):
-        alert_mins[alert.sku] = alert.min_quantity
+    low = running_low_skus({sku: int(qty) for sku, qty in stock_by_sku.items() if qty > 0})
 
     enriched = []
     for item in items:
@@ -1468,7 +1493,7 @@ def _add_stock_warnings(items: list[dict]) -> list[dict]:
 
         if available <= 0:
             item["stock_warning"] = "Sem estoque"
-        elif sku in alert_mins and available < alert_mins[sku]:
+        elif sku in low:
             item["stock_warning"] = f"Últimas {int(available)} un."
 
         enriched.append(item)

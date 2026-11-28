@@ -25,7 +25,7 @@ export const PRODUCTION_SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
-    title: "QC e timer",
+    title: "Finalização e timer",
     items: [
       { keys: ["0–9"], label: "Digitar quantidade ou minutos" },
       { keys: ["Backspace"], label: "Apagar o último dígito" },

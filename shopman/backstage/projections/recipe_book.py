@@ -192,6 +192,9 @@ class RecipeBookAccessProjection:
     can_view: bool
     can_edit: bool
     capture_available: bool
+    #: O Compras, para o atalho do insumo que não existe (#2390). Vazio para quem
+    #: não opera Compras ou sem a superfície configurada: o atalho não aparece.
+    purchase_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -213,6 +216,9 @@ class FormulaItemProjection:
     composition: str
     composition_label: str
     quantity_rule_display: str
+    #: A anotação prática do item ("a conferir com o fornecedor"), como escrita na
+    #: fórmula ou na ficha (#2386). Vazia quando o item não tem nota.
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -628,6 +634,16 @@ class RecipeCompareProjection:
 
     a_title: str
     b_title: str
+    #: Qual é qual (P2-20): o estado de cada lado ("Publicada · em uso", "Rascunho")
+    #: e de quando ("publicada 20/11/2026 14:00"). A tela não precisa adivinhar.
+    a_status: str
+    a_status_label: str
+    a_is_current: bool
+    a_when_display: str
+    b_status: str
+    b_status_label: str
+    b_is_current: bool
+    b_when_display: str
     rows: tuple[RecipeCompareRowProjection, ...]
     metrics: tuple[RecipeCompareMetricProjection, ...]
 
@@ -874,6 +890,7 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
     anchor_sku = str(anchor.get("sku") or "")
     anchor_kind = analysis.anchor_kind
     flagged = {warning.metric for warning in references}
+    notes = _item_notes(formula)
 
     basis = _decimal(formula.get("basis_g"))
     return FormulaLensProjection(
@@ -884,8 +901,8 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
         standardized=formula.get("standardized") is True,
         anchor_total_display=_grams_display(analysis.anchor_total_g),
         total_mass_display=_grams_display(analysis.total_mass_g),
-        ingredients=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.ingredients),
-        final_mix=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.final_mix),
+        ingredients=tuple(_lens_item(item, anchor_kind, anchor_sku, notes) for item in analysis.ingredients),
+        final_mix=tuple(_lens_item(item, anchor_kind, anchor_sku, notes) for item in analysis.final_mix),
         final_mix_differs=_has_included_composition(analysis),
         bom=tuple(_bom_item(line, analysis.anchor_total_g) for line in analysis.bom),
         bom_differs=_has_recipe_ingredient(analysis),
@@ -914,7 +931,26 @@ def _anchor_label(anchor_kind: str, anchor_sku: str, analysis: FormulaAnalysis) 
     return f"{label} ({name})" if name else label
 
 
-def _lens_item(item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str) -> FormulaItemProjection:
+def _item_notes(formula: dict) -> dict[str, str]:
+    """A nota de cada item, pela ``ref`` da linha (#2386).
+
+    A análise do Craftsman não carrega a anotação (ela só vira ``meta.note`` na
+    BOM ao publicar), então a lente a lê da própria fórmula, que é a fonte.
+    """
+    notes: dict[str, str] = {}
+    for item in formula.get("ingredients") or []:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref") or "")
+        note = item.get("note")
+        if ref and isinstance(note, str) and note.strip():
+            notes[ref] = note.strip()
+    return notes
+
+
+def _lens_item(
+    item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str, notes: dict[str, str] | None = None
+) -> FormulaItemProjection:
     if anchor_kind == "flour":
         is_anchor = item.role == "flour"
     elif anchor_kind == "ingredient":
@@ -945,6 +981,7 @@ def _lens_item(item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str) -> 
             basis_kind=item.basis_kind,
             basis_sku=item.basis_sku,
         ),
+        note=(notes or {}).get(item.ingredient_ref, ""),
     )
 
 
@@ -974,6 +1011,7 @@ def _bom_item(line: dict, anchor_total: Decimal | None) -> FormulaItemProjection
         composition=str((line.get("meta") or {}).get("composition") or "additional"),
         composition_label=_composition_label(str((line.get("meta") or {}).get("composition") or "additional")),
         quantity_rule_display="",
+        note=str((line.get("meta") or {}).get("note") or ""),
     )
 
 
@@ -1573,11 +1611,11 @@ def build_recipe_review_queue(*, sold: dict | None = None) -> RecipeReviewQueueP
 
 USAGE_CAVEAT_MESSAGES: dict[str, str] = {
     "loss_is_residual": (
-        "A perda é o que entrou na fornada menos o que saiu dela, pela conta e não pela balança: "
+        "A perda é o que entrou no lote menos o que saiu dele, pela conta e não pela balança: "
         "massa na bacia, aparas e peça não anotada entram todas aqui."
     ),
     "unversioned_not_attributed": (
-        "Fornada sem carimbo de versão (ficha nunca publicada pelo inventário, ou planejada antes "
+        "Lote sem carimbo de versão (ficha nunca publicada pelo inventário, ou planejada antes "
         "da publicação) fica em \"Sem versão\" e não conta para versão nenhuma."
     ),
     "bake_loss_house_default": (
@@ -1678,8 +1716,8 @@ def _version_usage(row: dict, *, number: int | None, ref: str, grade_labels: dic
     assumed = int(row["started_assumed"])
     avg_loss = (loss / batches) if batches else None
     loss_pct = (loss / started * 100) if started else None
-    batches_display = f"{batches} fornada" if batches == 1 else f"{batches} fornadas"
-    avg_loss_display = f"{_number(avg_loss)} por fornada" if avg_loss is not None else ""
+    batches_display = f"{batches} lote" if batches == 1 else f"{batches} lotes"
+    avg_loss_display = f"{_number(avg_loss)} por lote" if avg_loss is not None else ""
     summary = batches_display
     if yield_pct is not None:
         summary += f"; aproveitamento médio {_pct_display(yield_pct)}"
@@ -1767,6 +1805,8 @@ def build_recipe_compare(a_ref: str, b_ref: str) -> RecipeCompareProjection:
     return RecipeCompareProjection(
         a_title=_version_title(a),
         b_title=_version_title(b),
+        **_compare_side("a", a),
+        **_compare_side("b", b),
         rows=tuple(_compare_row(row) for row in diff.rows),
         metrics=tuple(_compare_metric(metric) for metric in diff.metrics),
     )
@@ -1774,6 +1814,21 @@ def build_recipe_compare(a_ref: str, b_ref: str) -> RecipeCompareProjection:
 
 def _version_title(version: RecipeVersion) -> str:
     return f"{version.entry.name} (versão {version.number})"
+
+
+def _compare_side(side: str, version: RecipeVersion) -> dict:
+    """O estado e a data de um lado da comparação: qual é a publicada, e de quando."""
+    is_current = version.entry.current_version_id == version.pk
+    if version.published_at:
+        when = f"publicada {_datetime_display(version.published_at)}"
+    else:
+        when = f"criada {_datetime_display(version.created_at)}" if version.created_at else ""
+    return {
+        f"{side}_status": version.status,
+        f"{side}_status_label": _status_label(version.status),
+        f"{side}_is_current": is_current,
+        f"{side}_when_display": when,
+    }
 
 
 def _compare_row(row: FormulaDiffRow) -> RecipeCompareRowProjection:
@@ -2069,7 +2124,15 @@ def resolve_recipe_book_access(user) -> RecipeBookAccessProjection:
         can_view=bool(can_view),
         can_edit=bool(can_edit),
         capture_available=is_configured(),
+        purchase_url=_purchase_url(user) if can_edit else "",
     )
+
+
+def _purchase_url(user) -> str:
+    """O mesmo atalho do "Pedir no Compras" da Produção: quem não opera Compras não o vê."""
+    from shopman.backstage.projections.hub import purchase_surface_url
+
+    return purchase_surface_url(user)
 
 
 # ── Ficha de execução: lista e detalhe ──────────────────────────────────────

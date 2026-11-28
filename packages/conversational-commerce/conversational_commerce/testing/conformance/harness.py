@@ -74,6 +74,15 @@ class HarnessEnv:
     currency: str = "XTS"
     # Devolve termos vigentes do carrinho (normalmente, ``commerce_read.quote``).
     fresh_terms: Callable[[], TermsDocument] | None = None
+    # Recebimento (``set_fulfillment``), opcional: um recebimento que o sistema aceita no ``cart_ref``
+    # (``date``, ``mode`` e/ou ``time``).
+    # Sem ``fulfillment``, a checagem do recebimento não roda: a casa que não liga o movimento não o executa.
+    fulfillment: Mapping[str, str] | None = None
+    # O carrinho (``change_cart``), opcional: linhas que o sistema aceita no ``cart_ref``. Sem elas, a
+    # checagem da mudança não roda.
+    cart_lines: tuple[Mapping[str, str], ...] = ()
+    # Um pedido do sujeito, opcional: a forma do ``read_order`` (o total em dinheiro) é conferida nele.
+    order_ref: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +222,24 @@ def check_commerce_read(port: Any, env: HarnessEnv) -> None:
             "scarcity não devolve Estimate nem Unavailable")
     if env.other_subject:
         _expect_error("object_forbidden", lambda: port.read_customer(env.ctx, env.other_subject))
+    # O que o motor lê depois do efeito (spec 03, "O que o motor exige da porta de comércio").
+    if isinstance(fact, Known) and isinstance(fact.value, Mapping) and "name" in fact.value:
+        _expect(isinstance(fact.value["name"], str) and fact.value["name"], "read_item com name que não é texto")
+    # As condições obrigatórias dos termos (o motor pergunta por elas antes de apresentar os termos).
+    needs = port.requirements(env.ctx, env.cart_ref)
+    _expect(isinstance(needs, Known | Unknown), "requirements não devolve Fact")
+    if isinstance(needs, Known):
+        missing = needs.value.get("missing") if isinstance(needs.value, Mapping) else None
+        _expect(isinstance(missing, (list, tuple)), "requirements sem a lista missing")
+        for code in missing or ():
+            _expect(isinstance(needs.value.get(code), (list, tuple)), f"requirements sem as opções de {code}")
+    if env.order_ref:
+        order = port.read_order(env.ctx, env.order_ref)
+        if isinstance(order, Known):
+            total = order.value.get("total") if isinstance(order.value, Mapping) else None
+            _expect(isinstance(total, Mapping) and isinstance(total.get("price_minor"), int)
+                    and isinstance(total.get("currency"), str),
+                    "read_order sem total em {price_minor, currency}")
 
 
 def check_commerce_execute(port: Any, env: HarnessEnv) -> None:
@@ -235,6 +262,105 @@ def check_commerce_execute(port: Any, env: HarnessEnv) -> None:
     refused = port.execute(env.ctx, _command(env, env.fresh_terms(), key="harness-exec-2", parameters={}),
                            RefuseGuard())
     _expect((refused.status, refused.effect) == ("failure", "not_applied"), "guarda recusou e houve efeito")
+    if receipt.status == "success":
+        _expect(bool(receipt.domain_refs.get("effect")), "recibo de sucesso do commit_order sem effect")
+    check_change_cart(port, env)
+    check_set_fulfillment(port, env)
+    check_effect_sequence(port, env)
+
+
+def check_effect_sequence(port: Any, env: HarnessEnv) -> None:
+    """A sequência de efeitos A2 num turno (spec 08 §5): o recebimento e depois a sacola, no mesmo alvo,
+    cada um com o próprio comando e o próprio recibo de sucesso, e o segundo não desfaz o primeiro."""
+    if env.fulfillment is None or not env.cart_lines:
+        return
+    guard = AllowGuard()
+    first = port.execute(env.ctx, _fulfillment_command(env, key="harness-seq-1", parameters=dict(env.fulfillment)),
+                         guard)
+    second = port.execute(env.ctx, _cart_command(env, key="harness-seq-2",
+                                                 parameters={"lines": [dict(line) for line in env.cart_lines]}), guard)
+    _expect((first.status, second.status) == ("success", "success"), "a sequência recebimento → sacola não aplicou")
+    _expect(first.id != second.id and first.command_id != second.command_id,
+            "dois efeitos da sequência com o mesmo recibo")
+    again = port.execute(env.ctx, _fulfillment_command(env, key="harness-seq-1", parameters=dict(env.fulfillment)),
+                         guard)
+    _expect(again.id == first.id, "o primeiro efeito da sequência, repetido, não devolveu o mesmo recibo")
+
+
+def _cart_command(env: HarnessEnv, *, key: str, parameters: Mapping[str, Any]) -> ActionCommand:
+    targets = (env.cart_ref,)
+    return ActionCommand(
+        **_envelope(env, "cmd", episode_id="harness-episode"),
+        command_id=env.clock.new_id("command"),
+        decision_id="harness-decision",
+        grant_id="harness-grant",
+        action="change_cart",
+        targets=targets,
+        parameters=parameters,
+        expected_versions={},
+        expected_ownership_epoch=0,
+        idempotency={"scope": "harness", "key": key},
+        content_hash=command_content_hash(action="change_cart", targets=targets, parameters=parameters,
+                                          terms_hash=None),
+        deadline=_later(env),
+    )
+
+
+def check_change_cart(port: Any, env: HarnessEnv) -> None:
+    """O comando ``change_cart``: as linhas num comando só, o recibo de sucesso aponta o ``effect``, a
+    mesma chave devolve o mesmo recibo, e linhas malformadas são recusadas sem efeito."""
+    if not env.cart_lines:
+        return
+    guard = AllowGuard()
+    command = _cart_command(env, key="harness-cart-1", parameters={"lines": [dict(line) for line in env.cart_lines]})
+    receipt = port.execute(env.ctx, command, guard)
+    _expect((receipt.status, receipt.effect) == ("success", "applied"), "linhas válidas não foram aplicadas")
+    _expect(bool(receipt.domain_refs.get("effect")), "recibo de sucesso do change_cart sem effect")
+    _expect(port.execute(env.ctx, command, guard).id == receipt.id,
+            "mesma chave e mesmo conteúdo não devolveram o mesmo recibo da mudança")
+    for key, parameters in (("harness-cart-2", {"lines": []}), ("harness-cart-3", {"item": "x", "quantity": "1"})):
+        malformed = port.execute(env.ctx, _cart_command(env, key=key, parameters=parameters), guard)
+        _expect((malformed.status, malformed.effect) == ("failure", "not_applied"),
+                f"mudança malformada foi aplicada: {parameters}")
+
+
+def _fulfillment_command(env: HarnessEnv, *, key: str, parameters: Mapping[str, Any]) -> ActionCommand:
+    targets = (env.cart_ref,)
+    return ActionCommand(
+        **_envelope(env, "cmd", episode_id="harness-episode"),
+        command_id=env.clock.new_id("command"),
+        decision_id="harness-decision",
+        grant_id="harness-grant",
+        action="set_fulfillment",
+        targets=targets,
+        parameters=parameters,
+        expected_versions={},
+        expected_ownership_epoch=0,
+        idempotency={"scope": "harness", "key": key},
+        content_hash=command_content_hash(action="set_fulfillment", targets=targets, parameters=parameters,
+                                          terms_hash=None),
+        deadline=_later(env),
+    )
+
+
+def check_set_fulfillment(port: Any, env: HarnessEnv) -> None:
+    """O comando ``set_fulfillment``: aplica o que foi dito, o recibo aponta o recebimento, e a forma
+    inválida é recusada sem efeito com ``invalid_content``."""
+    if env.fulfillment is None:
+        return
+    guard = AllowGuard()
+    command = _fulfillment_command(env, key="harness-fulfillment-1", parameters=dict(env.fulfillment))
+    receipt = port.execute(env.ctx, command, guard)
+    _expect(guard.seen, "o executor não chamou a guarda no recebimento")
+    _expect((receipt.status, receipt.effect) == ("success", "applied"), "recebimento válido não foi aplicado")
+    for name, value in env.fulfillment.items():
+        _expect(receipt.domain_refs.get(name) == value, f"o recibo não aponta o {name} aplicado")
+    _expect(port.execute(env.ctx, command, guard).id == receipt.id,
+            "mesma chave e mesmo conteúdo não devolveram o mesmo recibo do recebimento")
+    malformed = port.execute(env.ctx, _fulfillment_command(env, key="harness-fulfillment-3",
+                                                           parameters={"date": "tomorrow"}), guard)
+    _expect((malformed.status, malformed.effect) == ("failure", "not_applied"), "data fora de ISO foi aplicada")
+    _expect(malformed.error.code == "invalid_content", "data fora de ISO sem o código estável")
 
 
 def check_staff(port: Any, env: HarnessEnv) -> None:

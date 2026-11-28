@@ -65,6 +65,11 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     "concierge_verify": AlertSpec(
         "WhatsApp", "i-lucide-message-circle", "Cliente espera a resposta da equipe", 0, own_deadline_stays=True,
     ),
+    # A Concierge fez a mudança (a sacola, o pagamento, o pedido) e a resposta segurou: ela disse ao cliente
+    # "já te confirmo", e a equipe confirma até o prazo (``respond_by``). Vencido, fica: a promessa é da casa.
+    "concierge_effect_unconfirmed": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente espera a confirmação da Concierge", 0, own_deadline_stays=True,
+    ),
     # A Concierge atendendo sem modelo (dono, 19/11/2026): no topo do Gestor, até a causa
     # passar. Sem régua: não há prazo, há causa.
     "concierge_no_model": AlertSpec("WhatsApp", "i-lucide-message-circle", "Concierge sem modelo", 0, on_screen=True),

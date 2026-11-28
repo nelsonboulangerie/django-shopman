@@ -114,7 +114,7 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool 
 
         today = timezone.localdate()
         date_changes = from_day != new_day
-        if date_changes and _physical_work_started(locked):
+        if date_changes and physical_work_started(locked):
             raise RescheduleRefused(
                 "Este pedido já está em preparo: a data não muda mais. "
                 "Para outro dia, cancele e registre uma nova encomenda.",
@@ -261,8 +261,12 @@ def _validate(order, day: date_type, slot: str) -> None:
         raise RescheduleRefused(error, code="invalid_slot", field="slot")
 
 
-def _physical_work_started(order) -> bool:
-    """O pedido já foi para a cozinha ou já baixou estoque?"""
+def physical_work_started(order) -> bool:
+    """O pedido já foi para a cozinha ou já baixou estoque? Aí a data não muda mais.
+
+    Público para o fechamento do dia, que diz a cada pedido aberto o seu caminho
+    (remarcar só vale antes da cozinha).
+    """
     if order.status == Order.Status.PREPARING:
         return True
     if order.session_key:

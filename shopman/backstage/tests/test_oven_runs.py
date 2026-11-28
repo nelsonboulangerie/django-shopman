@@ -680,3 +680,29 @@ def test_concluded_run_survives_sweep(work_order):
     OvenRun.objects.filter(pk=run.pk).update(armed_at=timezone.now() - timedelta(minutes=600))
     call_command("sweep_stale_oven_runs")
     assert OvenRun.objects.get(pk=run.pk).status == "concluded"
+
+
+@pytest.mark.django_db
+def test_qc_kiosk_tells_every_tablet_until_when_the_lot_is_in_the_oven(client, work_order, production_operator):
+    """WP-F12 (P1-12): "No forno até 5h40" em qualquer tablet, pelo fato declarado.
+
+    A hora é enfornou + duração armada, escrita como a casa escreve; sem forno
+    aberto (antes de armar e depois de retirar) o campo fica vazio.
+    """
+    from shopman.utils.formatting import format_clock
+
+    from shopman.backstage.projections.production import build_qc_kiosk
+
+    def until() -> str:
+        kiosk = build_qc_kiosk(selected_date=work_order.target_date)
+        return next(card.oven_until_display for card in kiosk.orders if card.pk == work_order.pk)
+
+    assert until() == ""
+
+    client.force_login(production_operator)
+    production_mutation_post(client, _arm_url(work_order), _mutation(work_order, "arm-until", planned_seconds=1500))
+    run = OvenRun.objects.get(work_order_ref=work_order.ref, status="open")
+    assert until() == format_clock(run.armed_at + timedelta(seconds=1500))
+
+    production_mutation_post(client, _conclude_url(work_order), _mutation(work_order, "conclude-until"))
+    assert until() == ""

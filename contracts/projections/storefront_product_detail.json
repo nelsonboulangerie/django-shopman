@@ -17,6 +17,19 @@
   "components": [],
   "conservation": null,
   "dietary_warnings": [],
+  "fomo_badges": [
+    {
+      "expires_at": null,
+      "label": "Últimas 2 unidades",
+      "meta": {
+        "available": 2,
+        "sku": "CROISSANT-CONTRATO",
+        "threshold": 5
+      },
+      "priority": 1,
+      "type": "low_stock"
+    }
+  ],
   "gallery": [],
   "gtin": "",
   "image_url": null,
@@ -44,7 +57,7 @@
     "day_label": "hoje",
     "kind": "ready",
     "ready_at": "10:30",
-    "text": "Pronto agora"
+    "text": "Disponível agora"
   },
   "qty_in_cart": 0,
   "quote": {

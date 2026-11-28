@@ -54,6 +54,7 @@ from conversational_commerce.catalog.levels import identity_rank
 from conversational_commerce.contracts import (
     ActionCommand,
     ActionReceipt,
+    Alternative,
     AuthorizationGrant,
     Commitment,
     ContextSnapshot,
@@ -84,24 +85,28 @@ from conversational_commerce.ledger import (
     staff_deadline,
     staff_owner,
 )
-from conversational_commerce.ledger.commitments import window_seconds
+from conversational_commerce.ledger.commitments import Entry, window_seconds
 from conversational_commerce.memory import MemoryStore
 from conversational_commerce.policy import DecisionInput, decide
 from conversational_commerce.policy.advisor import adheres_to_declared_need
 from conversational_commerce.ports import (
+    AdjudicateRequest,
     Budget,
     HandoffRequest,
     InterpretRequest,
     ModelRequest,
+    PendingQuestion,
     PortError,
     PreparedMessage,
+    ReadingContext,
+    RecentTurn,
     StaffQuestion,
     Transition,
     TrustedContext,
     WorkItem,
 )
 from conversational_commerce.profile import read_line
-from conversational_commerce.reply import Composed, Evidence, Template, compose
+from conversational_commerce.reply import Composed, Evidence, PartSpec, Template, compose
 from conversational_commerce.workflow import (
     EpisodeEvent,
     answer_refers_to,
@@ -115,10 +120,11 @@ from conversational_commerce.workflow import (
     transition,
 )
 
-from .acts import ACTS, ANSWER_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
+from .acts import ACTS, ANSWER_ACTS, CHANGE_ACTS, DECLARATION_ACTS, TEST_RULES, LocalRules, only_courtesy, validate
 from .budget import TurnBudget
 from .format import DEFAULT_FORMATTERS
-from .moves import registry, templates
+from .moves import expected_acts, registry, templates, yes_no_conditions
+from .moves.ask_clarification import READING_REF
 from .state import NeedSpec, Subject, TurnState
 
 PRODUCER = Producer(name="conversational-commerce", version="engine-1")
@@ -145,6 +151,251 @@ class Ports:
     @classmethod
     def from_world(cls, world: Any) -> Ports:
         return cls(**world.ports())
+
+
+def terms_fact(terms, names: Mapping[str, str]) -> dict[str, Any]:
+    """O fato dos termos: o documento canônico selado, menos o destinatário (dado pessoal).
+
+    Os termos apresentados são o documento inteiro (v2 4.7): itens, ajustes, recebimento e condições,
+    não só o total. O nome de cada item vem do fato do item (``item.<ref>``), nunca de quem formata.
+    """
+    def money(value) -> dict[str, Any]:
+        return {"price_minor": value.amount_minor, "currency": value.currency}
+
+    fulfillment = terms.fulfillment
+    return {
+        "terms_id": terms.terms_id,
+        "total": money(terms.total),
+        "items": [{"ref": item.ref, "quantity": item.quantity.value, "unit": item.quantity.unit,
+                   "unit_price": money(item.unit_price), "line_total": money(item.line_total),
+                   **({"name": names[item.ref]} if item.ref in names else {})} for item in terms.items],
+        "adjustments": [{"code": adj.code, "amount": money(adj.amount)} for adj in terms.adjustments],
+        "fulfillment": {key: value for key, value in (("mode", fulfillment.mode),
+                                                      ("window_start", fulfillment.window_start),
+                                                      ("window_end", fulfillment.window_end)) if value},
+        "conditions": {condition.code: condition.value for condition in terms.conditions},
+    }
+
+
+#: A sequência declarada de efeitos A2 reversíveis num turno (spec 08 §5, [DECIDIDO]): o recebimento antes
+#: da sacola, para a sacola medir a data combinada. ``commit_order`` (A3) nunca entra nela.
+EFFECT_SEQUENCE: tuple[str, ...] = ("set_fulfillment", "set_delivery_address", "change_cart", "set_payment")
+#: O fechamento que perguntou por uma condição obrigatória (``present_terms.needs_*``), no estado de diálogo:
+#: ``{"cart": <carrinho>, "epoch": <época do episódio>}``. Vale só para o mesmo carrinho e a mesma época
+#: (a conversa que mudou de dono não herda o fechamento), e cai com o "não" do cliente.
+CLOSING_KEY = "terms_closing"
+
+
+#: A pergunta da condição de sim ou não que o fechamento fez ("entregamos no endereço do cadastro?"), no estado
+#: de diálogo: ``{"question_id", "code", "ref", "cart", "epoch"}``. ``ref`` é a opção OFERECIDA (a que o cliente
+#: viu); o "sim" aceita essa, nunca a que o fato diria depois. Cai com o fechamento e com a resposta.
+CONDITION_KEY = "terms_condition_question"
+
+
+def condition_in(dialogue: dict, cart_ref: str | None, epoch: int) -> dict | None:
+    """A pergunta da condição no ar, deste carrinho e desta época."""
+    value = dialogue.get(CONDITION_KEY)
+    if cart_ref is None or not isinstance(value, Mapping) or value.get("cart") != cart_ref \
+            or value.get("epoch") != epoch:
+        return None
+    return dict(value)
+
+
+#: As últimas falas da conversa, por referência (ADR-051): ``[{"role": "customer", "content_ref": …},
+#: {"role": "agent", "template_ids": [...]}, …]``, da mais antiga à mais nova. O teto é do perfil
+#: (``limits.reading_context_turns``, em turnos: cada turno são duas falas); sem teto, a chave não existe.
+RECENT_KEY = "recent_turns"
+#: Os atos que respondem à oferta dos termos ("Posso registrar?"): o sim e o não.
+TERMS_OFFER_ACTS = ("affirm", "deny")
+#: A leitura que o verificador deixou em dúvida e o agente perguntou "é isso?" (ADR-051): ``{"epoch", "acts"}``.
+#: O "sim" do turno seguinte aplica ``acts``; o "não" devolve a pergunta do fechamento; outra fala a descarta.
+CONFIRM_KEY = "reading_confirmation"
+#: Os atos que mudam de assunto de forma legítima com uma pergunta no ar (a conferência não os julga): mudança
+#: material, fechar ou cancelar, recusar, pedir a equipe ou reclamar.
+RUPTURE_ACTS = CHANGE_ACTS | {"deny", "request_human", "complain"}
+UNRATED = {"status": "unavailable", "reason": "conference"}
+
+
+def coherence(acts, expected) -> str:
+    """A leitura diante da pergunta no ar (ADR-051, peça 2): ``answers`` (algum ato a responde), ``rupture`` (o
+    cliente mudou de assunto de forma legítima), ``suspect`` (só pergunta, cortesia ou ``unknown``, nada que a
+    responda), ou ``free`` (nenhuma pergunta no ar). Determinística: não custa chamada."""
+    names = {act.act for act in acts}
+    if not expected:
+        return "free"
+    if names & set(expected):
+        return "answers"
+    if names & RUPTURE_ACTS:
+        return "rupture"
+    return "suspect"
+
+
+@dataclass(frozen=True, slots=True)
+class Conference:
+    """O conflito de leitura que vai ao verificador: a classe, as candidatas (a do leitor primeiro) e os atos que
+    respondem à pergunta no ar (vazio sem pergunta)."""
+
+    found: str
+    candidates: tuple[Alternative, ...]
+    expected: frozenset[str]
+
+
+def plan_conference(acts, alternatives, context: ReadingContext | None) -> Conference | None:
+    """O que vai ao verificador (ADR-051): a leitura ``suspect`` diante da pergunta no ar, ou leitores que
+    discordam em ato, com ou sem pergunta no ar. ``None``: nada a conferir, a leitura segue."""
+    names = {act.act for act in acts}
+    expected = frozenset(context.expected_acts) if context is not None and context.pending is not None else frozenset()
+    found = coherence(acts, expected)
+    differing = [alternative for alternative in alternatives if {act.act for act in alternative.acts} != names]
+    if found != "suspect" and not differing:
+        return None
+    return Conference(found=found + (":disagreement" if differing else ""),
+                      candidates=(Alternative(acts=acts, confidence=UNRATED), *differing), expected=expected)
+
+
+def in_doubt(conference: Conference, *, confirmed_before: bool = False, closing: bool = False) -> dict:
+    """O que o turno faz quando o verificador não escolhe (nunca chuta).
+
+    Com pergunta no ar, a candidata que a responde vai à confirmação ("é isso?"); sem candidata que responda, a
+    pergunta do fechamento volta. Sem pergunta no ar, a leitura do leitor vai à confirmação.
+
+    ``confirmed_before``: o turno anterior já perguntou "é isso?" e a resposta deu dúvida de novo. A confirmação
+    não se repete em seguida (coordenação, 24/11): com o fechamento em curso (``closing``), a pergunta dele volta;
+    sem ele, o agente pede para o cliente dizer de outro jeito (``ask_clarification.more``).
+    """
+    if confirmed_before:
+        return {"reask": True} if closing else {"more": True}
+    if not conference.expected:
+        chosen = conference.candidates[0].acts
+    else:
+        answering = next((candidate for candidate in conference.candidates
+                          if {act.act for act in candidate.acts} & conference.expected), None)
+        if answering is None:
+            return {"reask": True}
+        chosen = tuple(act for act in answering.acts if act.act in conference.expected)
+    return {"confirm": {"acts": [{"act": act.act, "fields": dict(act.fields)} for act in chosen]}}
+
+
+def confirmation_in(dialogue: Mapping[str, Any], epoch: int) -> Mapping[str, Any] | None:
+    value = dialogue.get(CONFIRM_KEY)
+    return value if isinstance(value, Mapping) and value.get("epoch") == epoch and value.get("acts") else None
+
+
+def reading_context(dialogue: Mapping[str, Any], cart_ref: str | None, epoch: int,
+                    offer: Offer | None) -> ReadingContext:
+    """A conversa em volta da fala, para o leitor (ADR-051, peça 1): a pergunta no ar, os atos que respondem a
+    ela, o que o fechamento ainda pede e as últimas falas. Só códigos e referências (P17)."""
+    pending, expected, open_conditions = None, (), ()
+    condition = condition_in(dict(dialogue), cart_ref, epoch)
+    confirming = confirmation_in(dialogue, epoch)
+    closing = dialogue.get(CLOSING_KEY) if closing_in(dict(dialogue), cart_ref, epoch) else None
+    if confirming is not None:
+        pending, expected = PendingQuestion(kind="clarification", code="confirm_reading"), TERMS_OFFER_ACTS
+    elif condition is not None and condition.get("code"):
+        code = str(condition["code"])
+        pending = PendingQuestion(kind="condition_yes_no", code=code, options=(str(condition.get("ref", "")),))
+        expected = expected_acts(code)
+    elif closing is not None and closing.get("code"):
+        code = str(closing["code"])
+        pending = PendingQuestion(kind="condition", code=code,
+                                  options=tuple(str(option) for option in closing.get("options") or ()))
+        expected = expected_acts(code)
+    elif offer is not None:
+        pending, expected = PendingQuestion(kind="terms_offer", code="terms"), TERMS_OFFER_ACTS
+    if closing is not None:
+        open_conditions = tuple(str(code) for code in closing.get("open") or ())
+    recent = tuple(RecentTurn(role=turn["role"], content_ref=turn.get("content_ref"),
+                              template_ids=tuple(turn.get("template_ids") or ()))
+                   for turn in dialogue.get(RECENT_KEY) or () if isinstance(turn, Mapping))
+    return ReadingContext(pending=pending, expected_acts=tuple(expected), open_conditions=open_conditions,
+                          recent=recent)
+
+
+def with_recent(dialogue: Mapping[str, Any], content_ref: str | None, reply: Composed | None,
+                turns: int) -> dict[str, Any]:
+    """O estado de diálogo com a fala do cliente e a resposta deste turno no fim das recentes (teto em turnos).
+    A resposta segurada não foi dita: entra só a fala do cliente."""
+    state = dict(dialogue)
+    if turns <= 0:
+        state.pop(RECENT_KEY, None)
+        return state
+    recent = [dict(turn) for turn in state.get(RECENT_KEY) or () if isinstance(turn, Mapping)]
+    recent.append({"role": "customer", "content_ref": content_ref})
+    if reply is not None and reply.text is not None:
+        recent.append({"role": "agent", "template_ids": list(reply.template_ids)})
+    state[RECENT_KEY] = recent[-2 * turns:]
+    return state
+
+
+def closing_in(dialogue: dict, cart_ref: str | None, epoch: int) -> bool:
+    """O fechamento no ar é deste carrinho e desta época."""
+    value = dialogue.get(CLOSING_KEY)
+    return (cart_ref is not None and isinstance(value, Mapping) and value.get("cart") == cart_ref
+            and value.get("epoch") == epoch)
+#: Quantas vezes o tick tenta o aviso de um prazo vencido que não saiu (segurado ou falhado) antes de desistir.
+NOTIFY_ATTEMPTS = 3
+#: As mudanças materiais do carrinho (v2 4.7, propriedade 2): depois de uma delas, os termos de antes não valem.
+MATERIAL_CHANGES = frozenset(EFFECT_SEQUENCE)
+
+
+#: A mudança da sacola com uma pergunta do fechamento no ar (#3488): os termos respondem a necessidade com a
+#: próxima pergunta (``present_terms.needs_*``), que não mostra a sacola. Sem a parte do recibo, "na verdade 3"
+#: mudava a sacola e ouvia só a pergunta de novo, como se nada tivesse acontecido. Diz o total novo pelos termos
+#: cotados de novo; sem eles, só o efeito (o degrau de baixo).
+CHANGE_TOTAL_TEMPLATE = "change_cart.done_total"
+CHANGE_RECEIPT_TEMPLATE = "change_cart.done_receipt"
+
+
+def _with_change_receipts(state, chosen, by_need, specs):
+    """A parte do recibo da mudança antes da pergunta do fechamento que respondeu por ela."""
+    from .moves._effects import known_with
+
+    key = state.terms_key(state.subject.cart_ref) if state.subject.cart_ref else "terms.none"
+    out = []
+    for candidate, spec in zip(chosen, specs, strict=True):
+        need = by_need[candidate.need_id]
+        receipt = state.receipts.get(need.need_id)
+        if candidate.move == "present_terms" and need.act == "change_quantity" and receipt is not None \
+                and receipt.status == "success" and str(spec.template_id).startswith("present_terms.needs_"):
+            done = {"done": ("receipt", receipt.command_id)}
+            out.append(PartSpec("change_cart", CHANGE_TOTAL_TEMPLATE, {**done, "total": ("fact", key)})
+                       if known_with(state, key, "total") else PartSpec("change_cart", CHANGE_RECEIPT_TEMPLATE, done))
+        out.append(spec)
+    return out
+
+
+#: Os recibos das condições do pedido: o recebimento, o endereço e o pagamento combinados no turno.
+CONDITION_MOVES = frozenset({"set_fulfillment", "set_delivery_address", "set_payment"})
+CART_SUMMARY_TEMPLATE = "change_cart.done"
+
+
+def _summary_after_conditions(specs):
+    """O resumo do carrinho vem depois do que se combinou no mesmo turno ("retirada amanhã às 16h").
+
+    O resumo diz o estado do turno inteiro (os itens e o total), e a voz da casa pode terminá-lo com o convite
+    para continuar ("Quer mais alguma coisa?"). Na ordem das partes da fala, o combinado saía depois do convite
+    (ensaio no ar, cartão 1, 24/11). As demais partes (a pergunta do fechamento, o aviso) seguem onde estavam.
+    """
+    at = next((index for index, spec in enumerate(specs)
+               if spec.move == "change_cart" and spec.template_id == CART_SUMMARY_TEMPLATE), None)
+    if at is None:
+        return specs
+    after = specs[at + 1:]
+    agreed = [spec for spec in after if spec.move in CONDITION_MOVES]
+    if not agreed:
+        return specs
+    return [*specs[:at], *agreed, specs[at], *(spec for spec in after if spec.move not in CONDITION_MOVES)]
+
+
+def _distinct(specs):
+    """A mesma parte (movimento, molde e lastros iguais) sai uma vez: as linhas do mesmo comando têm uma resposta só."""
+    seen, found = set(), []
+    for spec in specs:
+        key = (spec.move, spec.template_id, tuple(sorted(spec.bindings.items())))
+        if key not in seen:
+            seen.add(key)
+            found.append(spec)
+    return found
 
 
 def default_subject(ctx: TrustedContext, event: InteractionEvent) -> Subject:
@@ -208,6 +459,9 @@ class Engine:
     # lugar dos genéricos do pacote. Cada um troca a frase e mantém o movimento e os espaços, que é
     # o que a parte montada pelo movimento preenche; o que não trocar fica com o do pacote.
     house_templates: Mapping[str, Template] = field(default_factory=dict)
+    # A casa fala SÓ com os próprios moldes: a parte por molde do pacote (o texto neutro, em inglês) segura a
+    # mensagem (``template_not_in_voice``), no ar e depois do efeito, onde a sombra não vê (spec 06).
+    house_voice_only: bool = False
     resolve_content: Callable[[str | None], str] = text_of
     # O adaptador diz quem fala e qual é o carrinho dele, do contexto confiável (nunca do texto).
     subject_of: Callable[[TrustedContext, InteractionEvent], Subject] = default_subject
@@ -236,6 +490,9 @@ class Engine:
     def _templates(self) -> dict[str, Template]:
         return {**templates(), **self.house_templates}
 
+    def _voice(self) -> frozenset[str] | None:
+        return frozenset(self.house_templates) if self.house_voice_only else None
+
     # ── envelope ────────────────────────────────────────────────────────────
     def _envelope(self, ctx: TrustedContext, prefix: str, episode_id: str | None, trace_id: str,
                   cause_id: str | None) -> dict[str, Any]:
@@ -262,7 +519,7 @@ class Engine:
 
     # ── passos 2 e 3 ────────────────────────────────────────────────────────
     def _understand(self, ctx: TrustedContext, event: InteractionEvent, episode: Episode, trace_id: str,
-                    budget: TurnBudget, fallbacks: list[str]) -> Understanding:
+                    budget: TurnBudget, fallbacks: list[str], context: ReadingContext | None = None) -> Understanding:
         text = self.resolve_content(event.content_ref)
         local = self.rules.read(text)
         risk = self.rules.risk_acts(text)
@@ -278,7 +535,7 @@ class Engine:
                 request=ModelRequest(purpose="interpret", data_class="redacted",
                                      budget=Budget(max_calls=budget.max_model_calls - budget.model_calls,
                                                    max_spend=self.profile.limits.max_spend)),
-                event_id=event.id, content_ref=event.content_ref, allowed_acts=ACTS)
+                event_id=event.id, content_ref=event.content_ref, allowed_acts=ACTS, context=context)
             try:
                 understanding, consumption = self.ports.model.interpret(ctx, request)
             except PortError as error:
@@ -305,6 +562,70 @@ class Engine:
                                               confidence={"status": "unavailable", "reason": "local_risk_rule"}))
         return dataclasses.replace(understanding, acts=acts, id=self.ports.clock.new_id("und"),
                                    episode_id=episode.episode_id)
+
+    def _confer(self, ctx: TrustedContext, event: InteractionEvent, understanding: Understanding,
+                context: ReadingContext | None, dialogue: Mapping[str, Any], epoch: int, budget: TurnBudget,
+                fallbacks: list[str]) -> tuple[Understanding, dict | None]:
+        """A conferência de coerência (ADR-051, peça 2): a leitura diante da pergunta no ar.
+
+        Devolve a leitura (a escolhida pelo verificador, ou a confirmada pelo "sim") e, quando nada se aplica,
+        o que o turno faz no lugar: ``{"confirm": {"acts": [...]}}`` (perguntar "é isso?") ou ``{"reask": True}``
+        (devolver a pergunta do fechamento). Desligada pelo perfil (``max_adjudications_per_turn`` zero).
+        """
+        acts = list(understanding.acts)
+        names = {act.act for act in acts}
+        confirming = confirmation_in(dialogue, epoch)
+        if confirming is not None:
+            if "affirm" in names:
+                fallbacks.append("conference:confirmed")
+                return dataclasses.replace(understanding, acts=[{**dict(act), "confidence": UNRATED}
+                                                                for act in confirming["acts"]],
+                                           alternatives=()), None
+            if "deny" in names:
+                fallbacks.append("conference:denied")
+                return understanding, {"reask": True}
+            # Outra resposta: a confirmação sai do ar, e a fala passa pela conferência como qualquer outra; se der
+            # dúvida de novo, o "é isso?" não se repete em seguida.
+        if self.profile.limits.max_adjudications_per_turn <= 0 or context is None or event.content_ref is None:
+            return understanding, None
+        conference = plan_conference(acts, understanding.alternatives, context)
+        if conference is None:
+            return understanding, None
+        fallbacks.append(f"conference:{conference.found}")
+        candidates = list(conference.candidates)
+        choice = self._adjudicate(ctx, event, context, candidates, budget, fallbacks)
+        if choice is not None:
+            return dataclasses.replace(understanding, acts=list(candidates[choice].acts), alternatives=()), None
+        closing = bool(context.open_conditions) or OFFER_KEY in dialogue
+        return understanding, in_doubt(conference, confirmed_before=confirming is not None, closing=closing)
+
+    def _adjudicate(self, ctx: TrustedContext, event: InteractionEvent, context: ReadingContext, candidates: list,
+                    budget: TurnBudget, fallbacks: list[str]) -> int | None:
+        """O verificador com o contexto escolhe uma candidata; sem porta, sem orçamento, com falha ou na dúvida,
+        ``None``: nunca um chute."""
+        port = self.ports.model
+        if not port.capabilities().supports("adjudicate"):
+            fallbacks.append("adjudicate:unsupported")
+            return None
+        if not budget.may_call_model():
+            fallbacks.append("adjudicate:budget")
+            return None
+        request = AdjudicateRequest(
+            request=ModelRequest(purpose="adjudicate", data_class="redacted",
+                                 budget=Budget(max_calls=1, max_spend=self.profile.limits.max_spend)),
+            event_id=event.id, content_ref=event.content_ref, context=context, candidates=tuple(candidates))
+        try:
+            adjudication = port.adjudicate(ctx, request)
+        except PortError as error:
+            fallbacks.append(f"adjudicate_failed:{error.code.value}")
+            return None
+        cost = adjudication.consumption.cost
+        budget.record_model_call(cost.amount.amount_minor if getattr(cost, "status", "") == "known" else None)
+        if adjudication.choice is None or adjudication.choice >= len(candidates):
+            fallbacks.append("adjudicate:doubt")
+            return None
+        fallbacks.append(f"adjudicate:chose:{adjudication.choice}")
+        return adjudication.choice
 
     # ── passo 4 ─────────────────────────────────────────────────────────────
     def _needs(self, understanding: Understanding, previous_dialogue: Mapping[str, Any],
@@ -343,12 +664,23 @@ class Engine:
                 except PortError:
                     state.facts[key] = Unknown(reason="source_failed")
 
-    def _quote(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget) -> None:
-        """Cota o carrinho quando alguma necessidade pede termos. Cotação é leitura, com passo do teto."""
+    def _quote(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget, *, refresh: bool = False) -> None:
+        """Cota o carrinho quando alguma necessidade pede termos. Cotação é leitura, com passo do teto.
+
+        ``refresh``: depois de uma mudança material no carrinho, os termos de antes não valem (v2 4.7,
+        propriedade 2); cota de novo, mesmo que ninguém peça termos, para a resposta mostrar o carrinho.
+        """
         target = state.subject.cart_ref
-        if target is None or target in state.terms or not any(state.wants_terms(n) for n in state.needs):
+        if target is None:
+            return
+        if not refresh and (target in state.terms or not any(state.wants_terms(n) for n in state.needs)):
             return
         key = state.terms_key(target)
+        if refresh:
+            # O documento de antes não vale depois da mudança: sai antes de ler, para que a falha da leitura
+            # nunca deixe os termos velhos parecerem os de agora.
+            state.terms.pop(target, None)
+            state.facts.pop(key, None)
         if not budget.take_step(f"read:{key}"):
             state.facts[key] = Unknown(reason="source_failed")
             return
@@ -358,11 +690,78 @@ class Engine:
             state.facts[key] = Unknown(reason="source_failed")
             return
         state.terms[target] = terms
-        state.facts[key] = Known(value={"total": {"price_minor": terms.total.amount_minor,
-                                                  "currency": terms.total.currency},
-                                        "terms_id": terms.terms_id},
-                                 source="commerce-quote", observed_at=state.now, valid_until=terms.valid_until,
-                                 source_version=terms.hash)
+        self._requirements(ctx, state, budget)
+        names = self._item_names(ctx, state, budget, terms)
+        state.facts[key] = Known(value=terms_fact(terms, names), source="commerce-quote", observed_at=state.now,
+                                 valid_until=terms.valid_until, source_version=terms.hash)
+
+    def _requirements(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget) -> None:
+        """O que os termos do carrinho ainda exigem (``commerce_read.requirements``), lido com passo do teto."""
+        target = state.subject.cart_ref
+        if target is None:
+            return
+        key = state.requirements_key(target)
+        state.facts.pop(key, None)
+        if not budget.take_step(f"read:{key}"):
+            state.facts[key] = Unknown(reason="source_failed")
+            return
+        try:
+            state.facts[key] = self.ports.commerce_read.requirements(ctx, target)
+        except PortError:
+            state.facts[key] = Unknown(reason="source_failed")
+
+    def _item_names(self, ctx: TrustedContext, state: TurnState, budget: TurnBudget, terms) -> dict[str, str]:
+        """O nome de cada item dos termos, pelo fato do item (``item.<ref>``), lido com passo do teto."""
+        names: dict[str, str] = {}
+        for item in terms.items:
+            key = f"item.{item.ref}"
+            if key not in state.facts:
+                if not budget.take_step(f"read:{key}"):
+                    continue
+                try:
+                    state.facts[key] = self.ports.commerce_read.read_item(ctx, item.ref)
+                except PortError:
+                    state.facts[key] = Unknown(reason="source_failed")
+            fact = state.facts[key]
+            value = getattr(fact, "value", None)
+            if isinstance(value, Mapping) and value.get("name"):
+                names[item.ref] = str(value["name"])
+        return names
+
+    def _after_effects(self, ctx: TrustedContext, state: TurnState, event, budget: TurnBudget,
+                       effects: dict) -> bool:
+        """O que se lê depois do recibo de sucesso, para a resposta dizer o estado de agora.
+
+        - mudança no carrinho: o sujeito de novo (o efeito pode ter criado o carrinho) e termos novos;
+        - pedido fechado: o pedido lido pela porta, com o total dele.
+
+        Devolve se o carrinho foi cotado de novo (termos novos neste turno).
+        """
+        requoted = False
+        actions = {command.command_id: command.action for command in effects["commands"]}
+        for receipt in effects["receipts"]:
+            if receipt.status != "success":
+                continue
+            action = actions.get(receipt.command_id)
+            if action == "change_cart":
+                state.subject = self.subject_of(ctx, event)
+                self._quote(ctx, state, budget, refresh=True)
+                requoted = True
+            elif action in ("set_payment", "set_delivery_address", "set_fulfillment"):
+                # A condição mudou (o recebimento também é dos termos: o dia e o horário estão no resumo, e o
+                # quando é condição para registrar): termos novos.
+                self._quote(ctx, state, budget, refresh=True)
+                requoted = True
+            elif action == "commit_order" and receipt.domain_refs.get("effect"):
+                ref = receipt.domain_refs["effect"]
+                key = state.order_key(ref)
+                if key in state.facts or not budget.take_step(f"read:{key}"):
+                    continue
+                try:
+                    state.facts[key] = self.ports.commerce_read.read_order(ctx, ref)
+                except PortError:
+                    state.facts[key] = Unknown(reason="source_failed")
+        return requoted
 
     def _confirmation(self, ctx: TrustedContext, event: InteractionEvent, subject: Subject,
                       epoch: int) -> Confirmation:
@@ -388,22 +787,67 @@ class Engine:
     # ── passo 6 ─────────────────────────────────────────────────────────────
     def _execute(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, by_need, event,
                  episode: Episode, trace_id: str, unwritten: list, fallbacks: list[str], effects: dict) -> Episode:
-        """Autoriza e executa o movimento de efeito escolhido. Devolve o episódio como ficou gravado.
+        """Autoriza e executa os movimentos de efeito escolhidos. Devolve o episódio como ficou gravado.
 
-        Um efeito por turno: o segundo movimento de efeito escolhido fica recusado
-        (``one_effect_per_turn``) e a decisão refeita diz a limitação.
+        Um efeito por turno, com uma exceção declarada (spec 08 §5, [DECIDIDO]): a SEQUÊNCIA de efeitos
+        A2 reversíveis na ordem de ``EFFECT_SEQUENCE`` (o recebimento antes da sacola). Cada efeito da
+        sequência tem a própria concessão, o próprio comando, a intenção gravada antes (N13) e o
+        próprio recibo; o recibo terminal de um devolve o episódio a ``active`` antes do próximo, e a
+        sequência para no primeiro recibo que não é sucesso (``sequence_stopped``). Fora disso, o segundo
+        efeito escolhido fica recusado (``one_effect_per_turn``) e a decisão refeita diz a limitação. A
+        mesma mudança levada pelo primeiro (``carried_by``, as várias linhas do carrinho) é o mesmo comando,
+        e o recibo dele é o dela.
         """
-        clock, store, moves = self.ports.clock, self.ports.store, registry()
+        moves = registry()
         chosen = [decision.candidates[i] for i in decision.chosen if getattr(moves[decision.candidates[i].move],
                                                                              "EFFECT", False)]
         if not chosen:
             return episode
+        state.effect_chosen = True
         if ctx.environment == "shadow":
             fallbacks.extend(f"shadow:effect_not_executed:{c.move}" for c in chosen)
             return episode
-        for extra in chosen[1:]:
-            state.refused[extra.need_id] = "one_effect_per_turn"
-        candidate = chosen[0]
+        # A levada sem a líder escolhida nunca executa sozinha: o comando é o da líder.
+        leads = [c for c in chosen if not dict(c.content).get("carried_by")]
+        lead_ids = {c.need_id for c in leads}
+        for orphan in [c for c in chosen if dict(c.content).get("carried_by") not in (None, *lead_ids)]:
+            state.refused[orphan.need_id] = "carried_without_lead"
+        chosen = [c for c in chosen if c.need_id not in state.refused]
+        leads = [c for c in leads if c.need_id not in state.refused]
+        if not leads:
+            return episode
+
+        def carried_by(lead):
+            return [c for c in chosen if dict(c.content).get("carried_by") == lead.need_id]
+
+        moves_of_leads = [c.move for c in leads]
+        if len(leads) > 1 and all(m in EFFECT_SEQUENCE for m in moves_of_leads) \
+                and len(set(moves_of_leads)) == len(moves_of_leads):
+            ordered = sorted(leads, key=lambda c: EFFECT_SEQUENCE.index(c.move))
+        else:
+            ordered = leads[:1]
+            for extra in leads[1:]:
+                for refused in (extra, *carried_by(extra)):
+                    state.refused[refused.need_id] = "one_effect_per_turn"
+        for index, lead in enumerate(ordered):
+            # O recibo terminal do efeito anterior devolve o episódio a ``active``: uma espera por vez.
+            prefix = [("receipt_terminal", None)] if index else []
+            episode, receipt = self._effect(ctx, state, decision, lead, carried_by(lead), by_need, event, episode,
+                                            trace_id, unwritten, fallbacks, effects, prefix)
+            if index:
+                effects["walked"] = effects.get("walked", 0) + 1
+            if receipt is None or receipt.status != "success":
+                for rest in ordered[index + 1:]:
+                    for refused in (rest, *carried_by(rest)):
+                        state.refused[refused.need_id] = "sequence_stopped"
+                break
+        return episode
+
+    def _effect(self, ctx: TrustedContext, state: TurnState, decision: DecisionRecord, candidate, carried, by_need,
+                event, episode: Episode, trace_id: str, unwritten: list, fallbacks: list[str], effects: dict,
+                prefix: list) -> tuple[Episode, ActionReceipt | None]:
+        """Um efeito: concessão, comando, a intenção gravada antes (N13), a execução e o recibo."""
+        clock, store, moves = self.ports.clock, self.ports.store, registry()
         need, module = by_need[candidate.need_id], moves[candidate.move]
         plan = module.effect(state, need)
         now, epoch = clock.now(), episode.ownership.epoch
@@ -422,14 +866,21 @@ class Engine:
         except GrantRefused as refused:
             state.refused[need.need_id] = refused.code
             fallbacks.append(f"grant_refused:{refused.code}")
-            return episode
+            if prefix:
+                # O efeito anterior terminou: o episódio volta a ``active`` mesmo sem o próximo.
+                episode = store.commit_transition(
+                    ctx, Transition(episode=self._walk(episode, event.id, prefix), expected_version=episode.version),
+                    (*unwritten,), ())
+                unwritten.clear()
+                # O recibo anterior andou aqui; o ``_execute`` conta a volta (``walked``) uma vez só.
+            return episode, None
         command = build_command(record=self._envelope(ctx, "cmd", episode.episode_id, trace_id, grant.id),
                                 command_id=clock.new_id("command"), decision_id=decision.decision_id, grant=grant,
                                 parameters=plan.parameters, expected_versions=plan.expected_versions,
                                 ownership_epoch=epoch, scope=ctx.tenant, now=now)
         self.ledger.register(command)
         # N13: concessão, comando e intenção de execução gravados juntos, com o episódio esperando o efeito.
-        steps = self._to_active(episode, offer_confirmed=plan.basis == "confirmation")
+        steps = [*prefix, *self._to_active(episode, offer_confirmed=plan.basis == "confirmation")]
         steps.append(("command_handed_off", Wait(condition="the executor returns a receipt", owner="core",
                                                  deadline=command.deadline)))
         work = WorkItem(work_id=f"execute:{command.command_id}", kind="execute",
@@ -446,18 +897,22 @@ class Engine:
         receipt = settled.receipt
         if receipt is None:
             state.refused[need.need_id] = settled.conflict or "effect_unknown"
-            return episode
+            return episode, None
         effects["receipts"].append(receipt)
         state.receipts[need.need_id] = receipt
+        for other in carried:
+            state.receipts[other.need_id] = receipt  # a mesma mudança: o mesmo recibo
         if receipt.status in ("success", "failure"):
             store.complete_work(ctx, work.work_id)
         if receipt.status == "failure":
             state.refused[need.need_id] = receipt.error.code
+            for other in carried:
+                state.refused[other.need_id] = receipt.error.code
         elif receipt.status in ("pending", "unknown"):
             commitment = self._reconciliation_commitment(ctx, receipt, trace_id)
             state.commitments[commitment.commitment_id] = commitment
             unwritten.append(commitment)
-        return episode
+        return episode, receipt
 
     def _reconciliation_commitment(self, ctx: TrustedContext, receipt: ActionReceipt, trace_id: str) -> Commitment:
         from .moves._effects import commitment_id
@@ -669,11 +1124,28 @@ class Engine:
         if offer is not None and answer_refers_to(previous_dialogue, epoch) != offer.question_id:
             offer = None  # a pergunta dos termos não está no ar nesta época: nenhum "sim" se liga a ela
 
-        understanding = self._understand(ctx, event, episode, trace_id, budget, fallbacks)
+        context = reading_context(previous_dialogue, subject.cart_ref, epoch, offer)
+        understanding = self._understand(ctx, event, episode, trace_id, budget, fallbacks, context)
+        understanding, conference = self._confer(ctx, event, understanding, context, previous_dialogue, epoch,
+                                                 budget, fallbacks)
         needs, answered_question = self._needs(understanding, previous_dialogue, epoch)
+        if conference is not None:
+            # A conferência não aplicou leitura nenhuma: o turno só pergunta "é isso?", ou devolve a pergunta do
+            # fechamento pelos termos (a mesma frase da casa, que pede o que ainda falta).
+            if "confirm" in conference:
+                needs = (NeedSpec("n1", "unknown", confirm=conference["confirm"]),)
+            elif "more" in conference:
+                needs = (NeedSpec("n1", "unknown"),)  # "pode me dizer de outro jeito?"
+            else:
+                needs = (NeedSpec("n1", "place_order"),)
+            answered_question = answer_refers_to(previous_dialogue, epoch)
         state = TurnState(now=clock.now(), channel=event.channel_binding.channel,
                           identity=strongest_identity(subject.identity_evidence), profile=self.profile,
-                          needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer)
+                          needs=needs, event_assurance=event.event_identity.assurance, subject=subject, offer=offer,
+                          closing=closing_in(previous_dialogue, subject.cart_ref, epoch),
+                          content_ref=event.content_ref)
+        if state.closing:
+            state.condition_question = condition_in(previous_dialogue, subject.cart_ref, epoch)
         for need in needs:
             if state.answers_offer(need):
                 state.confirmation_problems[need.need_id] = confirmation_problem(
@@ -681,10 +1153,20 @@ class Engine:
         self._read_facts(ctx, state, budget)
         self._commercial_context(ctx, state, episode, understanding, budget)
         self._quote(ctx, state, budget)
+        if any(need.act == "choose_payment" for need in needs) and state.requirements_key(
+                state.subject.cart_ref or "") not in state.facts:
+            self._requirements(ctx, state, budget)  # a forma pedida confere com as opções do canal
         dialogue = answered(previous_dialogue) if answered_question else previous_dialogue
         answered_offer = offer is not None and answered_question == offer.question_id
         if answered_offer:
             dialogue.pop(OFFER_KEY, None)
+        if CLOSING_KEY in dialogue and (not state.closing or any(state.declines_terms(n) for n in needs)):
+            # O fechamento de outro carrinho ou de outra época não vale; o "não" do cliente o encerra.
+            dialogue = {key: value for key, value in dialogue.items() if key not in (CLOSING_KEY, CONDITION_KEY)}
+        if CONDITION_KEY in dialogue and (state.condition_question is None or answered_question == (
+                state.condition_question or {}).get("question_id")):
+            # A pergunta da condição foi respondida (ou não vale mais): sai do ar.
+            dialogue = {key: value for key, value in dialogue.items() if key != CONDITION_KEY}
 
         snapshot = self._snapshot(ctx, episode, trace_id, event.id, state, dialogue)
         decision = self._decide(state, needs, snapshot, trace_id)
@@ -698,7 +1180,22 @@ class Engine:
                                 effects)
         promised = self._promise(ctx, state, decision, by_need, event, episode, trace_id, unwritten, fallbacks)
         self._remember(ctx, state, decision, by_need, event, episode, trace_id, unwritten)
-        if state.refused:
+        requoted = self._after_effects(ctx, state, event, budget, effects)
+        if offer is not None and any(r.status == "success" for r in effects["receipts"]
+                                     if r.command_id in {c.command_id for c in effects["commands"]
+                                                         if c.action in MATERIAL_CHANGES}):
+            # O carrinho mudou: a pergunta dos termos de antes sai do ar (o "sim" seguinte nunca a confirma).
+            # Se os termos novos forem apresentados neste turno, a pergunta nova a substitui.
+            dialogue = dict(dialogue)
+            dialogue.pop(OFFER_KEY, None)
+        # Termos apresentados no mesmo turno de uma mudança: a decisão que os apresenta é refeita sobre
+        # os termos novos, ligada à anterior (N14), para a decisão gravada e a pergunta no ar citarem o
+        # MESMO documento.
+        presents = any(decision.candidates[i].move == "present_terms" for i in decision.chosen)
+        # A mudança feita com termos no ar pede termos novos (v2 4.7, propriedade 2): a decisão refeita
+        # apresenta o documento novo para a confirmação nova.
+        changed_under_offer = requoted and any(state.changed_under_offer(need) for need in needs)
+        if state.refused or (requoted and presents) or changed_under_offer:
             self._quote(ctx, state, budget)
             snapshot = self._snapshot(ctx, episode, trace_id, decision.id, state, dialogue)
             decision = self._decide(state, needs, snapshot, trace_id, parent=decision.decision_id)
@@ -710,13 +1207,17 @@ class Engine:
         moves = registry()
 
         # Passo 7: dizer e verificar.
-        specs = [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen]
+        specs = _distinct(_summary_after_conditions(_with_change_receipts(
+            state, chosen, by_need, [moves[c.move].reply(state, by_need[c.need_id]) for c in chosen])))
         reply = None
         if specs:
             receipts = {receipt.command_id: receipt for receipt in state.receipts.values()}
             reply = compose(specs=specs, templates=self._templates(), formatters=self.formatters,
+                            voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
-                                              receipts=receipts, commitments=state.commitments),
+                                              receipts=receipts, commitments=state.commitments,
+                                              readings={READING_REF.format(need_id=need.need_id): need.confirm
+                                                        for need in needs if need.confirm is not None}),
                             decision_id=decision_id,
                             record=self._envelope(ctx, "reply", episode.episode_id, trace_id, decision.id))
         held = reply is None or reply.verification.result == "hold"
@@ -727,8 +1228,32 @@ class Engine:
         terms_wait = None
         if asked is not None:
             dialogue = ask(dialogue, question_id=clock.new_id("q"), need_id=asked.need_id, epoch=epoch)
-        if presented is not None and not held:
-            # Termos que o cliente não viu (mensagem segurada) não esperam confirmação.
+        dialogue = {key: value for key, value in dialogue.items() if key != CONFIRM_KEY}
+        confirming = next((need for need in needs if need.confirm is not None), None)
+        if confirming is not None and asked is not None and asked.need_id == confirming.need_id and not held:
+            dialogue[CONFIRM_KEY] = {"epoch": epoch, "acts": [dict(act) for act in confirming.confirm["acts"]]}
+        if presented is not None and not held and state.missing_conditions():
+            # O fechamento perguntou por uma condição: a resposta que mudar o carrinho volta aos termos.
+            code = state.missing_conditions()[0]
+            options = state.offered(subject.cart_ref, code)
+            # O código perguntado, o que ainda falta e as opções vão junto: o próximo leitor lê a fala na
+            # pergunta (ADR-051), não sozinha.
+            dialogue = {**dialogue, CLOSING_KEY: {"cart": subject.cart_ref, "epoch": epoch, "code": code,
+                                                  "open": list(state.missing_conditions()),
+                                                  "options": [str(option) for option in options or ()]}}
+            # A lista das opções ("outro") não é pergunta de sim ou não: o "sim" a ela não escolhe a primeira.
+            asked_code = any(str(t).startswith(f"present_terms.needs_{code}")
+                             and not str(t).endswith(("_declined", "_options")) for t in reply.template_ids)
+            if code in yes_no_conditions() and options and asked_code:
+                # A pergunta de sim ou não fica no ar, com a opção oferecida: o "sim" responde a ESTA pergunta.
+                question_id = clock.new_id("q")
+                dialogue = ask(dialogue, question_id=question_id, need_id=presented.need_id, epoch=epoch)
+                dialogue[CONDITION_KEY] = {"question_id": question_id, "code": code, "ref": str(options[0]),
+                                           "cart": subject.cart_ref, "epoch": epoch}
+        if presented is not None and not held and not state.missing_conditions():
+            dialogue = {key: value for key, value in dialogue.items() if key not in (CLOSING_KEY, CONDITION_KEY)}
+            # Termos que o cliente não viu (mensagem segurada) não esperam confirmação; nem os que ainda pedem
+            # uma condição obrigatória (a parte perguntou por ela, e os termos não foram apresentados).
             terms = state.terms[subject.cart_ref]
             question_id = clock.new_id("q")
             dialogue = ask(dialogue, question_id=question_id, need_id=presented.need_id, epoch=epoch)
@@ -739,13 +1264,16 @@ class Engine:
                 epoch=epoch).to_json()
             terms_wait = Wait(condition="the customer confirms the terms", owner="customer",
                               deadline=terms.valid_until)
+        if self.profile.limits.reading_context_turns or RECENT_KEY in dialogue:
+            dialogue = with_recent(dialogue, event.content_ref, reply, self.profile.limits.reading_context_turns)
         after = None
         if dialogue != dict(snapshot.dialogue_state):
             # O estado de diálogo DEPOIS do turno: é o que o próximo turno lê (a pergunta no ar).
             after = seal(dataclasses.replace(snapshot, dialogue_state=dialogue, hash=None, id=clock.new_id("snap"),
                                              cause_id=decision.id))
         post = []
-        for receipt in effects["receipts"]:
+        # Os recibos que a sequência já levou à máquina (o terminal de um, antes do próximo) não andam de novo.
+        for receipt in effects["receipts"][effects.get("walked", 0):]:
             if receipt.status in ("success", "failure"):
                 post.append(("receipt_terminal", None))
             else:
@@ -909,7 +1437,7 @@ class Engine:
         reply = None
         if chosen:
             reply = compose(specs=[moves[c.move].reply(state, by_need[c.need_id]) for c in chosen],
-                            templates=self._templates(), formatters=self.formatters,
+                            templates=self._templates(), formatters=self.formatters, voice=self._voice(),
                             evidence=Evidence(now=state.now, facts=state.facts, fact_facets=state.fact_facets,
                                               commitments=state.commitments),
                             decision_id=decision.decision_id,
@@ -998,8 +1526,12 @@ class Engine:
         now = clock.now()
         line = read_line(self.profile, ESCALATION_LINE)
         results = []
+        # Avisos que não saíram num tick anterior (segurado ou falhado), antes que o due marque prazos novos.
+        pending = [entry for entry in self.commitments.open_entries(ctx.tenant, ctx.environment)
+                   if not entry.notified and "customer_notify_failed" in self.commitments.events_of(entry.commitment_id)]
         for entry in self.commitments.due(now, ctx.tenant, ctx.environment):
             cid = entry.commitment_id
+            pending = [other for other in pending if other.commitment_id != cid]
             self.commitments.note("deadline_passed", cid, now, entry.commitment.deadline.at)
             episode = store.load_episode(ctx, entry.commitment.episode_id)
             records, steps = [], []
@@ -1025,14 +1557,35 @@ class Engine:
                     store.commit_transition(ctx, Transition(episode=new_episode, expected_version=episode.version),
                                             tuple(records), ())
                 continue
+            results.append(self._notify_overdue(ctx, entry, episode, now, records, steps))
+        for entry in pending:
+            # O prazo já foi tratado; só o aviso ao cliente não saiu da outra vez. Tenta de novo, sem reescalar.
+            episode = store.load_episode(ctx, entry.commitment.episode_id)
+            results.append(self._notify_overdue(ctx, entry, episode, now, [], []))
+        return tuple(results)
+
+    def _notify_overdue(self, ctx: TrustedContext, entry: Entry, episode: Episode, now: str,
+                        records: list, steps: list) -> TurnResult:
+        """Avisa o cliente do prazo vencido. Avisado só com o aviso enviado: segurado ou falhado, ele não soube."""
+        cid = entry.commitment_id
+        state = self._resume_state(entry, now)
+        state.commitments[cid] = entry.commitment
+        state.waiting[entry.need.need_id] = cid
+        result = self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
+                               records=tuple(records), steps=steps)
+        if result.outcome == "answered" and result.exposure is not None:
             entry.notified = True
             self.commitments.note("customer_notified", cid, now)
-            state = self._resume_state(entry, now)
-            state.commitments[cid] = entry.commitment
-            state.waiting[entry.need.need_id] = cid
-            results.append(self._respond(ctx, entry, episode, state, cause_id=cid, only=("wait",),
-                                         records=tuple(records), steps=steps))
-        return tuple(results)
+            return result
+        reason = result.fallbacks[0] if result.fallbacks else result.outcome
+        if self.commitments.events_of(cid).count("customer_notify_failed") + 1 >= NOTIFY_ATTEMPTS:
+            # Tentou e não saiu: para de tentar, registrado, em vez de repetir a cada tick para sempre.
+            entry.notified = True
+            self.commitments.note("customer_notify_failed", cid, now, reason)
+            self.commitments.note("customer_notify_gave_up", cid, now, reason)
+        else:
+            self.commitments.note("customer_notify_failed", cid, now, reason)
+        return result
 
     def _due(self, episode: Episode) -> tuple[Wait, ...]:
         now = self.ports.clock.now()

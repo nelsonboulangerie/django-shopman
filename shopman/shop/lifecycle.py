@@ -898,7 +898,9 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
             ensure_payment_captured(order)
         except InvalidTransition as exc:
             if getattr(exc, "code", "") == "payment_not_captured":
-                _create_alert(order, "payment_awaiting_confirmation")
+                # Ainda sem dinheiro: não há o que aceitar. O alerta "já está
+                # pago e espera você aceitar" nasce quando o pagamento cai
+                # (``_on_paid``); aqui ele mentia (DEV-2026-091).
                 notification.send(order, "order_received")
                 return
             raise

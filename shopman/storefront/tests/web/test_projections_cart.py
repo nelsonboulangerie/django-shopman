@@ -43,6 +43,20 @@ def _request_with_cart_session(client):
 # ──────────────────────────────────────────────────────────────────────
 
 
+@pytest.fixture
+def something_to_order(monkeypatch):
+    """Há o que pedir (OC-04): a sacola vazia fala pela copy do momento."""
+    from shopman.storefront.presentation import cart as cart_presentation
+    from shopman.storefront.presentation.catalog import CatalogOrdering
+    from shopman.storefront.presentation.promise import OrderingProjection
+
+    monkeypatch.setattr(
+        cart_presentation,
+        "build_ordering",
+        lambda **_kw: CatalogOrdering(OrderingProjection("now", "2026-11-17", "hoje"), frozenset({"PAO"})),
+    )
+
+
 class TestEmptyCart:
     def test_empty_cart_has_stable_shape(self, client):
         rf = RequestFactory()
@@ -69,7 +83,7 @@ class TestEmptyCart:
         assert checkout.reason == "Sacola vazia."
         assert checkout.href == "/finalizar"
 
-    def test_empty_cart_carries_omotenashi_copy(self, client):
+    def test_empty_cart_carries_omotenashi_copy(self, client, something_to_order):
         """A sacola vazia fala pelo registro, não por string na tela."""
         rf = RequestFactory()
         request = rf.get("/carrinho/")
@@ -80,7 +94,7 @@ class TestEmptyCart:
         assert proj.empty_title
         assert proj.empty_message
 
-    def test_empty_copy_honours_admin_override(self, client):
+    def test_empty_copy_honours_admin_override(self, client, something_to_order):
         """O operador reescreve o estado vazio pelo Admin, sem deploy."""
         from shopman.shop.models import OmotenashiCopy
 
@@ -99,6 +113,28 @@ class TestEmptyCart:
 
         assert proj.empty_title == "Sacola vazia, dia cheio"
         assert proj.empty_message == "Escolha um pão e nós cuidamos do resto."
+
+    def test_nothing_to_order_is_the_plain_empty_state(self, client):
+        """Nada para pedir (OC-04): o vazio simples, sem convite nem frase de encomenda.
+
+        Nem a copy do momento ("Você pode encomendar para o próximo dia", "Ainda dá
+        tempo") nem o override do Admin entram: o "Me avise" vive em cada item.
+        """
+        from shopman.shop.models import OmotenashiCopy
+
+        OmotenashiCopy.objects.create(
+            key="CART_EMPTY", moment="*", audience="*", title="Ainda dá tempo", message="Peça já.",
+        )
+        rf = RequestFactory()
+        request = rf.get("/carrinho/")
+        request.session = client.session  # type: ignore[attr-defined]
+
+        proj = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert proj.ordering is not None and proj.ordering.state == "none"
+        assert (proj.empty_title, proj.empty_message) == ("Sacola vazia", "")
+        [continue_action] = [a for a in proj.actions if a.ref == "continue_shopping"]
+        assert continue_action.label == "Ver cardápio"
 
     def test_populated_cart_skips_empty_copy(self, cart_session):
         """Sacola com itens não resolve a copy do vazio — o bloco nem renderiza."""

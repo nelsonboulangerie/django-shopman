@@ -333,6 +333,7 @@ const draft = reactive({
   storage_tip: "",
   production_cycle_hours: "" as number | "",
   preorder_prep_minutes: "" as number | "",
+  running_low_percent: "" as number | "",
   is_published: true,
   is_sellable: true,
   allows_next_day_sale: false,
@@ -370,6 +371,18 @@ const preorderPrepPlaceholder = computed(() =>
     ? "Em branco = preparo padrão"
     : `Em branco = preparo padrão (${preorderPrepDefault.value} min)`,
 );
+// Quando o item está acabando (DEV-2026-077): em branco, vale o padrão da loja, e a
+// tela diz quanto ele é. A frase explica o efeito nas duas telas que o usam.
+const runningLowDefault = computed(
+  () => props.detail?.running_low_default_percent ?? null,
+);
+const runningLowPlaceholder = computed(() =>
+  runningLowDefault.value === null
+    ? "Em branco = padrão da loja"
+    : `Em branco = padrão da loja (${runningLowDefault.value}%)`,
+);
+const runningLowHint =
+  "Quando restar esta parte do que o dia teve, o PDV mostra o saldo no botão do produto e a Cozinha avisa as últimas unidades. Ex.: 20% de 30 pães avisa a partir de 6. 0 desliga.";
 const preorderPrepHint =
   "A encomenda chega à Cozinha este tempo antes da hora combinada, mais a antecedência da loja.";
 const numOrBlank = (v: number | null) =>
@@ -391,6 +404,7 @@ function hydrate(detail: ProductDetailProjection | null) {
     detail?.production_cycle_hours ?? null,
   );
   draft.preorder_prep_minutes = numOrBlank(detail?.preorder_prep_minutes ?? null);
+  draft.running_low_percent = numOrBlank(detail?.running_low_percent ?? null);
   draft.is_published = detail?.is_published ?? true;
   draft.is_sellable = detail?.is_sellable ?? true;
   draft.allows_next_day_sale = detail?.allows_next_day_sale ?? false;
@@ -559,6 +573,11 @@ function buildPatch(): ProductDetailPatch {
     "preorder_prep_minutes",
     nullableInt(draft.preorder_prep_minutes),
     current.preorder_prep_minutes ?? null,
+  );
+  put(
+    "running_low_percent",
+    nullableInt(draft.running_low_percent),
+    current.running_low_percent ?? null,
   );
   put("is_published", draft.is_published, current.is_published);
   put("is_sellable", draft.is_sellable, current.is_sellable);
@@ -736,6 +755,7 @@ const conflictLabels: Record<string, string> = {
   storage_tip: "Conservação",
   production_cycle_hours: "Tempo de produção",
   preorder_prep_minutes: "Preparo da encomenda",
+  running_low_percent: "Avisar que está acabando",
   is_published: "Publicado",
   is_sellable: "Disponível para venda",
   allows_next_day_sale: "Venda no dia seguinte",
@@ -1311,6 +1331,23 @@ const sectionClass =
                   :min="0"
                   :max="720"
                   :placeholder="preorderPrepPlaceholder"
+                />
+              </NuxtFormField>
+
+              <!-- Quando o item está acabando (DEV-2026-077): a % do SKU sobre o que
+                   o dia teve; a mesma régua no botão do PDV e no card da Cozinha. -->
+              <NuxtFormField
+                label="Avisar que está acabando (%)"
+                :description="runningLowHint"
+                data-testid="running-low"
+              >
+                <NuxtInput
+                  v-model.number="draft.running_low_percent"
+                  class="w-full"
+                  type="number"
+                  :min="0"
+                  :max="100"
+                  :placeholder="runningLowPlaceholder"
                 />
               </NuxtFormField>
 

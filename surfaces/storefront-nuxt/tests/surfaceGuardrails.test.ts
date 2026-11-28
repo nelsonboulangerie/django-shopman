@@ -101,9 +101,9 @@ describe('surface UX guardrails', () => {
     expect(read('app/pages/index.vue')).not.toContain("label: isOpen ? 'Aberto agora' : 'Fechado agora'")
     expect(read('app/pages/index.vue')).not.toContain('v-if="operationalStatus.message"')
     expect(read('app/components/HomeHeroThing.vue')).not.toContain('omo.shop_hint')
-    // Loja fechada: dá para finalizar agora (a casa confere na abertura), então o
-    // CTA não promete "para depois" (beta 06/11).
-    expect(read('app/pages/index.vue')).toContain('closed-cta-label="Fazer pedido"')
+    // Loja fechada: o CTA sai do `ordering` (OC-04): "Fazer pedido" quando há o
+    // que pedir (a casa confere na abertura), nunca "para depois" (beta 06/11).
+    expect(read('app/pages/index.vue')).toContain(':closed-cta-label="closedHeroCtaLabel(home.ordering)"')
     expect(read('app/pages/index.vue')).not.toContain('para depois')
     expect(omotenashiType).not.toMatch(/\b(is_open|opens_at|closes_at)\b/)
   })
@@ -236,7 +236,7 @@ describe('surface UX guardrails', () => {
     expect(productTile).toContain("import { tileBadge } from '~/presentation/menu'")
     // Indisponível = etiqueta neutra na foto (P&B); demais estados seguem tileBadge.
     expect(productTile).toContain('v-if="item.availability === \'unavailable\'"')
-    expect(productTile).toContain('v-else-if="badge"')
+    expect(productTile).toContain('v-else-if="badge || fomo.length"')
     expect(productTile).not.toContain('<UiPopover')
     expect(productTile).not.toContain('availabilityVariant')
     expect(productTile).not.toContain('item.allergens.length || item.available_qty')
@@ -274,19 +274,25 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain('const slides = computed<HeroSlide[]>')
     expect(hero).toContain("ref: 'birthday'")
     expect(hero).toContain("ref: 'order'")
-    expect(hero).toContain("ref: 'reorder'")
+    // A recompra mora só no cartão da home (OC-32): slide de recompra repetia a
+    // mesma pergunta na mesma tela.
+    expect(hero).not.toContain("ref: 'reorder'")
     expect(hero).toContain("ref: 'handmade'")
     expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
-    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    // Saudação uma vez só: o slide que a repetia saiu com as fotos dele (#3496).
+    expect(hero).not.toContain("ref: 'greeting-return'")
+    expect(hero).not.toContain('/img/home/facade4.webp')
+    expect(hero).not.toContain('/img/home/interior.webp')
     // Foto da casa, e uma por formato: o herói é faixa larga no computador e
     // tela cheia em pé no celular — uma foto só perde metade do assunto num
     // dos dois. Banco de imagem aqui é padaria de outra gente na nossa vitrine.
     expect(hero).not.toContain('images.unsplash.com')
     expect(hero).toContain('<source media="(min-width: 640px)"')
-    for (const foto of ['facade6', 'facade2', 'selfservice', 'facade4', 'interior', 'baguette']) {
+    for (const foto of ['facade6', 'facade2', 'selfservice', 'baguette']) {
       expect(hero).toContain(`/img/home/${foto}.webp`)
     }
-    expect(hero).toContain('copy.reorder_title_prefix')
+    expect(hero).not.toContain('copy.reorder_title_prefix')
+    expect(home).toContain('copy?.reorder_title_prefix')
     expect(hero).toContain('copy.handmade_title_prefix')
     expect(hero).toContain('data-home-hero-carousel')
     expect(hero).toContain('aria-roledescription="carousel"')
@@ -300,8 +306,8 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain('UiButton')
     expect(home).toContain('<main class="bg-background">')
     expect(home).toContain('<section class="shop-section-cta bg-background pb-6 pt-0 sm:py-8 lg:py-10">')
-    expect(home).toContain(':reorder-action="reorderAction"')
-    expect(home).toContain('@reorder="handleReorder"')
+    expect(home).not.toContain(':reorder-action="reorderAction"')
+    expect(home).not.toContain('@reorder="handleReorder"')
     expect(home).toContain('sectionsCopy.availability_heading.title')
     expect(home).toContain('sectionsCopy.how_it_works_heading.title')
     expect(home).toContain('sectionsCopy.whatsapp_cta.title')
@@ -312,7 +318,7 @@ describe('surface UX guardrails', () => {
     expect(home).not.toContain('v-if="operationalStatus.message"')
     expect(home).toContain('data-home-reorder-card')
     expect(home).toContain('const quickReorderImageItem = computed')
-    expect(home).toContain('<UiCard v-if="reorderAction || quickReorderItems.length" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
+    expect(home).toContain('<UiCard v-if="!reorderOnTop && (reorderAction || quickReorderItems.length)" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
     expect(home).toContain('<div class="grid grid-cols-1 md:grid-cols-2">')
     expect(home).toContain('<UiAspectRatio :ratio="16 / 9" class="overflow-hidden bg-muted md:h-full">')
     expect(home).not.toContain('class="mx-auto max-w-3xl"')
@@ -591,6 +597,10 @@ describe('surface UX guardrails', () => {
     expect(app).toContain('id="main-content"')
     expect(app).toContain('Pular para o conteúdo')
     expect(read('app/components/ShopHeader.vue')).toContain('bg-ink text-ink-foreground')
+    // Status bar recolhida sai da tela: `inert` tira do leitor E do Tab. Só
+    // `aria-hidden` deixava o "Ligar" focável e invisível (axe aria-hidden-focus).
+    expect(read('app/components/ShopHeader.vue')).toContain(':inert="scrolled ? true : undefined"')
+    expect(read('app/components/ShopHeader.vue')).not.toContain(':aria-hidden="scrolled')
     expect(footer).toContain('session.shop.value')
     expect(footer).toContain('session.openingHours.value')
     expect(footer).not.toContain('openingHours.slice')
@@ -722,6 +732,9 @@ describe('surface UX guardrails', () => {
     // rolagem/foco escritos à mão na página.
     expect(login).toContain('useNextFocus(step)')
     expect(login).toContain(':data-focus-target="step"')
+    // O título do passo para na linha de foco COM respiro: 16px do bloco
+    // (`-mt-4 pt-4`, o mesmo py-4 do passo do checkout), sem encostar no fio.
+    expect(login).toContain('<section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">')
     expect(login).not.toContain('scrollTo(')
     expect(login).not.toContain('.focus(')
     expect(login).toContain('data-login-moment')
@@ -934,7 +947,9 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain('data-cart-hold-banner')
     // O selo antigo só sobra quando a promessa não veio. O aviso de prioridade da
     // linha em espera é decisão do dono de 14/07/2026 e continua na sacola.
-    expect(cartPage).toContain('<UiBadge v-if="!cartLinePromise(line.promise)"')
+    // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+    // A linha da sacola datada (B) só traz a hora que difere da do pedido; em A, `linePromise` é o `cartLinePromise` de sempre.
+    expect(cartPage).toContain('<UiBadge v-if="!linePromise(line)"')
     expect(cartPage).toContain('cart.awaiting_confirmation_notice')
     // "Continuar comprando" uma vez por tela: embaixo da lista só no celular.
     expect(cartPage).toContain('md:hidden"\n              data-cart-continue-mobile')
@@ -1632,6 +1647,44 @@ describe('customer surface never names the reason behind unavailability', () => 
     expect(offenders).toEqual([])
     expect(read('app/pages/conta/preferencias.vue')).toContain("subscription.active ? 'Ativo' : 'Pausado'")
     expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.value?.state === 'paused'")
+  })
+
+  it('every action on the dark floating card of the product page uses the inverted tone (#3558)', () => {
+    // O "outline" sobre o card escuro herdava letra e fundo claros: no produto
+    // pausado, o "Ver itens parecidos" (a única saída da cliente) ficava invisível.
+    const pdp = read('app/pages/produto/[sku].vue')
+    const dock = pdp.slice(pdp.indexOf('class="shop-action-dock'))
+    const buttons = dock.match(/<UiButton[^>]*>/g) || []
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const button of buttons) expect(button).toContain('shop-action-inverted')
+    expect(dock).toContain('tone="inverted"')
+    expect(dock).toMatch(/<StockNotifyButton[^>]*\binverted\b/)
+  })
+
+  it('keeps the store line for Google discreet, at the end of the product info (#2652)', () => {
+    // O dono: "Quero apenas cumpri-la, não dar destaque" (24/11/2026). A linha fica
+    // depois da descrição, em texto de rodapé, sem ícone e sem endereço.
+    const pdp = read('app/pages/produto/[sku].vue')
+    const line = pdp.slice(pdp.indexOf('data-pdp-in-store-pickup') - 200, pdp.indexOf('data-pdp-in-store-pickup') + 300)
+    expect(pdp.indexOf('data-pdp-in-store-pickup')).toBeGreaterThan(pdp.indexOf('product.short_description'))
+    expect(line).toContain('shop-meta')
+    expect(line).not.toContain('lucide:store')
+    expect(line).not.toContain('address')
+  })
+
+  it('promotion badges use the light promotion style on the card and the product page (B, 24/11/2026)', () => {
+    // O dono escolheu "B nos dois": a cor da promoção a ~10% com o texto na cor da
+    // promoção, no card e no produto. O burgundy cheio voltaria a pesar.
+    for (const file of ['app/components/ProductTile.vue', 'app/pages/produto/[sku].vue']) {
+      const source = read(file)
+      expect(source).toMatch(/v-for="adjustment in [\w.]+\.quote\.adjustments" :key="adjustment\.code" variant="promotion"/)
+    }
+    expect(read('app/presentation/fomo.ts')).toContain("variant: 'promotion'")
+    expect(read('app/components/Ui/Badge.vue')).toContain('promotion: "shop-badge-promotion border-transparent"')
+    const css = read('app/assets/css/tailwind.css')
+    expect(css).toContain('.shop-badge-promotion {')
+    // No escuro, a cor da promoção como letra dava 2,8:1: o texto é clareado.
+    expect(css).toMatch(/\.dark \.shop-badge-promotion \{[^}]*white 50%/)
   })
 
   it('shows one label for every unavailable cause on the product page', () => {

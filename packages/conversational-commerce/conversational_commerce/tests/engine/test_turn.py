@@ -16,8 +16,9 @@ from .helpers import CTX, SHADOW, WITH_MODEL, engine, message
 def test_moves_are_discovered_by_module_name():
     assert sorted(registry()) == ["acknowledge", "amend_order", "ask_clarification", "cancel_order", "change_cart",
                                   "commit_order", "cover_readings", "grant_discount", "handoff", "inform",
-                                  "inform_limitation", "open_case", "present_terms", "recommend", "verify_with_staff",
-                                  "wait"]
+                                  "inform_limitation", "open_case", "present_terms", "recommend",
+                                  "set_delivery_address", "set_fulfillment", "set_payment",
+                                  "verify_with_staff", "wait"]
 
 
 def test_turn_answers_with_the_model_port_down():
@@ -98,7 +99,9 @@ def test_k25_instruction_in_the_customer_message_is_data():
     [request] = model.requests
     assert isinstance(request, InterpretRequest)
     # O modelo recebe a referência protegida e a lista fechada de atos, nada de autoridade nem de perfil.
-    assert {f.name for f in dataclasses.fields(request)} == {"request", "event_id", "content_ref", "allowed_acts"}
+    # O contexto da conversa (ADR-051) vai por código e referência: nenhum texto do cliente além da referência.
+    assert {f.name for f in dataclasses.fields(request)} == {"request", "event_id", "content_ref", "allowed_acts",
+                                                             "context"}
     assert request.request.data_class == "redacted"
 
 

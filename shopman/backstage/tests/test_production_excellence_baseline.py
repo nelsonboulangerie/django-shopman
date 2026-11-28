@@ -173,7 +173,10 @@ def test_board_query_budget_is_constant_for_100_work_orders(
     ("url_name", "query_budget"),
     (
         ("api-backstage-production-kds", 20),
-        ("api-backstage-production-qc", 25),
+        # 25 → 28 no WP-F10 (#3666): a Finalização lê o encomendado da data pela
+        # régua das reservas (`_promised_on`), 3 consultas fixas (planejado,
+        # reservado, pedidos), as mesmas que o quadro já paga. Constante em N.
+        ("api-backstage-production-qc", 28),
     ),
 )
 def test_operational_kiosks_have_constant_query_budgets_for_100_work_orders(

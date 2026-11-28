@@ -558,6 +558,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # A cabeça do snapshot público do cardápio sara aqui: o GET só lê.
         call("refresh_catalog_structure"),
         call("expire_stale_announcements"),
+        # Experimento de versão vencido: o aviso sai do worker, nunca do GET (OC-20).
+        call("alert_expired_experiments"),
         call("process_marketing_outbox", quiet_disabled=True),
         call(
             "process_marketing_delivery",
@@ -592,6 +594,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("cleanup_concierge_observations"),
         # A decisão em sombra: depois da limpeza, nunca decide sobre o que acabou de vencer.
         call("concierge_shadow_decisions"),
+        # Os prazos do motor: atrás das chaves da Shop e da frase da Nice para o aviso.
+        call("concierge_engine_tick"),
         # A PTAX final dos dias com gasto de IA: o B.I. só lê a cotação.
         call("record_usd_brl_quotes"),
         # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.

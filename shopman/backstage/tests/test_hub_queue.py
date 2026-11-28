@@ -34,6 +34,15 @@ from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTe
 
 pytestmark = pytest.mark.django_db
 
+
+@pytest.fixture(autouse=True)
+def _canal_web(db):
+    """O canal dos pedidos destes testes, materializado como no ar: a Central lê a
+    configuração dele para saber se o pedido novo só espera o pagamento (DEV-2026-091)."""
+    from shopman.shop.models import Channel
+
+    Channel.objects.update_or_create(ref="web", defaults={"name": "Loja online", "config": {}})
+
 SURFACE_URLS = {
     "pos": "https://pdv.example.test/",
     "kds": "https://kds.example.test/",

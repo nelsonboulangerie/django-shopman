@@ -49,8 +49,12 @@ from shopman.storefront.presentation.order_tracking import (
     OrderTrackingPromiseProjection,
     PickupInfoProjection,
     RatingFollowupProjection,
+    RetentionReceiptLineProjection,
+    RetentionReceiptProjection,
+    RetentionReceiptRowProjection,
     TrackingDiscountLineProjection,
     TrackingGiftProjection,
+    TrackingLoginInviteProjection,
 )
 from shopman.storefront.presentation.promise import PromiseProjection
 from shopman.storefront.presentation.types import (
@@ -84,6 +88,9 @@ MIRROR_CONTRACTS = [
         set(),
     ),
     (api_serializers.FiscalNoteSerializer, FiscalNoteProjection, set()),
+    (api_serializers.RetentionReceiptSerializer, RetentionReceiptProjection, set()),
+    (api_serializers.RetentionReceiptLineSerializer, RetentionReceiptLineProjection, set()),
+    (api_serializers.RetentionReceiptRowSerializer, RetentionReceiptRowProjection, set()),
     (api_serializers.TrackingDiscountLineSerializer, TrackingDiscountLineProjection, set()),
     (api_serializers.TrackingGiftSerializer, TrackingGiftProjection, set()),
     (api_serializers.OrderProgressStepSerializer, OrderProgressStepProjection, set()),
@@ -95,6 +102,7 @@ MIRROR_CONTRACTS = [
     ),
     (api_serializers.OrderTrackingCopySerializer, OrderTrackingCopyProjection, set()),
     (api_serializers.OrderTrackingPromiseSerializer, OrderTrackingPromiseProjection, set()),
+    (api_serializers.TrackingLoginInviteSerializer, TrackingLoginInviteProjection, set()),
     # `order_ref` é usado só server-side (support_url/share_text); o cliente lê `ref`.
     (api_serializers.OrderTrackingSerializer, OrderTrackingProjection, {"order_ref"}),
     (api_serializers.AddressSerializer, SavedAddressProjection, set()),
@@ -107,6 +115,7 @@ NON_MIRROR = {
     "SetSkuQtySerializer",
     "CartLineNotesSerializer",
     "AddCartLineSerializer",
+    "CartDaySerializer",
     "CartLineOptionSerializer",
     "CheckoutSerializer",
     "CheckoutAddressLabelSerializer",

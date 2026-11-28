@@ -9,6 +9,7 @@ conta**, e só para o cliente identificado que tem a conta na casa
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from shopman.shop.rules import BaseRule
@@ -20,6 +21,32 @@ PAYMENT_METHODS = frozenset(
 )
 
 MISSING_MESSAGE = "Escolha a forma de pagamento antes de fechar o pedido."
+
+
+def conversation_payment_methods(channel_ref: str) -> list[str]:
+    """As formas de pagamento que a conversa oferece: as do canal, sem dinheiro (D-003).
+
+    D-003: dinheiro não entra no fluxo remoto; troco e dinheiro vivo moram na
+    encomenda anotada pelo operador. Régua ÚNICA das portas da conversa: o
+    orçamento e o pedido da Concierge (``concierge.tools``), o ``requirements``
+    e as condições dos termos (``conversational.commerce_read``) e o fechamento
+    de hoje (``concierge.order_closing``) leem as opções daqui.
+    """
+    from shopman.shop.config import ChannelConfig
+
+    return [m for m in ChannelConfig.for_channel(channel_ref).payment.available_methods if m != "cash"]
+
+
+def sole_payment_method(offered: Sequence[str]) -> str:
+    """A forma que vale quando o cliente não escolheu: a única oferecida, ou nenhuma (``""``).
+
+    Régua ÚNICA de "assumir a única forma": o orçamento da Concierge
+    (``concierge.tools.review_order``) e as condições dos termos da conversa
+    (``conversational.commerce_read._fulfillment_conditions``) decidem por ela.
+    Cada porta passa a lista que ela oferece; com mais de uma, ou nenhuma, nada
+    se assume e quem chama pergunta.
+    """
+    return offered[0] if len(offered) == 1 else ""
 
 
 def payment_refusal(data: dict | None) -> tuple[str, str] | None:
@@ -77,3 +104,24 @@ class PaymentMethodRule(BaseRule):
             return
         code, message = refused
         raise OrderValidationError(code=code, message=message, context={"field": "payment_method"})
+
+
+def awaits_online_payment(order, *, payment_reads=None, channel_config=None) -> bool:
+    """O pedido novo só espera o dinheiro online (Pix ou cartão que não caiu)?
+
+    É a mesma régua do aceite (``lifecycle.ensure_payment_captured``): quem paga
+    na entrega ou na loja, o PDV e o iFood nunca esperam aqui, e o cartão já
+    autorizado também não. Lê, não grava. Usado para tirar da contagem do
+    "para aceitar" o que ninguém consegue aceitar ainda (DEV-2026-091).
+    """
+    from shopman.orderman.exceptions import InvalidTransition
+
+    from shopman.shop.lifecycle import ensure_payment_captured
+
+    if str(getattr(order, "status", "")) != "new":
+        return False
+    try:
+        ensure_payment_captured(order, payment_reads=payment_reads, channel_config=channel_config)
+    except InvalidTransition as exc:
+        return exc.code == "payment_not_captured"
+    return False

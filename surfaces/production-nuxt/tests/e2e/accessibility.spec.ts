@@ -231,7 +231,7 @@ test("Finalização abre a revisão de QC mantendo contexto", async ({ context, 
     .getByRole("button", { name: "Finalizar o lote de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("40 previstos", { exact: false })).toBeVisible();
+  await expect(page.getByText("Previsto: 40 un.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Voltar" })).toBeVisible();
   await expectNoAxeViolations(page, `QC aberto ${testInfo.project.name}`);
   await testInfo.attach(`qc-aberto-${testInfo.project.name}`, {
@@ -245,7 +245,7 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.install({ time: new Date("2026-09-14T12:00:00-03:00") });
   await page.goto("/board");
-  await expect(page.getByRole("heading", { name: "Lotes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produção do dia" })).toBeVisible();
   expect(
     await page.evaluate(
       () => matchMedia("(prefers-reduced-motion: reduce)").matches,

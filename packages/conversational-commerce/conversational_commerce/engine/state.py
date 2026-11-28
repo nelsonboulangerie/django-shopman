@@ -18,6 +18,10 @@ RETERM = frozenset({"terms_changed", "terms_expired", "grant_expired", "confirma
                     "revision_conflict"})
 
 
+#: Os atos que mudam o carrinho de forma material (a sacola, o recebimento, o pagamento): v2 4.7, propriedade 2.
+MATERIAL_ACTS = frozenset({"change_quantity", "choose_fulfillment", "choose_payment", "give_address"})
+
+
 @dataclass(frozen=True, slots=True)
 class NeedSpec:
     need_id: str
@@ -26,6 +30,9 @@ class NeedSpec:
     readings: tuple[Mapping[str, Any], ...] = ({},)
     # A pergunta no ar a que esta necessidade responde, se for resposta.
     answers_question: str | None = None
+    # A leitura que o verificador deixou em dúvida (ADR-051): ``{"acts": [{"act", "fields"}]}``. A necessidade só
+    # pergunta "é isso?", e o "sim" do turno seguinte aplica a leitura.
+    confirm: Mapping[str, Any] | None = None
 
     @property
     def request_kind(self) -> str:
@@ -80,6 +87,14 @@ class CommitmentPlan:
     handoff: bool = False
 
 
+def _without_required(need: NeedSpec) -> bool:
+    """O ato tem campo obrigatório (``acts.REQUIRED_FIELDS``) e nenhuma leitura o traz."""
+    from .acts import REQUIRED_FIELDS
+
+    field = REQUIRED_FIELDS.get(need.act)
+    return field is not None and not any(dict(reading).get(field) for reading in need.readings)
+
+
 @dataclass
 class TurnState:
     now: str
@@ -95,6 +110,16 @@ class TurnState:
     subject: Subject = field(default_factory=Subject)
     # Os termos apresentados, se a pergunta que pede a confirmação deles está no ar nesta época.
     offer: Offer | None = None
+    # O fechamento pediu uma condição obrigatória no turno anterior (``present_terms.needs_*``): a resposta
+    # que muda o carrinho volta aos termos, sem o cliente repetir "pode fechar".
+    closing: bool = False
+    # A referência protegida do conteúdo do evento (spec 01): o endereço se lê por ela, nunca pelo texto.
+    content_ref: str | None = None
+    # A pergunta da condição de sim ou não que o fechamento fez (``turn.CONDITION_KEY``): a pergunta, o código e a
+    # opção oferecida. Só deste carrinho e desta época.
+    condition_question: dict | None = None
+    # Algum movimento de efeito foi escolhido neste turno (executado ou não, inclusive em sombra).
+    effect_chosen: bool = False
     # Necessidade que responde à oferta → por que a confirmação não autoriza (``None``: autoriza).
     confirmation_problems: dict[str, str | None] = field(default_factory=dict)
     # Termos cotados neste turno, por alvo.
@@ -126,9 +151,77 @@ class TurnState:
         return (self.offer is not None and need.act == "affirm"
                 and need.answers_question == self.offer.question_id)
 
+    def declines_offer(self, need: NeedSpec) -> bool:
+        """O "não" desta necessidade responde à pergunta dos termos ("deixa pra lá")."""
+        return (self.offer is not None and need.act == "deny"
+                and need.answers_question == self.offer.question_id)
+
+    def declines_terms(self, need: NeedSpec) -> bool:
+        """O "não" aos termos no ar, ou ao fechamento que pergunta por uma condição ("deixa pra lá").
+
+        O "não" à condição que se responde com sim ou não ("entregamos no endereço do cadastro?") não é
+        desistir: é recusar aquela opção, e o fechamento segue (``declines_condition``)."""
+        return self.declines_offer(need) or (self.offer is None and self.closing and need.act == "deny"
+                                             and not self.declines_condition(need) and not self._alternative(need))
+
+    def _alternative(self, need: NeedSpec) -> bool:
+        """Outra necessidade da mesma fala muda o carrinho ("não, o do trabalho"): o "não" é correção, não recusa."""
+        return any(other.need_id != need.need_id and other.act in CHANGE_ACTS for other in self.needs)
+
+    def _answers_condition_question(self, need: NeedSpec, codes) -> bool:
+        """A resposta curta é À pergunta da condição que o fechamento fez (``condition_question``), do código pedido."""
+        asked = self.condition_question
+        if not asked or need.answers_question != asked.get("question_id"):
+            return False
+        if codes is not None and asked.get("code") not in codes:
+            return False
+        return not self._alternative(need)
+
+    def answers_condition(self, need: NeedSpec, codes=None) -> bool:
+        """O "sim" à pergunta da condição de sim ou não ("entregamos no endereço do cadastro?"): aceita a opção
+        OFERECIDA naquela pergunta (``condition_question["ref"]``), nunca a que o fato diria agora.
+
+        ``codes``: as condições do movimento que pergunta; ``None`` para quem só precisa saber se é resposta."""
+        return need.act == "affirm" and self._answers_condition_question(need, codes)
+
+    def declines_condition(self, need: NeedSpec, codes=None) -> bool:
+        """O "não" à pergunta da condição: recusa a opção, e o fechamento pergunta o que falta sem ela."""
+        return need.act == "deny" and self._answers_condition_question(need, codes)
+
+    def asks_condition_options(self, need: NeedSpec, codes=None) -> bool:
+        """O "outro" à pergunta da condição: nem aceita nem recusa a opção; pede as opções que o fato oferece."""
+        return need.act == "ask_options" and self._answers_condition_question(need, codes)
+
+    def has_fresh_terms(self) -> bool:
+        """Os termos do carrinho cotados neste turno valem (a leitura não falhou)."""
+        from conversational_commerce.contracts import Known
+
+        target = self.subject.cart_ref
+        return target in self.terms and isinstance(self.facts.get(self.terms_key(target or "")), Known)
+
+    def changed_under_offer(self, need: NeedSpec) -> bool:
+        """A mudança desta necessidade já aconteceu (recibo de sucesso) com termos no ar: pede termos novos.
+
+        Vale também com o fechamento esperando uma condição obrigatória (``closing``): a forma de pagamento
+        ou o endereço respondidos voltam aos termos, que perguntam a próxima condição ou se apresentam.
+
+        v2 4.7, propriedade 2: mudança material gera novos termos e nova confirmação. O "sim" seguinte
+        responde ao documento novo, nunca ao de antes.
+        """
+        if (self.offer is None and not self.closing) or not self.has_fresh_terms():
+            return False
+        if need.act in MATERIAL_ACTS or self.answers_condition(need):
+            receipt = self.receipts.get(need.need_id)
+            return receipt is not None and receipt.status == "success"
+        # "Sim, e põe quatro": o "sim" do mesmo turno também pede os termos novos (as duas portas juntas).
+        return self.answers_offer(need) and any(
+            other.act in MATERIAL_ACTS and getattr(self.receipts.get(other.need_id), "status", "") == "success"
+            for other in self.needs)
+
     def wants_terms(self, need: NeedSpec) -> bool:
         """Esta necessidade pede termos (novos): fechar o pedido, ou confirmação que não valeu mais."""
-        if need.act == "place_order":
+        if need.act == "place_order" or self.changed_under_offer(need) or self.declines_condition(need) \
+                or self.asks_condition_options(need):
             return True
         if not self.answers_offer(need):
             return False
@@ -138,6 +231,36 @@ class TurnState:
     @staticmethod
     def terms_key(target: str) -> str:
         return f"terms.{target}"
+
+    @staticmethod
+    def order_key(ref: str) -> str:
+        return f"order.{ref}"
+
+    @staticmethod
+    def requirements_key(target: str) -> str:
+        return f"requirements.{target}"
+
+    def _requirements(self) -> dict:
+        from conversational_commerce.contracts import Known
+
+        fact = self.facts.get(self.requirements_key(self.subject.cart_ref or ""))
+        value = fact.value if isinstance(fact, Known) else None
+        return dict(value) if hasattr(value, "get") else {}
+
+    def conditions_known(self) -> bool:
+        """O fato ``requirements`` do carrinho foi lido e é conhecido. ``Unknown`` (a fonte falhou, o teto
+        acabou) ou ausente: não se sabe o que falta, e o fechamento segura (K04)."""
+        from conversational_commerce.contracts import Known
+
+        return isinstance(self.facts.get(self.requirements_key(self.subject.cart_ref or "")), Known)
+
+    def offered(self, target: str | None, code: str) -> tuple[str, ...]:
+        """As opções que o canal oferece para a condição (``commerce_read.requirements``); vazio sem o fato."""
+        return tuple(self._requirements().get(code) or ())
+
+    def missing_conditions(self) -> tuple[str, ...]:
+        """As condições obrigatórias dos termos ainda ausentes (forma de pagamento, endereço…)."""
+        return tuple(self._requirements().get("missing") or ())
 
     def situation(self, need: NeedSpec, **fields: Any) -> Situation:
         """A situação comum a toda proposta da necessidade, mais o que o movimento acrescenta."""
@@ -150,7 +273,7 @@ class TurnState:
             "reading_count": len(need.readings),
             "request_kind": need.request_kind,
             "missing_required_field": need.act == "unknown" or (need.is_query and need.act != "ask_hours"
-                                                                and not keys),
+                                                                and not keys) or _without_required(need),
             "answer_changes_decision": True,
             "question_open_for_need": need.need_id in self.open_question_needs,
             "requested_move_ineligible": False,

@@ -6,7 +6,8 @@ Dois níveis, por dependência de dados:
 
 `resilience.spec.ts` e `guards.spec.ts` cobrem comportamentos do app que não
 precisam de dados de negócio: shell degradado com backend vazio, banner offline
-(reconexão), guard de `/conta` (redireciona ao login), página 404 (noindex).
+(reconexão), guard de `/conta` (redireciona ao login), página 404 (noindex), e o
+documento com cookie de sessão saindo `private, no-store` em qualquer rota (#3474).
 
 Sobem automaticamente um **mock backend** (`mockBackend.mjs`, respostas `{}`
 rápidas) e o `nuxt preview` apontado a ele.
@@ -29,12 +30,21 @@ precisa do Django real semeado, e por isso não vive aqui. Ele está em
   (`/pedido/<ref>`) já com o pagamento autorizado. O cartão passa pelo adapter
   `payment_stripe` de produção contra um Stripe falso local
   (`shopman/shop/tests/e2e/fake_stripe.py`): sem rede e sem credencial.
+- `test_experience_e2e.py` (OC-21, X14): a versão de experimento que o servidor
+  decidiu. A coorte nasce pelo servidor (`seed_experience.py`, uma `RuleConfig` com
+  `CLI-003` na coorte `internal`, gravada antes de o Django subir), nunca por query:
+  fora da coorte e anônimo veem `a`; na coorte, `b`, sem alternar na recarga, com o
+  documento e o shell saindo `private, no-store`. Documento com sessão (#3474): com
+  a cliente logada (`CLI-005`), cardápio, produto, páginas legais e home saem
+  `private, no-store`; anônimas (`TestSessionDocumentIsNeverShared`), as mesmas
+  páginas seguem sem `no-store`.
 
 Para rodar localmente, da raiz do repositório:
 
 ```bash
 make storefront-e2e                       # seed + Django + loja + Stripe falso
 make storefront-e2e args="-k test_12"     # só o Dia 1
+make storefront-e2e args="-k Experience"  # só a versão de experimento (OC-21)
 ```
 
 O antigo `criticalFlow.spec.ts` (sempre `skip`) foi apagado: o fluxo que ele
@@ -55,6 +65,7 @@ As jornadas a canonizar estão na seção 8 de `docs/plans/EXCELENCIA-STOREFRONT
 |---|---|---|
 | `j1-retirada-hoje-pix.spec.ts` | J1: retirada para hoje com Pix, do cardápio ao aceite | cliente nova (375 e 1366 px) · Gerente no Gestor (1366 px) |
 | `j3-loja-viva.spec.ts` | J3: o produto que acaba muda sozinho na tela de quem está olhando (pelo aviso da vitrine, pela consulta de reserva e pela recusa ao tocar) | duas clientes na loja: A olhando (375 e 1366 px) · B levando as últimas unidades (1366 px). Não usa o Gestor, mas a suíte pede a variável dele mesmo assim |
+| `x9-tipografia-decisiva.spec.ts` | X9 e X11 (OC-30): em home, cardápio, produto, entrar, sacola, finalizar, acompanhamento e conta, todo `[data-decisive]` tem 14 px e contraste AA (tema claro e escuro), todo `.shop-reading` tem 16 px, e com a fonte raiz a 200 % nenhum decisivo nem ação some ou é cortado. A medida mora em `support/typographyAudit.mjs` | cliente nova, medida a 320, 375 e 390 px (projeto 375) e a 1366 px. Não usa o Gestor |
 
 A suíte **não sobe servidor nenhum** e recusa rodar sem as três variáveis abaixo. Cada
 projeto (`cliente-375`, `cliente-1366`) é uma cliente nova, com telefone sorteado, e faz um
@@ -193,3 +204,23 @@ script sobe sozinho (porta em `JOURNEYS_MAPS_PORT`, padrão 12192).
 
 Derrube o que subiu (`kill` nos processos do `runserver`, do worker e dos dois
 `node .output/server/index.mjs`) e, se o banco era só da jornada, `dropdb shopman_exc_l00`.
+
+## 4. Comparação A/B supervisionada (`tests/e2e/journeys/`, OC-23)
+
+As jornadas essenciais do §5.1 do plano da Etapa II omnicanal, escritas uma vez e rodadas
+para a versão A e para a B na pilha da seção 3, com a mesma cliente (CLI-003) e o mesmo
+seed. Quem decide a versão é o servidor (a cliente fora ou dentro da coorte das
+`RuleConfig` do harness, `shopman/shop/tests/e2e/seed_experience.py --cohort
+--experiment`, que liga o de prova e todo `EXPERIMENT(<ref>)` da loja), nunca a URL.
+Cada passo é auditado em 320/375/390 px e no computador: captura, axe, X9
+(`data-decisive`) e X11 (fonte raiz a 200 %), com a medida da fila
+(`tests/journeys/support/typographyAudit.mjs`). Config própria
+(`playwright.experience.config.ts`); a suíte com servidor de mentira ignora esta pasta.
+
+```bash
+DATABASE_URL=postgres://localhost:5432/<banco só de jornada> \
+  lockf /tmp/shopman-previa.lock make experience-compare
+```
+
+Relatório em `test-results/experience-compare/relatorio.html`. Protocolo completo, com a
+sessão humana: [`docs/guides/comparacao-ab-supervisionada.md`](../../../../docs/guides/comparacao-ab-supervisionada.md).

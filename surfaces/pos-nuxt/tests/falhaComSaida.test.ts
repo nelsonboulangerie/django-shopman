@@ -106,6 +106,11 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
     trecho: 'releaseChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") }',
     porque: "a saída é o diálogo do gerente, que reabre com a recusa para assinar de novo",
   },
+  {
+    arquivo: "composables/useDayClosing.ts",
+    trecho: 'readyChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") }',
+    porque: "a saída é o diálogo do gerente do gesto em lote dos não retirados, que reabre com a recusa para assinar de novo (#2684)",
+  },
 ];
 
 const EXTENSOES = [".ts", ".vue"];

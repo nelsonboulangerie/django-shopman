@@ -101,7 +101,7 @@ def bump_session_hold_expiry(
         return 0
 
     if ttl_minutes is None:
-        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
+        ttl_minutes = channel_hold_ttl_minutes(channel_ref)
     now = timezone.now()
     new_expiry = now + timedelta(minutes=ttl_minutes)
     bumping = Hold.objects.filter(
@@ -994,7 +994,7 @@ def _listing_items_for_skus(skus: list[str], channel_ref: str | None) -> dict[st
     return {sku: found.get(sku, False) for sku in skus}
 
 
-def _channel_hold_ttl_minutes(channel_ref: str | None) -> int:
+def channel_hold_ttl_minutes(channel_ref: str | None) -> int:
     """TTL de hold de carrinho do canal (config) — default seguro de 30 min."""
     if not channel_ref:
         return 30
@@ -1040,7 +1040,7 @@ def reserve(
     """
     qty_d = Decimal(str(qty))
     if ttl_minutes is None:
-        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
+        ttl_minutes = channel_hold_ttl_minutes(channel_ref)
     if target_date is None:
         # A pronta-entrega é servida primeiro; só quando ela não cobre o pedido
         # a reserva ancora na fornada planejada — e ancora na data DELA, não no
@@ -1375,7 +1375,7 @@ def reconcile(
     if new_qty_d < 0:
         new_qty_d = Decimal("0")
     if ttl_minutes is None:
-        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
+        ttl_minutes = channel_hold_ttl_minutes(channel_ref)
 
     # Bundles are reconciled per component. Component holds are scoped by
     # cart-line metadata so a combo using CROIS-01 cannot consume/release a

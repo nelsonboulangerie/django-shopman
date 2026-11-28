@@ -11,6 +11,7 @@ Sem lista central: um WP que acrescenta movimento (F8, F9, F10) cria
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import pkgutil
 import sys
@@ -63,3 +64,26 @@ def registry() -> dict[str, ModuleType]:
 
 def templates() -> dict:
     return {template.template_id: template for module in registry().values() for template in module.TEMPLATES}
+
+
+@functools.cache
+def expected_acts(code: str) -> tuple[str, ...]:
+    """Os atos que respondem à pergunta da condição ``code`` (ADR-051, conferência de coerência).
+
+    O ato de cada movimento que a cumpre (``FULFILLS_CONDITIONS``) ou que a responde (``ANSWERS_CONDITIONS``),
+    e, na condição de sim ou não, o sim, o não e o pedido das opções. Condição que nenhum movimento declara
+    não espera ato nenhum: a conferência não a julga.
+    """
+    from ..acts import ANSWER_ACTS
+
+    acts = [module.ACT for module in registry().values()
+            if code in (*getattr(module, "FULFILLS_CONDITIONS", ()), *getattr(module, "ANSWERS_CONDITIONS", ()))]
+    if code in yes_no_conditions():
+        acts.extend(sorted(ANSWER_ACTS))
+    return tuple(dict.fromkeys(acts))
+
+
+def yes_no_conditions() -> frozenset[str]:
+    """As condições que se respondem com sim ou não, declaradas pelos movimentos que as cumprem
+    (``ANSWERS_CONDITIONS``). Lidas uma vez: o registro não muda em execução."""
+    return frozenset(code for module in registry().values() for code in getattr(module, "ANSWERS_CONDITIONS", ()))

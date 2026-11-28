@@ -1,7 +1,7 @@
 import { couponAppliedToast } from '~/utils/checkoutFlow'
 import { applyLineQty, applySkuQty, cartQtyForSku, isOptimisticLine, substituteSwapPlan } from '~/presentation/cart'
 import { serverClockOffsetMs } from '~/presentation/deadline'
-import type { CartItemProjection, CartMutationResponse, CartProjection, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
+import type { CartItemProjection, CartMutationResponse, CartProjection, CartTransferResponse, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
 
 export interface CartIssue {
   title: string
@@ -447,7 +447,8 @@ export function useCartState () {
     return async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
       method: 'PUT',
       headers: await csrfHeaders(),
-      body: { qty },
+      // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+      body: meta.date ? { qty, date: meta.date } : { qty },
       credentials: 'include'
     })
   }
@@ -499,11 +500,30 @@ export function useCartState () {
       async () => $fetch<CartMutationResponse>(apiPath('/api/v1/cart/lines/'), {
         method: 'POST',
         headers: await csrfHeaders(),
-        body: { sku: meta.sku, qty, options: chosen },
+        // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+        body: meta.date ? { sku: meta.sku, qty, options: chosen, date: meta.date } : { sku: meta.sku, qty, options: chosen },
         credentials: 'include'
       }),
       { idempotent: false }
     )
+  }
+
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // O "Trocar" do dia (OC-33 B1): a sacola INTEIRA passa para `date`, ou nada muda.
+  // Quem decide é o servidor, num comando só; aqui só se espera a fila de mudanças
+  // e se aceita a sacola que ele devolve. Recusa (400 dia que a casa não atende, 409
+  // item que não dá no dia) sobe para a tela, que a mostra no lugar da escolha.
+  async function changeCartDay (date: string, without: string[] = []): Promise<CartProjection> {
+    return enqueueMutation(async () => {
+      const response = await $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/day/'), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { date, without },
+        credentials: 'include'
+      })
+      setCartProjection(response.cart)
+      return response.cart
+    })
   }
 
   // `notice`: o cupom entrou no lugar de um desconto que já valia, e a resposta diz
@@ -563,6 +583,31 @@ export function useCartState () {
     }
     if (queueDepth === 0) applyServerCart(response.cart)
     return response.cart
+  }
+
+  // A passagem da sacola entre a loja e a conversa (OC-16): "Trazer a sacola do
+  // WhatsApp". Sem otimista e sem repetir sozinha: quem decide
+  // o que chega é o servidor. A recusa (409) também traz a sacola como ficou.
+  async function runCartPassage (href: string, body: Record<string, unknown>): Promise<CartTransferResponse> {
+    beginMutation()
+    let response: CartTransferResponse
+    try {
+      response = await enqueueMutation(async () => $fetch<CartTransferResponse>(apiPath(href), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        body,
+        credentials: 'include'
+      }))
+    } catch (error) {
+      const data = asRecord((error as { data?: unknown })?.data)
+      const refusedCart = data.cart as CartProjection | undefined
+      if (refusedCart && queueDepth === 1) applyServerCart(refusedCart)
+      throw error
+    } finally {
+      queueDepth -= 1
+    }
+    if (queueDepth === 0) applyServerCart(response.cart)
+    return response
   }
 
   function replay (mutation: CartMutationSnapshot, qty: number) {
@@ -653,12 +698,15 @@ export function useCartState () {
     clearCart,
     refreshCart,
     settleCart,
+    runCartPassage,
     qtyForSku,
     isPending,
     setSkuQty,
     replayEarlyAdd,
     setLineQty,
     addLineWithOptions,
+    // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+    changeCartDay,
     applyCoupon,
     removeCoupon,
     setLineNotes,

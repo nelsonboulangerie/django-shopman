@@ -11,6 +11,7 @@ from shopman.shop.eventstream import events as eventstream_view
 from .alerts import (
     AlertAckView,
     AlertListView,
+    ConciergeHandoffGiveBackView,
     ConciergeVerificationAnswerView,
     ConciergeVerificationPromoteView,
     ConciergeVerificationTakeOverView,
@@ -192,6 +193,7 @@ from .operation_checklists import (
 )
 from .operations import (
     CourierTicketEscposView,
+    DayClosingNotPickedUpView,
     DayClosingView,
     DeliveriesCountView,
     DeliveriesView,
@@ -248,6 +250,7 @@ from .operations import (
     OrderRequeueFiscalView,
     OrderRescheduleView,
     OrderResendPaymentLinkView,
+    OrderRetentionReceiptEscposView,
     OrderReturnPreviewView,
     OrderReturnView,
     OrderSettleDeliveryCashView,
@@ -324,8 +327,10 @@ from .operations import (
     ProductionKDSView,
     ProductionManagementView,
     ProductionMiseEnPlaceView,
+    ProductionPurchaseRequestView,
     ProductionQCView,
     ProductionReportsView,
+    ProductionShortageAuthorizationView,
     ProductionWeighingView,
     StationProvisionView,
     WorkOrderFinishView,
@@ -355,6 +360,7 @@ from .print_jobs import (
     ProductionWeighingPrintJobCreateView,
 )
 from .product_promise import CatalogPromiseView, ProductPromiseView
+from .production_checklist import ProductionPrepChecklistView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
@@ -575,6 +581,11 @@ urlpatterns = [
         "production/mise-en-place/",
         ProductionMiseEnPlaceView.as_view(),
         name="api-backstage-production-mise-en-place",
+    ),
+    path(
+        "production/mise-en-place/marks/",
+        ProductionPrepChecklistView.as_view(),
+        name="api-backstage-production-prep-checklist",
     ),
     path(
         "production/weighing/",
@@ -810,6 +821,7 @@ urlpatterns = [
     path("saved-views/<int:pk>/", SavedViewDetailView.as_view(), name="api-backstage-saved-view"),
     path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
+    path("closing/not-picked-up/", DayClosingNotPickedUpView.as_view(), name="api-backstage-closing-not-picked-up"),
     path(
         "closing/episodes/<int:episode_id>/",
         OperationEpisodeAnswerView.as_view(),
@@ -998,6 +1010,11 @@ urlpatterns = [
         name="api-backstage-order-ticket-escpos",
     ),
     path(
+        "orders/<str:ref>/retention-receipt-escpos/",
+        OrderRetentionReceiptEscposView.as_view(),
+        name="api-backstage-order-retention-receipt-escpos",
+    ),
+    path(
         "orders/<str:ref>/danfe-escpos/",
         OrderDanfeEscposView.as_view(),
         name="api-backstage-order-danfe-escpos",
@@ -1115,6 +1132,12 @@ urlpatterns = [
         "alerts/<int:pk>/concierge-verification/take-over/",
         ConciergeVerificationTakeOverView.as_view(),
         name="api-backstage-alert-concierge-verification-take-over",
+    ),
+    # #3578: a conversa com a equipe volta à Concierge pelo cartão do handoff.
+    path(
+        "alerts/<int:pk>/concierge-handoff/give-back/",
+        ConciergeHandoffGiveBackView.as_view(),
+        name="api-backstage-alert-concierge-handoff-give-back",
     ),
     # WP-15: a pergunta respondida vira rascunho de pergunta frequente (não publicado).
     path(
@@ -1357,6 +1380,16 @@ urlpatterns = [
         name="api-backstage-wo-quality-correction",
     ),
     path("production/quick-finish/", WorkOrderQuickFinishView.as_view(), name="api-backstage-wo-quick-finish"),
+    path(
+        "production/purchase-request/",
+        ProductionPurchaseRequestView.as_view(),
+        name="api-backstage-production-purchase-request",
+    ),
+    path(
+        "production/shortage-authorization/",
+        ProductionShortageAuthorizationView.as_view(),
+        name="api-backstage-production-shortage-authorization",
+    ),
     path("production/<int:wo_id>/void/", WorkOrderVoidView.as_view(), name="api-backstage-wo-void"),
     # Forno — o timer do kiosk declara; o servidor carimba (ADR-021 §4)
     path("production/<int:wo_id>/oven/arm/", WorkOrderOvenArmView.as_view(), name="api-backstage-wo-oven-arm"),

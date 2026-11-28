@@ -23,9 +23,23 @@ from shopman.shop.services import payment as payment_service
 logger = logging.getLogger(__name__)
 
 ACTIVE_STATUSES = frozenset({"new", "accepted", "preparing", "ready", "dispatched"})
+# O pedido que chegou ao cliente: entregue (delivery) ou finalizado (retirada,
+# balcão, e o fechamento depois da entrega). É o que o cliente avalia e o que a
+# loja oferece repetir; pedido em andamento, cancelado ou devolvido fica de fora.
+CONCLUDED_STATUSES = frozenset({"delivered", "completed"})
 DEFAULT_CHANNEL_REF = "web"
 ORDER_ACCESS_SESSION_KEY = "shopman_order_access_refs"
 MAX_SESSION_ORDER_ACCESS_REFS = 20
+#: Os pedidos que ESTE navegador abriu só pelo link do aviso (capacidade de pedido,
+#: ``order_view_link``), com a revisão do link no momento da troca: ``{ref: rev}``.
+#: Lista separada de propósito: acesso por capacidade não é o acesso de quem fez o
+#: pedido neste navegador, e não pode virar ele (DEV-2026-093).
+ORDER_CAPABILITY_SESSION_KEY = "shopman_order_capability_refs"
+
+#: Os dois modos de acesso a um pedido. ``full``: staff, o navegador do checkout ou a
+#: conta dona do pedido. ``capability``: só o link do aviso.
+ACCESS_FULL = "full"
+ACCESS_CAPABILITY = "capability"
 
 
 def get_order(ref: str):
@@ -55,9 +69,22 @@ def find_order(ref: str):
     return Order.objects.filter(ref=ref).first()
 
 
-def grant_order_access(request, order_ref: str) -> None:
-    """Bind an order ref to the current browser session after checkout/access-link."""
+def grant_order_access(request, order_ref: str, *, via_capability: bool = False, link_rev: int = 0) -> None:
+    """Bind an order ref to the current browser session after checkout/access-link.
+
+    ``via_capability``: o acesso veio SÓ do link do aviso (``order_view_link``). Vai
+    para a lista separada, com a revisão do link, e nunca para a lista de quem fez o
+    pedido neste navegador. Não loga, não cria usuário: é uma linha na sessão anônima.
+    """
     if not order_ref or not hasattr(request, "session"):
+        return
+    if via_capability:
+        granted = dict(request.session.get(ORDER_CAPABILITY_SESSION_KEY) or {})
+        granted.pop(str(order_ref), None)
+        granted[str(order_ref)] = int(link_rev)
+        # O mais antigo sai primeiro (dict mantém a ordem de inserção).
+        request.session[ORDER_CAPABILITY_SESSION_KEY] = dict(list(granted.items())[-MAX_SESSION_ORDER_ACCESS_REFS:])
+        request.session.modified = True
         return
     refs = [
         str(ref)
@@ -72,13 +99,57 @@ def grant_order_access(request, order_ref: str) -> None:
 
 
 def request_can_access_order(request, order) -> bool:
-    """Return True for staff, same checkout session, or matching customer identity."""
+    """Return True for staff, same checkout session, matching customer, or the order link."""
+    return order_access_mode(request, order) is not None
+
+
+def order_access_mode(request, order) -> str | None:
+    """Como este pedido abre para esta requisição: ``full``, ``capability`` ou ``None``.
+
+    ``full`` vence sempre: quem fez o pedido neste navegador, a conta dona dele ou o
+    staff. ``capability`` é só o link do aviso, revalidado a cada pedido (revogar ou
+    passar da validade fecha na hora, mesmo para quem já tinha trocado o selo).
+    """
     user = getattr(request, "user", None)
     if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
-        return True
+        return ACCESS_FULL
     if _session_can_access_order(request, order.ref):
-        return True
-    return customer_can_access_order(getattr(request, "customer", None), order)
+        return ACCESS_FULL
+    if customer_can_access_order(getattr(request, "customer", None), order):
+        return ACCESS_FULL
+    if _capability_session_can_access_order(request, order):
+        return ACCESS_CAPABILITY
+    return None
+
+
+def get_accessible_order_with_mode(request, ref: str):
+    """``(pedido, modo)`` quando esta requisição pode ver o pedido; senão ``Http404``."""
+    order = get_order(ref)
+    mode = order_access_mode(request, order)
+    if mode is not None:
+        return order, mode
+    logger.warning(
+        "customer_order_access_denied order=%s user=%s",
+        order.ref,
+        getattr(getattr(request, "user", None), "pk", None),
+    )
+    raise Http404
+
+
+def grant_order_capability(request, ref: str, cap: str) -> bool:
+    """Troca o selo do link do aviso por acesso deste navegador a ESTE pedido.
+
+    Selo inválido, adulterado, vencido, revogado ou de outro pedido: ``False``, sem
+    dizer qual (a API responde o mesmo 404 de pedido inexistente). Nunca loga ninguém.
+    """
+    from shopman.shop.services import order_view_link
+
+    order = find_order(str(ref or ""))
+    if order is None or not order_view_link.verify(order, cap):
+        logger.warning("customer_order_capability_refused order=%s", ref)
+        return False
+    grant_order_access(request, order.ref, via_capability=True, link_rev=order_view_link.link_rev(order))
+    return True
 
 
 def user_can_access_order(user, order) -> bool:
@@ -105,25 +176,19 @@ def order_matches_customer_identity(
     customer_ref: str | None = None,
     phone: str | None = None,
 ) -> bool:
-    """Compare order identity without exposing whether the ref exists."""
-    data = order.data if isinstance(order.data, dict) else {}
-    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    """Compare order identity without exposing whether the ref exists.
 
-    if customer_ref:
-        if str(data.get("customer_ref") or "") == customer_ref:
-            return True
-        if str(customer.get("ref") or "") == customer_ref:
-            return True
-
-    if phone:
-        candidates = [
-            order.handle_ref if order.handle_type in {"phone", "whatsapp"} else "",
-            str(customer.get("phone") or ""),
-            str(data.get("customer_phone") or ""),
-        ]
-        return any(_same_phone(phone, candidate) for candidate in candidates if candidate)
-
-    return False
+    Avalia a MESMA regra do histórico e da projeção do cliente
+    (``customer_identity_filter``) sobre este pedido, no banco: pedido com dono
+    declarado só abre pelo ref; telefone só abre pedido sem dono (OC-02, X7).
+    """
+    pk = getattr(order, "pk", None)
+    if pk is None:
+        return False
+    identity = customer_identity_filter(customer_ref=customer_ref, phone=phone)
+    if identity is None:
+        return False
+    return type(order)._default_manager.filter(pk=pk).filter(identity).exists()
 
 
 def active_order_count_for_customer(
@@ -160,7 +225,13 @@ def order_count_for_customer(
 
 
 def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, list[dict]]:
-    """Return the last old-enough order ref and sealed snapshot items for reorder."""
+    """Return the last CONCLUDED order ref and its items for the reorder offer.
+
+    Só pedido concluído (``CONCLUDED_STATUSES``): o que ainda está em andamento já
+    aparece na faixa do pedido, e oferecer repeti-lo logo abaixo seria repetir o
+    pedido que está a caminho (#3560). Cancelado e devolvido também não voltam
+    aqui; o pedido vencido sem pagamento tem caminho próprio (``repeat_order``).
+    """
     try:
         from shopman.guestman.services import customer as customer_service
 
@@ -181,7 +252,7 @@ def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, l
             return None, []
 
         last = (
-            Order.objects.filter(identity)
+            Order.objects.filter(identity, status__in=CONCLUDED_STATUSES)
             .distinct()
             .order_by("-created_at")
             .prefetch_related("items")
@@ -260,7 +331,7 @@ def lock_customer_order(order_ref: str):
 
 def can_rate(order) -> bool:
     """Return whether the customer may submit the order's first rating."""
-    if order.status not in {"delivered", "completed"}:
+    if order.status not in CONCLUDED_STATUSES:
         return False
     data = order.data if isinstance(order.data, dict) else {}
     rating = data.get("customer_rating")
@@ -725,6 +796,21 @@ def _session_can_access_order(request, order_ref: str) -> bool:
     }
 
 
+def _capability_session_can_access_order(request, order) -> bool:
+    if not hasattr(request, "session"):
+        return False
+    granted = request.session.get(ORDER_CAPABILITY_SESSION_KEY) or {}
+    if not isinstance(granted, dict) or str(order.ref) not in granted:
+        return False
+    from shopman.shop.services import order_view_link
+
+    try:
+        rev = int(granted[str(order.ref)])
+    except (TypeError, ValueError):
+        return False
+    return rev == order_view_link.link_rev(order) and order_view_link.is_within_validity(order)
+
+
 def _customer_identity_from_info(customer_info) -> tuple[str | None, str | None]:
     customer_ref = None
     try:
@@ -761,14 +847,35 @@ def _customer_identity_from_user(user) -> tuple[str | None, str | None]:
         return None, None
 
 
-def _same_phone(left: str, right: str) -> bool:
+#: Handles de pedido que SÃO o telefone de quem pediu.
+PHONE_HANDLE_TYPES: tuple[str, ...] = ("phone", "whatsapp")
+
+
+def _blank_json_key(path: str) -> Q:
+    """A chave ``path`` de ``Order.data`` está ausente, nula ou vazia."""
+    return Q(**{f"data__{path}__isnull": True}) | Q(**{f"data__{path}": None}) | Q(**{f"data__{path}": ""})
+
+
+def _without_declared_owner() -> Q:
+    """Pedido sem dono declarado: nem ``customer_ref`` nem ``customer.ref``."""
+    return _blank_json_key("customer_ref") & _blank_json_key("customer__ref")
+
+
+def _phone_variants(phone: str) -> list[str]:
+    """As grafias com que o mesmo telefone pode estar gravado no pedido.
+
+    E.164 (``+5543...``), a mesma sem o ``+`` e a forma recebida.
+    """
+    raw = str(phone).strip()
     try:
         from shopman.utils.phone import normalize_phone
 
-        return normalize_phone(left) == normalize_phone(right)
+        normalized = normalize_phone(raw)
     except Exception:
-        logger.debug("customer_orders._same_phone degraded; using fallback", exc_info=True)
-        return str(left).strip() == str(right).strip()
+        logger.debug("customer_orders._phone_variants degraded; using raw phone", exc_info=True)
+        normalized = ""
+    variants = (normalized, normalized.lstrip("+"), raw)
+    return [value for value in dict.fromkeys(variants) if value]
 
 
 def customer_identity_filter(
@@ -776,11 +883,29 @@ def customer_identity_filter(
     customer_ref: str | None = None,
     phone: str | None = None,
 ):
+    """A regra única de titularidade de pedido do cliente (OC-02, X7).
+
+    - Pedido com dono declarado (``data["customer_ref"]`` ou
+      ``data["customer"]["ref"]``) só casa pelo ``customer_ref``.
+    - Telefone só casa pedido SEM dono declarado (convidado), pelo handle de
+      telefone ou pelo telefone gravado no pedido. Operadora recicla número:
+      quem herda o número não herda os pedidos de quem tinha dono.
+
+    Casamento individual (``order_matches_customer_identity``), histórico,
+    contagens e projeção do cliente usam esta função; não reescreva a regra.
+    Devolve ``None`` quando não há identidade nenhuma para casar.
+    """
     query = Q()
     if customer_ref:
-        query |= Q(data__customer_ref=customer_ref)
-    if phone:
-        query |= Q(handle_type="phone", handle_ref=phone)
+        query |= Q(data__customer_ref=customer_ref) | Q(data__customer__ref=customer_ref)
+    phones = _phone_variants(phone) if phone else []
+    if phones:
+        by_phone = (
+            Q(handle_type__in=PHONE_HANDLE_TYPES, handle_ref__in=phones)
+            | Q(data__customer__phone__in=phones)
+            | Q(data__customer_phone__in=phones)
+        )
+        query |= by_phone & _without_declared_owner()
     return query if query.children else None
 
 
@@ -796,7 +921,11 @@ def _price_q(product, *, channel_ref: str, qty=1) -> int:
 
 __all__ = [
     "ACTIVE_STATUSES",
+    "CONCLUDED_STATUSES",
+    "ACCESS_CAPABILITY",
+    "ACCESS_FULL",
     "ORDER_ACCESS_SESSION_KEY",
+    "ORDER_CAPABILITY_SESSION_KEY",
     "active_order_count_for_customer",
     "active_order_count_for_phone",
     "add_reorder_items",
@@ -807,6 +936,9 @@ __all__ = [
     "customer_identity_filter",
     "ensure_payment_intent",
     "get_accessible_order",
+    "get_accessible_order_with_mode",
+    "grant_order_capability",
+    "order_access_mode",
     "find_order",
     "get_order",
     "get_payment_status",

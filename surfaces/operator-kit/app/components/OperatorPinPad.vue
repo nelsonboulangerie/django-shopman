@@ -36,6 +36,13 @@ const props = withDefaults(
      * (a troca de PIN); a identificação já captura no documento e decide crachá.
      */
     keyboard?: boolean;
+    /**
+     * O PIN tem tamanho fixo (4, #3223): o campo mostra exatamente essas casas e o
+     * leitor de tela diz "de 4". O PIN se envia sozinho no último dígito (quem
+     * envia é a captura de quem chama); a tecla de confirmar fica, girando
+     * enquanto o servidor confere. `null` = a regra antiga, de 4 a 8.
+     */
+    fixedDigits?: number | null;
   }>(),
   {
     label: "",
@@ -45,6 +52,7 @@ const props = withDefaults(
     submitIcon: "i-lucide-check",
     submitLabel: "Confirmar",
     keyboard: false,
+    fixedDigits: null,
   },
 );
 
@@ -54,18 +62,23 @@ const emit = defineEmits<{
   submit: [];
 }>();
 
-const slots = computed(() => pinSlots(props.pin.length));
+const slots = computed(() => (props.fixedDigits ? props.fixedDigits : pinSlots(props.pin.length)));
 // O campo recebe bolinhas, não os dígitos: o PIN não fica no DOM (nem como
 // `value` de um campo de senha), e a bolinha tem o tamanho do texto, não o do
 // disco minúsculo que o navegador desenha num campo de senha.
 const dots = computed(() => Array.from(props.pin, () => "●"));
 const fieldName = computed(() => props.label || "PIN");
 // O que o leitor de tela ouve a cada dígito: quantos já foram, e o mínimo.
-const spoken = computed(() =>
-  props.pin.length
+const spoken = computed(() => {
+  if (props.fixedDigits) {
+    return props.pin.length
+      ? `${props.pin.length} de ${props.fixedDigits} dígitos`
+      : `PIN de ${props.fixedDigits} dígitos`;
+  }
+  return props.pin.length
     ? `${props.pin.length} de no mínimo ${PIN_MIN_DIGITS} dígitos`
-    : `PIN de no mínimo ${PIN_MIN_DIGITS} dígitos`,
-);
+    : `PIN de no mínimo ${PIN_MIN_DIGITS} dígitos`;
+});
 
 // A recusa (PIN errado) se dispensa: no X, ou voltando a digitar.
 const errorDismissed = ref(false);

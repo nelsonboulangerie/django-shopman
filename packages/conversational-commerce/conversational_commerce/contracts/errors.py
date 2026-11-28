@@ -35,6 +35,8 @@ class ErrorCode(StrEnum):
     EFFECT_UNKNOWN = "effect_unknown"
     BUDGET_EXHAUSTED = "budget_exhausted"
     PROVIDER_UNAVAILABLE = "provider_unavailable"
+    # Recebimento (``set_fulfillment``) bem formado que a casa não atende. Forma inválida é ``invalid_content``.
+    FULFILLMENT_UNAVAILABLE = "fulfillment_unavailable"
 
 
 class ContractError(ValueError):

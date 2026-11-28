@@ -6,8 +6,15 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from shopman.shop.models.faq import OPERATIONAL_QUESTIONS, normalized_question
 from shopman.shop.projections.channel_state import channel_capabilities
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
+
+#: Quantas perguntas a home mostra; as outras ficam em /faq ("Ver todas as perguntas").
+#: As mais úteis são as primeiras na ordem que ``build_public_faq`` já tem: as respostas
+#: operacionais (entrega, horário, endereço, pagamento, encomenda, alérgenos, contato),
+#: depois as curadas pela ``position`` do ``FAQEntry`` (OC-31).
+HOME_FAQ_LIMIT = 6
 
 
 @dataclass(frozen=True)
@@ -60,7 +67,7 @@ def _payment_faq(channel_ref: str) -> FAQItemProjection | None:
         return None
     return FAQItemProjection(
         ref="payment",
-        question="Como posso pagar?",
+        question=OPERATIONAL_QUESTIONS["payment"],
         answer=f"Você paga com {_join_pt(labels)}.",
     )
 
@@ -90,7 +97,7 @@ def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
         return None
     return FAQItemProjection(
         ref="preorder",
-        question="Posso encomendar para outro dia?",
+        question=OPERATIONAL_QUESTIONS["preorder"],
         answer=f"Sim. Ao finalizar o pedido, você escolhe o dia, com até {window} de antecedência.",
     )
 
@@ -127,7 +134,7 @@ def _operational_faq(
     items.append(
         FAQItemProjection(
             ref="delivery",
-            question="Vocês fazem entrega?",
+            question=OPERATIONAL_QUESTIONS["delivery"],
             answer=delivery_answer,
         )
     )
@@ -142,7 +149,7 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="hours",
-                question="Quais são os horários de funcionamento?",
+                question=OPERATIONAL_QUESTIONS["hours"],
                 answer=answer,
             )
         )
@@ -152,7 +159,7 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="location",
-                question="Onde vocês ficam?",
+                question=OPERATIONAL_QUESTIONS["location"],
                 answer=f"Ficamos em {address}.",
             )
         )
@@ -167,7 +174,7 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="allergens",
-                question="Os produtos têm alérgenos?",
+                question=OPERATIONAL_QUESTIONS["allergens"],
                 answer=f"{notice} Os ingredientes de cada produto estão na página dele.",
             )
         )
@@ -183,7 +190,7 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="contact",
-                question="Como falar com vocês?",
+                question=OPERATIONAL_QUESTIONS["contact"],
                 answer="Você pode falar conosco por " + " ou ".join(contacts) + ".",
             )
         )
@@ -210,7 +217,13 @@ def build_public_faq(
     status: dict | None = None,
     opening_hours: tuple | list | None = None,
 ) -> tuple[FAQItemProjection, ...]:
-    """Project dynamic operational answers plus published curated answers."""
+    """As respostas operacionais (da configuração) e depois as curadas publicadas.
+
+    Uma pergunta só aparece uma vez, comparada sem acento, caixa, pontuação e espaço
+    (``normalized_question``). A operacional vence: a curada que a repete fica de fora,
+    porque duas respostas para a mesma pergunta, de fontes diferentes, podiam se
+    contradizer (OC-31). Entre curadas repetidas, fica a primeira pela posição.
+    """
     from shopman.shop.models import FAQEntry, Shop
 
     shop = shop or Shop.load()
@@ -231,7 +244,15 @@ def build_public_faq(
         )
         for entry in FAQEntry.objects.filter(is_published=True).order_by("position", "id")
     )
-    return tuple(item for item in items if item.question and item.answer)
+    seen: set[str] = set()
+    unique: list[FAQItemProjection] = []
+    for item in items:
+        key = normalized_question(item.question)
+        if not key or not item.answer or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return tuple(unique)
 
 
 def search_public_faq(
@@ -282,4 +303,4 @@ def search_public_faq(
     return tuple(item for _, _, item in ranked[:limit])
 
 
-__all__ = ["FAQItemProjection", "build_public_faq", "food_safety_notice", "search_public_faq"]
+__all__ = ["HOME_FAQ_LIMIT", "FAQItemProjection", "build_public_faq", "food_safety_notice", "search_public_faq"]

@@ -669,12 +669,21 @@ def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
     "customer_ref", "customer_uuid", "hold_ids", "management_url",
+    # Não é campo do ManyChat: é o VALOR que o campo `order_ref` leva (ver abaixo).
+    "order_link_ref",
 })
+
+#: O campo do botão aprovado na Meta (`/pedido/{{1}}`) e a chave do contexto com o
+#: valor que ele leva: o ref com a capacidade do pedido, `<ref>~<selo>` (DEV-2026-093).
+#: O campo `order_ref` só vai em botão, nunca no corpo, então trocar o valor dele não
+#: muda texto nenhum e não pede re-submeter modelo.
+_ORDER_BUTTON_FIELD = "order_ref"
+_ORDER_BUTTON_VALUE_KEY = "order_link_ref"
 
 #: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser
 #: substituído pelo link COMUM (ver `_safe_field_value`). Elas mesmas nunca viajam.
-#: É sufixo, e não uma lista, porque toda chave de link ganhou a sua gêmea pública —
-#: uma lista voltaria a ficar para trás na próxima.
+#: É sufixo, e não uma lista, porque qualquer chave que um dia carregar link pessoal
+#: ganha a sua gêmea pública pelo mesmo nome; uma lista voltaria a ficar para trás.
 _PUBLIC_SUFFIX = "_public"
 
 
@@ -686,12 +695,14 @@ _ACCESS_TOKEN_IN_QUERY = re.compile(r"[?&]t=")
 def _safe_field_value(name: str, value, ctx: dict):
     """O valor que pode SAIR daqui, ou ``None`` para "não mande este campo".
 
-    ⚠️ Os links de cliente (`tracking_url`, `payment_url`, `reorder_url`, `action_url`)
-    carregam um LINK DE ACESSO PESSOAL: o despacho o cunha por destinatário, ele vale
-    horas e cria sessão de cliente identificado. Como campo personalizado, esse token
-    passa a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
-    marketing — legível por qualquer pessoa com acesso à conta, e utilizável enquanto o
-    cliente não clicar.
+    ⚠️ O link de campanha (`action_url`) carrega um LINK DE ACESSO PESSOAL: o despacho o
+    cunha por destinatário, ele vale horas e cria sessão de cliente identificado. Os
+    links do aviso de pedido (`tracking_url`, `payment_url`) levam só a capacidade do
+    pedido (`/pedido/<ref>~<selo>`, DEV-2026-093), que não é credencial de login nem de
+    conta: abre aquele pedido e nada mais. Passam por aqui intactos; o `reorder_url` é
+    o histórico da conta, sem nada. Como campo personalizado, um token passa a viver em texto claro no perfil
+    do cliente dentro de uma ferramenta SaaS de marketing — legível por qualquer pessoa
+    com acesso à conta, e utilizável enquanto o cliente não clicar.
 
     ⚠️ E simplesmente NÃO mandar não serve: o flow do ManyChat não lê o `flow_token`,
     as variáveis dele saem dos campos personalizados. Um link ausente sai como botão EM
@@ -702,10 +713,9 @@ def _safe_field_value(name: str, value, ctx: dict):
     seguro dele.
 
     ⚠️ A recusa vale para QUALQUER chave, não para uma lista delas. Ela nasceu olhando
-    só o `action_url` (campanha/estoque), e por isso não via os três links que TODO aviso
-    de pedido carrega: `tracking_url`, `payment_url` e `reorder_url` saíam com o token
-    inteiro. Era inerte só porque nenhum flow estava mapeado — mapear o primeiro é que
-    ligava o vazamento. Filtro que depende de lembrarem de o inscrever não é filtro.
+    só o `action_url` (campanha/estoque), e por isso não via os links do aviso de pedido,
+    que naquela época saíam com o token inteiro. Filtro que depende de lembrarem de o
+    inscrever não é filtro.
     """
     if not _ACCESS_TOKEN_IN_QUERY.search(str(value)):
         return value
@@ -724,14 +734,17 @@ def _shareable_context(ctx: dict) -> dict:
     metade das saídas não é filtro.
     """
     shareable: dict[str, str] = {}
-    for name, value in (ctx or {}).items():
+    ctx = dict(ctx or {})
+    if ctx.get(_ORDER_BUTTON_VALUE_KEY) and ctx.get(_ORDER_BUTTON_FIELD):
+        ctx[_ORDER_BUTTON_FIELD] = ctx[_ORDER_BUTTON_VALUE_KEY]
+    for name, value in ctx.items():
         if (
             name in _FIELD_DENYLIST
             or name.endswith(_PUBLIC_SUFFIX)
             or not isinstance(value, (str, int, float))
         ):
             continue
-        safe = _safe_field_value(name, value, ctx or {})
+        safe = _safe_field_value(name, value, ctx)
         if safe is None:
             continue
         text = str(safe).strip()

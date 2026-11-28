@@ -93,6 +93,44 @@ O assinante é o do vínculo, autenticado pela chave do ingresso; o que o ingres
 identidade e a hora de cada mensagem, e isso continua tratado pelos itens 1 a 3. A autoridade
 COMERCIAL continua falsa nesse ingresso, e a de sacola respeita o só leitura.
 
+### 5. Alterar o pedido já feito pelo código da prévia (emenda de 24/11/2026, OC-11)
+
+Trocar a data ou o horário, tirar um item e trocar o endereço de um pedido já feito
+(`tools.amend_order`, `concierge/order_amendment.py`) passam a valer com a autoridade de
+sacola, pela mesma prova do item 2: a prévia mostra o efeito (horário, item, endereço, taxa,
+total) e o código tirado dela (`quote_code` sobre o hash do `order_edit.plan`); só
+"confirmo NNNN" aplica. A confirmação recalcula a prévia com o pedido travado: se mudou
+(outra edição, outro preço, outra taxa), o código antigo não aplica e a prévia nova sai com
+outro código (X5). A mesma confirmação de novo não aplica outra vez (X4). O item 3 continua
+valendo para `add_to_order`, `send_web_link` e `notify_when_available`.
+
+Pedido com o Pix aberto e nada pago (decisão do dono, 24/11/2026): a alteração que muda o
+valor troca o Pix. Depois do código, a Nice pergunta ao gateway se o Pix já foi pago; com o
+pedido e os pagamentos travados, o `order_edit.edit(reissue_open_pix=True)` cancela o Pix
+aberto no gateway por último e `payment.initiate` abre um novo pelo valor novo, em mensagem
+própria. Pago no meio, o pagamento vale e a alteração vai à equipe; cancelamento recusado
+no gateway, nada muda. Nunca um estorno silencioso.
+
+### 6. O "sim" do motor no lugar do código (emenda de 24/11/2026)
+
+O pedido pelo motor do framework (DEV-2026-080) fecha com "Posso registrar?" e "sim", frase aprovada pelo dono
+em 23/11 no lugar do código. O motor prende esse "sim" aos termos que o cliente viu: a concessão
+(`AuthorizationGrant`), o hash dos termos, a revisão da sacola (`Session.rev`) e a época de posse. A guarda do
+Core confere tudo isso dentro do sítio de efeito, na mesma transação do registro. Sem esta emenda, a guarda da
+seção 2 recusava o "sim" (`confirmation_required`, medido em 24/11), porque ele não é o código do resumo.
+
+- **A casa aceita a confirmação do motor no lugar do código**, e só dentro do sítio de efeito do motor
+  (`effect_site._place_by_engine`, `tools.engine_confirmed`). Fora dele, o código da seção 2 continua sendo a
+  única confirmação.
+- **A confirmação é presa à revisão da casa feita no próprio efeito**, depois da guarda do Core
+  (`EngineConfirmation.quote_token`).
+- **Sacola mudada depois da oferta sobe a revisão**: a guarda do Core recusa o "sim", e a Nice diz o total novo
+  para o cliente conferir. Nada é registrado.
+- **A concessão vale uma vez.** O registro é uma mutação única pela concessão (`concierge.engine_grant`). O
+  mesmo comando repete o mesmo pedido; outro comando com a mesma concessão é recusado
+  (`confirmation_used`) antes de chegar à casa.
+- **"Sim" sem a oferta no ar** não gera concessão, e nada é registrado.
+
 ## Consequências
 
 - O pedido na conversa fica possível com o ManyChat de hoje, sem esperar identificador.

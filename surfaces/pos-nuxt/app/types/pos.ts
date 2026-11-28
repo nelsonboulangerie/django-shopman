@@ -47,6 +47,9 @@ export interface POSProductProjection {
   sold_out_reason?: string;
   /** Unidades que a casa ainda promete hoje (só com pronto na prateleira); `null` = não diz. */
   units_left?: number | null;
+  /** O item está ACABANDO (DEV-2026-077): o saldo chegou à porcentagem do SKU.
+   *  Só então o tile mostra o saldo à vista; fora disso, no hover e no foco. */
+  running_low?: boolean;
   /** Encomenda para outro dia sem lote planejado do item na data (WP-E3): o item
    *  entra, como pedido à Produção, e esta é a frase que a tela diz. Vazio fora disso. */
   unplanned_note?: string;
@@ -869,6 +872,8 @@ export interface POSTabPayload {
   delivery_time_slot: string;
   delivery_fee_override_q: number | null;
   order_notes: string;
+  /** Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse. */
+  counter_service?: string;
   payment_method: string;
   payment_collection: PosPaymentCollection;
   payment_tenders: POSIntentCartState["paymentTenders"];
@@ -959,6 +964,8 @@ export interface POSIntentCartState {
    * Nunca 0 por omissão: ausente significa "resolva", não "cobre zero". */
   deliveryFeeOverrideQ: number | null;
   orderNotes: string;
+  /** No balcão: comer aqui ou levar (#3193). Só viaja no modo balcão. */
+  counterService: "here" | "to_go";
   paymentMethod: string;
   paymentCollection: PosPaymentCollection;
   paymentTenders: POSPaymentTenderDraft[];

@@ -48,8 +48,10 @@ import {
 import { contactRequestNotice } from "~/presentation/contactRequest";
 import { REFUND, refundToast } from "~/presentation/orderRefund";
 import { ifoodChatNotice } from "~/presentation/ifoodWidget";
-import { orderTicketMenuItem } from "~/presentation/orderTicket";
+import { orderTicketMenuItem, stationPrints } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
+import { retentionNoPrinterReason, retentionReceiptMenuItem } from "~/presentation/retentionReceipt";
+import { useRetentionReceiptPrint } from "~/composables/useRetentionReceiptPrint";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
@@ -208,6 +210,10 @@ async function onResolveContact(choice: { reason: string }) {
 
 // A Via Pedido (P2-19): o mesmo papel do PDV, pela impressora desta estação.
 const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
+
+// O recibo do valor retido (#3538): sai sozinho no fim do "Não retirado" e o menu
+// reimprime. O cliente tem o mesmo recibo no link do pedido.
+const retentionPrinter = useRetentionReceiptPrint(deviceAgent);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
@@ -626,9 +632,15 @@ async function submitNoShow(payload: { contract: Action; moneySentence: string }
   noShowMoneySentence.value = payload.moneySentence;
   if (await markNotPickedUp(payload.contract)) onNoShowDone();
 }
-function onNoShowDone() {
+async function onNoShowDone() {
   dialog.value = "";
   useSonner.success("Pedido encerrado como não retirado.");
+  // Ficou dinheiro com a loja: o recibo sai agora, na impressora desta estação.
+  await refresh();
+  const done = order.value;
+  if (!done?.retention_receipt_printable || done.retention_receipt_printed) return;
+  if (stationPrints(deviceAgent.value)) await retentionPrinter.print(done.ref);
+  else useSonner.info(`O recibo do valor retido não saiu aqui. ${retentionNoPrinterReason(deviceAgent.value)}`);
 }
 
 // Tentar o estorno de novo (WP-G13): o botão mora na linha "Estorno não saiu" da faixa.
@@ -656,8 +668,8 @@ function onRefundRetryDone() {
 // recibo diz se o dinheiro voltou; a recusa do meio de pagamento vira o aviso, e a
 // tentativa fica na linha do tempo do pedido.
 const refundAction = computed(() => projectedAction(REFUND));
-async function submitRefund(payload: { contract: Action; amountQ: number }) {
-  const receipt = await refundOrder(payload.contract, payload.amountQ);
+async function submitRefund(payload: { contract: Action; amountQ: number; intentRef?: string }) {
+  const receipt = await refundOrder(payload.contract, payload.amountQ, payload.intentRef);
   if (!receipt) return;
   dialog.value = "";
   const told = refundToast(receipt);
@@ -810,6 +822,21 @@ const detailMenuItems = computed(() => [
           }),
           "data-action": "order-ticket",
           onSelect: () => menuDo(() => ticketPrinter.print(orderRef.value)),
+        },
+      ]
+    : []),
+  ...(order.value?.retention_receipt_printable
+    ? [
+        {
+          ...retentionReceiptMenuItem(deviceAgent.value, {
+            printing: retentionPrinter.printing.value,
+            printed: order.value.retention_receipt_printed,
+          }),
+          "data-action": "retention-receipt",
+          onSelect: () => menuDo(async () => {
+            await retentionPrinter.print(orderRef.value);
+            await refresh();
+          }),
         },
       ]
     : []),

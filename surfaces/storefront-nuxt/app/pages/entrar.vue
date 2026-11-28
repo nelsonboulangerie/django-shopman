@@ -225,12 +225,13 @@ const resendState = computed(() => resendCooldown(lastSentAtMs.value, nowMs.valu
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
 const requestedPhoneDisplay = computed(() => phoneDisplay(requestedPhone.value))
 const canContinueWelcome = computed(() => !!welcomeNameValue(welcomeName.value) && !pending.value)
-// Saudação personalizada de retorno: "Bem-vindo de volta, {primeiro nome}!" quando
-// já sabemos o nome (recorrente); sem nome, cai em "Bem-vindo de volta!". O dado vem
+// Saudação personalizada de retorno: "Que bom te ver de novo, {primeiro nome}!" quando
+// já sabemos o nome (recorrente); sem nome, cai em "Que bom te ver de novo!". Voz
+// neutra: a loja não presume o gênero de quem entra (DEV-2026-085). O dado vem
 // da própria resposta de auth (customer_name → session.customerName).
 const greetName = computed(() => (session.customerName.value || '').trim().split(/\s+/)[0] || '')
 const momentTitle = computed(() => {
-  const base = copyTitle(authCopy.value?.auth_confirmed, 'Bem-vindo de volta')
+  const base = copyTitle(authCopy.value?.auth_confirmed, 'Que bom te ver de novo')
   return greetName.value ? `${base}, ${greetName.value}!` : `${base}!`
 })
 const momentMessage = computed(() => moment.value === 'recognized'
@@ -674,8 +675,11 @@ useSeoMeta({
         <template v-else>
         <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
              campos. `data-focus-target` aplica a régua única do Storefront —
-             exatamente a base visual da navbar (4rem + fio Brass de 6px). -->
-        <section :data-focus-target="step" class="shop-stack-block outline-none" tabindex="-1">
+             exatamente a base visual da navbar (4rem + fio Brass de 6px).
+             O respiro entre o cabeçalho e o título é do BLOCO, como no checkout
+             (o passo tem py-4): `-mt-4 pt-4` põe 16px acima do título sem mexer
+             no lugar dele na página parada. Sem isso o título encostava no fio. -->
+        <section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>

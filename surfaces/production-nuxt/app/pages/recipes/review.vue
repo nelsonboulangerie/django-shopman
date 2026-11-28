@@ -4,6 +4,7 @@
 // da casa conferiu, na ordem do que mais sai. A massa da peça vem em destaque:
 // foi ali que as seis fichas erraram em 22/09. A pessoa abre a ficha técnica,
 // lê o conteúdo e só então registra a conferência na própria receita.
+import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 import { isStale } from "~/presentation/production";
 import { provenanceIcon } from "~/presentation/recipeBook";
 
@@ -43,11 +44,20 @@ const progress = computed(() => {
         variant="subtle"
         icon="i-lucide-wifi-off"
         title="Sem atualizar. Mostrando a última lista carregada."
+        :actions="alertActions('warning', [{ label: 'Tentar de novo', onClick: () => refresh() }])"
         role="status"
         aria-live="polite"
       />
 
       <p v-if="pending && !items.length" class="text-sm text-muted-foreground">Carregando…</p>
+
+      <!-- A primeira leitura falhou: sem lista para mostrar, a saída é tentar de novo (P2-20). -->
+      <OperatorScreenState
+        v-else-if="error && !items.length"
+        state="error"
+        what="as receitas a conferir"
+        @retry="refresh()"
+      />
 
       <NuxtEmpty
         v-else-if="!items.length && !error"

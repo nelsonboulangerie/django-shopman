@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { cartBatchFloor, cartHoldBanner, cartReservationNotice, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, linePrice, reservationDeadlineMs } from '~/presentation/cart'
 import { cartLinePromise, cartReadyLine } from '~/presentation/promise'
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+import { cartDayItemLine, cartDayReadyLine, shortDayLabel } from '~/presentation/menuDay'
 import { metaForCartLine } from '~/composables/useCartState'
 import type { CartItemProjection } from '~/types/shopman'
 import { formatCount } from '~/utils/display'
@@ -21,6 +23,12 @@ const continueAction = computed(() => cart.value.actions.find(action => action.r
 const checkoutTarget = computed(() => checkoutAction.value?.href || '/finalizar')
 const checkoutDisabled = computed(() => !checkoutAction.value?.enabled)
 const checkoutReason = computed(() => checkoutAction.value?.reason || '')
+// O cartão do total só flutua enquanto deixa a página à vista (#3573): com a fonte do
+// sistema a 200 % ele desce para o fim do conteúdo.
+const actionDock = ref<HTMLElement | null>(null)
+const actionDockFloats = useActionDockFit(actionDock)
+// EXPERIMENT(duvida-no-ponto) remove_after 2027-02-20
+const duvidaNoPonto = useExperience('duvida-no-ponto')
 
 // Timeout transparente: deadline explícito + countdown vivo enquanto há
 // itens planejados; o estado é re-sincronizado a cada 30s (materialização
@@ -103,6 +111,24 @@ function holdFor (line: CartItemProjection) {
 // recém-adicionada, que ainda espera a resposta do servidor, não cala a frase
 // das outras.
 const readyLine = computed(() => cartReadyLine(cart.value.items.filter(line => !isOptimisticLine(line))))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// B (OC-33 B1, direção E2): a sacola de outro dia diz o dia UMA vez, como a etapa
+// feita do checkout no topo ("Quando · qui, 26/11 · Editar"); o pedido diz "Tudo
+// pronto a partir das 15h"; a linha do item só traz a hora quando ela difere da do
+// pedido. "Editar" reabre a folha "Quando" no cardápio.
+const { is: cartExperienceIs } = useExperience('cardapio-dia-primeiro')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const datedItems = computed(() => cart.value.items.filter(line => !isOptimisticLine(line)))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayStep = computed(() => (
+  cartExperienceIs('b') && !cart.value.is_empty && cart.value.day ? shortDayLabel(cart.value.day.date) : ''
+))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayReady = computed(() => (dayStep.value ? cartDayReadyLine(cart.value.day, datedItems.value) : ''))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function linePromise (line: CartItemProjection): string {
+  return dayStep.value ? cartDayItemLine(cart.value.day, datedItems.value, line) : cartLinePromise(line.promise)
+}
 
 // Lixeira e "Usar N disponíveis" mostram que estão em andamento até a sacola
 // responder; a trava é por linha (remover A não trava B). A chave é a `line_id`:
@@ -170,14 +196,24 @@ useSeoMeta({
         <UiButton variant="ghost" @click="reorderOutcome = null">Entendi</UiButton>
       </section>
 
+      <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+      <div v-if="dayStep" class="-mt-4" data-cart-day-line>
+        <CheckoutProgressSection title="Quando" state="done" icon="lucide:clock" @edit="navigateTo('/menu?trocar=1')">
+          <template #summary>
+            <span class="text-xl font-semibold text-foreground" data-decisive="availability">{{ dayStep }}</span>
+          </template>
+        </CheckoutProgressSection>
+      </div>
+
       <div>
         <h1 class="shop-title">Sua sacola</h1>
         <p v-if="!cart.is_empty" class="mt-2 shop-muted">
           {{ `${formatCount(cart.items_count, 'item', 'itens')} · ${cart.grand_total_display}` }}
         </p>
-        <p v-if="!cart.is_empty && readyLine" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
+        <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+        <p v-if="!cart.is_empty && (dayStep ? dayReady : readyLine)" class="mt-1 flex items-start gap-2 shop-body" data-cart-ready-line>
           <Icon name="lucide:clock" class="mt-0.5 size-4 shrink-0" />
-          {{ readyLine }}
+          {{ dayStep ? dayReady : readyLine }}
         </p>
         <!-- Até quando a sacola guarda os itens (WP-L11): no alto, junto de quando o
              pedido fica pronto, porque as duas respondem "quando". Mesmo texto de
@@ -228,13 +264,17 @@ useSeoMeta({
           </UiAlertDescription>
         </UiAlert>
 
+        <!-- A sacola entre a loja e a conversa (OC-16): a pergunta "substituir ou
+             manter", o que mudou na sacola que chegou e a sacola aberta no WhatsApp. -->
+        <CartPassageNotices :cart="cart" />
+
         <UiEmpty v-if="cart.is_empty" class="border">
           <UiEmptyMedia variant="icon">
             <Icon name="lucide:shopping-bag" />
           </UiEmptyMedia>
           <UiEmptyHeader>
             <UiEmptyTitle>{{ cart.empty_title }}</UiEmptyTitle>
-            <UiEmptyDescription>{{ cart.empty_message }}</UiEmptyDescription>
+            <UiEmptyDescription v-if="cart.empty_message">{{ cart.empty_message }}</UiEmptyDescription>
           </UiEmptyHeader>
           <UiEmptyContent class="flex flex-col items-center gap-2">
             <UiButton :to="continueAction?.href || '/menu'" icon="lucide:utensils">
@@ -254,9 +294,12 @@ useSeoMeta({
               <div
                 v-for="line in cart.items"
                 :key="line.line_id"
-                class="flex gap-3 border-b py-3"
+                class="flex flex-wrap gap-3 border-b py-3"
                 data-cart-line-item
               >
+                <!-- A coluna do item tem piso de 10rem (ou a largura toda, se menor), que cresce com a fonte: com a fonte do
+                     sistema a 200 % a foto deixava 100 px para nome, preço e quantidade, e o
+                     seletor saía da tela (X11, OC-30). Aí a coluna desce para baixo da foto. -->
                 <div class="size-24 shrink-0 self-start drop-shadow-sm transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
                   <div class="shop-photo-frame shop-photo-frame-sm size-full">
                     <div class="shop-photo-mat-sm size-full overflow-hidden bg-muted">
@@ -276,7 +319,7 @@ useSeoMeta({
                   </div>
                 </div>
 
-                <div class="min-w-0 flex-1">
+                <div class="min-w-[min(10rem,100%)] flex-1 basis-0">
                   <div class="flex items-start gap-2">
                     <h3 class="shop-item-title line-clamp-2 min-w-0 flex-1">{{ line.name }}</h3>
                     <UiButton
@@ -292,7 +335,7 @@ useSeoMeta({
                   </div>
                   <!-- O unitário que a cliente paga; com promoção do produto, o
                        cheio vem riscado depois, com "antes" (como no cardápio). -->
-                  <p class="mt-0.5 shop-meta" data-cart-line-price>
+                  <p class="mt-0.5 shop-meta" data-cart-line-price data-decisive="price">
                     {{ line.qty }} ×
                     <template v-if="linePrice(line).original">
                       <span class="font-semibold text-foreground">{{ linePrice(line).current }}</span>
@@ -300,8 +343,8 @@ useSeoMeta({
                     </template>
                     <template v-else>{{ linePrice(line).current }} cada</template>
                   </p>
-                  <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
-                  <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>
+                  <p v-if="line.discount_label" class="mt-0.5 text-sm font-semibold text-promotion" data-decisive="price">{{ line.discount_label }}</p>
+                  <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-sm text-destructive" data-decisive="availability">{{ line.availability_warning }}</p>
 
                   <!-- Preparado na hora: promessa DECLARADA da casa (finalizado no
                        momento de servir). Eixo próprio — o croque da vitrine tem o
@@ -318,15 +361,16 @@ useSeoMeta({
                        produto, escrita pelo servidor. Só a de fornada aparece na
                        linha; pronto agora é o normal, e casa fechada é dito uma
                        vez no alto da sacola. -->
-                  <p v-if="cartLinePromise(line.promise)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise>
+                  <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+                  <p v-if="linePromise(line)" class="mt-2 flex items-start gap-1 shop-meta text-foreground" data-cart-line-promise data-decisive="availability">
                     <Icon name="lucide:clock" class="mt-px size-3.5 shrink-0" />
-                    {{ cartLinePromise(line.promise) }}
+                    {{ linePromise(line) }}
                   </p>
 
                   <template v-if="holdFor(line)">
-                    <div v-if="holdFor(line)!.kind === 'awaiting'" :class="cartLinePromise(line.promise) ? 'mt-1' : 'mt-2'" data-cart-line-awaiting>
+                    <div v-if="holdFor(line)!.kind === 'awaiting'" :class="linePromise(line) ? 'mt-1' : 'mt-2'" data-cart-line-awaiting>
                       <!-- O selo antigo só sobra quando a promessa não veio. -->
-                      <UiBadge v-if="!cartLinePromise(line.promise)" variant="outline" class="mb-1">
+                      <UiBadge v-if="!linePromise(line)" variant="outline" class="mb-1">
                         <Icon name="lucide:clock" class="mr-1 size-3.5" />
                         Lista de espera
                       </UiBadge>
@@ -375,9 +419,10 @@ useSeoMeta({
                   </div>
                   <p
                     v-if="availabilityCeiling(line) !== null"
-                    class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+                    class="mt-1 flex items-center gap-1 shop-meta"
                     aria-live="polite"
                     data-cart-line-ceiling
+                    data-decisive="availability"
                   >
                     <Icon name="lucide:info" class="size-3.5 shrink-0" />
                     Por hoje, temos {{ formatCount(availabilityCeiling(line)!, 'unidade', 'unidades') }} deste item.
@@ -432,6 +477,8 @@ useSeoMeta({
               <UiAlertDescription>Escolha a retirada na loja ou um endereço dentro da nossa área.</UiAlertDescription>
             </UiAlert>
 
+            <CartContinueInConversation :cart="cart" />
+
           </section>
 
           <aside class="min-w-0 lg:sticky lg:top-24 lg:self-start">
@@ -449,7 +496,7 @@ useSeoMeta({
               >
                 {{ checkoutAction?.label || 'Finalizar pedido' }}
               </UiButton>
-              <p v-if="checkoutDisabled && checkoutReason" class="text-center shop-meta">
+              <p v-if="checkoutDisabled && checkoutReason" class="text-center shop-meta" data-decisive="state">
                 {{ checkoutReason }}
               </p>
               <UiButton
@@ -461,18 +508,22 @@ useSeoMeta({
                 {{ continueAction.label }}
               </UiButton>
             </div>
+            <!-- EXPERIMENT(duvida-no-ponto) remove_after 2027-02-20 -->
+            <FaqAtPoint v-if="duvidaNoPonto.is('b')" point="cart" class="mt-6" />
           </aside>
         </div>
       </template>
 
       <div
         v-if="!cart.is_empty"
+        ref="actionDock"
         class="shop-action-dock shop-stack-tight rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
-        data-focus-obstruction
+        :class="{ 'shop-action-dock--in-flow': !actionDockFloats }"
+        :data-focus-obstruction="actionDockFloats ? '' : undefined"
       >
-        <div class="flex items-baseline justify-between gap-3">
-          <p class="text-xs uppercase tracking-wide text-ink-foreground/70">Total do pedido</p>
-          <p class="shop-price-strong" :class="cart.summary_pending ? 'opacity-70' : ''">{{ cart.grand_total_display }}</p>
+        <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p class="shop-body text-ink-foreground/80">Total do pedido</p>
+          <p class="shop-price-strong" :class="cart.summary_pending ? 'opacity-70' : ''" data-decisive="total">{{ cart.grand_total_display }}</p>
         </div>
         <UiButton
           :to="checkoutTarget"
@@ -484,7 +535,7 @@ useSeoMeta({
         >
           {{ checkoutAction?.label || 'Finalizar pedido' }}
         </UiButton>
-        <p v-if="checkoutDisabled && checkoutReason" class="text-center text-xs text-ink-foreground/70">
+        <p v-if="checkoutDisabled && checkoutReason" class="text-center text-sm text-ink-foreground/80" data-decisive="state">
           {{ checkoutReason }}
         </p>
       </div>

@@ -322,6 +322,44 @@ As APIs do Marketing (`/api/v1/backstage/marketing/`,
 uma view não traduziu cai em `_CampaignBase.handle_exception` e sai no shape de
 comando (422) — nunca 500 sem código.
 
+### Superset da Produção (deliberado; WP-F14)
+
+As mutações da Produção (`/api/v1/backstage/production/…`) falam o canônico **por
+cima** de um envelope próprio. Na validação (400), `detail` é a frase do primeiro
+problema, nunca "Corrija os campos indicados"; `field` sobe quando o problema é de um
+campo e `errors` traz o mapa campo → frases. `error.issues` segue para a tela marcar
+cada campo (`shopman/backstage/api/_production_mutations.py::validation_error_body`).
+
+```json
+{
+  "detail": "Um número válido é necessário.",
+  "field": "quantity",
+  "errors": {"quantity": ["Um número válido é necessário."]},
+  "error": {"code": "validation_error", "issues": [{"field": "quantity", "code": "invalid", "message": "Um número válido é necessário."}]}
+}
+```
+
+O Core nunca fala com o operador. `_operator_error`
+(`shopman/backstage/services/production.py`) traduz `CraftError` e `StockError` na
+borda, e os serviços que não passavam por ele (`register_old_dough`,
+`authorize_formula_deviation`) passam pelo `_speaks_to_operator`: nada deles vira 500.
+
+| Código do Core | O que o operador lê |
+|---|---|
+| `COMMITTED_HOLDS` | "Há 12 un. encomendadas para este dia. O plano não pode ficar abaixo disso." No Planejamento, a recusa vem **antes** do Core, como `order_shortage` (409) sem a oferta de forçar, com "Revisar quantidade" e "Ver encomendas" |
+| `INSUFFICIENT_MATERIALS` | "Falta insumo para esta quantidade: Manteiga. Revise o número ou peça ao Compras antes de planejar." (o nome do insumo, nunca o SKU) |
+| `DOWNSTREAM_DEFICIT` | "Reduzir este lote deixa faltar para os lotes que já estão planejados com ele (Croissant). Reduza esses lotes primeiro." |
+| `TERMINAL_STATUS`, `VOID_FROM_DONE`, `INVALID_STATUS`, `STALE_REVISION`, `IDEMPOTENCY_CONFLICT`, `AMBIGUOUS_WORK_ORDER` | conflito (409) com "Atualize o painel" |
+| `RECIPE_NOT_FOUND`, `WORK_ORDER_NOT_FOUND` | 404 com "Receita/Lote não encontrado. Atualize o painel." |
+| código sem tradução | "Não deu para salvar esta mudança na produção. Atualize o painel e tente de novo."; o código vai para o log (`production.untranslated_craft_error`), para virar tradução |
+| `StockError` (qualquer) | "O estoque não aceitou: {a frase do estoque}. Nada foi gravado. Atualize o painel e tente de novo." (sem `[CODIGO]`) |
+
+As duas travas de redução do plano dizem uma frase só. Onde o Core recusaria
+(`COMMITTED_HOLDS`), a Produção recusa antes e não oferece "Salvar com
+justificativa". Onde só a trava dos pedidos ligados ao lote recusa, a frase é "Há 8 un.
+encomendadas neste lote. Para planejar menos, é preciso justificar.", e quem tem
+a permissão salva com justificativa. Trava: `shopman/backstage/tests/test_erros_em_portugues.py`.
+
 ---
 
 ## Hierarquia

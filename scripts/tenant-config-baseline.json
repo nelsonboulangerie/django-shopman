@@ -14,7 +14,7 @@
     "JEV"
   ],
   "totals": {
-    "settings": 310,
+    "settings": 309,
     "env": 24,
     "settings_env": 170
   },
@@ -499,7 +499,7 @@
       "settings": 1
     },
     "shopman/storefront/concierge/tools.py": {
-      "settings": 5
+      "settings": 4
     },
     "shopman/storefront/concierge/transport.py": {
       "settings": 1

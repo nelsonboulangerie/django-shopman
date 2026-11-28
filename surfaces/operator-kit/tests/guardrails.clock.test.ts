@@ -9,6 +9,7 @@ import {
   formatDateClock,
 } from "../app/presentation/clock";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de HORA: a hora que alguém LÊ é "12h45" ("9h05", "9h"). O formato
 // "12:45" não se escreve mais na tela. Decisão do dono em 16/11/2026, para a
@@ -65,7 +66,7 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry) || entry.startsWith(".output")) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (SOURCE_EXT.some((extension) => full.endsWith(extension))) found.push(full);

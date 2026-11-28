@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Trava do CHIP DE CONTAGEM da suíte (dono, 09/10/2026). Toda contagem mora no
 // `OperatorCountChip` (no fluxo: botão, aba, recorte, barra lateral aberta) ou no
@@ -32,7 +33,7 @@ function vueFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);

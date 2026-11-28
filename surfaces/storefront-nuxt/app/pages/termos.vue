@@ -155,9 +155,9 @@ useSeoMeta({
         do expediente do dia combinado.
       </p>
       <p>
-        <strong>Pedido não retirado até o fim do expediente do dia combinado:</strong> o que ainda
-        puder voltar à venda é devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a
-        loja.
+        <strong>Pedido não retirado até o fim do expediente do dia combinado:</strong> os itens de
+        revenda voltam inteiros; dos itens feitos para a encomenda, retemos até 40% do valor para
+        cobrir o custo de produção, e o restante volta pelo mesmo meio de pagamento.
       </p>
       <p>
         <strong>Entrega:</strong> a taxa depende do endereço e aparece no total antes de você

@@ -278,6 +278,8 @@ function contextAction(pk, ref, label, href, priority) {
   };
 }
 
+let givenBack = false;
+
 function handoffAlert() {
   return {
     pk: 970, rev: 0, type: "concierge_handoff", type_label: "WhatsApp: conversa para a equipe",
@@ -288,6 +290,9 @@ function handoffAlert() {
     on_screen: true, respond_by_iso: "", deadline_kind: "",
     actions: [
       contextAction(970, "live-chat", "Responder no Live Chat", "https://app.manychat.com/fb486126/chat/1234567890", 9),
+      // #3578: devolve a conversa à Concierge, com confirmação (gesto secundário, sob o Live Chat).
+      { ...contextAction(970, "give-back", "Devolver à Concierge", "/api/v1/backstage/alerts/970/concierge-handoff/give-back/", 11),
+        kind: "give_back_to_concierge", method: "POST", source_alert_effect: "resolves" },
       contextAction(970, "open-context", "Abrir conversa", "https://admin.boulangerie.com.br/admin/shop/conversation/2/change/", 10),
       { ...contextAction(970, "acknowledge", "Visto", "/api/v1/backstage/alerts/970/ack/", 20),
         kind: "acknowledge_alert", method: "POST", source_alert_effect: "acknowledges" },
@@ -301,7 +306,7 @@ function alertsPayload() {
     payload.alerts = [faqDraftsAlert(), ...payload.alerts];
     payload.counts.active += 1;
   }
-  if (scenario === "concierge-handoff") {
+  if (scenario === "concierge-handoff" && !givenBack) {
     payload.alerts = [handoffAlert(), ...payload.alerts];
     payload.counts.active += 1;
   }
@@ -380,21 +385,24 @@ createServer((req, res) => {
 
   if (path === "/__visual/scenario") {
     const next = url.searchParams.get("set");
-    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; verification.promoted = false; verification.answerText = ""; }
+    if (next) { scenario = next; acknowledged.clear(); checkedBags.clear(); verification.answered = false; verification.takenOver = false; verification.promoted = false; verification.answerText = ""; givenBack = false; }
     send(res, 200, { scenario });
     return;
   }
   if (path === "/__visual/health") { send(res, 200, { ok: true }); return; }
-  // A trava do operador (kit): `lock` = ninguém operando; `lock-forced` = o gerente
-  // redefiniu o PIN e a troca é obrigatória. Destrave e troca sempre recusam: o
-  // spec mede a geometria da tela de PIN, inclusive com a recusa.
+  // A trava do operador (kit): `lock` = ninguém operando; `lock-forced` = a troca é
+  // obrigatória (o gerente redefiniu o PIN, ou o PIN é de antes dos 4 fixos) e quem
+  // está aqui já DESTRAVOU com o PIN de hoje: `locked: false`. Com o dispositivo
+  // travado, a trava mostra a escolha de usuário, e não a troca de quem ficou logado
+  // (P0 de 23/11, #3401). Destrave e troca sempre recusam: o spec mede a geometria
+  // da tela de PIN, inclusive com a recusa.
   if (scenario.startsWith("lock")) {
     if (path === "/api/v1/backstage/operator/session/") {
       const forced = scenario === "lock-forced";
       send(res, 200, {
         station: "GESTOR-1", workstation: null,
         operator: forced ? LOCK_PEOPLE[0] : null,
-        locked: true, pin_must_change: forced, authorized: false,
+        locked: !forced, pin_must_change: forced, authorized: false,
       });
       return;
     }
@@ -445,6 +453,12 @@ createServer((req, res) => {
   if (path === "/api/v1/backstage/hub/") { send(res, 200, { hub: { tiles: [{"ref":"pos","label":"PDV","icon":"shopping-basket","url":"http://localhost:3002/","kind":"launch","description":"","status_attention":"1 encomenda na próxima hora","status_summary":"Caixa aberto","status_positive":"","next_item":null},{"ref":"kds","label":"Cozinha","icon":"chef-hat","url":"http://localhost:3003/","kind":"launch","description":"","status_attention":"1 atrasado","status_summary":"3 em preparo","status_positive":"","next_item":null},{"ref":"gestor","label":"Gestor de pedidos","icon":"square-kanban","url":"http://localhost:3004/","kind":"launch","description":"","status_attention":"","status_summary":"","status_positive":"","next_item":null},{"ref":"production","label":"Produção","icon":"croissant","url":"http://localhost:3005/","kind":"launch","description":"","status_attention":"","status_summary":"5 lotes hoje","status_positive":"","next_item":null},{"ref":"purchase","label":"Compras","icon":"package","url":"http://localhost:3008/","kind":"launch","description":"","status_attention":"2 entregas para receber","status_summary":"","status_positive":"","next_item":null},{"ref":"marketing","label":"Marketing","icon":"megaphone","url":"http://localhost:3006/","kind":"launch","description":"","status_attention":"1 anúncio para decidir","status_summary":"","status_positive":"","next_item":null},{"ref":"bi","label":"B.I.","icon":"chart-no-axes-combined","url":"http://localhost:3007/","kind":"launch","description":"","status_attention":"","status_summary":"Vendas de ontem","status_positive":"","next_item":null}] } }); return; }
   if (path === "/api/v1/backstage/orders/rail-counts/") { send(res, 200, baseRailCounts); return; }
   if (path === "/api/v1/backstage/alerts/") { send(res, 200, alertsPayload()); return; }
+  if (req.method === "POST" && path === "/api/v1/backstage/alerts/970/concierge-handoff/give-back/") {
+    // #3578: a conversa volta à Concierge; o cartão sai da lista.
+    givenBack = true;
+    send(res, 200, { ok: true, pk: 970 });
+    return;
+  }
   const verifyMatch = path.match(/^\/api\/v1\/backstage\/alerts\/950\/concierge-verification\/(answer|take-over)\/$/);
   if (req.method === "POST" && verifyMatch) {
     let raw = "";

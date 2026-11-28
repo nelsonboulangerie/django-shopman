@@ -55,6 +55,14 @@ def subject_of(conversation_id: int | str) -> str:
     return f"{SUBJECT_PREFIX}{conversation_id}"
 
 
+#: A sacola que a conversa ainda não tem: o alvo do primeiro pedido pelo motor. Nasce no efeito.
+NEW_CART_PREFIX = "new-cart:"
+
+
+def new_cart_ref(conversation_id: int | str) -> str:
+    return f"{NEW_CART_PREFIX}{subject_of(conversation_id)}"
+
+
 def _conversation(ctx: TrustedContext):
     from shopman.shop.models import Conversation
 
@@ -73,6 +81,13 @@ class ConversationOwnership:
     def cart(self, ctx: TrustedContext) -> str | None:
         conversation = _conversation(ctx)
         return (conversation.session_key or None) if conversation is not None else None
+
+    def new_cart(self, ctx: TrustedContext) -> str | None:
+        """A sacola nova da conversa, enquanto ela não tem nenhuma (nasce no efeito, nunca na leitura)."""
+        conversation = _conversation(ctx)
+        if conversation is None or conversation.session_key:
+            return None
+        return new_cart_ref(conversation.pk)
 
     def customer(self, ctx: TrustedContext) -> str | None:
         conversation = _conversation(ctx)
@@ -114,6 +129,10 @@ class NiceChannel:
 
     adapter: Any
     bodies: Mapping[str, str] | None = None
+    #: Os pedidos de transferência do turno (``request_handoff``). A entrega à equipe é a de hoje
+    #: (``service.mark_handoff``), feita DEPOIS que o turno do motor fecha: ela sobe a cerca do turno e tira a
+    #: conversa da Concierge, e no meio do turno revogaria a resposta que diz ao cliente que a equipe vem.
+    handoffs: list[str] | None = None
     PORT = "channel"
 
     def capabilities(self) -> Capabilities:
@@ -159,7 +178,12 @@ class NiceChannel:
         text = (self.bodies or {}).get(prepared.body_ref)
         if not text:
             raise PortError("invalid_content", f"sem o texto de {prepared.body_ref}: nada foi enviado")
-        message = send_out_of_turn(conversation, text, send_key=idempotency_key)
+        from shopman.shop.models import Conversation
+
+        # Com a conversa na equipe, só sai o que fala do atendimento humano (``handoff_ack``, o mesmo propósito do
+        # aviso de hoje): o aviso do prazo que o encaminhamento prometeu ("te aviso por aqui até…") é isso.
+        purpose = "handoff_ack" if conversation.state == Conversation.State.HANDOFF else "reply"
+        message = send_out_of_turn(conversation, text, purpose=purpose, send_key=idempotency_key)
         if message is None:
             raise PortError("provider_unavailable", "a conversa não tem entrada por vínculo ativo: nada foi enviado")
         return self._exposure(ctx, message, decision_id=prepared.decision_id, recipient=prepared.recipient)
@@ -191,7 +215,10 @@ class NiceChannel:
             recipient=recipient or "unknown", attempt=attempts, state=state)
 
     def request_handoff(self, ctx, request):
-        raise PortError("capability_missing", "a transferência da Nice segue pelo caminho legado até o N9")
+        """Anota o pedido de transferência; quem transfere é o serviço, ao fechar o turno (``handoffs``)."""
+        if self.handoffs is None:
+            raise PortError("capability_missing", "canal sem turno do motor: a transferência segue pelo caminho de hoje")
+        self.handoffs.append(str(request.reason or "customer_request"))
 
 
 def _cart_fields(act, conversation, text: str) -> dict:
@@ -229,7 +256,7 @@ class LocalReader:
     PORT = "model"
 
     def capabilities(self) -> Capabilities:
-        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score"),
+        return Capabilities(port="model", operations=MODEL_OPERATIONS, unsupported=("draft", "score", "adjudicate"),
                             guarantees={"priced": False, "calls_model": False})
 
     def interpret(self, ctx: TrustedContext, request) -> tuple[Understanding, Consumption]:
@@ -262,6 +289,9 @@ class LocalReader:
     def score(self, ctx, request):
         raise PortError("capability_missing", "o leitor local não pontua")
 
+    def adjudicate(self, ctx, request):
+        raise PortError("capability_missing", "o leitor local não verifica leitura")
+
 
 def resolve_text(content_ref: str | None) -> str:
     """A referência protegida do conteúdo: ``message:<pk>`` (a mensagem gravada) ou ``text:`` (teste)."""
@@ -278,6 +308,19 @@ def resolve_text(content_ref: str | None) -> str:
             return ""
         return message.text if message is not None else ""
     return ""
+
+
+def shared_location_of(content_ref: str | None) -> bool:
+    """A fala é a localização enviada pelo WhatsApp (o pin): o endereço sai dela, nunca de texto digitado."""
+    from shopman.shop.models import ConversationMessage
+
+    if not content_ref or not content_ref.startswith(MESSAGE_PREFIX):
+        return False
+    try:
+        message = ConversationMessage.objects.filter(pk=int(content_ref[len(MESSAGE_PREFIX):])).first()
+    except ValueError:
+        return False
+    return message is not None and (message.envelope or {}).get("message_type") == "location"
 
 
 def _iso_instant(value: Any) -> str | None:

@@ -9,9 +9,11 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: '**/*.spec.ts',
-  // A suíte alpha aponta para um ambiente real e possui configuração própria.
-  // Sem este recorte, o gate local com backend vazio coleta os dois mundos.
-  testIgnore: 'alpha/**',
+  // A suíte alpha aponta para um ambiente real e possui configuração própria, e as
+  // jornadas da comparação A/B (journeys/, OC-23) precisam da pilha de pé
+  // (playwright.experience.config.ts). Sem este recorte, o gate local com backend
+  // vazio coleta os três mundos.
+  testIgnore: ['alpha/**', 'journeys/**'],
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,

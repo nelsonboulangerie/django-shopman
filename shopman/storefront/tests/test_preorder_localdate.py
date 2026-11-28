@@ -10,7 +10,7 @@ cliente monta o pedido do dia seguinte.
 from datetime import UTC, datetime
 from unittest.mock import patch
 
-from shopman.storefront.intents.checkout import _validate_preorder
+from shopman.shop.policies.preorder_date import preorder_date_errors
 
 # 01:00 UTC de 12/07 = 22:00 BRT de 11/07 — o dia local ainda é 11/07.
 FROZEN_UTC = datetime(2026, 7, 12, 1, 0, tzinfo=UTC)
@@ -30,7 +30,7 @@ def _stub_preorder_config():
 def test_preorder_for_local_today_not_rejected_as_past():
     """Encomenda para 11/07 às 22h BRT de 11/07 não é "data passada"."""
     with _frozen_clock(), _stub_preorder_config():
-        errors = _validate_preorder("2026-07-11")
+        errors = preorder_date_errors("2026-07-11")
 
     assert "delivery_date" not in errors
 
@@ -38,7 +38,7 @@ def test_preorder_for_local_today_not_rejected_as_past():
 def test_preorder_for_local_yesterday_still_rejected():
     """Data realmente passada (10/07) segue rejeitada no mesmo instante."""
     with _frozen_clock(), _stub_preorder_config():
-        errors = _validate_preorder("2026-07-10")
+        errors = preorder_date_errors("2026-07-10")
 
     assert errors["delivery_date"] == "Não é possível encomendar para uma data passada."
 
@@ -46,8 +46,8 @@ def test_preorder_for_local_yesterday_still_rejected():
 def test_preorder_max_window_counts_from_local_today():
     """A janela máxima conta a partir do dia local (11/07 + 30d = 10/08)."""
     with _frozen_clock(), _stub_preorder_config():
-        ok = _validate_preorder("2026-08-10")
-        too_far = _validate_preorder("2026-08-11")
+        ok = preorder_date_errors("2026-08-10")
+        too_far = preorder_date_errors("2026-08-11")
 
     assert "delivery_date" not in ok
     assert "delivery_date" in too_far

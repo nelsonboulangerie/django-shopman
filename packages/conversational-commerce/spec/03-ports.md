@@ -31,13 +31,79 @@ Derivado de: v2 5.4 e plano do framework, seção 3.3.
 | Porta | Operações | Garantias que o adaptador prova | Chaves de `guarantees` |
 |---|---|---|---|
 | `channel` | `normalize`, `send`, `delivery_status`, `request_handoff` | pelo menos uma vez sem duplicar; mesma chave de envio, mesma exposição; identidade nunca acima de `transported` sem prova; aceite do transporte não é aceite de pessoa; canal sem leitura nunca informa leitura | `at_least_once`, `event_identity`, `read_receipts`, `delivery_receipts` |
-| `model` | `interpret`, `draft`, `score` | pedido com finalidade, orçamento e classe de dado (`public`, `redacted`, `personal`); saída fora do esquema é `invalid_content`; consumo com custo `KnownCost` ou `Unavailable` (nunca zero, N21); nenhum retorno é concessão nem recibo | `schema_validated_output`, `priced`, `data_classes` |
+| `model` | `interpret`, `draft`, `score`, `adjudicate` (o verificador do conflito de leitura: escolhe uma candidata ou declara dúvida, nunca chuta; ADR-051) | pedido com finalidade, orçamento e classe de dado (`public`, `redacted`, `personal`); saída fora do esquema é `invalid_content`; consumo com custo `KnownCost` ou `Unavailable` (nunca zero, N21); nenhum retorno é concessão nem recibo; o `interpret` recebe o contexto da conversa (`ReadingContext`: a pergunta no ar, os atos que respondem a ela, as condições abertas e as últimas falas, só por código e referência; ADR-051) | `schema_validated_output`, `priced`, `data_classes` |
 | `commerce_read` | `search_catalog`, `read_item`, `promise`, `quote`, `read_order`, `read_customer`, `read_policy`, `knowledge`, `scarcity` | fato com fonte e validade; autorização por objeto (`object_forbidden`); consulta não é reserva; a promessa traz quatro leituras (`factual`, `expected`, `planned`, `promisable`), nunca "reservado" (K27); cotação devolve `TermsDocument` selado; `scarcity` opcional, padrão `Unavailable` | `fact_validity_seconds`, `object_authorization`, `promise_is_not_reservation` |
 | `commerce_execute` | `execute`, `locate`, `reconcile` | o contrato de efeito inteiro (v2 4.7): guarda chamada na unidade atômica do efeito; mesma chave e mesmo conteúdo devolvem o mesmo recibo; mesma chave com outro conteúdo é `idempotency_conflict` e o recibo não muda; resposta perdida é `effect_unknown` | `atomic_effect_guard`, `idempotency_retention_seconds`, `reconciliation` |
 | `staff` | `ask`, `open_or_update`, `assign`, `record_acceptance`, `record_fulfillment`, `return_conversation`, `promote_answer` | roteado não é aceito (`ask` nunca nomeia quem aceitou); dono e prazo, ou o motivo da ausência; resposta entra como fato com autoria e validade; época de posse só cresce | `nominal_acceptance`, `answer_is_authored_fact` |
 | `store` | `record_event_once`, `load_episode`, `latest_episode`, `latest_record`, `commit_transition`, `claim_work`, `complete_work`, `append_receipt` | evento com identidade estável grava uma vez (sem identidade, nunca deduplica, K02); comparar e gravar (`revision_conflict`); estado, registros e caixa de saída juntos; isolamento por inquilino | `compare_and_set`, `transactional_outbox`, `tenant_isolation`, `real_concurrency` |
 | `clock` | `now`, `new_id`, `schedule`, `cancel`, `business_hours` | relógio não volta; ids únicos; prazo vencido vira trabalho reivindicável, não laço | `deterministic`, `monotonic` |
 | `outcomes` | `harvest` | fonte independente do agente; janela aberta é `censored`; correção chega com `supersedes`; desconhecido explícito | `independent_source`, `censoring`, `supersession` |
+
+### O que o motor exige da porta de comércio para dizer o estado depois do efeito
+
+O turno lê depois do recibo de sucesso (`08-effect.md`, "Depois do efeito") e cita o que leu.
+Para isso, cada porta devolve:
+
+- **`read_order(ref)`**: fato `Known` com `ref` e **`total` em `{price_minor, currency}`**. Sem
+  `total`, o pedido registrado cai no degrau de baixo (`commit_order.done_order`, sem total); a
+  porta nunca inventa um total.
+- **`read_item(ref)`**: fato com **`name` opcional**. É o nome que as linhas dos termos mostram;
+  sem ele, a linha mostra a referência.
+- **`requirements(cart_ref)`**: `Known(value={"missing": [código, ...], <código>: [opção, ...]})`, as
+  condições obrigatórias dos termos ainda ausentes, NA ORDEM do fechamento (o endereço da entrega antes
+  do pagamento), e as opções do canal para cada uma, nunca do texto. Códigos: `delivery_address` (sem
+  opções: lista vazia), `delivery_address_saved` (os endereços do cadastro do sujeito, por referência
+  opaca, o padrão primeiro), `delivery_address_details` (o que falta no endereço, em palavras da casa),
+  `delivery_complement` (lista vazia) e `payment_method`. Com mais de uma opção, o molde
+  `present_terms.needs_<código>_many` pergunta, quando existe. Código que o pacote não conhece pergunta pelo
+  molde genérico (`present_terms.needs`, `{missing}`). Com algo faltando, o `present_terms` não apresenta os
+  termos: pergunta pela condição (spec 06, `present_terms.needs_<código>`). O arnês confere a forma.
+- **Comando `set_payment`**: `parameters={"method"}`, uma das formas de `requirements`; o executor recusa
+  outra (`invalid_content`), e o efeito sobe a versão do carrinho (a guarda invalida o "sim" de antes).
+- **Comando `set_delivery_address`**: `parameters={"source"}`, a `content_ref` da fala (spec 01), nunca o
+  texto. O executor lê o texto original pela referência, monta e grava o endereço, e recusa com
+  `fulfillment_unavailable` (a casa não entrega ali), `invalid_content` (o endereço não se localiza) ou
+  `fact_unavailable` (sem entrega combinada); as três têm frase própria, do `inform_limitation`:
+  `set_delivery_address.not_delivered`, `.not_located` e `.ask_mode` (a pergunta "retirada ou
+  entrega?"). Outra falha do efeito recusa com outro código, e a resposta é a limitação comum. O
+  recibo traz só `address_ref`, opaca e presa ao endereço gravado (muda quando o endereço muda: o
+  resumo reenviado nunca diz um endereço que o cliente não confirmou); o `TermsDocument` leva a
+  mesma em `fulfillment.address_ref`. O efeito sobe a versão do carrinho.
+- **`quote(cart_ref)`**: o `TermsDocument` selado. Carrinho vazio ou cotação que falha vira
+  `Unknown`, e a resposta da mudança cai no degrau de baixo (`change_cart.done_receipt`).
+- **Comando `change_cart`**: `parameters={"lines": [{"item", "quantity"}, ...]}`, as linhas do
+  turno numa mudança só. O executor aplica todas ou nenhuma (uma recusa desfaz as anteriores, na
+  mesma unidade atômica) e devolve um recibo.
+- **Recibo de sucesso do `change_cart` e do `commit_order`**: `domain_refs` traz **`effect`**, a
+  referência do efeito no domínio (o carrinho, o pedido). É a faceta que os moldes citam
+  (`{order}`, `{track}`); sem ela, a composição não tem o que mostrar.
+
+O arnês do pacote confere essas formas em qualquer adaptador (`testing/conformance/harness.py`: `check_commerce_read` com `HarnessEnv.order_ref`, `check_change_cart` com `HarnessEnv.cart_lines`, e o `effect` no recibo de sucesso em `check_commerce_execute`). A Nice confere também pelos próprios testes de escopo `adapter` (K23, K24).
+
+### O comando `set_fulfillment` na porta `commerce_execute`
+
+O recebimento (quando e como o pedido é recebido) é um comando como o `change_cart`: alvo
+único, o carrinho do sujeito; sem termos; concessão pela linha do perfil; reversível.
+
+- **Parâmetros:** só os campos ditos, qualquer subconjunto não vazio de `date`
+  (`AAAA-MM-DD`), `mode` (`pickup` ou `delivery`) e `time` (`HH:MM`). Campo ausente quer
+  dizer **mantenha como está**, nunca "apague": o executor aplica o que veio e guarda o resto.
+  A janela do dia não é parâmetro: é a casa que a dá.
+- **Recusa, antes de qualquer efeito** (`failure` / `not_applied`, `retry: never`):
+  `invalid_content` (forma) e `fulfillment_unavailable` (bem formado, mas a casa não atende). Seção 7 do
+  `02-catalog-profile.md`.
+- **Recibo de sucesso:** `domain_refs` traz `effect` (a referência do efeito) e o recebimento
+  do alvo **depois** do efeito: `date`, `mode`, `time`, os que estiverem definidos, e a
+  `window` que a casa dá ao dia quando não há hora.
+  A resposta lê dali (`08-effect.md`, seção 6). O valor é `Identifier` (sem espaço): o rótulo
+  da janela na voz da casa é do formatador do espaço `window`, a partir da referência.
+- Muda a versão do alvo: os termos cotados antes deixam de valer.
+
+O arnês (`check_set_fulfillment`) roda quando o adaptador dá `HarnessEnv.fulfillment` (um
+recebimento que o sistema dele aceita): confere o efeito, o recibo com os campos aplicados,
+a mesma chave devolvendo o mesmo recibo e a data fora de ISO recusada sem efeito, com o
+código estável. Casa que não
+liga o movimento não passa `fulfillment` e a checagem não roda.
 
 Convenções de `store`: episódio novo é confirmado com `expected_version = 0` e `version = 1`;
 toda transição incrementa a versão em um. `latest_episode(subject)` devolve o episódio mais
@@ -73,7 +139,8 @@ comuns (`FakeWorld`). Distribuídos no wheel, para que um adaptador novo os use 
 
 - **Domínio sintético** (`synthetic_domain.py`): três itens neutros (`ITEM-A`, `ITEM-B` sem
   nada em mãos, `ITEM-C` vendido por kg), dois clientes, duas políticas, moeda `XTS` (o
-  código ISO 4217 reservado para teste). Nenhuma loja real, nenhum nome de canal.
+  código ISO 4217 reservado para teste), os dois modos de recebimento e a janela que ele dá
+  ao dia sem hora (`window-afternoon`). Nenhuma loja real, nenhum nome de canal.
 - **Determinismo:** o relógio só anda quando o teste manda (`advance`); ids em sequência por
   prefixo (`evt-0001`).
 - **Falhas injetáveis** (`faults.py`): `FaultPlan.arm(operação, Fault, times)`. Cada falso

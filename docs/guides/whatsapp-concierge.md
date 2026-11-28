@@ -131,8 +131,10 @@ caso diretamente como ingresso **at-least-once**:
 4. fechar o pedido (`place_order`) exige o **código do orçamento** que o resumo mostra
    ("confirmo 4821"): um "sim" sozinho não prova que veio depois do resumo;
 5. catálogo público, orientação e handoff permanecem disponíveis;
-6. acréscimo a pedido já feito, cópia da sacola para o site, inscrição de aviso,
-   pagamento, identidade e transferência não recebem autoridade desse ingresso;
+6. acréscimo a pedido já feito, inscrição de aviso, pagamento e identidade não recebem
+   autoridade desse ingresso; o convite para levar a sacola ao site recebe a de sacola
+   (decisão da #3529) só na forma que leva itens e quantidades e não abre sessão no site
+   (ver `whatsapp-access-link.md`, OC-18);
 7. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
    portanto nenhum hash de contato + timestamp é usado para descartar mensagens.
 
@@ -195,6 +197,10 @@ CONCIERGE_HUMAN_RETURN_ENABLED=false
 CONCIERGE_OUTPUT_RETRY_ENABLED=false
 CONCIERGE_TRANSFER_ENABLED=false
 ```
+
+`CONCIERGE_TRANSFER_ENABLED` liga a passagem da sacola entre a loja e a conversa (OC-15 a
+OC-18): o que a Nice diz e o passo para ligar estão em
+[whatsapp-access-link.md](whatsapp-access-link.md), seção "A Nice manda o site e diz onde a sacola está (OC-18)".
 
 Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY` e do worker
 canônico. A lista de subjects vazia fecha a connection. Telefone ou nome no body

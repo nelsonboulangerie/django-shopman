@@ -31,6 +31,9 @@ import json
 import logging
 import re
 import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import date as date_type
 from datetime import timedelta
@@ -43,7 +46,7 @@ from django.utils import timezone
 from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
-from shopman.shop.models import Conversation
+from shopman.shop.models import Conversation, ConversationBinding
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,11 @@ MAX_MENU_ITEMS = 12
 MAX_PUBLIC_SEARCH_ITEMS = 3
 MAX_PUBLIC_SEARCH_ANSWERS = 2
 FULFILLMENT_TYPES = ("pickup", "delivery")
+#: O link que leva a sacola (OC-18, §4.4): ela vai junto quando a cliente abre o link; quem
+#: diz depois onde ela está é ``cart_moved_away``. Só o fato, sem a consequência (régua KISS
+#: do dono, a mesma do OC-16).
+CART_GOES_ALONG = "Sua sacola vai junto."
+
 WEB_DESTINATIONS = {
     "menu": "/menu",
     "checkout": "/finalizar",
@@ -80,6 +88,9 @@ class ToolContext:
     #: Texto humano deste turno, capturado pelo servidor. Uma consulta refinada
     #: por quem chama pode refiná-lo, nunca apagar uma parte da pergunta original.
     customer_text: str = ""
+    #: A fala como o cliente escreveu, quando ``customer_text`` é a busca já corrigida
+    #: ("campagne" para "pão champagne"). Só desempata nomes, nunca acha item sozinha.
+    spoken_text: str = ""
     extra_replies: list[str] = field(default_factory=list)
     handoff: bool = False
     handoff_reason: str = ""
@@ -109,6 +120,27 @@ def _fold(text: str) -> str:
 
 def _storefront_ref() -> str:
     return settings.SHOPMAN_STOREFRONT_CHANNEL_REF
+
+
+def _order_page_path(order) -> str:
+    """A página do pedido com a capacidade dele (``/pedido/<ref>~<selo>``, DEV-2026-093).
+
+    O link que a Nice manda abre o pedido no navegador do WhatsApp sem pedir a entrada
+    de novo; não abre a conta nem outro pedido.
+    """
+    from shopman.shop.services import order_view_link
+
+    return order_view_link.path_for(order)
+
+
+def _order_page_path_for_ref(ref: str) -> str:
+    """Idem, a partir do número; pedido que não existe fica com a página comum."""
+    from shopman.shop.services.customer_orders import find_order
+
+    order = find_order(str(ref or ""))
+    if order is None:
+        return f"/pedido/{ref}/"
+    return _order_page_path(order)
 
 
 def _storefront_base_url() -> str:
@@ -249,6 +281,7 @@ def _item_payload(item) -> dict:
         "promotion": (str(adjustment.badge_label or adjustment.label) if adjustment else ""),
         "unit": item.unit_weight_label or "",
         "collection": item.category or "",
+        "keywords": list(item.tags or ()),
     }
 
 
@@ -416,7 +449,9 @@ def _summary_when(value: str, slot: str) -> str:
 
     day = _parse_date(str(value or ""))
     text = f"{formats.date_format(day, 'l').lower()}, {formats.date_format(day, 'd/m')}" if day else str(value or "")
-    slot = str(slot or "").strip()
+    from .order_closing import spoken_hours
+
+    slot = spoken_hours(str(slot or "")).strip()
     if slot:
         text = ", ".join(p for p in (text, f"{slot[:1].lower()}{slot[1:]}") if p)
     return text
@@ -552,6 +587,36 @@ _MENU_OVERVIEW_TERMS = frozenset(
 )
 
 
+#: Como se escreve o que se ouve: "campanha" é "campagne" (o "gn" francês é o nosso "nh"),
+#: "ciabata" é "ciabatta", "capuccino" é "cappuccino", "tradição" é "tradition". A chave
+#: compara o som, não a letra.
+_SOUND_RULES = (("tion", "sao"), ("cao", "sao"), ("gn", "nh"), ("ph", "f"), ("th", "t"), ("ch", "x"), ("sh", "x"),
+                ("y", "i"), ("w", "v"), ("qu", "k"), ("c", "k"))
+
+#: A palavra francesa do cardápio que o cliente diz em português: "pão au chocolat" (observação,
+#: 19/11/2026) é o "Pain au Chocolat".
+_SPOKEN_AS = {"pain": "pao"}
+
+
+def sound_key(word: str) -> str:
+    key = _fold(word)
+    for written, spoken in _SOUND_RULES:
+        key = key.replace(written, spoken)
+    key = re.sub(r"(.)\1+", r"\1", key)  # letra dobrada soa como uma: "baguette", "ciabatta"
+    key = re.sub(r"s$", "", key)  # o plural: "croassants" pede o croissant
+    return re.sub(r"[eao]$", "", key)  # a vogal final some na fala: "campagne" e "campanha"
+
+
+def heard(word: str) -> str:
+    """A palavra (dobrada, sem acento) como se ouve: sem o plural e, de cinco letras para cima,
+    pela chave do som ("baguete" e "baguette" são a mesma). Palavra curta fica no radical: no
+    som, "pão" e "pá" seriam uma só."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    stem = word_stem(_SPOKEN_AS.get(word, word))
+    return sound_key(stem) if len(stem) >= 5 else stem
+
+
 def _public_search_terms(query: str) -> tuple[str, ...]:
     """Meaningful normalized words from a natural customer question."""
     return tuple(
@@ -604,6 +669,9 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
     items = list(catalog.items) if catalog is not None else []
     if needle and items:
         terms = _public_search_terms(needle)
+        said_terms = {heard(word) for word in re.findall(r"[a-z0-9]+", _fold(ctx.spoken_text or ""))} | {
+            heard(term) for term in terms
+        }
         ranked_items = []
         for index, item in enumerate(items):
             haystack = _fold(
@@ -611,17 +679,28 @@ def search_storefront(ctx: ToolContext, query: str = "") -> dict:
                     [item.name, item.short_description or "", item.category or "", " ".join(item.search_terms or ())]
                 )
             )
-            haystack_terms = {word_stem(word) for word in re.findall(r"[a-z0-9]+", haystack)}
-            score = sum(1 for term in terms if word_stem(term) in haystack_terms)
+            # Como se ouve: "baguete" acha a "Baguette", "pão" acha o "Pain".
+            haystack_terms = {heard(word) for word in re.findall(r"[a-z0-9]+", haystack)}
+            score = sum(1 for term in terms if heard(term) in haystack_terms)
             name = _fold(item.name)
             score += 4 if name and name in needle else 0
+            # No empate, o nome vence a palavra-chave: "croissant" é o Croissant antes do Pain
+            # au Chocolat, que leva "croissant" só nas palavras-chave.
+            name_terms = {heard(word) for word in re.findall(r"[a-z0-9]+", name)}
+            named = sum(1 for term in terms if heard(term) in name_terms)
+            # Ainda empatados: o nome que a fala inteira mais cita. "pão champagne" busca só
+            # "campagne", e o "pão" da fala é o "Pain" do Pain de Campagne.
+            said = len(name_terms & said_terms)
+            # E ainda: o que não é variante. "campagne" põe o Pain de Campagne antes do Campagne
+            # Redondo e do de passas, que levam no nome uma palavra que o cliente não disse.
+            extra = len({heard(word) for word in _public_search_terms(name)} - said_terms - {heard("pao")})
             if score:
-                ranked_items.append((-score, index, item))
-        ranked_items.sort(key=lambda row: (row[0], 0 if row[2].can_add_to_cart else 1, row[1]))
+                ranked_items.append((-score, -named, -said, extra, index, item))
+        ranked_items.sort(key=lambda row: (row[0], row[1], row[2], row[3], 0 if row[5].can_add_to_cart else 1, row[4]))
         if ranked_items:
             best_score = -ranked_items[0][0]
             threshold = max(1, best_score - 1)
-            items = [item for score, _, item in ranked_items if -score >= threshold]
+            items = [item for score, _named, _said, _extra, _, item in ranked_items if -score >= threshold]
         else:
             items = []
     items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
@@ -763,12 +842,45 @@ def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
     }
 
 
+def _open_elsewhere(ctx: ToolContext) -> list[dict]:
+    """As sacolas abertas deste cliente nos outros canais (OC-17, C06).
+
+    Só leitura: a Nice diz que a outra sacola existe e não a toca, nem junta com
+    esta. O dono é o ``customer_ref`` da conversa (vínculo verificado), nunca o
+    telefone (X7).
+    """
+    from shopman.shop.projections.cart import items_phrase, open_elsewhere
+
+    ref = ctx.conversation.customer_ref
+    if not ref:
+        return []
+    return [
+        {
+            "channel": entry.channel_ref,
+            "where": "no site" if entry.channel_ref == _storefront_ref() else f"no {entry.channel_name}",
+            "items": items_phrase(entry),
+            "subtotal": _money(entry.subtotal_q),
+        }
+        for entry in open_elsewhere(ref, ctx.channel_ref)
+    ]
+
+
+def _with_open_elsewhere(ctx: ToolContext, result: dict) -> dict:
+    elsewhere = _open_elsewhere(ctx)
+    if elsewhere:
+        result["open_elsewhere"] = elsewhere
+    return result
+
+
 def view_cart(ctx: ToolContext) -> dict:
     """A sacola desta conversa, com totais e o que falta para fechar."""
     session = _open_session(ctx)
     if session is None:
-        return {"ok": True, "empty": True, "count": 0, "lines": [], "total": _money(0), "fulfillment": _fulfillment_payload({})}
-    return {"ok": True, **_cart_payload(ctx, session)}
+        return _with_open_elsewhere(
+            ctx,
+            {"ok": True, "empty": True, "count": 0, "lines": [], "total": _money(0), "fulfillment": _fulfillment_payload({})},
+        )
+    return _with_open_elsewhere(ctx, {"ok": True, **_cart_payload(ctx, session)})
 
 
 def set_item(ctx: ToolContext, sku: str, qty: int) -> dict:
@@ -977,6 +1089,7 @@ def set_fulfillment(
     use_saved_address: bool = False,
     saved_address_label: str = "",
     list_saved_addresses: bool = False,
+    saved_address_pk: int | None = None,
 ) -> dict:
     """Retirada ou entrega, quando, e (na entrega) onde. Valida como o checkout do site.
 
@@ -986,8 +1099,8 @@ def set_fulfillment(
     recusa (``DeliveryFiscalIdentityRule``). Vazio não apaga o que já foi informado.
 
     O endereço é montado na conversa (``concierge/address.py``): pelo
-    endereço do cadastro do cliente (``use_saved_address``, o padrão, ou
-    ``saved_address_label``), pela localização enviada no WhatsApp
+    endereço do cadastro do cliente (``use_saved_address``, o padrão, ``saved_address_label``,
+    ou ``saved_address_pk``, o endereço exato que o motor ofereceu e o cliente aceitou), pela localização enviada no WhatsApp
     (``use_shared_location``), pelo texto (``address``) ou pelas partes ditas
     depois (rua, número, complemento, bairro, CEP, cidade, UF), por cima do
     que já está na sacola. O resultado traz ``address_question``: o que ainda
@@ -997,8 +1110,8 @@ def set_fulfillment(
     grava nada: devolve a OFERTA do endereço padrão (``saved_address_offer``),
     para o cliente responder antes de qualquer pergunta.
     """
+    from shopman.shop.policies.preorder_date import preorder_date_errors
     from shopman.shop.services import cart as cart_service
-    from shopman.storefront.intents.checkout import _validate_preorder
     from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
 
     fulfillment_type = str(fulfillment_type or "").strip().lower()
@@ -1020,7 +1133,7 @@ def set_fulfillment(
 
     errors: dict[str, str] = {}
     errors.update(
-        _validate_preorder(
+        preorder_date_errors(
             when,
             cart_lines=list(session.items or []),
             channel_ref=ctx.channel_ref,
@@ -1076,7 +1189,8 @@ def set_fulfillment(
                     "ou escrever o endereço com rua, número, bairro e CEP?",
                 )
         said_parts = any(str(v or "").strip() for v in parts.values())
-        wants_saved = pin is None and not address and (use_saved_address or str(saved_address_label or "").strip())
+        wants_saved = pin is None and not address and (
+            use_saved_address or str(saved_address_label or "").strip() or saved_address_pk is not None)
         data = session.data or {}
         current = data.get("delivery_address_structured") if data.get("fulfillment_type") == "delivery" else None
         asks_nothing = pin is None and not address and not said_parts and not current and not wants_saved
@@ -1093,7 +1207,11 @@ def set_fulfillment(
                     "Não há endereço no seu cadastro. Pode enviar a localização pelo WhatsApp ou escrever "
                     "rua, número, bairro e CEP.",
                 )
-            saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
+            if saved_address_pk is not None:
+                # O endereço exato, do cadastro DESTE cliente; nunca "o padrão" escolhido aqui.
+                saved_choice = next((saved for saved in saved_list if saved.pk == saved_address_pk), None)
+            else:
+                saved_choice = delivery_address.pick_saved(saved_list, saved_address_label) if wants_saved else None
             if saved_choice is None:
                 if list_saved_addresses and not wants_saved:
                     prefix = ""
@@ -1215,20 +1333,22 @@ def _shared_location(ctx: ToolContext) -> tuple[float, float] | None:
 
 def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | None = None) -> dict:
     """O orçamento: recap completo, o que falta e o token que autoriza o pedido."""
-    from shopman.shop.config import ChannelConfig
-    from shopman.storefront.intents.checkout import _validate_preorder
+    from shopman.shop.policies.order_payment import conversation_payment_methods, sole_payment_method
+    from shopman.shop.policies.preorder_date import preorder_date_errors
 
     session = _open_session(ctx)
     if session is None or not (session.items or []):
-        return {"ok": True, "ready": False, "missing": ["items"], "message": "A sacola está vazia."}
+        return _with_open_elsewhere(
+            ctx, {"ok": True, "ready": False, "missing": ["items"], "message": "A sacola está vazia."}
+        )
 
     from shopman.shop.services import cart as cart_service
     if order_notes is not None:
         if not isinstance(order_notes, str) or len(order_notes) > 300:
             return _error("invalid_input", "A observação deve ter até 300 caracteres.")
         session = _set_session_data(ctx, session.session_key, {"order_notes": " ".join(order_notes.split())})
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
-    selected = payment_method or (session.data or {}).get("payment", {}).get("method") or (methods[0] if len(methods) == 1 else "")
+    methods = conversation_payment_methods(ctx.channel_ref)
+    selected = payment_method or (session.data or {}).get("payment", {}).get("method") or sole_payment_method(methods)
     if selected and selected not in methods:
         return _error("invalid_payment_method", "Escolha uma forma de pagamento disponível.")
     if selected:
@@ -1268,7 +1388,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
     if not ctx.conversation.phone:
         missing.append("customer_phone")
     if data.get("delivery_date"):
-        date_errors = _validate_preorder(
+        date_errors = preorder_date_errors(
             str(data["delivery_date"]),
             cart_lines=list(session.items or []),
             channel_ref=ctx.channel_ref,
@@ -1278,7 +1398,7 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
             missing.append("delivery_date")
             payload["date_error"] = " ".join(date_errors.values())
 
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     result = {
         "ok": True,
         "ready": not missing,
@@ -1287,6 +1407,8 @@ def review_order(ctx: ToolContext, payment_method: str = "", order_notes: str | 
         "payment_methods": [{"ref": m, "label": PAYMENT_LABELS.get(m, m)} for m in methods],
         "payment_method": selected,
     }
+    # Fora do ``payload``: o resumo (e o orçamento que ele grava) é só desta sacola.
+    _with_open_elsewhere(ctx, result)
     if payload.get("suggestion"):
         # Uma sugestão por CONVERSA. Medido em 04/09: Pain Grillé num recap, Água no
         # seguinte; a regra do prompt ("uma vez, nunca de novo") precisa do código.
@@ -1459,11 +1581,40 @@ def _code_confirmation(ctx: ToolContext, token: str):
     return messages[-1]
 
 
+@dataclass(frozen=True)
+class EngineConfirmation:
+    """A confirmação do motor no lugar do código (ADR-050, emenda de 24/11/2026).
+
+    O "sim" ao "Posso registrar?" do motor (aprovado pelo dono em 23/11) é preso pelo motor aos termos que o
+    cliente viu: a concessão, o hash dos termos, a revisão da sacola e a época de posse, que a guarda do Core
+    confere dentro do sítio de efeito. ``quote_token`` é a revisão da casa feita NESSE efeito, depois da guarda.
+    ``pk``: a mensagem do cliente que confirmou, para o recibo do pedido (como a do código).
+    """
+
+    pk: int | None
+    grant_id: str
+    quote_token: str
+
+
+#: A confirmação do motor só existe enquanto o sítio de efeito do motor executa o registro
+#: (``effect_site._commit_order``, ``engine_confirmed``). Fora dele, a guarda do ADR-050 fica como está.
+_ENGINE_CONFIRMATION: ContextVar[EngineConfirmation | None] = ContextVar("concierge_engine_confirmation", default=None)
+
+
+@contextmanager
+def engine_confirmed(proof: EngineConfirmation) -> Iterator[None]:
+    token = _ENGINE_CONFIRMATION.set(proof)
+    try:
+        yield
+    finally:
+        _ENGINE_CONFIRMATION.reset(token)
+
+
 def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_notes: str = "") -> dict:
     """Compra autorizada por revisão oferecida; recibo e efeito local compartilham commit."""
     from shopman.orderman.models import Order, Session
 
-    from shopman.shop.config import ChannelConfig
+    from shopman.shop.policies.order_payment import conversation_payment_methods
     from shopman.shop.services import checkout as checkout_service
     from shopman.shop.services import remote_mutations
     from shopman.shop.services.customer_orders import customer_identity_filter
@@ -1479,7 +1630,7 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     if not isinstance(quote_token, str) or not quote_token or not isinstance(payment_method, str) or not isinstance(order_notes, str):
         return _error("invalid_input", "Confira a revisão e a forma de pagamento.")
     payment_method = payment_method.strip().lower()
-    methods = ChannelConfig.for_channel(ctx.channel_ref).payment.available_methods
+    methods = conversation_payment_methods(ctx.channel_ref)
     if payment_method not in methods:
         return _error("invalid_payment_method", "Forma de pagamento indisponível neste canal.")
     if len(order_notes) > 300:
@@ -1519,6 +1670,11 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
     else:
         # Sem identificador de mensagem (ADR-050): só o código deste orçamento confirma.
         confirmation = _code_confirmation(ctx, quote_token)
+    if confirmation is None:
+        # O "sim" do motor (emenda de 24/11): só dentro do sítio de efeito dele, e só para a revisão feita nele.
+        proof = _ENGINE_CONFIRMATION.get()
+        if proof is not None and proof.quote_token == quote_token:
+            confirmation = proof
     if confirmation is None:
         return _error("confirmation_required", "Confira o resumo enviado e confirme o pedido em uma nova mensagem.")
     if quote.get("phone") != current.phone or quote.get("customer_ref") != current.customer_ref:
@@ -1578,8 +1734,8 @@ def place_order(ctx: ToolContext, quote_token: str, payment_method: str, order_n
             fresh = _cart_payload(ctx, locked)
             if fresh["total_q"] != quote["total_q"]:
                 return _error("revision_conflict", "O total mudou; confira a diferença antes de confirmar.", previous_total_q=quote["total_q"], current_total_q=fresh["total_q"]), 409
-            from shopman.storefront.intents.checkout import _validate_preorder
-            errors = _validate_preorder(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
+            from shopman.shop.policies.preorder_date import preorder_date_errors
+            errors = preorder_date_errors(str(locked.data.get("delivery_date") or ""), cart_lines=locked.items,
                 channel_ref=ctx.channel_ref, session_key=locked.session_key)
             if locked.data.get("fulfillment_type") == "pickup":
                 from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
@@ -1730,7 +1886,7 @@ def _placed_result(ctx, order_ref, payment_method, *, replayed=False):
         "outcome": "already_applied" if replayed else ("partial" if pending else "applied"),
         "order_ref": order.ref, "resource_ref": order.ref, "status": order.status,
         "total": _money(order.total_q), "items_count": order.items.count(),
-        "tracking_url": f"{_storefront_base_url()}/pedido/{order.ref}/",
+        "tracking_url": f"{_storefront_base_url()}{_order_page_path(order)}",
         "pending_effects": ["payment_setup"] if pending else [],
         "payment": {"method": payment_method, "pix_code_prepared_separately": bool(pix_code),
             "checkout_url": str(payment.get("checkout_url") or ""),
@@ -1790,11 +1946,321 @@ def order_status(ctx: ToolContext, order_ref: str = "") -> dict:
                 "requires_payment_gate": projection.requires_payment_gate,
                 "supports_access_link": projection.supports_access_link,
                 "created_at": format_local(order.created_at, "%d/%m {clock}"),
+                "pix_sent_at": _pix_sent_at(conversation, order) if projection.source_projection == "payment" else "",
             }
         )
+        orders[-1]["actions"].extend(_amendment_actions(conversation, order))
     if order_ref and not orders:
         return {"ok": True, "orders": [], "message": f"Não achei o pedido {order_ref} para este cliente."}
     return {"ok": True, "orders": orders}
+
+
+def _amendment_actions(conversation, order) -> list[dict]:
+    """As alterações que a Nice faz neste pedido agora (OC-11), como ações de conversa.
+
+    Só com a autoridade que a ``amend_order`` exige, e só as que o serviço do balcão aceita
+    agora (``order_amendment.offered``, X1): a resposta oferece ("Posso…, se quiser"), nunca um endereço.
+    """
+    if not (getattr(conversation, "_cart_authority", False) or getattr(conversation, "_commercial_authority", False)):
+        return []
+    from . import order_amendment
+
+    try:
+        refs = order_amendment.offered(order)
+    except Exception:
+        logger.warning("concierge.order_status amendment offer unavailable order=%s", order.ref, exc_info=True)
+        return []
+    return [
+        {"ref": ref, "label": AMEND_GESTURES[ref], "kind": "conversation", "enabled": True, "href": "", "method": ""}
+        for ref in refs
+    ]
+
+
+#: Estados de saída em que a mensagem chegou ao fornecedor (``ConversationMessage.transport_state``).
+_SENT_STATES = ("accepted", "delivered", "read")
+
+
+def _pix_sent_at(conversation, order) -> str:
+    """Quando este chat recebeu o código Pix VIGENTE do pedido: "às 14h12", ou vazio (OC-10).
+
+    Vale o aviso do pedido gravado na conversa (``notification._note_in_conversation``)
+    e a resposta da própria Concierge que já saiu. Código regenerado não conta o velho.
+    """
+    from django.db.models import Q
+
+    from shopman.shop.models import ConversationMessage
+    from shopman.shop.services.notification import ORDER_NOTICE_NOTE
+
+    code = str(((order.data or {}).get("payment") or {}).get("copy_paste") or "").strip()
+    if not code or conversation is None or not conversation.pk:
+        return ""
+    sent = (
+        ConversationMessage.objects.filter(conversation=conversation, text__contains=code)
+        .filter(
+            Q(kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_NOTE, envelope__order_ref=order.ref)
+            | Q(kind=ConversationMessage.Kind.REPLY, transport_state__in=_SENT_STATES)
+        )
+        .order_by("-pk")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if sent is None:
+        return ""
+    if timezone.localdate(sent) == timezone.localdate():
+        return format_local(sent, "às {clock}")
+    return format_local(sent, "em %d/%m, às {clock}")
+
+
+#: Pagar de novo ou de outra forma, como o cliente pede (OC-12): um pedido de pagamento
+#: ("manda outro Pix", "o Pix venceu", "tenta de novo", "quero pagar com cartão") e a forma
+#: que ele quer, quando diz. Só lê a fala: quem decide o que dá para fazer é a projeção.
+_PAYMENT_NOUN = re.compile(r"\b(?:pix|cartao|cartoes|pagamento|pagar|cobranca|codigo|qr)\b")
+_PAYMENT_ASK = re.compile(
+    r"\b(?:manda|mande|mandar|envia|envie|enviar|reenvia|reenvie|gera|gere|gerar|outro|outra|novo|nova"
+    r"|de novo|novamente|troca|troque|trocar|muda|mude|mudar|tenta|tente|tentar|venceu|vencido|vencida"
+    r"|expirou|expirado|expirada|recusou|recusado|recusada|nao passou|nao chegou|nao veio"
+    r"|quero pagar|prefiro pagar|vou pagar|pagar com|pagar no|pagar por|pagar pelo|pagar pela)\b"
+)
+#: A forma pedida vem depois da preposição ("pagar COM Pix", "troca o Pix PELO cartão").
+_PAYMENT_TARGET = re.compile(r"\b(?:com|por|pelo|pela|para|pra|no|em)\s+(?:o\s+|a\s+|um\s+)?(pix|cartao)\b")
+_PAYMENT_FORMS = {"pix": "pix", "cartao": "card"}
+
+
+def payment_request(text: str) -> str | None:
+    """O que o cliente pede para pagar: ``None`` (não pede), ``""`` (a mesma forma) ou a forma.
+
+    A forma é ``"pix"`` ou ``"card"``: a que vem depois de "com/por/para" ("o cartão não
+    passou, quero pagar com Pix"), ou a única citada ("o Pix venceu, manda outro").
+    """
+    folded = _fold(text)
+    if not (_PAYMENT_NOUN.search(folded) and _PAYMENT_ASK.search(folded)):
+        return None
+    targets = _PAYMENT_TARGET.findall(folded)
+    if targets:
+        return _PAYMENT_FORMS[targets[-1]]
+    cited = {form for word, form in _PAYMENT_FORMS.items() if re.search(rf"\b{word}\b", folded)}
+    return cited.pop() if len(cited) == 1 else ""
+
+
+def _payment_entry(ctx: ToolContext, order_ref: str) -> tuple[dict, dict | None]:
+    """A consulta (``order_status``) e o pedido de que se fala: o citado, ou o mais recente
+    que espera pagamento ou cujo prazo de pagar venceu, ou o mais recente."""
+    status = order_status(ctx, order_ref)
+    entries = (status.get("orders") or []) if status.get("ok") else []
+    entry = next(
+        (item for item in entries if item.get("needs_payment") or item.get("state") == "payment_expired"),
+        entries[0] if entries else None,
+    )
+    return status, entry
+
+
+def _repay_refusal(order, entry: dict, *, want: str, current: str) -> tuple[str, bool]:
+    """Por que não dá (a chave de ``REPAY_REFUSED``) e se o pedido ainda pede pagamento.
+
+    Não decide nada novo: lê o estado do pedido, as formas aceitas no canal e o motivo que
+    o serviço de pagamento já dá para a troca do cartão por Pix (``pix_switch_blocker``).
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services import payment as payment_service
+
+    cancelled = order.status == Order.Status.CANCELLED
+    if entry.get("state") == "payment_expired":
+        return ("payment_expired_cancelled" if cancelled else "payment_expired"), False
+    if cancelled:
+        return "order_cancelled", False
+    if payment_service.has_sufficient_captured_payment(order) is True:
+        return "already_paid", False
+    if (payment_service.get_payment_status(order) or "").lower() == "authorized":
+        return "card_authorized", False
+    if not entry.get("needs_payment"):
+        return "not_awaiting_payment", False
+    accepted = {
+        str(method or "").lower() for method in ChannelConfig.for_channel(order.channel_ref).payment.available_methods
+    }
+    if want == "card" and not accepted & payment_service.HOSTED_CHECKOUT_METHODS:
+        return "method_not_accepted", True
+    if want == "pix" and "pix" not in accepted:
+        return "method_not_accepted", True
+    if want == "card":
+        return "pix_to_card", True
+    if want == "pix":
+        blocker = payment_service.pix_switch_blocker(order) if current == "card" else ""
+        return ("card_to_pix_after_decline" if blocker == "not_declined" else "card_to_pix"), True
+    return "not_awaiting_payment", True
+
+
+def repay_order(ctx: ToolContext, order_ref: str = "", method: str = "") -> dict:
+    """Pagar de novo ou de outra forma pela conversa (OC-12), pelo mesmo serviço da página.
+
+    A Nice só faz o que a página do pedido oferece agora (as ações da projeção, X1):
+
+    - ``pay_with_pix`` e o cliente quer Pix: a troca do cartão recusado por Pix
+      (``switch_declined_card_to_pix``, ou ``switch_repayment_to_pix`` na espera do novo
+      pagamento), o mesmo comando do botão "Pagar com Pix";
+    - ``retry_payment``: a conferência que refaz a cobrança que não nasceu
+      (``check_payment``), o mesmo comando do "Tentar novamente";
+    - cobrança de pé na forma pedida: nada muda, e a resposta traz o mesmo código ou o
+      mesmo link (pedir duas vezes não abre outra cobrança, X4).
+
+    Fora disso, a recusa com o motivo. O Pix cujo prazo venceu não renasce: o prazo de
+    pagar cancela o pedido (ADR-036, ``handlers/payment_timeout``).
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment as payment_service
+    from shopman.storefront.services import orders as order_service
+
+    want = {"pix": "pix", "card": "card"}.get(str(method or "").strip().lower(), "")
+    status, entry = _payment_entry(ctx, order_ref)
+    if entry is None:
+        return status
+    order = Order.objects.get(ref=entry["order_ref"])
+    current = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
+    same_form = want in {"", current} or (want == "card" and current in payment_service.HOSTED_CHECKOUT_METHODS)
+    offered = {action.get("ref") for action in entry.get("actions", []) if action.get("enabled")}
+    code = "ready"
+    if want == "pix" and "pay_with_pix" in offered:
+        if payment_service.awaiting_repayment(order) is not None:
+            try:
+                payment_service.switch_repayment_to_pix(order)
+            except payment_service.RepaymentSwitchRefused as refusal:
+                return {"ok": True, "code": "refused", "order_ref": order.ref, "lead": _sentence(refusal.message),
+                        "orders": [entry], "payable": False}
+        elif not order_service.switch_declined_card_to_pix(order):
+            return {"ok": True, "code": "refused", "order_ref": order.ref, "payable": False,
+                    "lead": REPAY_REFUSED["card_to_pix"].format(ref=order.ref), "orders": [entry]}
+        code = "switched_to_pix"
+    elif "retry_payment" in offered and same_form:
+        order_service.check_payment(order)
+        code = "retried"
+    elif not (same_form and offered & {"copy_pix", "pay_card"}):
+        reason, still_due = _repay_refusal(order, entry, want=want, current=current)
+        lead = REPAY_REFUSED[reason].format(ref=order.ref, method=PAYMENT_FORM_WORDS.get(want, ""))
+        if reason in {"payment_expired_cancelled", "payment_expired"} and current == "pix":
+            lead = f"{lead} {OLD_PIX_CODE_WARNING}"
+        if reason == "payment_expired_cancelled":
+            # Variante "oferecer": o pedido vencido não renasce, mas pode ser remontado.
+            lead = f"{lead}\n{REPEAT_OFFER}"
+        # Recusada a troca, a cobrança que vale continua embaixo (o código ou o link).
+        return {"ok": True, "code": reason, "order_ref": order.ref, "lead": lead, "payable": False,
+                "orders": [entry] if still_due else [], "order_url": entry["tracking_url"]}
+    if code == "ready":
+        return {"ok": True, "code": code, "order_ref": order.ref, "lead": "", "orders": [entry], "payable": True}
+    status, entry = _payment_entry(ctx, order.ref)
+    if entry is None:
+        return status
+    payable_now = any(
+        action.get("enabled") and (action.get("ref") == "pay_card" or str(action.get("value") or "").strip())
+        for action in entry.get("actions", [])
+    )
+    lead = REPAY_DONE[code if payable_now else "still_failing"].format(ref=order.ref)
+    return {"ok": True, "code": code, "order_ref": order.ref, "lead": lead, "orders": [entry], "payable": payable_now}
+
+
+def amend_order(ctx: ToolContext, kind: str = "", order_ref: str = "", code: str = "", **said) -> dict:
+    """Alterar o pedido já feito pela conversa (OC-11): remarcar, tirar um item, trocar o endereço.
+
+    Sem ``code``, a prévia: o efeito (horário, item, endereço, taxa, total) e o código de
+    confirmação, ou a pergunta do que falta, ou a recusa com o motivo. Com ``code``, aplica
+    pelo ``order_edit.edit`` do balcão, se o pedido ainda é o da prévia (X5); a mesma
+    confirmação de novo não aplica outra vez (X4). Regra nenhuma mora aqui: a porta, a data,
+    a taxa e o dinheiro são do ``order_edit`` (``concierge/order_amendment.py``).
+    """
+    from . import order_amendment
+
+    return order_amendment.run_tool(ctx, kind=kind, order_ref=order_ref, code=code, **said)
+
+
+#: "Monta de novo", "repete o pedido": o cliente aceita a oferta de remontar o pedido que
+#: venceu sem pagamento (OC-12, variante "oferecer"). Também vale o "sim" logo depois da oferta.
+_REPEAT_ASK = re.compile(
+    r"\b(?:monta|monte|montar|refaz|refaca|refazer|repete|repita|repetir)\b.{0,24}"
+    r"\b(?:de novo|novamente|outra vez|o pedido|mesmo pedido|o mesmo)\b"
+    r"|\bmesmo pedido de novo\b"
+)
+_REPEAT_YES = frozenset({
+    "sim", "s", "pode", "pode sim", "sim pode", "sim, pode", "quero", "quero sim", "isso", "por favor",
+    "sim por favor", "sim, por favor", "pode montar", "monta", "monte", "claro", "ok", "beleza",
+})
+
+
+def repeat_was_offered(conversation) -> bool:
+    """A última resposta da Nice nesta conversa ofereceu remontar o pedido vencido."""
+    from shopman.shop.models import ConversationMessage
+
+    if conversation is None or not conversation.pk:
+        return False
+    last = (
+        ConversationMessage.objects.filter(conversation=conversation, kind=ConversationMessage.Kind.REPLY)
+        .order_by("-pk").values_list("text", flat=True).first()
+    )
+    return REPEAT_OFFER in str(last or "")
+
+
+def asks_to_repeat(text: str, *, offered) -> bool:
+    """O cliente pede para remontar o pedido: pela frase, ou pelo "sim" à oferta da Nice.
+
+    ``offered`` é ``bool`` ou uma função sem argumento (``repeat_was_offered``), chamada
+    só quando a fala é um "sim": a conversa não paga a leitura da última resposta à toa.
+    """
+    folded = " ".join(_fold(text).replace("!", " ").replace(".", " ").split())
+    if _REPEAT_ASK.search(folded):
+        return True
+    return folded in _REPEAT_YES and bool(offered() if callable(offered) else offered)
+
+
+class _ConversationCart:
+    """A sacola da conversa no lugar da sacola da página, para ``add_reorder_items``.
+
+    A recompra é a da loja (``customer_orders.add_reorder_items``: a taxa de entrega não
+    volta, o que não se vende mais fica de fora); cada linha entra pelo ``set_item`` da
+    conversa, que reserva o estoque e põe o preço de AGORA. A escolha de sabor ou
+    adicional não é da Concierge (``_line_for_sku``): a linha com escolha fica de fora.
+    """
+
+    def __init__(self, ctx: ToolContext):
+        self.ctx = ctx
+
+    def add_item(self, request, *, sku, qty, unit_price_q, name, options):
+        from shopman.shop import product_options
+        from shopman.shop.services.cart import CartUnavailableError
+
+        if options:
+            raise product_options.OptionSelectionError("option_required", "A escolha não vem pela conversa.")
+        session = _open_session(self.ctx)
+        line = _line_for_sku(session, sku) if session is not None else None
+        current = Decimal(str((line or {}).get("qty") or 0))
+        result = set_item(self.ctx, sku, int(current + Decimal(str(qty))))
+        if not result.get("ok"):
+            raise CartUnavailableError(sku, int(qty), 0, False, [], str(result.get("error") or "unavailable"))
+
+
+def repeat_order(ctx: ToolContext, order_ref: str = "") -> dict:
+    """Remontar na sacola o pedido cujo prazo de pagar venceu (OC-12, variante "oferecer").
+
+    Só o pedido que a Nice ofereceu: o mais recente do cliente cancelado pelo prazo de pagar.
+    Pelo caminho de recompra da loja, com preço e disponibilidade de agora; o pedido novo
+    nasce pelo fechamento de sempre (dia, recebimento, forma e o código de confirmação).
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.customer_orders import add_reorder_items
+
+    _status, entry = _payment_entry(ctx, order_ref)
+    if entry is None or entry.get("state") != "payment_expired" or entry.get("status") != Order.Status.CANCELLED:
+        return {"ok": True, "code": "not_offered"}
+    order = Order.objects.get(ref=entry["order_ref"])
+    skipped = add_reorder_items(None, order, cart_service=_ConversationCart(ctx), channel_ref=_catalog_channel_ref(ctx.channel_ref))
+    cart = view_cart(ctx)
+    if not cart.get("lines"):
+        return {"ok": True, "code": "nothing_available", "order_ref": order.ref,
+                "lead": REPEAT_NOTHING.format(ref=order.ref)}
+    lead = REPEAT_DONE.format(ref=order.ref)
+    if skipped:
+        lead = f"{lead}\n{REPEAT_SKIPPED.format(items=', '.join(skipped))}"
+    return {"ok": True, "code": "repeated", "order_ref": order.ref, "lead": lead, "cart": cart}
 
 
 def add_to_order(ctx: ToolContext, order_ref: str, sku: str, qty: int) -> dict:
@@ -1839,11 +2305,43 @@ def last_order(ctx: ToolContext) -> dict:
     }
 
 
+def _full_authority(ctx: ToolContext) -> bool:
+    """O turno tem a autoridade comercial completa? Pela mesma régua do guarda, nunca um atalho.
+
+    Só a falta da autoridade comercial vira ``False``; qualquer outra revogação do turno
+    (cerca, vínculo, prazo) sobe e o guarda recusa a ferramenta inteira.
+    """
+    from shopman.storefront.concierge import service
+
+    try:
+        _assert_authority(ctx, for_mutation=True)
+    except service.TurnRevoked as revoked:
+        if str(revoked) != "commercial_authority_missing":
+            raise
+        return False
+    return True
+
+
 def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = "") -> dict:
-    """Acesso ao alvo exato; navegar não implica transferir uma sacola."""
+    """Acesso ao alvo exato; navegar não implica transferir uma sacola.
+
+    Com a autoridade comercial completa, o link é um acesso à conta (como sempre). Só com a
+    autoridade de sacola (a entrada sem identificador de mensagem do ManyChat, ADR-050), a
+    Coordenação decidiu na #3529 que o convite com a sacola vale, em três condições:
+    (1) o link leva só itens e quantidades e a troca não abre sessão (``items_only`` e
+    ``cart_only``: nada de nome, endereço, telefone ou pagamento chega ao site antes da prova
+    lá); (2) é o mesmo ``AccessLink`` de uso único e prazo curto do convite de hoje; (3) sai
+    só como resposta deste turno, nesta conversa: o guarda (``_assert_authority``) prende a
+    cunhagem à cerca do turno e ao vínculo, e a ferramenta não aceita destinatário.
+    """
     if destination not in WEB_DESTINATIONS:
         return _error("invalid_input", "Escolha cardápio, conta, sacola ou pedido.")
+    full = _full_authority(ctx)
+    if not full and destination != "checkout":
+        # Só a sacola viaja com a autoridade de sacola; um acesso à conta, nunca.
+        return _error("authority_unavailable", "O atendimento automático está pausado. Suas escolhas foram preservadas.")
     path = WEB_DESTINATIONS[destination]
+    public_path = path
     if destination == "order":
         if not order_ref:
             available = order_status(ctx)
@@ -1855,125 +2353,251 @@ def send_web_link(ctx: ToolContext, destination: str = "menu", order_ref: str = 
             return selected
         if not selected.get("orders"):
             return _error("not_found", "Não encontrei esse pedido para este acesso.")
-        path = f"/pedido/{selected['orders'][0]['order_ref']}/"
-    public_url = f"{_storefront_base_url()}{path}"
+        selected_ref = selected['orders'][0]['order_ref']
+        path = f"/pedido/{selected_ref}/"
+        # Sem a entrada, o link leva a capacidade do pedido (DEV-2026-093): abre o
+        # pedido no navegador do WhatsApp e mais nada. Com a entrada, o link de acesso
+        # já entra na conta e volta ao pedido pelo caminho limpo.
+        public_path = _order_page_path_for_ref(selected_ref)
+    public_url = f"{_storefront_base_url()}{public_path}"
     info = _auth_customer_info(ctx)
     if info is None:
         return {"ok": True, "url": public_url, "logged_in": False, "cart_carried": False,
             "message": "Continue pelo site; confirme seu acesso para abrir dados pessoais."}
-    if destination == "checkout" and not (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False):
+    if destination == "checkout" and not _transfer_enabled():
         return _error("transfer_disabled", "Sua sacola está preservada aqui. A continuação desta sacola no site ainda não está disponível.")
+    from shopman.shop.services import session_transfer
+
     try:
         from shopman.doorman.models import AccessLink
         from shopman.doorman.services.access_link import AccessLinkService
 
-        from shopman.shop.services import remote_mutations
-        current = Conversation.objects.get(pk=ctx.conversation.pk)
-        source_key = current.session_key or (current.flags or {}).get("web_transfer_key", "")
-        def prepare_access():
-            # Mint é local. Qualquer falha reverte transferência e holds.
-            with transaction.atomic():
-                current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
-                _assert_authority(ctx)
-                web_key = _copy_cart_to_web(ctx) if destination == "checkout" else ""
-                metadata = {
-                    "next": path,
-                    "conversation_id": ctx.conversation.pk,
-                    "transport": _transport_scope(ctx),
-                }
-                if web_key:
-                    metadata["cart_session_key"] = web_key
-                result = AccessLinkService.create_token(info, audience=AccessLink.Audience.WEB_GENERAL,
-                    source=AccessLink.Source.API, metadata=metadata)
-                if result is None or not result.success or not result.url:
-                    raise ValueError("access_link_unavailable")
-                if destination == "checkout":
-                    flags = dict(current.flags or {})
-                    flags["web_transfer_key"] = source_key
-                    Conversation.objects.filter(pk=current.pk).update(flags=flags)
-                return {"ok": True, "url": result.url, "logged_in": True, "cart_carried": bool(web_key),
-                    "order_ref": order_ref, "resource_ref": web_key or order_ref,
-                    "expires_at": str(getattr(result, "expires_at", "") or "")}, 200
-        if destination == "checkout":
-            if not source_key:
-                return _error("no_cart", "Não há sacola para transferir. Consulte seus pedidos para continuar uma compra registrada.")
-            fingerprint = remote_mutations.mutation_fingerprint({"customer_ref": current.customer_ref,
-                "phone": current.phone, "source_key": source_key, "destination": _storefront_ref()})
-            receipt = remote_mutations.run_idempotent_mutation(scope=f"concierge.transfer:{current.pk}",
-                key=source_key, fingerprint=fingerprint, execute=prepare_access)
-            return receipt.response_body
-        return prepare_access()[0]
-
+        # Mint é local. Oferecer não toca a sacola: quem a leva é o aceite, na troca
+        # do link (``session_transfer.accept``); até lá ela segue aberta aqui.
+        with transaction.atomic():
+            current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
+            _assert_authority(ctx, for_mutation=True if full else CART_LEVEL)
+            metadata = {
+                "next": path,
+                "conversation_id": ctx.conversation.pk,
+                "transport": _transport_scope(ctx),
+            }
+            carried = None
+            if destination == "checkout":
+                carried = session_transfer.offer(
+                    ctx.channel_ref, current.session_key, _storefront_ref(),
+                    customer_ref=current.customer_ref, actor="concierge", items_only=not full,
+                )
+                metadata[session_transfer.TRANSFER_METADATA_KEY] = carried.as_metadata()
+                if not full:
+                    metadata[session_transfer.CART_ONLY_METADATA_KEY] = True
+            result = AccessLinkService.create_token(info, audience=AccessLink.Audience.WEB_GENERAL,
+                source=AccessLink.Source.API, metadata=metadata)
+            if result is None or not result.success or not result.url:
+                raise ValueError("access_link_unavailable")
+        return {"ok": True, "url": result.url, "logged_in": full, "cart_carried": carried is not None,
+            "order_ref": order_ref, "resource_ref": carried.offer_id if carried else order_ref,
+            "expires_at": str(getattr(result, "expires_at", "") or "")}
+    except session_transfer.TransferRefused as refused:
+        if refused.code == "no_cart":
+            return _error("no_cart", "Não há sacola para transferir. Consulte seus pedidos para continuar uma compra registrada.")
+        return _error(refused.code, refused.message)
     except Exception:
         ctx.conversation.refresh_from_db()
         logger.exception("concierge.send_web_link failed")
         return _error("access_unavailable", "Não consegui preparar o acesso. Sua sacola foi preservada; podemos continuar aqui.")
 
 
+def receive_site_cart(ctx: ToolContext, offer_data) -> dict:
+    """A sacola que a cliente mandou da loja chega a esta conversa (OC-16, C02).
+
+    Quem decide tudo é ``session_transfer.accept``: a sacola com dono só vem para o
+    dono; a anônima só para quem tem vínculo ``verified_customer``, e passa a ser
+    dele no aceite; a revisão da loja mudou ⇒ ``source_changed``; com sacola na
+    conversa, os itens entram nela (o mesmo item soma). O mesmo aceite outra vez
+    devolve o mesmo recibo (X4). Aqui só se prende à conversa a sacola nova, como
+    ``_ensure_session`` prende a que nasce nela.
+    """
+    from shopman.shop.services import session_transfer, sessions
+    from shopman.storefront.concierge import service
+
+    try:
+        carried = session_transfer.TransferOffer.from_metadata(offer_data)
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    if carried.dest_channel != ctx.channel_ref:
+        return _error("invalid_offer", session_transfer.REFUSAL_MESSAGES["invalid_offer"])
+    binding = getattr(ctx.conversation, "_binding", None)
+    verified = bool(
+        binding is not None
+        and binding.identity_assurance == ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
+    )
+    if not (getattr(ctx.conversation, "_cart_authority", False) or getattr(ctx.conversation, "_commercial_authority", False)):
+        # Sem autoridade de sacola neste turno (número não verificado, conexão só leitura):
+        # a sacola fica onde está, e a conversa diz isso em vez de calar o turno.
+        return _error("not_authorized", session_transfer.REFUSAL_MESSAGES["not_authorized"])
+    try:
+        with transaction.atomic():
+            current = Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
+            _assert_authority(ctx, for_mutation=CART_LEVEL)
+            receipt = session_transfer.accept(
+                carried,
+                dest_context=session_transfer.TransferDestination(
+                    customer_ref=current.customer_ref,
+                    verified_customer=verified,
+                    session_key=current.session_key,
+                    origin_channel=_transport_origin(ctx),
+                ),
+                actor="concierge",
+            )
+            key = receipt.dest_session_key
+            if current.session_key != key:
+                customer = {
+                    k: v
+                    for k, v in {"name": current.customer_name, "phone": current.phone, "ref": current.customer_ref}.items()
+                    if v
+                }
+                session = _open_cart(ctx, key)
+                ops = [{"op": "set_data", "path": "concierge", "value": {"conversation_id": current.pk}}]
+                if session is not None and customer:
+                    merged = {**((session.data or {}).get("customer") or {}), **customer}
+                    ops.append({"op": "set_data", "path": "customer", "value": merged})
+                if session is not None:
+                    sessions.modify_session(session_key=key, channel_ref=ctx.channel_ref, ops=ops)
+                    if current.phone:
+                        sessions.assign_phone_handle(session_key=key, channel_ref=ctx.channel_ref, phone=current.phone)
+                current.session_key = key
+                current.save(update_fields=["session_key", "updated_at"])
+                ctx.conversation.session_key = key
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    except service.TurnRevoked:
+        raise
+    return {
+        "ok": True,
+        "replayed": receipt.replayed,
+        "differences": list(receipt.differences),
+        "source_total_q": receipt.source_total_q,
+        "dest_total_q": receipt.dest_total_q,
+        "resource_ref": receipt.offer_id,
+    }
+
+
+def _open_cart(ctx: ToolContext, session_key: str):
+    from shopman.shop.services import cart as cart_service
+
+    return cart_service.get_open_session(session_key=session_key, channel_ref=ctx.channel_ref)
+
+
+def public_site_url(destination: str = "menu") -> str:
+    """O endereço público do site, sem acesso nem sacola: o que se manda sem autoridade comercial."""
+    return f"{_storefront_base_url()}{WEB_DESTINATIONS[destination]}"
+
+
+def _transfer_enabled() -> bool:
+    return bool((getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False))
+
+
+def cart_moved_away(ctx: ToolContext) -> dict | None:
+    """A sacola desta conversa que foi para outro canal (OC-18, §4.4), ou ``None``.
+
+    Lê a sacola que a conversa ainda aponta: abandonada pelo aceite da passagem, com
+    ``Session.data["transferred_to"]``. Esquece a chave (como ``_open_session`` faria),
+    então a conversa diz onde a sacola está UMA vez. ``open`` diz se a sacola do outro
+    lado ainda está aberta; fechada (virou pedido, venceu), não há o que dizer dela.
+    """
+    from shopman.orderman.models import Session
+
+    from shopman.shop.projections.cart import offered_cart
+
+    key = ctx.conversation.session_key
+    if not key:
+        return None
+    source = Session.objects.filter(session_key=key, channel_ref=ctx.channel_ref).exclude(state="open").first()
+    moved = (source.data or {}).get("transferred_to") if source is not None else None
+    if not isinstance(moved, dict) or not moved.get("channel_ref"):
+        return None
+    Conversation.objects.filter(pk=ctx.conversation.pk, session_key=key).update(session_key="")
+    ctx.conversation.session_key = ""
+    channel = str(moved["channel_ref"])
+    there = offered_cart(channel, str(moved.get("session_key") or ""))
+    site = channel == _storefront_ref()
+    found = {"channel": channel, "site": site, "where": "no site" if site else f"no canal {channel}", "open": False}
+    if there is not None:
+        found.update(open=True, **cart_elsewhere_summary(there))
+    return found
+
+
+def cart_elsewhere_summary(entry) -> dict:
+    """Quanto há numa sacola de outro canal, como a Nice diz: ``{"items": "2 itens", "subtotal": "R$ 1,80"}``."""
+    from shopman.shop.projections.cart import items_phrase
+
+    return {"items": items_phrase(entry), "subtotal": _money(entry.subtotal_q)}
+
+
+def site_cart(ctx: ToolContext):
+    """A sacola aberta, com itens, que o cliente desta conversa tem no site; ``None`` se não tem.
+
+    Leitura pura (``open_elsewhere``, OC-17): o dono é o ``customer_ref`` da conversa,
+    nunca o telefone (X7).
+    """
+    from shopman.orderman.models import Session
+
+    from shopman.shop.projections.cart import offered_cart, open_elsewhere
+
+    ref = ctx.conversation.customer_ref
+    if not ref:
+        return None
+    site = _storefront_ref()
+    found = next((entry for entry in open_elsewhere(ref, ctx.channel_ref) if entry.channel_ref == site), None)
+    if found is not None:
+        return found
+    # A sacola que ESTA conversa mandou ao site só com itens (#3529) chega sem dono, então
+    # não aparece pelo cliente: a conversa a acha pelo ``transferred_to`` da sacola dela.
+    sent = (
+        Session.objects.filter(
+            channel_ref=ctx.channel_ref, data__concierge__conversation_id=ctx.conversation.pk,
+            data__transferred_to__channel_ref=site,
+        )
+        .exclude(state="open")
+        .order_by("-pk")
+        .values_list("data", flat=True)
+        .first()
+    )
+    moved = (sent or {}).get("transferred_to") if isinstance(sent, dict) else None
+    return offered_cart(site, str(moved.get("session_key") or "")) if isinstance(moved, dict) else None
+
+
+def bring_site_cart(ctx: ToolContext) -> dict:
+    """A oferta inversa (OC-18, §4.4): a sacola que a cliente tem aberta no site vem para a conversa.
+
+    O mesmo gesto do "Trazer para cá" da loja, do lado da Nice: oferta e aceite no
+    mesmo turno, pelo serviço de transferência (``receive_site_cart`` →
+    ``session_transfer.accept``), que decide dono, revisão, conflito e reserva. Só a
+    sacola com o MESMO dono da conversa (``open_elsewhere`` lê pelo ``customer_ref``,
+    nunca pelo telefone, X7).
+    """
+    from shopman.shop.services import session_transfer
+
+    if not _transfer_enabled():
+        return _error("transfer_disabled", "Não consigo trazer a sacola do site agora.")
+    entry = site_cart(ctx)
+    if entry is None:
+        return _error("no_cart", session_transfer.REFUSAL_MESSAGES["no_cart"])
+    try:
+        carried = session_transfer.offer(
+            entry.channel_ref, entry.session_key, ctx.channel_ref, customer_ref=ctx.conversation.customer_ref,
+            actor="concierge",
+        )
+    except session_transfer.TransferRefused as refused:
+        return _error(refused.code, refused.message)
+    return receive_site_cart(ctx, carried.as_metadata())
+
+
 def _auth_customer_info(ctx: ToolContext):
     from shopman.shop.services.auth import identity_by_customer_ref
 
     return identity_by_customer_ref(ctx.conversation.customer_ref)
-
-
-def _copy_cart_to_web(ctx: ToolContext) -> str:
-    """Transferência conservadora: qualquer conflito reverte origem, destino e reservas."""
-    from shopman.orderman.models import Session
-
-    from shopman.shop import product_options
-    from shopman.shop.services import cart as cart_service
-    from shopman.shop.services import sessions
-    if not (getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("transfer_enabled", False):
-        raise ValueError("transfer_disabled")
-    source = _open_session(ctx)
-    if source is None or not source.items:
-        raise ValueError("no_cart")
-    base_revision = source.rev
-    with transaction.atomic():
-        Conversation.objects.select_for_update().get(pk=ctx.conversation.pk)
-        source = Session.objects.select_for_update().get(pk=source.pk)
-        _assert_authority(ctx)
-        if source.rev != base_revision or source.state != "open":
-            raise ValueError("revision_conflict")
-        web_ref = _storefront_ref()
-        # G05 precisa decidir conflito de carrinhos: jamais abandonar o existente.
-        if ctx.conversation.phone and Session.objects.filter(channel_ref=web_ref, state="open", handle_type="phone", handle_ref=ctx.conversation.phone).exists():
-            raise ValueError("destination_conflict")
-        from shopman.shop.projections.cart import build_cart
-        source_total_q = build_cart(source.session_key, ctx.channel_ref).grand_total_q
-        # Liberação e nova reserva acontecem na mesma transação: ninguém observa
-        # estoque liberado entre elas, e toda recusa restaura os holds originais.
-        sessions.abandon_session(session_key=source.session_key, channel_ref=ctx.channel_ref)
-        web_key = None
-        for item in source.items:
-            if item.get("sku") == "__DELIVERY_FEE__":
-                continue
-            qty = Decimal(str(item.get("qty") or 0))
-            from shopman.orderman.models import SessionItem
-            precision = Decimal(1).scaleb(-SessionItem._meta.get_field("qty").decimal_places)
-            if not qty.is_finite() or qty <= 0 or qty != qty.quantize(precision):
-                raise ValueError("unsupported_quantity")
-            # A escolha da linha (sabor, adicionais) viaja como ``[{group, ref}]``
-            # e é conferida de novo contra o cadastro; recusa reverte a transferência.
-            _, web_key = cart_service.add_item(session_key=web_key, channel_ref=web_ref,
-                origin_channel=_transport_origin(ctx), sku=str(item["sku"]), qty=qty,
-                unit_price_q=int(item.get("unit_price_q") or 0), name=str(item.get("name") or ""),
-                options=product_options.selection_of(product_options.line_options(item)))
-        values = {key: value for key, value in source.data.items() if key in {
-            "customer", "fulfillment_type", "delivery_address", "delivery_address_structured", "delivery_date",
-            "delivery_time_slot", "order_notes", "coupon_code", "is_gift", "recipient", "gift_message", "gift_hide_values",
-        }}
-        target = sessions.modify_session(session_key=web_key, channel_ref=web_ref,
-            ops=[{"op": "set_data", "path": key, "value": value} for key, value in values.items()])
-        from shopman.shop.projections.cart import build_cart
-        if source_total_q != build_cart(web_key, web_ref).grand_total_q:
-            raise ValueError("commercial_revision_conflict")
-        if len(target.items) != len(source.items):
-            raise ValueError("incomplete_transfer")
-        # Sem assign_phone_handle: essa função abandona carrinho concorrente.
-        Conversation.objects.filter(pk=ctx.conversation.pk).update(session_key="")
-        ctx.conversation.session_key = ""
-        return web_key
 
 
 def notify_when_available(ctx: ToolContext, sku: str) -> dict:
@@ -2040,10 +2664,23 @@ READ_TOOLS = frozenset({"search_storefront", "view_cart", "last_order", "order_s
 CART_TOOLS = frozenset({"set_item", "set_fulfillment", "review_order", "place_order"})
 
 
+#: Pagar o próprio pedido de novo ou de outra forma, e remontar na sacola o que venceu sem
+#: pagamento (OC-12): a autoridade de sacola basta.
+PAYMENT_TOOLS = frozenset({"repay_order", "repeat_order"})
+#: Alterar o próprio pedido (OC-11): a autoridade de sacola, com a confirmação pelo código da
+#: prévia (ADR-050), como o pedido fechado na conversa.
+AMEND_TOOLS = frozenset({"amend_order"})
+#: O convite com a sacola (OC-18, decisão da Coordenação na #3529): vale com a autoridade de
+#: sacola, mas aí o link só leva itens e quantidades e não abre sessão no site; o resto do
+#: ``send_web_link`` (cardápio, conta, pedido: um acesso à conta) pede a autoridade completa,
+#: conferida dentro dele.
+INVITE_TOOLS = frozenset({"send_web_link"})
+
+
 def _authority_level(name: str):
     if name in READ_TOOLS:
         return False
-    return CART_LEVEL if name in CART_TOOLS else True
+    return CART_LEVEL if name in CART_TOOLS | PAYMENT_TOOLS | AMEND_TOOLS | INVITE_TOOLS else True
 
 
 def _guard(handler):
@@ -2073,6 +2710,14 @@ def _guard(handler):
 
 for _name in ("search_storefront", "view_cart", "last_order", "order_status", "list_fulfillment_slots", "set_item", "set_fulfillment", "review_order", "place_order", "add_to_order", "send_web_link", "notify_when_available"):
     globals()[_name] = _guard(globals()[_name])
+#: Refazer ou trocar a cobrança do PRÓPRIO pedido é pagar (D3: o número verificado pede,
+#: vê os pedidos recentes e paga): vale com a autoridade de sacola, a mesma que fecha o
+#: pedido pelo código (ADR-050). Não move dinheiro: só refaz o código ou troca a forma.
+repay_order = _guard(repay_order)
+#: Alterar o PRÓPRIO pedido (OC-11) é mudar compromisso: a autoridade de sacola, e nada se
+#: aplica sem o código da prévia que o cliente viu (ADR-050), conferido na transação.
+amend_order = _guard(amend_order)
+repeat_order = _guard(repeat_order)
 
 
 def _display_text(value) -> str:
@@ -2101,8 +2746,214 @@ def _sentence(text) -> str:
     return text if text[-1] in ".!?…:" else text + "."
 
 
+#: O código Pix sai SOZINHO na mensagem seguinte (``extra_replies``), para o cliente
+#: copiar no WhatsApp sem ruído; esta é a linha que avisa, no pedido e na consulta.
+PIX_CODE_FOLLOWS = "Mando o código Pix copia e cola na próxima mensagem."
+#: O que este chat já recebeu (OC-10), sozinho ou com o código indo de novo, numa linha só.
+PIX_SENT = "Já te mandei o código Pix por aqui {when}."
+PIX_SENT_AGAIN = "Já te mandei o código Pix por aqui {when}. Mando de novo na próxima mensagem."
+
+
+#: O que a Nice faz pela conversa quando a ação da projeção é um comando (POST/API), não
+#: uma página: a instrução no lugar do endereço. Ação de comando fora desta lista some da
+#: resposta, porque endereço de API não abre como link (X3). Cancelar é a J4 da Nice
+#: (``concierge/cancellation.py``, pela mesma régua do site). Tentar pagar de novo e pagar
+#: com Pix são a J4 do pagamento (``repay_order``, pelo mesmo serviço dos botões, OC-12).
+CONVERSATION_EQUIVALENTS = {
+    "cancel_order": "Posso cancelar, se quiser.",
+    "retry_payment": "Posso gerar a cobrança de novo, se quiser.",
+    "pay_with_pix": "Posso trocar para Pix, se preferir.",
+    # As alterações do pedido já feito (OC-11, ``amend_order``), só quando o serviço do
+    # balcão aceita agora (``order_amendment.offered``). Juntas, saem numa linha só.
+    "reschedule_order": "Posso trocar o dia ou o horário, se quiser.",
+    "remove_item": "Posso tirar um item, se quiser.",
+    "change_address": "Posso trocar o endereço da entrega, se quiser.",
+}
+
+
+#: As alterações do pedido já feito (OC-11), como entram na frase quando são mais de uma
+#: ("Posso remarcar ou tirar um item, se quiser"; e no motivo que a equipe lê).
+AMEND_GESTURES = {
+    "reschedule_order": "remarcar",
+    "remove_item": "tirar um item",
+    "change_address": "trocar o endereço da entrega",
+}
+#: Cancelar e as alterações, juntos na mesma oferta da consulta.
+OFFER_GESTURES = {**AMEND_GESTURES, "cancel_order": "cancelar"}
+AMEND_OFFER = "Posso {gestures}, se quiser."
+AMEND_MODE_WORDS = {"pickup": "retirada", "delivery": "entrega"}
+#: A prévia da alteração (OC-11): o efeito em fatos do sistema e o código que confirma.
+AMEND_PREVIEW_LEAD = "Confira a alteração do pedido {ref}:"
+AMEND_EFFECT = {
+    "when": "{mode} passa para {when}.",
+    "removed": "Sai do pedido: {items}.",
+    "reduced": "{name} passa de {before} para {after}.",
+    "address": "Novo endereço: {address}.",
+    "fee": "Taxa de entrega: {after} (era {before}).",
+    "fee_same": "Taxa de entrega: continua {fee}.",
+    "fee_none": "Sem taxa de entrega.",
+    "total": "Total: {after} (era {before}).",
+    "total_same": "Total: continua {total}.",
+    "collect": "A pagar na {mode}: {amount}.",
+    # Pix aberto e nada pago: o Pix antigo é cancelado e o novo sai pelo valor novo
+    # (decisão do dono, 24/11/2026).
+    "new_pix": "O código Pix muda para o novo valor.",
+}
+AMEND_CONFIRM = "Para confirmar, responda: confirmo {code}"
+AMEND_STALE = "O pedido {ref} mudou. Confira de novo:"
+AMEND_DONE = {
+    "applied": "Pronto, alterei o pedido {ref}.",
+    "already_applied": "Essa alteração do pedido {ref} já está feita.",
+}
+#: O que a Nice pergunta quando falta o que mudar.
+AMEND_ASK = {
+    "reschedule_order": "Qual horário fica melhor para {day}? {options}",
+    "no_slots": "Não tenho horário de {mode} para {day}. Me diga outro dia (dia/mês).",
+    "remove_item": "Qual item sai do pedido {ref}? {options}",
+    "change_address": "Qual o endereço novo? Rua, número, bairro e CEP.",
+    "address_incomplete": (
+        "Falta {words} no endereço. Mande rua, número, bairro e CEP."
+    ),
+}
+#: Por que a Nice não altera o pedido. O que o serviço recusa com motivo próprio (data,
+#: horário, estoque) sai com a frase dele; o que pede gente sai com a equipe chamada.
+AMEND_STATUS_REFUSED = {
+    "ready": "O pedido {ref} já está pronto e não muda mais.",
+    "dispatched": "O pedido {ref} já saiu para entrega e não muda mais.",
+    "delivered": "O pedido {ref} já foi entregue.",
+    "completed": "O pedido {ref} já foi concluído.",
+    "cancelled": "O pedido {ref} foi cancelado.",
+    "returned": "O pedido {ref} foi devolvido.",
+}
+AMEND_REFUSED = {
+    "no_order": "Não achei pedido seu por aqui.",
+    "many_orders": "Você tem mais de um pedido em andamento ({refs}). Qual quer alterar?",
+    "nothing_pending": "Não há alteração de pedido esperando confirmação.",
+    "unchanged": "O pedido {ref} já está assim.",
+    "marketplace_order": "O pedido {ref} é do iFood. Para alterar, use o iFood.",
+    "marketplace_schedule": "O pedido {ref} é do iFood. Para alterar, use o iFood.",
+    "test_order": "O pedido {ref} é de teste e não se altera.",
+    "fiscal_authorized": "A nota fiscal do pedido {ref} já foi emitida.",
+    "already_in_preparation": "O pedido {ref} já está em preparo e o dia não muda mais.",
+    "no_slot_at": "Não tenho horário de {mode} às {time} para {day}.",
+    "slot_closed": "O horário {slot} não está disponível para {day}: {reason}.",
+    "item_not_found": "Não achei {item} no pedido {ref}. O pedido tem: {items}.",
+    "empty_order": "Esse é o único item do pedido {ref}. Para tirá-lo, só cancelando o pedido.",
+    "pickup_order": "O pedido {ref} é para retirada na loja, sem entrega.",
+    "delivery_out_of_area": "Esse endereço fica fora da nossa área de entrega.",
+    "address_not_located": "Não consegui localizar esse endereço.",
+    "manager_approval_required": "O pedido {ref} já está pago, e a mudança devolve {amount}.",
+    "open_digital_charge": (
+        "O pedido {ref} tem um pagamento em aberto, e o valor não muda por aqui."
+    ),
+    "delivery_payment_method_required": (
+        "Com a mudança, fica um valor a pagar na entrega."
+    ),
+    "mixed_payment_refund": "O pedido {ref} foi pago em mais de uma forma.",
+    "on_account_total_locked": "O pedido {ref} está na conta da casa, e o valor não muda por aqui.",
+    "split_pending_tenders": (
+        "O pagamento do pedido {ref} está dividido em mais de uma forma."
+    ),
+    "payment_unreadable": "Não consegui conferir o pagamento do pedido {ref} agora.",
+    "pix_paid_meanwhile": "O Pix do pedido {ref} acabou de ser pago.",
+    "open_pix_not_cancelled": (
+        "Não consegui cancelar o código Pix antigo do pedido {ref}. O pedido não mudou."
+    ),
+    "activation_running": "O pedido {ref} está indo para a cozinha neste instante.",
+    "generic": "Não consigo fazer essa alteração no pedido {ref} por aqui.",
+}
+AMEND_TEAM_SUFFIX = "Já chamei a equipe para ver isso com você."
+
+
+#: O que a Nice diz depois de refazer ou trocar a cobrança pela conversa (OC-12). O código
+#: novo segue sozinho na mensagem seguinte (``PIX_CODE_FOLLOWS``); o link do cartão, na linha.
+REPAY_DONE = {
+    "switched_to_pix": "Pronto, troquei o pagamento do pedido {ref} para Pix.",
+    "retried": "Pronto, gerei de novo a cobrança do pedido {ref}.",
+    "still_failing": "Ainda não consegui gerar a cobrança do pedido {ref}. Tente de novo daqui a pouco.",
+}
+#: Por que a Nice não refaz nem troca a cobrança (OC-12): o estado do pedido, as formas do
+#: canal e o motivo que o serviço de pagamento dá, ditos ao cliente. Sem "acabou" (a R2 o
+#: troca por "indisponível") e sem "pedido ... confirmado" (promessa da R6 sem recibo).
+REPAY_REFUSED = {
+    "payment_expired_cancelled": "O prazo para pagar o pedido {ref} venceu, e o pedido foi cancelado.",
+    "payment_expired": "O prazo para pagar o pedido {ref} venceu.",
+    "order_cancelled": "O pedido {ref} foi cancelado.",
+    "already_paid": "O pedido {ref} já está pago.",
+    "card_authorized": "O cartão do pedido {ref} já foi autorizado.",
+    "not_awaiting_payment": "O pedido {ref} não está esperando pagamento agora.",
+    "method_not_accepted": "Por aqui, não aceitamos pagamento com {method}.",
+    "pix_to_card": "Neste pedido, não dá para trocar o Pix por cartão.",
+    "card_to_pix_after_decline": "A troca do cartão por Pix só vale se o cartão for recusado.",
+    "card_to_pix": "Neste pedido, não dá para trocar o cartão por Pix.",
+}
+#: Prazo de pagar vencido num pedido de Pix: o código antigo não se paga (o aviso da página).
+OLD_PIX_CODE_WARNING = "Não pague o código Pix antigo."
+#: A forma de pagar como entra na frase ("não aceitamos pagamento com cartão").
+PAYMENT_FORM_WORDS = {"pix": "Pix", "card": "cartão"}
+#: Variante "oferecer" (OC-12): o pedido que venceu sem pagamento pode ser remontado na
+#: sacola, pela recompra da loja, com preço e disponibilidade de agora e confirmação nova.
+REPEAT_OFFER = "Se quiser, monto o mesmo pedido de novo, com os preços de agora."
+REPEAT_DONE = "Pronto, montei o pedido {ref} de novo na sacola, com os preços de agora."
+REPEAT_SKIPPED = "Indisponível agora: {items}."
+REPEAT_NOTHING = "Nenhum item do pedido {ref} está disponível agora."
+
+
+def _opens_as_page(action: dict) -> bool:
+    """A ação leva a uma página que o cliente abre (GET), e não a um comando da API.
+
+    Decide pela natureza do destino, não pelo nome: tem endereço, o método é GET (ou
+    nenhum), não é comando (``mutation``) e o endereço fica fora de ``/api/``.
+    """
+    from urllib.parse import urlsplit
+
+    href = str(action.get("href") or "")
+    method = str(action.get("method") or "GET").upper()
+    return (
+        bool(href)
+        and method == "GET"
+        and action.get("kind") != "mutation"
+        and not urlsplit(href).path.startswith("/api/")
+    )
+
+
+def copy_texts(result: dict) -> list[str]:
+    """O que as ações de copiar da consulta copiam (o copia-e-cola do Pix), um por mensagem.
+
+    A conversa não tem botão de copiar: o texto da ação ``copy`` vai em mensagem própria,
+    e a linha de ``render_result`` só avisa. Nunca o ``href``: link com o rótulo
+    "Copiar código Pix" é rótulo que mente (X3).
+    """
+    texts: list[str] = []
+    for order in result.get("orders", []) if result.get("ok") else []:
+        for action in order.get("actions", []):
+            value = str(action.get("value") or "").strip()
+            if action.get("enabled") and action.get("kind") == "copy" and value and value not in texts:
+                texts.append(value)
+    return texts
+
+
+def _open_elsewhere_rows(result: dict) -> list[str]:
+    """Uma linha por sacola aberta em outro canal: avisa, não sincroniza (OC-17)."""
+    rows = []
+    for entry in result.get("open_elsewhere") or []:
+        where = _display_text(entry.get("where", ""))
+        rows.append(
+            f"{where[:1].upper()}{where[1:]}, você tem outra sacola aberta, "
+            f"com {_display_text(entry.get('items', ''))} ({_display_text(entry.get('subtotal', ''))})."
+        )
+    return rows
+
+
 def render_result(name: str, result: dict) -> str:
     """Somente fatos do servidor; texto livre nunca entra na resposta."""
+    text = _render_facts(name, result)
+    if name in {"view_cart", "review_order"} and result.get("ok") and result.get("open_elsewhere"):
+        return "\n".join(part for part in (text, *_open_elsewhere_rows(result)) if part)
+    return text
+
+
+def _render_facts(name: str, result: dict) -> str:
     if not result.get("ok"):
         return _display_text(result.get("message") or "Não consegui concluir. Suas escolhas estão preservadas.")
     if result.get("message") and (
@@ -2165,7 +3016,10 @@ def render_result(name: str, result: dict) -> str:
         if payment.get("pending_setup"):
             text += " O pagamento ainda não está disponível; consulte o mesmo pedido para acompanhar."
         elif payment.get("pix_code_prepared_separately"):
-            text += " O pagamento está pendente; o código Pix é apresentado em um bloco separado."
+            text += f" {PIX_CODE_FOLLOWS}"
+        elif payment.get("checkout_url"):
+            # Cartão: o link do gateway já no pedido, com o mesmo rótulo da consulta.
+            text += f"\nPagar com cartão: {payment['checkout_url']}"
         text += f"\nAcompanhar: {result['tracking_url']}"
         return text
     if name == "order_status":
@@ -2178,15 +3032,75 @@ def render_result(name: str, result: dict) -> str:
             if str(order.get("total") or "").strip():
                 parts.append(f"Total: {order['total']}.")
             rows.append(f"Pedido {order['order_ref']}{when}: " + " ".join(p for p in parts if p))
+            pix_follows = any(
+                action.get("enabled") and action.get("kind") == "copy" and action.get("ref") == "copy_pix"
+                and str(action.get("value") or "").strip()
+                for action in order.get("actions", [])
+            )
+            if order.get("pix_sent_at"):
+                # O que este chat já recebeu (OC-10): "cadê o Pix?" depois do aviso com o código.
+                # Com o código indo de novo, as duas coisas numa linha só.
+                template = PIX_SENT_AGAIN if pix_follows else PIX_SENT
+                rows.append(template.format(when=order["pix_sent_at"]))
+            elif pix_follows:
+                rows.append(PIX_CODE_FOLLOWS)
+            offers = [
+                action["ref"] for action in order.get("actions", [])
+                if action.get("enabled") and action.get("ref") in OFFER_GESTURES
+            ]
             for action in order.get("actions", []):
-                if action.get("enabled"):
-                    href = action.get("href") or order["tracking_url"]
+                if action.get("ref") in OFFER_GESTURES:
+                    continue  # cancelar e as alterações do pedido saem juntos, numa linha só (abaixo)
+                if action.get("enabled") and action.get("kind") == "copy":
+                    # O que se copia vai sozinho na mensagem seguinte (``copy_texts``), avisado
+                    # acima; sem o texto, a ação fica de fora: o link do pedido segue no "Acompanhar".
+                    continue
+                elif action.get("enabled") and _opens_as_page(action):
+                    href = action["href"]
                     if href.startswith("/") and not href.startswith("//"):
                         href = _storefront_base_url() + href
                     rows.append(f"{action['label']}: {href}")
+                elif action.get("enabled") and CONVERSATION_EQUIVALENTS.get(action.get("ref")):
+                    # Comando que a Nice faz pela conversa: a instrução, nunca o endereço.
+                    rows.append(CONVERSATION_EQUIVALENTS[action["ref"]])
+            # Cancelar por último: "Posso remarcar, tirar um item ou cancelar, se quiser."
+            offers.sort(key=lambda ref: ref == "cancel_order")
+            if len(offers) == 1:
+                rows.append(CONVERSATION_EQUIVALENTS[offers[0]])
+            elif offers:
+                gestures = [OFFER_GESTURES[ref] for ref in offers]
+                rows.append(AMEND_OFFER.format(gestures=", ".join(gestures[:-1]) + " ou " + gestures[-1]))
             rows.append(f"Acompanhar: {order['tracking_url']}")
         return "\n".join(rows) or "Não encontrei pedidos para este acesso."
+    if name == "repay_order":
+        # O que a Nice fez (ou por que não fez) e, embaixo, o pedido como a consulta o mostra:
+        # o mesmo código, o mesmo link, as mesmas instruções (OC-12).
+        if not result.get("orders") and not result.get("lead"):
+            return render_result("order_status", result)
+        rows = [result["lead"]] if result.get("lead") else []
+        if result.get("orders"):
+            rows.append(render_result("order_status", result))
+        elif result.get("order_url"):
+            # A página do pedido (``/pedido/<ref>/``), não o link do entregador: esse só
+            # se lê por ``courier.proven_tracking``.
+            rows.append(f"Acompanhar: {result['order_url']}")
+        return "\n".join(rows)
+    if name == "amend_order":
+        # O que a Nice fez, mostrou ou perguntou, e o código quando há o que confirmar (OC-11).
+        rows = [result["lead"]] if result.get("lead") else []
+        rows.extend(result.get("lines") or [])
+        if result.get("confirm_code") and result.get("code") in {"proposed", "stale"}:
+            rows.append(AMEND_CONFIRM.format(code=result["confirm_code"]))
+        return "\n".join(rows)
+    if name == "repeat_order":
+        if not result.get("cart"):
+            return _display_text(result.get("lead") or "")
+        # O "pode fechar" vem de quem compõe o turno (``CONCIERGE_CART_NEXT``), como na sacola.
+        return "\n".join(part for part in (result["lead"], render_result("view_cart", result["cart"])) if part)
     if name == "send_web_link":
+        if result.get("cart_carried"):
+            # A sacola só passa na troca do link (o aceite); até lá ela segue aqui (OC-18, §4.4).
+            return f"Continue no site: {result['url']}\n{CART_GOES_ALONG}"
         return f"Continue no site: {result['url']}"
     if name == "last_order":
         return "\n".join(f"{i['qty']} × {_display_name(i['name'])}" for i in result.get("items", [])) or "Sem pedido anterior."
@@ -2277,6 +3191,32 @@ INPUT_SCHEMAS: dict[str, dict] = {
         },
         "required": ["order_ref", "sku", "qty"],
     },
+    "repeat_order": {
+        "properties": {"order_ref": {"type": "string"}},
+        "required": [],
+    },
+    "repay_order": {
+        "properties": {
+            "order_ref": {"type": "string"},
+            "method": {"type": "string", "enum": ["", "pix", "card"]},
+        },
+        "required": [],
+    },
+    "amend_order": {
+        "properties": {
+            "kind": {"type": "string", "enum": ["", "reschedule_order", "remove_item", "change_address"]},
+            "order_ref": {"type": "string"},
+            "day": {"type": "string"},
+            "minutes": {"type": "integer"},
+            "time_text": {"type": "string"},
+            "pick": {"type": "integer"},
+            "item": {"type": "string"},
+            "qty": {"type": "integer"},
+            "address": {"type": "string"},
+            "code": {"type": "string"},
+        },
+        "required": [],
+    },
     "last_order": {
         "properties": {},
         "required": [],
@@ -2306,6 +3246,9 @@ _HANDLERS = {
     "place_order": place_order,
     "order_status": order_status,
     "add_to_order": add_to_order,
+    "repay_order": repay_order,
+    "amend_order": amend_order,
+    "repeat_order": repeat_order,
     "last_order": last_order,
     "send_web_link": send_web_link,
     "notify_when_available": notify_when_available,

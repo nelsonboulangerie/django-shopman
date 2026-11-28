@@ -93,6 +93,47 @@ def _rate_limited_response(detail: str = "Muitas tentativas. Aguarde um instante
     )
 
 
+#: O que cada ação recusada ao link do aviso pede, na frase da recusa.
+_LOGIN_REQUIRED_DETAIL = {
+    "cancel": "Para cancelar o pedido, entre com seu telefone.",
+    "rate": "Para avaliar o pedido, entre com seu telefone.",
+    "reorder": "Para pedir de novo, entre com seu telefone.",
+    "waitlist_confirm": "Para confirmar a vaga, entre com seu telefone.",
+}
+
+
+def login_required_response(ref: str, gesture: str) -> Response:
+    """403 para quem abriu o pedido só pelo link do aviso (DEV-2026-093).
+
+    Dialeto canônico ``{detail, field, errors}``, mais o convite: ``login_url`` leva a
+    ``/entrar`` e volta ao mesmo pedido. A tela já esconde estas ações; a recusa aqui
+    é a trava do servidor, para o link encaminhado nunca cancelar o pedido de outro.
+    """
+    from urllib.parse import urlencode
+
+    from shopman.storefront.api.actions import action_payload
+
+    login_url = f"/entrar?{urlencode({'next': f'/pedido/{ref}'})}"
+    return Response(
+        {
+            "detail": _LOGIN_REQUIRED_DETAIL.get(gesture, "Para continuar, entre com seu telefone."),
+            "error_code": "login_required",
+            "login_url": login_url,
+            "actions": [
+                action_payload(
+                    ref="sign_in",
+                    kind="navigation",
+                    label="Entrar com meu telefone",
+                    priority="primary",
+                    href=login_url,
+                    idempotency="none",
+                ),
+            ],
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> bool:
     return bool(is_ratelimited(
         request=request,
@@ -104,8 +145,8 @@ def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> 
     ))
 
 
-def _tracking_payload(order) -> dict:
-    proj = build_order_tracking(order)
+def _tracking_payload(order, access_mode: str = "full") -> dict:
+    proj = build_order_tracking(order, access_mode=access_mode)
     data = projection_data(proj)
     fulfillments = (*proj.delivery_fulfillments, *proj.pickup_fulfillments)
     data["ref"] = proj.order_ref
@@ -177,7 +218,7 @@ class OrderTrackingView(ServerTimingMixin, APIView):
             return _rate_limited_response("Muitas consultas de tracking. Aguarde um instante.")
 
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -198,9 +239,54 @@ class OrderTrackingView(ServerTimingMixin, APIView):
         # o Pix que não ganhou código são o POST ``payment/check/`` que a tela
         # chama quando o pedido deve pagamento, e o ``reconcile_payments`` do
         # worker é a rede por baixo dos dois.
-        data = _tracking_payload(order)
+        data = _tracking_payload(order, access_mode)
         serializer = OrderTrackingSerializer(data)
         return Response(serializer.data)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Open one order in this browser with the order link capability (no login)",
+        responses={200: OpenApiResponse(description="This browser now sees the order."), 404: DetailSerializer},
+    ),
+)
+class OrderCapabilityAccessView(APIView):
+    """POST /api/v1/tracking/{ref}/access/ ``{cap}``: o link do aviso abre o pedido.
+
+    O aviso leva ``/pedido/<ref>~<selo>`` (``shop.services.order_view_link``). A página
+    troca o selo aqui ANTES de ler o pedido: este navegador passa a ver ESTE pedido,
+    marcado na sessão como acesso só pela capacidade. Não loga, não cria usuário, não
+    abre a conta, a sacola nem o canal de tempo real (DEV-2026-093).
+
+    Selo inválido, adulterado, vencido, revogado ou de outro pedido, e pedido que não
+    existe: o mesmo 404, sem dizer qual.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-capability-access",
+            rate="30/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        cap = str((request.data or {}).get("cap") or "").strip()
+        if not order_service.grant_order_capability(request, ref, cap):
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({"ok": True, "ref": ref}, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(
@@ -242,7 +328,7 @@ class OrderPaymentCheckView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -255,7 +341,7 @@ class OrderPaymentCheckView(APIView):
             )
 
         order_service.check_payment(order)
-        serializer = OrderTrackingSerializer(_tracking_payload(order))
+        serializer = OrderTrackingSerializer(_tracking_payload(order, access_mode))
         return Response(serializer.data)
 
 
@@ -294,7 +380,7 @@ class OrderPaymentSwitchToPixView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -324,7 +410,7 @@ class OrderPaymentSwitchToPixView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
             order.refresh_from_db()
-            return dict(OrderTrackingSerializer(_tracking_payload(order)).data), status.HTTP_200_OK
+            return dict(OrderTrackingSerializer(_tracking_payload(order, access_mode)).data), status.HTTP_200_OK
 
         try:
             result = remote_mutations.run_idempotent_mutation(
@@ -404,7 +490,7 @@ class OrderCancelView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -418,6 +504,9 @@ class OrderCancelView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        if access_mode != order_service.ACCESS_FULL:
+            return login_required_response(order.ref, "cancel")
 
         key = remote_mutations.idempotency_key_from_request(
             request,
@@ -439,7 +528,7 @@ class OrderCancelView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            data = _tracking_payload(order)
+            data = _tracking_payload(order, access_mode)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
 
@@ -492,7 +581,7 @@ class OrderWaitlistConfirmView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -528,7 +617,7 @@ class OrderWaitlistConfirmView(APIView):
                 )
 
             order.refresh_from_db()
-            data = _tracking_payload(order)
+            data = _tracking_payload(order, access_mode)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
 
@@ -580,7 +669,7 @@ class OrderConfirmReceiptView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -609,7 +698,7 @@ class OrderConfirmReceiptView(APIView):
                     },
                     status.HTTP_409_CONFLICT,
                 )
-            data = _tracking_payload(order)
+            data = _tracking_payload(order, access_mode)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
 
@@ -663,7 +752,7 @@ class OrderRepaymentPixView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -683,7 +772,7 @@ class OrderRepaymentPixView(APIView):
             except payment_service.RepaymentSwitchRefused as refusal:
                 return {"detail": refusal.message, "error_code": refusal.code}, status.HTTP_409_CONFLICT
             order.refresh_from_db()
-            serializer = OrderTrackingSerializer(_tracking_payload(order))
+            serializer = OrderTrackingSerializer(_tracking_payload(order, access_mode))
             return dict(serializer.data), status.HTTP_200_OK
 
         try:
@@ -732,7 +821,7 @@ class OrderContactRequestView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -775,7 +864,7 @@ class OrderContactRequestView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
             order.refresh_from_db()
-            response = OrderTrackingSerializer(_tracking_payload(order))
+            response = OrderTrackingSerializer(_tracking_payload(order, access_mode))
             return dict(response.data), status.HTTP_200_OK
 
         try:
@@ -829,7 +918,7 @@ class OrderRateView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -843,6 +932,9 @@ class OrderRateView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        if access_mode != order_service.ACCESS_FULL:
+            return login_required_response(order.ref, "rate")
 
         try:
             rating = int((request.data if hasattr(request, "data") else {}).get("rating"))
@@ -879,7 +971,7 @@ class OrderRateView(APIView):
                 _alert_low_rating(order, rating, comment)
             # Mesmo contrato de resposta das demais mutações (cancel/confirm):
             # o payload volta pelo serializer canônico, não como dict cru.
-            serializer = OrderTrackingSerializer(_tracking_payload(order))
+            serializer = OrderTrackingSerializer(_tracking_payload(order, access_mode))
             return dict(serializer.data), status.HTTP_200_OK
 
         try:

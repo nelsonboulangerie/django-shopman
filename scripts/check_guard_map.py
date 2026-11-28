@@ -58,6 +58,7 @@ GUARDS: dict[str, list[str]] = {
         "scripts/check_workflow_budgets.py",
         "scripts/check_ficou_de_fora.py",
         "scripts/check_menu_smoke.py",
+        "scripts/check_test_cost.py",
     ],
     "deploy-runtime": [
         "scripts/check_do_spec_drift.py",
@@ -68,6 +69,7 @@ GUARDS: dict[str, list[str]] = {
         "scripts/check_instance_descriptors.py",
         "scripts/check_tenant_config.py",
         "scripts/check_ai_port.py",
+        "scripts/check_experiments.py",
     ],
     "constituicao": [
         "scripts/check_money_integer.py",

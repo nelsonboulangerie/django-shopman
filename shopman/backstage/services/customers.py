@@ -297,6 +297,7 @@ def create_customer(data: dict, *, actor: str):
     tags = _apply_payload(customer, data, creating=True)
     cleared = {field for field in ("phone", "email") if not getattr(customer, field)}
     _save_customer(customer, tags=tags, cleared=cleared)
+    _request_phone_confirmation(customer, previous_phone="")
     return customer
 
 
@@ -312,10 +313,25 @@ def update_customer(ref: str, data: dict):
     if not customer.is_active:
         raise _mutation_error("Este cadastro foi unificado ou desativado e não pode mais ser editado.", code="inactive")
     _assert_revision(customer, data)
+    previous_phone = customer.phone
     tags = _apply_payload(customer, data, creating=False)
     cleared = {field for field in ("phone", "email") if field in data and not getattr(customer, field)}
     _save_customer(customer, tags=tags, cleared=cleared)
+    _request_phone_confirmation(customer, previous_phone=previous_phone)
     return customer
+
+
+def _request_phone_confirmation(customer, *, previous_phone: str) -> None:
+    """Telefone novo digitado pela equipe: o titular confirma no WhatsApp (D4).
+
+    Até a confirmação (o toque no WhatsApp ou o código certo do SMS), o número
+    não resolve para a conta pela loja. Só pede quando o
+    telefone da ficha mudou nesta gravação; editar o nome não manda nada.
+    """
+    from shopman.shop.services import phone_confirmation
+
+    if customer.phone and customer.phone != previous_phone:
+        phone_confirmation.request_on_commit(customer.ref, customer.phone)
 
 
 # ── Cópia e lote ─────────────────────────────────────────────────────────────

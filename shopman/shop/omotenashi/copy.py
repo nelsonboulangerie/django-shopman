@@ -291,7 +291,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="todo dia")},
     },
     "HOME_MENU_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ver Cardápio")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ver cardápio")},
     },
     "HOME_BIRTHDAY_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ver minha oferta de aniversário")},
@@ -391,7 +391,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Peça ao atendente. Preparamos na hora.")},
     },
     "HOW_PREORDER_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Escolha o dia ao finalizar o pedido. Encomendas com até {window} de antecedência.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Encomendas com até {window} de antecedência.")},
     },
     "HOW_TRACKING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Use seu telefone para consultar o status dos pedidos a qualquer momento.")},
@@ -410,6 +410,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             WILDCARD: CopyEntry(
                 title="Dúvidas? Ou algum pedido especial?",
                 message="Respondemos rápido, de pessoa para pessoa.",
+            ),
+        },
+    },
+    # A mesma chamada quando a Concierge atende o WhatsApp da casa (OC-06): quem responde
+    # primeiro é a assistente virtual (R8), e a home não promete pessoa para pessoa.
+    "HOME_WHATSAPP_CTA_CONCIERGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Dúvidas? Ou algum pedido especial?",
+                message="Nossa assistente virtual responde e chama a equipe quando precisa. Se preferir falar com uma pessoa, é só pedir.",
             ),
         },
     },
@@ -952,6 +962,17 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             WILDCARD: CopyEntry(
                 title="Não conseguimos cobrar o cartão",
                 message="A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
+            ),
+        },
+    },
+    # O pedido aberto só pelo link do aviso (DEV-2026-093): o convite para entrar no
+    # lugar de cancelar, avaliar e pedir de novo. ``{gestures}`` é a lista do que
+    # pede a entrada ("cancelar o pedido ou avaliar"); o título é o botão.
+    "TRACKING_LOGIN_INVITE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Entrar com meu telefone",
+                message="Para {gestures}, entre com seu telefone.",
             ),
         },
     },
@@ -1525,6 +1546,93 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": {
         WILDCARD: {WILDCARD: CopyEntry(message="Tudo ótimo por aqui, obrigada.")},
     },
+    "CONCIERGE_ENGINE_ASK_MORE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi bem. Pode me dizer o que você gostaria?")},
+    },
+    "CONCIERGE_ENGINE_TOTAL_CHANGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O total mudou; agora é {total}. Confira antes de confirmar.")},
+    },
+    "CONCIERGE_ENGINE_ORDER_PLACED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Total: {total}.\nAcompanhar: {track}")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, sua sacola ficou assim:\n{items}\nTotal: {total}\nQuer mais alguma coisa? Quando terminar, é só escrever “pode fechar”.")},
+    },
+    "CONCIERGE_ENGINE_TERMS_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?")},
+    },
+    "CONCIERGE_ENGINE_PAYMENT_SET": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {method}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_SET": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: entrega na {address}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_DETAILS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para a entrega, me diga {delivery_address_details}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Esse endereço está fora da nossa área de entrega. Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, número, bairro e CEP.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não consegui localizar esse endereço para calcular a entrega. Confira a rua, o número e o bairro, ou envie sua localização pelo WhatsApp.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message='Tem complemento (apartamento, bloco, fundos)? Se não tiver, é só dizer "sem complemento".')},
+    },
+    "CONCIERGE_ENGINE_OFFER_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED_SHORT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada.")},
+    },
+    "CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual janela de entrega fica melhor? {delivery_window}")},
+    },
+    "CONCIERGE_ENGINE_CONFIRM_READING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Só para confirmar: {reading}?")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada. Total: {total}.")},
+    },
+    "CONCIERGE_ENGINE_FULFILLMENT_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{noted}, atualizei o recebimento.")},
+    },
+    "CONCIERGE_ENGINE_ORDER_PLACED_SHORT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Acompanhar: {track}")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_PENDING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Ainda estou concluindo isso. Te confirmo por aqui até {deadline}.")},
+    },
+    "CONCIERGE_ENGINE_WAIT_OVERDUE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Até {deadline}, {owner} te responde por aqui.")},
+    },
+    "CONCIERGE_ENGINE_WAIT_OVERDUE_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Ainda estou esperando {owner} e te aviso por aqui assim que tiver a resposta.")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entregamos no endereço do seu cadastro, {delivery_address_saved}?")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER_MANY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entregamos no endereço do seu cadastro, {delivery_address_saved}? Se preferir outro endereço cadastrado, é só dizer qual.")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_LIST": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seus endereços cadastrados: {delivery_address_saved_options}. Em qual entregamos?")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_HELD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, anotei. Já te confirmo os detalhes por aqui.")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_FAILED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento a {owner} e preservei suas escolhas. Se ninguém assumir até {deadline}, te aviso por aqui.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento a {owner} e preservei suas escolhas. A equipe continuará por aqui conforme a disponibilidade.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento humano e preservei suas escolhas. Enquanto ninguém assume, sigo com você por aqui e te dou notícia até {deadline}.")},
+    },
     "CONCIERGE_SMALL_TALK_THANKS": {
         WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Qualquer coisa, é só chamar. 💛")},
     },
@@ -1593,6 +1701,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_NOT_IN_MENU": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não encontrei “{part}” no cardápio de hoje. O que temos agora:")},
     },
+    "CONCIERGE_LATE_REPLY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora para responder.")},
+    },
     "CONCIERGE_CART_UNAVAILABLE": {
         WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
     },
@@ -1637,6 +1748,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_MEMORY_ASK_WHICH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
+    },
+    # Duas ou mais coisas pedidas, cada uma com mais de um item: uma linha por coisa, na
+    # ordem do pedido (#3597). {asked} é o que o cliente escreveu; {options}, "“A” ou “B”".
+    "CONCIERGE_MEMORY_ASK_WHICH_EACH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para “{asked}”: {options}?")},
     },
     "CONCIERGE_MEMORY_STILL_HERE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estou aqui, sim!")},
@@ -1898,7 +2014,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Continuar")},
     },
     "LOGIN_AUTH_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Bem-vindo de volta", message="Tudo pronto. Levando você para a loja…")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Que bom te ver de novo", message="Tudo pronto. Levando você para a loja…")},
     },
     "DEVICE_TRUST_REDIRECTING": {
         WILDCARD: {WILDCARD: CopyEntry(message="Aparelho reconhecido. Entrando automaticamente…")},
@@ -2113,8 +2229,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO": {
         WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar de {name}?")},
     },
+    # O item acabou e há próximo lote: a folha diz quando ele fica disponível, e o
+    # botão é "Reservar" (dono, 24/11/2026, KISS). ``{when}`` é o pedaço da promessa
+    # do próximo lote: "a partir das 15h", "amanhã, quarta, a partir das 7h". Sobre o
+    # produto a loja fala de disponibilidade, nunca de prontidão.
     "KINTSUGI_PLANNED_OFFER": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Fica pronto no próximo lote, fresquinho. Quer garantir o seu?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Disponível {when}")},
     },
 
     # ── Reorder ──────────────────────────────────────────────────
@@ -2207,14 +2327,77 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
 # ── Resolver ───────────────────────────────────────────────────────────
 
-_DB_CACHE: dict[str, dict[tuple[str, str], CopyEntry]] | None = None
+#: A copy é lida em todo processo (``web-storefront``, ``web-operator``, worker),
+#: mas editada só no Admin, que mora em outro processo. Por isso o memo local de
+#: cada processo obedece a duas coisas:
+#:
+#: - uma **versão** no cache compartilhado do Django (Valkey em produção), trocada
+#:   a cada gravação (:func:`invalidate_cache`). Quem lê confere a versão uma vez
+#:   por request (``request_memo``) e, se mudou, relê o banco;
+#: - um **teto de idade** (:data:`LOCAL_MEMO_TTL`). Se o cache compartilhado cair,
+#:   ou alguém gravar por fora do ORM, o memo vence sozinho: copy velha dura no
+#:   máximo isso, nunca até o próximo deploy.
+COPY_VERSION_CACHE_KEY = "shopman:omotenashi_copy:version"
+LOCAL_MEMO_TTL = 60.0  # segundos
+
+#: A versão não pôde ser lida (cache compartilhado fora do ar).
+_UNREACHABLE = object()
+
+
+class _ProcessMemo:
+    """O memo de copy deste processo: as linhas ativas, de qual versão e de quando."""
+
+    __slots__ = ("rows", "version", "loaded_at")
+
+    def __init__(self) -> None:
+        self.rows: dict[str, dict[tuple[str, str], CopyEntry]] | None = None
+        self.version: object = None
+        self.loaded_at = 0.0
+
+    def is_fresh(self, version: object, now: float) -> bool:
+        if self.rows is None or now - self.loaded_at >= LOCAL_MEMO_TTL:
+            return False
+        # Sem versão legível, só o teto de idade decide.
+        return version is _UNREACHABLE or version == self.version
+
+    def clear(self) -> None:
+        self.rows = None
+
+
+_memo = _ProcessMemo()
+
+
+def _read_shared_version() -> object:
+    from django.core.cache import cache
+
+    try:
+        return cache.get(COPY_VERSION_CACHE_KEY)
+    except Exception:
+        logger.error(
+            "omotenashi.copy: cache compartilhado ilegível; a copy editada no Admin "
+            "pode levar até %ss para chegar a este processo",
+            int(LOCAL_MEMO_TTL),
+            exc_info=True,
+        )
+        return _UNREACHABLE
+
+
+def _shared_version() -> object:
+    """A versão da copy no cache compartilhado, lida uma vez por request."""
+    from shopman.shop.request_memo import memoized
+
+    return memoized(COPY_VERSION_CACHE_KEY, _read_shared_version)
 
 
 def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
-    """Load all active DB overrides into memory. Lazily built, invalidated on save."""
-    global _DB_CACHE
-    if _DB_CACHE is not None:
-        return _DB_CACHE
+    """As linhas ativas do banco, do memo do processo enquanto ele valer."""
+    import time
+
+    memo = _memo
+    version = _shared_version()
+    now = time.monotonic()
+    if memo.is_fresh(version, now):
+        return memo.rows
 
     cache: dict[str, dict[tuple[str, str], CopyEntry]] = {}
     try:
@@ -2226,18 +2409,56 @@ def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
                 title=row.title or "",
                 message=row.message or "",
             )
-    except Exception:
+    except Exception:  # silêncio-deliberado: sem tabela (antes do migrate) ou sem banco, vale o padrão do código e o teto relê
         # Model not migrated yet, or DB not reachable — fall back to defaults.
         logger.debug("omotenashi.copy: DB cache load failed, using defaults", exc_info=True)
 
-    _DB_CACHE = cache
+    memo.rows = cache
+    memo.version = version
+    memo.loaded_at = now
     return cache
 
 
+def _publish_new_version() -> None:
+    import uuid
+
+    from django.core.cache import cache
+
+    from shopman.shop.request_memo import forget
+
+    _memo.clear()
+    forget(COPY_VERSION_CACHE_KEY)
+    try:
+        # Ficha nova, não contador: uma chave despejada e recriada nunca repete
+        # uma versão que algum processo ainda guarda.
+        cache.set(COPY_VERSION_CACHE_KEY, uuid.uuid4().hex, timeout=None)
+    except Exception:
+        logger.error(
+            "omotenashi.copy: não consegui publicar a versão nova da copy; os outros "
+            "processos só a veem quando o memo deles vencer (até %ss)",
+            int(LOCAL_MEMO_TTL),
+            exc_info=True,
+        )
+
+
 def invalidate_cache() -> None:
-    """Invalidate the in-process DB cache. Hooked on model save/delete."""
-    global _DB_CACHE
-    _DB_CACHE = None
+    """Faz todo processo reler a copy do banco. Chame depois de gravar ``OmotenashiCopy``.
+
+    Ligado ao ``post_save``/``post_delete`` do modelo; quem grava sem sinal
+    (``QuerySet.update()``, ação em lote do Admin) chama direto. Este processo
+    esquece o memo na hora; a versão compartilhada muda quando a transação
+    confirma, para que nenhum outro processo releia o banco antes do commit e
+    guarde o texto velho sob a versão nova.
+    """
+    from django.db import transaction
+
+    _memo.clear()
+    if transaction.get_connection().in_atomic_block:
+        transaction.on_commit(_publish_new_version)
+    else:
+        # Fora de transação não há commit a esperar (e ``on_commit`` abriria
+        # conexão só para descobrir isso).
+        _publish_new_version()
 
 
 def resolve_copy(

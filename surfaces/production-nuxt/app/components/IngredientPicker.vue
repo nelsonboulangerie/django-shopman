@@ -6,6 +6,7 @@
 // O resultado pode ser comprado ou preparado por outra receita. A origem não muda
 // o gesto do operador: ele busca e escolhe um ingrediente.
 import type { IngredientOptionProjection } from "~/types/recipeBook";
+import { purchaseMaterialsHref } from "~/presentation/recipeBook";
 
 const props = defineProps<{
   /** SKU casado ("" = sem ingrediente). */
@@ -78,6 +79,12 @@ function onUpdate(value: string | null | undefined) {
 }
 
 const touch = useTouchPointer();
+
+// O insumo que não existe se cadastra no Compras (#2390): o vazio da busca leva até lá.
+// Quem não opera Compras recebe `purchase_url` vazio, e o atalho não aparece.
+const { access } = useRecipeBookAccess();
+const { attrsFor } = useOperatorAppLink();
+const purchaseMaterialsUrl = computed(() => purchaseMaterialsHref(access.value?.purchase_url ?? ""));
 </script>
 
 <template>
@@ -104,7 +111,19 @@ const touch = useTouchPointer();
       </span>
     </template>
     <template #empty>
-      {{ pending ? "Buscando…" : "Nenhum insumo com esse nome. Insumo novo se cadastra no Compras." }}
+      <span v-if="pending">Buscando…</span>
+      <span v-else class="grid justify-items-center gap-2 text-center" data-ingredient-empty>
+        <span>Nenhum insumo com esse nome. Insumo novo se cadastra no Compras.</span>
+        <NuxtButton
+          v-if="purchaseMaterialsUrl"
+          :href="purchaseMaterialsUrl"
+          v-bind="attrsFor(purchaseMaterialsUrl)"
+          color="neutral"
+          variant="outline"
+          trailing-icon="i-lucide-external-link"
+          label="Abrir o Compras"
+        />
+      </span>
     </template>
   </NuxtSelectMenu>
 </template>

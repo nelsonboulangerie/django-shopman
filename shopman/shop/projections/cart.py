@@ -220,6 +220,14 @@ class CartProjection:
     # Mensagem de economia do grupo (texto por grupo, editável no Admin). Vazia
     # quando não houve desconto de grupo.
     group_savings_message: str = ""
+    # De onde a sacola veio quando outro canal a passou para cá (OC-15/OC-16):
+    # ``Session.data["transferred_from"]``, lido na mesma consulta da sacola, para
+    # o recibo da passagem só custar consulta quando existe.
+    transferred_from: dict | None = None
+    # O dia da sacola quando ela é de OUTRO dia (a reserva, ou o dia escolhido no
+    # "Para quando?" do cardápio, OC-33 B1): a mesma data em que ela reserva
+    # (``cart._cart_date``). ``None`` para hoje ou sem data.
+    cart_date: date | None = None
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -307,6 +315,98 @@ def reservation_lapsed_at(session_key: str | None, skus):
     )
 
 
+def open_elsewhere(customer_ref: str, channel_ref: str):
+    """As sacolas abertas deste cliente nos outros canais (OC-17, C06).
+
+    Leitura pura sobre ``sessions.open_sessions_for_customer``: o canal que
+    pergunta avisa, nunca sincroniza. Vazio sem cliente.
+    """
+    if not customer_ref:
+        return ()
+    from shopman.shop.services.sessions import open_sessions_for_customer
+
+    return open_sessions_for_customer(customer_ref, exclude_channel=channel_ref)
+
+
+def offered_cart(channel_ref: str, session_key: str):
+    """A sacola de outro canal que uma passagem aponta (``transferred_to``), contada; ``None`` se fechou."""
+    from shopman.shop.services.sessions import open_session_summary
+
+    return open_session_summary(channel_ref, session_key)
+
+
+def conversation_number_available() -> bool:
+    """A loja tem WhatsApp para a mensagem pronta de "Continuar pelo WhatsApp" (X1)."""
+    from shopman.shop.services.session_transfer import conversation_number
+
+    return bool(conversation_number())
+
+
+@dataclass(frozen=True)
+class TransferArrival:
+    """A sacola deste canal que chegou de outro, com o recibo da passagem (OC-15/OC-16).
+
+    Só existe na sacola em que ``session_transfer.accept`` pôs os itens (nova, ou a
+    que o destino já tinha): a adoção no mesmo canal não grava recibo. As diferenças são as do recibo gravado na origem.
+    """
+
+    source_channel: str
+    source_channel_name: str
+    differences: tuple[dict, ...]
+    source_total_q: int
+    dest_total_q: int
+    #: O que entrou: linhas e unidades ("3"; "1.5" com item de peso).
+    carried_lines: int = 0
+    carried_units: str = ""
+
+
+def transfer_arrival(session_key: str | None, came_from: dict | None) -> TransferArrival | None:
+    """O recibo da passagem que trouxe esta sacola, ou ``None``. Leitura pura.
+
+    ``came_from`` é o ``transferred_from`` que ``build_cart`` já leu da sacola: sem
+    ele, nenhuma consulta.
+    """
+    if not session_key:
+        return None
+    from shopman.orderman.models import Session
+
+    from shopman.shop.models import Channel
+
+    if not isinstance(came_from, dict) or not came_from.get("channel_ref") or "tab_ref" in came_from:
+        return None
+    source_data = (
+        Session.objects.filter(channel_ref=came_from["channel_ref"], session_key=came_from.get("session_key") or "")
+        .values_list("data", flat=True)
+        .first()
+    )
+    receipt = (source_data or {}).get("transfer_receipt") if isinstance(source_data, dict) else None
+    if not isinstance(receipt, dict) or receipt.get("dest_session_key") != session_key:
+        return None
+    name = Channel.objects.filter(ref=came_from["channel_ref"]).values_list("name", flat=True).first()
+    return TransferArrival(
+        source_channel=str(came_from["channel_ref"]),
+        source_channel_name=str(name or came_from["channel_ref"]),
+        differences=tuple(diff for diff in receipt.get("differences") or () if isinstance(diff, dict)),
+        source_total_q=int(receipt.get("source_total_q") or 0),
+        dest_total_q=int(receipt.get("dest_total_q") or 0),
+        carried_lines=int(receipt.get("carried_lines") or 0),
+        carried_units=str(receipt.get("carried_units") or ""),
+    )
+
+
+def items_phrase(entry) -> str:
+    """Quanto há na outra sacola, como a cliente conta: "3 itens", "1 item".
+
+    Com item de peso (quantidade quebrada) a soma de unidades não diz nada, e a
+    frase conta os produtos: "2 produtos".
+    """
+    count = entry.items_count
+    if isinstance(count, int):
+        return f"{count} {'item' if count == 1 else 'itens'}"
+    lines = entry.lines_count
+    return f"{lines} {'produto' if lines == 1 else 'produtos'}"
+
+
 def build_cart(
     session_key: str | None,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,
@@ -350,7 +450,8 @@ def build_cart(
     # das linhas, logo abaixo, sai do memo. A resposta é a mesma: o trilho só
     # depende do conjunto de SKUs da sacola, que já está decidido aqui.
     upsell = _upsell(set(skus), channel_ref=channel_ref)
-    avail_map, own_holds = _availability(skus, session_key, channel_ref, _future_cart_date(session))
+    cart_date = _future_cart_date(session)
+    avail_map, own_holds = _availability(skus, session_key, channel_ref, cart_date)
     planned_by_sku = _planned_holds(session_key, skus)
     earlier_by_sku = _earlier_available_dates(raw_items, planned_by_sku, channel_ref)
 
@@ -420,8 +521,10 @@ def build_cart(
         minimum_order=minimum_order,
     )
 
+    came_from = (session.data or {}).get("transferred_from")
     return CartProjection(
         session_key=session_key,
+        transferred_from=came_from if isinstance(came_from, dict) else None,
         revision=session.rev,
         lines=lines,
         count=count,
@@ -447,6 +550,7 @@ def build_cart(
         can_checkout=can_checkout,
         checkout_block_reason=block_reason,
         group_savings_message=str((discount_data.get("savings") or {}).get("message") or ""),
+        cart_date=cart_date,
     )
 
 

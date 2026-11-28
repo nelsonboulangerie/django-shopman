@@ -211,7 +211,7 @@ def test_csv_stream_emits_bom_and_header_before_querying_rows(report_data, djang
     )
     with django_assert_num_queries(0):
         assert next(stream) == "\ufeff"
-        assert "Ref,Data,Receita" in next(stream)
+        assert "Lote,Data,Receita" in next(stream)
     assert report_data["finished"].ref in "".join(stream)
 
 

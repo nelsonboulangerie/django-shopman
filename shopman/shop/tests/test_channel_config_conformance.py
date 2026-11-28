@@ -101,7 +101,8 @@ class TestConfirmationConformance:
 
         mock_init.assert_called_once_with(order)
         order.transition_status.assert_not_called()
-        mock_alert.assert_called_once_with(order, "payment_awaiting_confirmation")
+        # Sem dinheiro, nada a aceitar: o alerta nasce no pagamento (DEV-2026-091).
+        mock_alert.assert_not_called()
         mock_send.assert_called_once_with(order, "order_received")
 
     def test_manual_does_not_auto_confirm(self):

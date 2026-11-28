@@ -220,6 +220,7 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
 
     from shopman.backstage.projections import order_queue
     from shopman.backstage.projections.preorders import _channel_labels, _fallback_channel_label
+    from shopman.shop.policies.order_payment import awaits_online_payment
     from shopman.shop.services import order_composition
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
@@ -232,7 +233,13 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
     # (60 min de prazo, dono 09/11); a encomenda já aceita que ainda não chegou à
     # hora dela vive na lista "Encomendas" e não é trabalho do dia.
     today_work = [order for order in active if not _waits_outside_the_board(order)]
-    to_accept = [order for order in today_work if order.status == "new"]
+    # O pedido que espera o dinheiro online não é "para aceitar": ninguém consegue
+    # aceitá-lo até o Pix ou o cartão cair (DEV-2026-091). Ele volta a contar no
+    # instante em que o pagamento cai.
+    to_accept = [
+        order for order in today_work
+        if order.status == "new" and not awaits_online_payment(order)
+    ]
     deadlines = order_queue._confirmation_deadlines([order.ref for order in to_accept])
     channels = _channel_labels({order.channel_ref or "" for order in to_accept})
 
@@ -646,7 +653,7 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
 
 
 def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
-    """Compras: pedido enviado ao fornecedor e ainda aguardando entrega.
+    """Compras: solicitações abertas da Produção e pedidos aguardando entrega.
 
     A mesma marca que o quadro do Compras lê (``metadata.purchase.request_status``):
     ``sent`` é o pedido em aberto, que o recebimento ou o cancelamento encerram. Um
@@ -658,15 +665,26 @@ def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected
 
     Material = apps.get_model("buyman", "Material")
     on_the_way: set[str] = set()
+    requested = 0
     for material in Material.objects.filter(is_active=True).only("sku", "metadata"):
+        meta = _purchase_meta(material)
         if _purchase_request_status(material) == "sent":
-            ref = str(_purchase_meta(material).get("request_ref") or "").strip()
+            ref = str(meta.get("request_ref") or "").strip()
             on_the_way.add(ref or f"sku:{material.sku}")
+        # A Produção solicitou e o Compras ainda não pediu ao fornecedor.
+        requested += sum(
+            1
+            for entry in meta.get("internal_requests") or ()
+            if isinstance(entry, dict) and entry.get("status") == "open"
+        )
+    parts = []
+    if requested:
+        parts.append(_plural(requested, "solicitação da Produção", "solicitações da Produção"))
+    if on_the_way:
+        parts.append(_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho"))
     out.statuses["purchase"] = HubAppStatusProjection(
         # Todo bloco tem estado (prévia v4): sem pedido, o estado calmo diz isso.
-        summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho")
-        if on_the_way
-        else "Nenhum pedido em andamento",
+        summary=" · ".join(parts) if parts else "Nenhum pedido em andamento",
     )
 
 

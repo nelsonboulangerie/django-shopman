@@ -46,13 +46,13 @@ na primeira vez.
 Todas moram em `surfaces/storefront-nuxt/public/img/home/` e são referenciadas
 direto no código. Não passam pelo banco nem pelo catálogo.
 
+H4 e H5 (o slide "quem já comprou", `facade4.webp`/`interior.webp`) saíram da Home em 24/11/2026: o slide repetia a saudação, e o dono decidiu tirá-lo com as fotos (#3496).
+
 | # | Lugar | Arquivo | Onde | Quadro que a tela recorta | Mínimo para ficar nítido | Orientação |
 |---|---|---|---|---|---|---|
 | H1 | Herói, "quem chega" (celular) | `facade6.webp` (900×1600) | `HomeHeroThing.vue` | quase a tela inteira em pé, ~2:3 a 9:16 | **1080×1920** | **vertical** |
 | H2 | Herói, "quem chega" (≥640px) | `facade2.webp` (1600×900) | idem | faixa de ~1090×440–480, ~2,3:1 | **2200×1000** (16:9 serve se o assunto estiver no meio) | **horizontal** |
 | H3 | Herói, "pedido em andamento" | `selfservice.webp` (1254² nos dois) | idem | os dois quadros acima | 1080×1920 **e** 2200×1000 | par vertical + horizontal |
-| H4 | Herói, "quem já comprou" (celular) | `facade4.webp` (900×1600) | idem | vertical | 1080×1920 | vertical |
-| H5 | Herói, "quem já comprou" (≥640px) | `interior.webp` (1600×900) | idem | faixa larga | 2200×1000 | horizontal |
 | H6 | Herói, "feito à mão" | `baguette.webp` (1254² nos dois) | idem | os dois quadros | 1080×1920 **e** 2200×1000 | par vertical + horizontal |
 | C1 | "Como funciona": pedir online | `baguette.webp` | `pages/index.vue` | 16:9, ~540 px de largura | 1280×720 | horizontal |
 | C2 | "Como funciona": vir à loja | `selfservice.webp` | idem | 16:9 | 1280×720 | horizontal |
@@ -81,7 +81,6 @@ fotos são do WP-FOTOS-DA-CASA, porque foto de produto promete **aquela** peça.
 |---|---|---|
 | H1/H2, quem chega | **fachada ou salão com luz de dia**, a casa como lugar | Primeira impressão: onde fica e como é por dentro |
 | H3, pedido em andamento | **balcão/vitrine cheia** ou **mãos embalando** | "Seu pedido está sendo preparado" |
-| H4/H5, quem já comprou | **interior acolhedor**: mesas, café servido | Volta de quem já conhece |
 | H6, feito à mão | **forno/fornada**: pão saindo, massa sendo modelada, levain | O argumento central da casa (fermentação natural desde 1997) |
 | C1, pedir online | **produto em contexto**, pronto para levar (sacola, caixa) | É o caminho da compra online |
 | C2, vir à loja | **vitrine/balcão do autoatendimento** | É o caminho da visita |

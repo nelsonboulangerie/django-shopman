@@ -114,4 +114,4 @@ def test_k26_instruction_in_a_team_answer_is_data():
     model = turn_engine.ports.model
     assert model.requests and all(injected not in repr(request) for request in model.requests)
     assert {f.name for f in dataclasses.fields(model.requests[-1])} == {"request", "event_id", "content_ref",
-                                                                        "allowed_acts"}
+                                                                        "allowed_acts", "context"}

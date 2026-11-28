@@ -473,6 +473,8 @@ class CommitService:
             "gift_hide_values",
             # Comanda do PDV que nasceu de uma transferência: de qual comanda veio.
             "transferred_from",
+            # De qual versão da loja o pedido veio: {ref: {variant, generation}}.
+            "experience",
         ):
             if key in session_data:
                 order_data[key] = session_data[key]

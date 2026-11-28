@@ -33,15 +33,23 @@ class StorefrontConfig(AppConfig):
         # backstage, que não importa superfície; a Concierge se registra na porta do shop.
         from shopman.shop import concierge_verification
         from shopman.storefront.concierge import faq_promotion, verification
+        from shopman.storefront.concierge.service import give_back_by_alert
 
         concierge_verification.register(
-            answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote
+            answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote,
+            give_back=give_back_by_alert,
         )
         # O B.I. mostra fala de cliente (a seção IA): só pelo redator da Concierge.
         from shopman.shop import concierge_reading
         from shopman.storefront.concierge.observation_privacy import redact_observation_text
 
         concierge_reading.register(redact=lambda text: redact_observation_text(text).text)
+        # Número que muda de dono (D3): a conversa daquele número se desliga do
+        # cadastro que o perdeu, na mesma transação que o tirou.
+        from shopman.shop.services import auth as auth_service
+        from shopman.storefront.concierge.service import detach_reassigned_number
+
+        auth_service.on_number_left(detach_reassigned_number)
         # Loja viva (#2784): o canal da loja tem vitrine pública. O shop só calcula o
         # estado público do SKU (e publica ``shelf-<canal>``) para canal registrado aqui.
         from shopman.shop.services import public_shelf

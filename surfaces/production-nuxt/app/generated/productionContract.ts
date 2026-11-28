@@ -82,13 +82,25 @@ export interface OperatorAlertsProjection {
   contract_version: number;
 }
 
-/** A compact order commitment for a production work order. */
-export interface OrderCommitmentProjection {
+/** Um pedido que conta no prometido de um produto numa data (WP-F08). */
+export interface PromisedOrderProjection {
   ref: string;
+  customer_first_name: string;
+  due_time: string;
+  fulfillment_type: string;
+  qty: string;
   status: string;
   status_label: string;
-  qty_required: string;
-  due_time: string;
+}
+
+/** O prometido de um produto numa data, pela régua das reservas (WP-F08). */
+export interface ProductionPromisedProjection {
+  date: string;
+  planned_qty: string;
+  ordered_qty: string;
+  free_qty: string;
+  over_plan_qty: string;
+  orders: PromisedOrderProjection[];
 }
 
 /** How much of a base recipe is used by an output SKU recipe. */
@@ -124,11 +136,10 @@ export interface WorkOrderCardProjection {
   started_at_display: string;
   created_at_display: string;
   progress_pct: number;
-  committed_qty: string;
-  order_commitments: OrderCommitmentProjection[];
   can_void: boolean;
   position_name: string;
   created_at_time: string;
+  promised: ProductionPromisedProjection | null;
 }
 
 /** Aggregate counts for the production board header. */
@@ -238,6 +249,7 @@ export interface ProductionMatrixRowProjection {
   finished_qty: string;
   loss_qty: string;
   output_unit: string;
+  promised: ProductionPromisedProjection | null;
 }
 
 /** A matrix row within a base recipe group. */
@@ -376,12 +388,13 @@ export interface ProductionKDSProjection {
   contract_version: number;
 }
 
-/** ForecastRowProjection(ref: 'str', output_sku: 'str', recipe_name: 'str', qty: 'str', eta_display: 'str', eta_is_actual: 'bool', status: 'str', status_label: 'str', history_days: 'int') */
+/** ForecastRowProjection(ref: 'str', output_sku: 'str', recipe_name: 'str', qty: 'str', unit: 'str', eta_display: 'str', eta_is_actual: 'bool', status: 'str', status_label: 'str', history_days: 'int') */
 export interface ForecastRowProjection {
   ref: string;
   output_sku: string;
   recipe_name: string;
   qty: string;
+  unit: string;
   eta_display: string;
   eta_is_actual: boolean;
   status: string;
@@ -423,6 +436,7 @@ export interface MiseEnPlaceLineProjection {
   annotation: string;
   margin_display: string;
   margin_reason: string;
+  missing_display: string;
 }
 
 /** Aggregated material needs for the day's open work orders. */
@@ -437,6 +451,7 @@ export interface ProductionMiseEnPlaceProjection {
   yield_margin_applied: boolean;
   yield_margin_note: string;
   access: ProductionSurfaceAccess;
+  purchase_url: string;
   actions: ProductionActionProjection[];
   generated_at: string;
   source_revision: string;
@@ -546,6 +561,59 @@ export interface ProductionBlindMapProjection {
   contract_version: number;
 }
 
+/** Uma parte da diferença do lote: o que foi, quanto, por quê, quem e quando. */
+export interface LossPartProjection {
+  kind: string;
+  kind_label: string;
+  quantity: string;
+  quantity_display: string;
+  cause: string;
+  who: string;
+  at: string;
+  counts_as_loss: boolean;
+}
+
+/** A perda do dia numa grandeza só (peça, massa ou volume), com as duas partes. */
+export interface DayLossByUnitProjection {
+  unit_label: string;
+  total_display: string;
+  declared_display: string;
+  shortfall_display: string;
+  heading: string;
+}
+
+/** A work order history row for production audit reports. */
+export interface WorkOrderReportRow {
+  ref: string;
+  date: string;
+  recipe_ref: string;
+  recipe_name: string;
+  position_ref: string;
+  qty_planned: string;
+  qty_started: string;
+  started_assumed: boolean;
+  qty_finished: string;
+  qty_loss: string;
+  yield_rate: string;
+  operator_ref: string;
+  started_at: string;
+  finished_at: string;
+  duration_minutes: string;
+  date_display: string;
+  position_name: string;
+  operator_name: string;
+  unit_label: string;
+  qty_planned_display: string;
+  qty_started_display: string;
+  qty_finished_display: string;
+  qty_loss_display: string;
+  loss_declared: string;
+  loss_shortfall: string;
+  loss_overshoot: string;
+  loss_parts: LossPartProjection[];
+  duration_display: string;
+}
+
 /** A started work order that exceeded its configured target window. */
 export interface ProductionLateWorkOrderProjection {
   pk: number;
@@ -555,6 +623,7 @@ export interface ProductionLateWorkOrderProjection {
   operator_ref: string;
   elapsed_minutes: number;
   target_minutes: number;
+  operator_name: string;
 }
 
 /** Top-level read model for the production dashboard. */
@@ -576,6 +645,9 @@ export interface ProductionDashboardProjection {
   planned_display: string;
   loss_display: string;
   loss_hint: string;
+  planned_hint: string;
+  loss_by_unit: DayLossByUnitProjection[];
+  loss_lots: WorkOrderReportRow[];
   actions: ProductionActionProjection[];
   generated_at: string;
   source_revision: string;
@@ -629,7 +701,6 @@ export interface QCOrderCardProjection {
   partition: QCPartitionGroupProjection[];
   correction_count: number;
   last_correction_at_display: string;
-  committed_qty: string;
   full_price_qty: string;
   discounted_qty: string;
   loss_qty: string;
@@ -639,6 +710,8 @@ export interface QCOrderCardProjection {
   typical_loss_qty: string;
   alert_waiting_count: number | null;
   output_unit: string;
+  oven_until_display: string;
+  promised: ProductionPromisedProjection | null;
 }
 
 /** O quiosque do fournil (ADR-017 §9): ordens do dia + catálogos de QC. */
@@ -672,25 +745,6 @@ export interface ProductionReportFilters {
   status: string;
 }
 
-/** A work order history row for production audit reports. */
-export interface WorkOrderReportRow {
-  ref: string;
-  date: string;
-  recipe_ref: string;
-  recipe_name: string;
-  position_ref: string;
-  qty_planned: string;
-  qty_started: string;
-  started_assumed: boolean;
-  qty_finished: string;
-  qty_loss: string;
-  yield_rate: string;
-  operator_ref: string;
-  started_at: string;
-  finished_at: string;
-  duration_minutes: string;
-}
-
 /** Aggregated productivity by production operator. */
 export interface OperatorProductivityRow {
   operator_ref: string;
@@ -699,6 +753,11 @@ export interface OperatorProductivityRow {
   qty_total: string;
   yield_avg: string;
   duration_avg_minutes: string;
+  qty_total_display: string;
+  duration_avg_display: string;
+  qty_count_display: string;
+  qty_mass_display: string;
+  qty_volume_display: string;
 }
 
 /** Aggregated waste by recipe. */
@@ -709,6 +768,10 @@ export interface RecipeWasteRow {
   loss_total: string;
   yield_avg: string;
   capacity_utilization: string;
+  unit_label: string;
+  loss_total_display: string;
+  loss_declared_display: string;
+  loss_shortfall_display: string;
 }
 
 /** Partição de qualidade agregada por receita × grau × defeito (ADR-017). */
@@ -842,10 +905,12 @@ export interface ProductionValidationErrorBody {
   issues: ProductionValidationIssue[];
 }
 
-/** ProductionValidationErrorEnvelope(detail: 'str', error: 'ProductionValidationErrorBody') */
+/** O dialeto da casa (``docs/reference/errors.md``) por cima do superset. */
 export interface ProductionValidationErrorEnvelope {
   detail: string;
   error: ProductionValidationErrorBody;
+  field: string | null;
+  errors: Record<string, string[]> | null;
 }
 
 /** ProductionConflictRecovery(action: "Literal['refresh', 'retry']", label: 'str') */
@@ -917,15 +982,36 @@ export interface ProductionNotFoundErrorEnvelope {
   error: ProductionNotFoundErrorBody;
 }
 
-/** ProductionShortagePossibility(kind: "Literal['retry', 'force']", label: 'str', enabled: 'bool', proof: 'str') */
+/** ProductionShortagePossibility(kind: "Literal['retry', 'force', 'confirm', 'purchase', 'request_purchase']", label: 'str', enabled: 'bool', proof: 'str', href: 'str') */
 export interface ProductionShortagePossibility {
-  kind: "retry" | "force";
+  kind: "retry" | "force" | "confirm" | "purchase" | "request_purchase";
   label: string;
   enabled: boolean;
   proof: string;
+  href: string;
 }
 
-/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str') */
+/** Quem pode assinar a falta de insumo (Gerente e Dono, D-042). */
+export interface ProductionShortageAuthorizer {
+  id: number;
+  username: string;
+  name: string;
+  pin_digits: number | null;
+}
+
+/** ProductionShortageAuthorizationResponse(override_proof: 'str', authorizer_name: 'str') */
+export interface ProductionShortageAuthorizationResponse {
+  override_proof: string;
+  authorizer_name: string;
+}
+
+/** O que ficou solicitado ao Compras: os insumos e a frase de confirmação. */
+export interface ProductionPurchaseRequestResponse {
+  requested_skus: string[];
+  detail: string;
+}
+
+/** ProductionMaterialShortageItem(sku: 'str', name: 'str', unit: 'str', needed: 'str', available: 'str', shortage: 'str', shortage_display: 'str', needed_display: 'str', available_display: 'str', produced_here: 'bool') */
 export interface ProductionMaterialShortageItem {
   sku: string;
   name: string;
@@ -933,15 +1019,21 @@ export interface ProductionMaterialShortageItem {
   needed: string;
   available: string;
   shortage: string;
+  shortage_display: string;
+  needed_display: string;
+  available_display: string;
+  produced_here: boolean;
 }
 
-/** ProductionMaterialShortageErrorBody(code: "Literal['material_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', missing: 'tuple[ProductionMaterialShortageItem, ...]') */
+/** ProductionMaterialShortageErrorBody(code: "Literal['material_shortage']", stage: "Literal['start', 'finish']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', missing: 'tuple[ProductionMaterialShortageItem, ...]', authorizers: 'tuple[ProductionShortageAuthorizer, ...]') */
 export interface ProductionMaterialShortageErrorBody {
   code: "material_shortage";
+  stage: "start" | "finish";
   work_order_ref: string;
   idempotency_key: string;
   possibilities: ProductionShortagePossibility[];
   missing: ProductionMaterialShortageItem[];
+  authorizers: ProductionShortageAuthorizer[];
 }
 
 /** ProductionMaterialShortageErrorEnvelope(detail: 'str', error: 'ProductionMaterialShortageErrorBody') */
@@ -950,7 +1042,13 @@ export interface ProductionMaterialShortageErrorEnvelope {
   error: ProductionMaterialShortageErrorBody;
 }
 
-/** ProductionOrderShortageErrorBody(code: "Literal['order_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', required: 'str', requested: 'str', order_refs: 'tuple[str, ...]') */
+/** ProductionOrderShortageLine(ref: 'str', qty: 'str') */
+export interface ProductionOrderShortageLine {
+  ref: string;
+  qty: string;
+}
+
+/** ProductionOrderShortageErrorBody(code: "Literal['order_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', required: 'str', requested: 'str', order_refs: 'tuple[str, ...]', orders: 'tuple[ProductionOrderShortageLine, ...]') */
 export interface ProductionOrderShortageErrorBody {
   code: "order_shortage";
   work_order_ref: string;
@@ -959,6 +1057,7 @@ export interface ProductionOrderShortageErrorBody {
   required: string;
   requested: string;
   order_refs: string[];
+  orders: ProductionOrderShortageLine[];
 }
 
 /** ProductionOrderShortageErrorEnvelope(detail: 'str', error: 'ProductionOrderShortageErrorBody') */
@@ -977,6 +1076,17 @@ export interface ProductionPartitionGroupRequest {
 export interface ProductionQualityReviewBatchItemRequest {
   work_order_id: number;
   expected_rev: number;
+}
+
+export interface ProductionPurchaseRequestRequest {
+  purchase_request_proof: string;
+}
+
+export interface ProductionShortageAuthorizationRequest {
+  override_proof: string;
+  username?: string;
+  pin?: string;
+  badge?: string;
 }
 
 export interface ProductionPlanMutationRequest {
@@ -1009,6 +1119,8 @@ export interface ProductionStartMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+  short_lot_proof?: string;
+  material_shortage_proof?: string;
   quantity: string;
   position_id?: string;
   operator_ref?: string;
@@ -1055,6 +1167,7 @@ export interface ProductionFinishMutationRequest {
   action_ref: string;
   action_proof: string;
   expected_rev: number;
+  short_lot_proof?: string;
   override_proof?: string;
   quantity: string;
   force?: boolean;
@@ -1188,6 +1301,14 @@ async function postProductionMutation<T>(href: string, body: unknown): Promise<T
     options: { method: "POST"; body: unknown },
   ) => Promise<T>;
   return post(href, { method: "POST", body });
+}
+
+export function requestProductionPurchase(body: ProductionPurchaseRequestRequest): Promise<ProductionPurchaseRequestResponse> {
+  return postProductionMutation<ProductionPurchaseRequestResponse>("/api/v1/backstage/production/purchase-request/", body);
+}
+
+export function authorizeProductionShortage(body: ProductionShortageAuthorizationRequest): Promise<ProductionShortageAuthorizationResponse> {
+  return postProductionMutation<ProductionShortageAuthorizationResponse>("/api/v1/backstage/production/shortage-authorization/", body);
 }
 
 export function planProduction(body: ProductionPlanMutationRequest): Promise<ProductionPlanMutationSuccess> {

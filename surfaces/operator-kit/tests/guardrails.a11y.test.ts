@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de NOME ACESSÍVEL: botão de ícone puro tem que dizer o que faz.
 //
@@ -34,7 +35,7 @@ const NAMING_ATTRIBUTES = /aria-label|aria-labelledby|title=|\blabel=|:label\b/;
 function vueFiles(dir: string, found: string[] = []): string[] {
   if (!existsSync(dir)) return found;
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".nuxt" || entry === ".output") continue;
+    if (isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);

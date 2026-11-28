@@ -14,7 +14,7 @@
 #   🔴 SEM PR        branch com delta real sobre o main e nenhum PR
 #   🔴 NÃO EMPURRADA commits locais que o origin não tem
 #   ⚠️ DELTA PÓS-PR  PR mergeado, mas o branch tem commits além dele
-#   🟢 VERDE FORA DA FILA  PR limpo, checks verdes, auto-merge desligado → `gh pr merge <N>`
+#   🟢 VERDE FORA DA FILA  PR limpo, checks verdes, auto-merge desligado → `make ready pr=<N>`
 #   🚦 NA FILA       auto-merge ligado, a fila é dona
 #   🔴 VERMELHO      check reprovado — nomeie a causa ou conserte
 #   ⚠️ CONFLITO      PR não funde com o main — resolva no branch
@@ -161,7 +161,7 @@ done < <(git worktree list --porcelain | awk '
 
 echo
 echo "${bold}Em voo — worktrees e branches locais (base ${BASE})${reset}"
-echo "${dim}🔴 exige ação: commit por arquivo nomeado → push → gh pr create → gh pr merge <N>. ⚠️ pede olhar. ✓ só conta.${reset}"
+echo "${dim}🔴 exige ação: commit por arquivo nomeado → make preflight → push → gh pr create → make ready pr=<N>. ⚠️ pede olhar. ✓ só conta.${reset}"
 echo
 {
   printf 'STATUS\tBRANCH\tDETALHE\tWORKTREE\n'
@@ -203,7 +203,7 @@ printf '%s' "${OPEN}" | jq -r '
         elif .fail>0 then "🔴 VERMELHO (\(.fail) check)"
         elif .queued then "🚦 NA FILA"
         elif .total==0 or .pend>0 then "◷  RODANDO"
-        elif .mergeStateStatus=="CLEAN" or .mergeStateStatus=="BEHIND" or .mergeStateStatus=="UNSTABLE" then "🟢 VERDE FORA DA FILA → gh pr merge \(.number)"
+        elif .mergeStateStatus=="CLEAN" or .mergeStateStatus=="BEHIND" or .mergeStateStatus=="UNSTABLE" then "🟢 VERDE FORA DA FILA → make ready pr=\(.number)"
         else "?  \(.mergeStateStatus)" end) as $tag
      | "\($tag)\t#\(.number)\t\(.updatedAt[:10])\t\(.headRefName)\t\(.title[:56])"
     ),

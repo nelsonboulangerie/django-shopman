@@ -747,6 +747,24 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_nelson_seed_carries_the_concierge_keywords_the_owner_approved(monkeypatch):
+    """O seed grava as palavras-chave aprovadas (24/11/2026) como o ``--write`` gravou no ar:
+    só nos produtos publicados, o teste vê o que o cliente vê ("madalena" acha a Madeleine)
+    e o corte do dono vale."""
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    from shopman.offerman.models import Product
+
+    def words(sku):
+        return {tag.name for tag in Product.objects.get(sku=sku).keywords.all()}
+
+    assert {"madalena", "bolinho francês"} <= words("MDLN")
+    assert {"campagne oval", "pão oval"} <= words("CPG")
+    assert "italiano" not in words("CI")
+
+
+@pytest.mark.django_db
 def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
     monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
 
@@ -871,6 +889,16 @@ def test_o_seed_padrao_da_a_ana_um_pedido_concluido_ontem(monkeypatch, instant):
     ]
     assert dela, f"o seed não deu à Ana pedido concluído em {yesterday:%d/%m}"
     assert dela[0].data["customer"]["name"] == "Ana Ferreira"
+
+    # Os clientes da casa no seed já provaram o número: o código abre a conta
+    # deles (D4, OC-08). É por eles que o harness E2E entra (CLI-003, CLI-005).
+    from shopman.guestman.adapters.auth import IdentityResolver
+    from shopman.guestman.models import Customer
+
+    for ref in ("CLI-003", "CLI-005"):
+        cliente = Customer.objects.get(ref=ref)
+        resolvido = IdentityResolver().resolve("phone", cliente.phone)
+        assert resolvido is not None and resolvido.subject_id == cliente.uuid, ref
 
 
 @pytest.mark.django_db

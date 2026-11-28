@@ -12,6 +12,8 @@ from .commerce_read import CommerceReadPort, ItemSummary, PromiseReading
 from .common import PORT_NAMES, Capabilities, PortError, TrustedContext
 from .guard import EffectGuard, EffectState
 from .model import (
+    AdjudicateRequest,
+    Adjudication,
     Budget,
     Consumption,
     Draft,
@@ -19,6 +21,9 @@ from .model import (
     KnownCost,
     ModelPort,
     ModelRequest,
+    PendingQuestion,
+    ReadingContext,
+    RecentTurn,
     ScoreRequest,
     Scores,
 )
@@ -41,6 +46,8 @@ PORTS = {
 __all__ = [
     "PORTS",
     "PORT_NAMES",
+    "AdjudicateRequest",
+    "Adjudication",
     "Budget",
     "Capabilities",
     "ChannelPort",
@@ -60,9 +67,12 @@ __all__ = [
     "ModelPort",
     "ModelRequest",
     "OutcomesPort",
+    "PendingQuestion",
     "PortError",
     "PreparedMessage",
     "PromiseReading",
+    "ReadingContext",
+    "RecentTurn",
     "ScoreRequest",
     "Scores",
     "StaffPort",

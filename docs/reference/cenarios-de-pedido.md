@@ -29,6 +29,15 @@ na §8.
   em segundo, logo depois do cliente, porque diz respeito à disponibilidade (dono, 19/11/2026,
   #2754; revê a ordem de 16/09, que punha o recebimento antes do quando).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
+- Encomenda paga e **não retirada**: o valor que a loja retém é multa por desistência, com
+  recibo e **sem NFC-e**, fora da receita bruta do Simples. A parte executada de uma encomenda
+  é o que foi **entregue**, não o que foi produzido. Na retirada parcial, a NFC-e é só do que
+  saiu, e o resto retido é multa (contador, 24/11/2026, #2695). No sistema, o "Não retirado"
+  termina em `cancelled` sem passar pela saída, e `fiscal.emit` recusa pedido desfeito. O recibo
+  do valor retido (dono, 24/11/2026, #3538) sai no balcão no fim do gesto e fica na página do
+  pedido; o aviso ao cliente aponta para ele. Compra na conta da casa não tem recibo (nada foi recebido). Desde 24/11/2026 (DEV-2026-089) a
+  retenção é de 40% provisório do valor dos itens feitos para a encomenda; a revenda e o que volta à
+  venda voltam inteiros (`Shop.defaults["no_show"]["retention"]`).
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
 - Expedição sem NFC-e só avisa, nunca segura a sacola.
 - KDS: dois gestos (Iniciar, Pronto), desfazer de 5 s, cancelamento com alarde.
@@ -472,7 +481,7 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Horário de entrega do site | só confere "já passou", não a grade | `views.py:273-285` | ATRITO (P2-30), resolvido #1767 |
 | Link do entregador na página do pedido | não aparece (só no aviso) | `order_tracking.py:1477-1482` | LACUNA (P1-11), resolvida #1718 |
 | Sacola na fila de uma fornada futura, pedido para antes dela (Kuro Pan de quarta para retirar hoje, beta 09/11) | o Quando abre no dia da fornada; os dias antes aparecem desabilitados com a frase "Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar."; o commit recusa (`order_date_before_batch`, campo `delivery_date`) e nunca adota a reserva da fornada num pedido de antes dela | `stock.hold`; `availability.session_holds_after`; `checkoutFlow.ts` (`checkoutDateChoices`, `initialCheckoutDate`); `presentation/cart.ts` (`cartBatchFloor`) | OK (P0 de 09/11) |
-| Sacola na fila de uma fornada futura, pedido para o DIA dela | o pedido adota a reserva que a sacola já tem no lote (a vaga na fila é a mesma, mesmo com a fornada cheia); não cria outra reserva nem cai em demanda sem lote. Na concierge, a data antes da fornada é recusada já ao combinar retirada ou entrega, com o item e o dia | `stock.hold` (`_session_holds_on_batch`); `availability.session_holds_on_batch`; `stock.order_date_before_batch_refusal` em `intents/checkout._validate_preorder` | OK (P0 de 09/11) |
+| Sacola na fila de uma fornada futura, pedido para o DIA dela | o pedido adota a reserva que a sacola já tem no lote (a vaga na fila é a mesma, mesmo com a fornada cheia); não cria outra reserva nem cai em demanda sem lote. Na concierge, a data antes da fornada é recusada já ao combinar retirada ou entrega, com o item e o dia | `stock.hold` (`_session_holds_on_batch`); `availability.session_holds_on_batch`; `stock.order_date_before_batch_refusal` em `policies/preorder_date.preorder_date_errors` | OK (P0 de 09/11) |
 | Sacola na fila de uma fornada futura, e depois surge saldo numa data anterior (fornada extra, pão pronto) | a data anterior fica liberada no Quando (`earlier_available_date` na linha da sacola); o pedido para ela reserva de novo nessa data, sem registro de demanda, e a vaga da fornada posterior volta para a fila. Sem saldo para a quantidade inteira, vale a recusa de sempre, com o item e o dia da fornada (dono, 10/11/2026) | `policies/order_date_before_batch.py` (`day_has_room`, `earliest_day_with_room`); `stock.hold` (`_hold_anchored_by`); `projections/cart._earlier_available_dates` | `test_order_date_before_batch.py::TestFornadaAnteriorComSaldo`; `test_checkout_order_date_before_batch.py` |
 | Texto residual "CPF obrigatório na entrega" | comentário e prompt da concierge | `checkoutPayload.ts:30`; `concierge/tools.py:1374` | ATRITO (P2-30), resolvido #1745 |
 

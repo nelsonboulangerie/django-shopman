@@ -74,7 +74,7 @@ def _safe_next(raw: str) -> str:
     return ""
 
 
-def _is_checkout_next(path: str) -> bool:
+def is_checkout_next(path: str) -> bool:
     return bool(re.search(r"/(?:checkout|finalizar)(?:/|$)", path))
 
 
@@ -138,7 +138,7 @@ def start_access_link(
 
     state: dict = {}
     # A sessão que apertou o botão, só quando ela é um COMPUTADOR: a mensagem deixa a
-    # liberação esperando por ela (``AccessLinkCreateView._release_origin``) e o botão
+    # liberação esperando por ela (``doorman.services.site_context.release_origin``) e o botão
     # "Liberar o Chrome no Windows" a solta. Impressão digital, nunca a chave. No
     # celular não há origem a liberar: a entrada acontece no navegador que o botão
     # "Voltar à loja" abrir (``site_return``), nunca noutra aba.
@@ -155,7 +155,7 @@ def start_access_link(
     if cart_session_key:
         state["cart_session_key"] = str(cart_session_key)
     safe_next = _safe_next(next_path)
-    if safe_next and (cart_session_key or not _is_checkout_next(safe_next)):
+    if safe_next and (cart_session_key or not is_checkout_next(safe_next)):
         state["next"] = safe_next
 
     code = store_state(state)

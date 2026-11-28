@@ -78,17 +78,21 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
+    ProductionPurchaseRequestSerializer,
     ProductionQualityCorrectionMutationSerializer,
     ProductionQualityReviewBatchMutationSerializer,
     ProductionQualityReviewMutationSerializer,
     ProductionQuickFinishMutationSerializer,
+    ProductionShortageAuthorizationSerializer,
     ProductionStartMutationSerializer,
     ProductionVoidMutationSerializer,
     validated_body,
 )
 from shopman.backstage.api.pos_concurrency import tab_command
 from shopman.backstage.api.production_freshness import (
+    authorized_override_proof,
     override_attempt_digest,
+    override_authorizer,
     override_shortage_snapshot,
     signed_override_proof,
     validate_override_proof,
@@ -284,6 +288,51 @@ def _shortage_override_reason(request, *, reason: str) -> str:
     return reason
 
 
+def _authorize_shortage_override(request, body: dict) -> None:
+    """Quem responde pela falta de insumo: a assinatura da lista, ou o próprio operador.
+
+    A prova que veio assinada por quem autorizou (``ShortageAuthorizationView``,
+    decisão 3 do dono, D-042) já conferiu o PIN da Gerente ou do Dono; aqui só se
+    confere que essa pessoa ainda pode autorizar, e o motivo deixa de ser texto
+    livre: é o nome dela (P1-24). Sem assinatura, vale a regra de antes: o próprio
+    operador precisa da permissão e de uma justificativa.
+    """
+    from shopman.backstage.services import operator as operator_service
+
+    authorized_by = override_authorizer(str(body.get("override_proof") or ""))
+    if not authorized_by:
+        body["reason"] = _shortage_override_reason(request, reason=body.get("reason", ""))
+        return
+    user = operator_service.shortage_authorizer(authorized_by)
+    if user is None:
+        raise ProductionMutationValidationError(
+            {"override_proof": "Quem assinou não pode mais autorizar falta de insumo. Peça outra assinatura."}
+        )
+    body["reason"] = f"Autorizado por {operator_service.operator_card(user)['name']}, com PIN."
+    body["_authorized_by"] = user.get_username()
+
+
+def _require_material_shortage_proof(body: dict) -> None:
+    """A abertura "assim mesmo" só vale como a continuação que a recusa ofereceu."""
+    proof = str(body.get("material_shortage_proof") or "")
+    if not proof:
+        return
+    errors = validate_override_proof(
+        override_proof=proof,
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+    )
+    if errors:
+        raise ProductionMutationValidationError({"material_shortage_proof": next(iter(errors.values()))})
+    snapshot = override_shortage_snapshot(proof)
+    if not snapshot or snapshot.get("kind") != "material_shortage":
+        raise ProductionMutationValidationError(
+            {"material_shortage_proof": "A confirmação pertence a outra falta. Atualize o painel."}
+        )
+    body["_approved_material_shortage_snapshot"] = snapshot
+
+
 def _require_shortage_override_proof(body: dict) -> None:
     """Accept force only as the signed continuation of a shortage response."""
     proof = str(body.get("override_proof") or "")
@@ -302,6 +351,22 @@ def _require_shortage_override_proof(body: dict) -> None:
     body["_approved_shortage_snapshot"] = override_shortage_snapshot(proof)
 
 
+def _require_short_lot_proof(body: dict) -> None:
+    """Accept the short-lot confirmation only as the continuation it was offered as."""
+    proof = str(body.get("short_lot_proof") or "")
+    if not proof:
+        return
+    errors = validate_override_proof(
+        override_proof=proof,
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+    )
+    if errors:
+        raise ProductionMutationValidationError({"short_lot_proof": next(iter(errors.values()))})
+    body["_approved_short_lot_snapshot"] = override_shortage_snapshot(proof)
+
+
 def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     snapshot = production_service.production_shortage_snapshot(exc)
     if snapshot is None:
@@ -312,6 +377,37 @@ def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
         attempt_digest=override_attempt_digest(body),
         shortage_snapshot=snapshot,
     )
+
+
+PURCHASE_REQUEST_SALT = "shopman.backstage.production.purchase_request"
+#: A prova da solicitação vale o tempo de alguém ler o aviso e tocar no botão.
+PURCHASE_REQUEST_MAX_AGE_SECONDS = 60 * 60
+
+
+def _purchase_request_proof(exc, produced_here: set[str]) -> str:
+    """Assina o que a recusa mediu: o lote e quanto falta de cada insumo comprado.
+
+    A solicitação grava exatamente isto. Insumo sem cadastro de compra não entra
+    (não há onde o Compras vê-lo); sem nenhum, não há solicitação a oferecer.
+    """
+    from django.apps import apps
+    from django.core import signing
+
+    Material = apps.get_model("buyman", "Material")
+    bought = [item for item in exc.missing if item.sku not in produced_here and item.shortage > 0]
+    known = set(Material.objects.filter(sku__in={item.sku for item in bought}).values_list("sku", flat=True))
+    items = [
+        {
+            "sku": item.sku,
+            "quantity": format(item.shortage.quantize(Decimal("0.001")).normalize(), "f"),
+            "unit": item.unit,
+        }
+        for item in bought
+        if item.sku in known
+    ]
+    if not items:
+        return ""
+    return signing.dumps({"work_order_ref": exc.work_order_ref, "items": items}, salt=PURCHASE_REQUEST_SALT)
 
 
 def _material_display_names(skus: set[str]) -> dict[str, str]:
@@ -340,8 +436,14 @@ def _production_error_response(
     can_override_shortage: bool = False,
     projection_generated_at=None,
     override_proof: str = "",
+    short_lot_action: str = "",
+    purchase_url: str = "",
 ) -> Response | None:
     """Structured error envelope for production error states.
+
+    ``short_lot_action`` ("start" ou "finish"): a recusa de encomenda dessa ação
+    oferece "confirmar" (o lote curto segue com o número verdadeiro), assinada com
+    o mesmo impacto. Sem ela, só "Revisar quantidade".
 
     The floor app reproduces the material/order shortage modals from this
     payload (mirrors the POS error envelope shape ``{detail, error: {code,…}}``),
@@ -406,22 +508,77 @@ def _production_error_response(
             status=404,
         )
     if isinstance(exc, ProductionStockShortError):
+        from shopman.craftsman.models import Recipe
+
+        from shopman.backstage.projections.production import _preparation_measure
+        from shopman.backstage.services import operator as operator_service
+
         material_names = _material_display_names({item.sku for item in exc.missing})
+        # O que a casa produz (massa, recheio) não se pede ao Compras: o link e a frase
+        # do Compras só valem quando falta algo comprado.
+        produced_here = set(
+            Recipe.objects.filter(
+                output_sku__in={item.sku for item in exc.missing}, is_active=True
+            ).values_list("output_sku", flat=True)
+        )
+        bought_missing = any(item.sku not in produced_here for item in exc.missing)
+        # A próxima ação está no envelope (WP-F11): na abertura a falta é aviso, e
+        # o padeiro escolhe entre pedir no Compras e abrir assim mesmo; no
+        # fechamento é trava, e a saída é a assinatura de quem pode autorizar,
+        # escolhido da lista (decisão 3 do dono, D-042).
+        opening = exc.stage == "start"
+        authorizers = [] if opening else operator_service.shortage_authorizers()
         possibilities = [
             {
                 "kind": "retry",
-                "label": "Tentar novamente",
+                "label": "Revisar quantidade" if opening else "Tentar novamente",
                 "enabled": True,
                 "proof": "",
+                "href": "",
             },
         ]
-        if can_override_shortage:
+        if purchase_url and bought_missing:
+            possibilities.append(
+                {
+                    "kind": "purchase",
+                    "label": "Pedir no Compras",
+                    "enabled": True,
+                    "proof": "",
+                    "href": purchase_url,
+                }
+            )
+        elif bought_missing:
+            # Quem não opera o Compras não pede ao fornecedor: deixa a solicitação,
+            # que o "Comprar" mostra a quem opera (decisão do dono, 26/11/2026).
+            request_proof = _purchase_request_proof(exc, produced_here)
+            if request_proof:
+                possibilities.append(
+                    {
+                        "kind": "request_purchase",
+                        "label": "Solicitar ao Compras",
+                        "enabled": True,
+                        "proof": request_proof,
+                        "href": "",
+                    }
+                )
+        if opening and override_proof:
+            possibilities.append(
+                {
+                    "kind": "confirm",
+                    "label": "Abrir assim mesmo",
+                    "enabled": True,
+                    "proof": override_proof,
+                    "href": "",
+                }
+            )
+        elif not opening and override_proof and (authorizers or can_override_shortage):
             possibilities.append(
                 {
                     "kind": "force",
-                    "label": "Concluir com justificativa",
-                    "enabled": True,
+                    "label": "Fechar com autorização",
+                    "enabled": bool(authorizers),
                     "proof": override_proof,
+                    "href": "",
                 }
             )
         return Response(
@@ -429,9 +586,11 @@ def _production_error_response(
                 "detail": str(exc),
                 "error": {
                     "code": "material_shortage",
+                    "stage": "start" if opening else "finish",
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
+                    "authorizers": authorizers,
                     # Nome e unidade para a tela escrever "Massa de croissant:
                     # precisa 336 kg", nunca o SKU cru com três casas (beta 05/11).
                     "missing": [
@@ -439,9 +598,17 @@ def _production_error_response(
                             "sku": item.sku,
                             "name": material_names.get(item.sku, item.sku),
                             "unit": item.unit,
-                            "needed": str(item.needed),
-                            "available": str(item.available),
-                            "shortage": str(item.shortage),
+                            # Três casas, sem zero à direita: a bruta vezes o
+                            # coeficiente dava "0.300000000000000" na tela.
+                            "needed": _production_quantity(item.needed.quantize(Decimal("0.001"))),
+                            "available": _production_quantity(item.available.quantize(Decimal("0.001"))),
+                            "shortage": _production_quantity(item.shortage.quantize(Decimal("0.001"))),
+                            # A medida da bancada ("300 g", nunca "0,3 kg"), a
+                            # mesma do aviso da sugestão no Planejamento.
+                            "shortage_display": _preparation_measure(item.shortage, item.unit),
+                            "needed_display": _preparation_measure(item.needed, item.unit),
+                            "available_display": _preparation_measure(item.available, item.unit),
+                            "produced_here": item.sku in produced_here,
                         }
                         for item in exc.missing
                     ],
@@ -456,6 +623,7 @@ def _production_error_response(
                 "label": "Revisar quantidade",
                 "enabled": True,
                 "proof": "",
+                "href": "",
             },
         ]
         if can_override_shortage and exc.allow_override:
@@ -465,6 +633,24 @@ def _production_error_response(
                     "label": "Salvar com justificativa",
                     "enabled": True,
                     "proof": override_proof,
+                    "href": "",
+                }
+            )
+        if short_lot_action and exc.confirmable and override_proof:
+            requested = _production_quantity(exc.requested)
+            possibilities.append(
+                {
+                    "kind": "confirm",
+                    "label": (
+                        # Sem prometer o aviso ao Gestor enquanto a lista daqui e o aviso de lá
+                        # saem de réguas diferentes (#3457); o WP-F08 devolve a promessa exata.
+                        f"Fechar com {requested}"
+                        if short_lot_action == "finish"
+                        else f"Abrir com {requested}"
+                    ),
+                    "enabled": True,
+                    "proof": override_proof,
+                    "href": "",
                 }
             )
         return Response(
@@ -475,9 +661,10 @@ def _production_error_response(
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
-                    "required": str(exc.required),
-                    "requested": str(exc.requested),
+                    "required": _production_quantity(exc.required),
+                    "requested": _production_quantity(exc.requested),
                     "order_refs": list(exc.order_refs),
+                    "orders": [{"ref": ref, "qty": _production_quantity(quantity)} for ref, quantity in exc.orders],
                 },
             },
             status=409,
@@ -493,21 +680,11 @@ def _production_validation_error_response(
     *,
     fallback: str,
 ) -> Response:
+    from shopman.backstage.api._production_mutations import validation_error_body
+
     message = str(exc) or fallback
     return Response(
-        {
-            "detail": message,
-            "error": {
-                "code": "validation_error",
-                "issues": [
-                    {
-                        "field": "non_field_errors",
-                        "code": "invalid",
-                        "message": message,
-                    }
-                ],
-            },
-        },
+        validation_error_body([{"field": "non_field_errors", "code": "invalid", "message": message}]),
         status=400,
     )
 
@@ -1916,6 +2093,7 @@ class ProductionMiseEnPlaceView(APIView):
             selected_date=query.get("date"),
             expand=query["expand"],
             access=access,
+            purchase_url=purchase_surface_url(request.user),
         )
         return Response({"mise_en_place": projection_data(mise_en_place)})
 
@@ -2351,6 +2529,36 @@ class DayClosingView(APIView):
             return Response({"detail": public_error_detail(exc, "Falha no fechamento.")}, status=400)
 
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
+
+
+class DayClosingNotPickedUpView(APIView):
+    """O gesto em lote do fechamento: encerrar como não retirado os prontos da lista.
+
+    Opcional (decisão da coordenação em 22/11/2026, reversível): fechar o dia não
+    depende dele. Body: ``{"orders": [{"ref", "revision"}], "manager_approval":
+    {"username", "pin"} | {"badge"}}``.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request):
+        body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+        try:
+            record = closing_service.resolve_not_picked_up(user=request.user, release=body)
+        except closing_service.NotPickedUpBatchRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente: o mesmo desafio da sangria e da produção aberta.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({"ok": True, "orders": record["orders"], "approved_by": record["approved_by"]})
 
 
 def _payment_check_due(order) -> bool:
@@ -3404,8 +3612,9 @@ _ORDER_REFUND_PERMISSIONS = ("shop.manage_orders", "backstage.refund_single_orde
 
 class OrderRefundPreviewView(OperationalObservationMixin, APIView):
     """O que o diálogo "Estornar" mostra: o valor pago naquela cobrança, o que já
-    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança, a
-    deste pedido; nenhuma soma, nenhuma lista (``order_refund.preview``)."""
+    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança;
+    com mais de uma no pedido, cada uma com o valor dela, para a escolha
+    (``?intent=<ref>`` lê a escolhida). Nenhuma soma (``order_refund.preview``)."""
 
     permission_classes = [HasBackstagePermission]
     required_permission = _ORDER_REFUND_PERMISSIONS
@@ -3416,7 +3625,8 @@ class OrderRefundPreviewView(OperationalObservationMixin, APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
-        return Response(order_refund.preview(order, user=request.user))
+        intent_ref = str(request.query_params.get("intent") or "").strip()
+        return Response(order_refund.preview(order, user=request.user, intent_ref=intent_ref))
 
 
 @extend_schema_view(
@@ -3429,7 +3639,8 @@ class OrderRefundPreviewView(OperationalObservationMixin, APIView):
 class OrderRefundView(_OrderActionBase):
     """Estornar UM pedido no Gestor (#2727, item 5; dono, 21/11/2026).
 
-    ``POST {base_revision, expected_actor_id, amount_q?, confirm: true}``. Só com
+    ``POST {base_revision, expected_actor_id, intent_ref?, amount_q?, confirm: true}``.
+    ``intent_ref`` é a cobrança escolhida, quando o pedido tem mais de uma (#3134). Só com
     ``backstage.refund_single_order``: o Gerente estorna partindo do pedido e vê só o
     valor daquela cobrança, sem ``payman.view_paymentintent`` (o Admin de cobranças
     lista, e listar é proibido a ele). ``amount_q`` em centavos, até o disponível; sem
@@ -3463,6 +3674,7 @@ class OrderRefundView(_OrderActionBase):
                  "errors": {"confirm": [order_refund.CONFIRM_REQUIRED]}},
                 status=400,
             )
+        intent_ref = str(request.data.get("intent_ref") or "").strip()
         try:
             amount_q = order_refund.parse_amount_q(request.data.get("amount_q"))
         except order_refund.OrderRefundRefused as exc:
@@ -3471,7 +3683,8 @@ class OrderRefundView(_OrderActionBase):
         def execute(base):
             try:
                 result = order_refund.refund(
-                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key, expected_revision=base,
+                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key,
+                    expected_revision=base, intent_ref=intent_ref,
                 )
             except order_refund.OrderRefundStale as exc:
                 raise OrderStateConflict(str(exc)) from exc
@@ -4812,6 +5025,62 @@ class OrderTicketEscposView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Retained-amount receipt bytes (ESC/POS, base64) of a not-picked-up order, for the station agent",
+        responses={
+            200: OpenApiResponse(description="Receipt payload."),
+            404: OpenApiResponse(description="No retained amount on this order."),
+        },
+    ),
+)
+class OrderRetentionReceiptEscposView(APIView):
+    """O recibo do valor retido de uma encomenda não retirada (#3538).
+
+    Contador (24/11/2026, #2695): o valor que a loja retém é multa, com recibo e
+    sem NFC-e. O papel é composto aqui (``receipt_escpos.retention_receipt``) a
+    partir do que o gesto do "Não retirado" gravou, e a página relaia ao agente
+    local da estação, como a Via Pedido. Sai sozinho no fim do gesto e pode ser
+    reimpresso pelo pedido; a partir do segundo, é 2ª via
+    (``retention_receipt_printed_at`` em ``Order.data``).
+
+    Não é uma das vias do pedido (``order_documents``): é o documento do
+    encerramento, como a DANFE é o da venda. Mesma permissão do gesto e da
+    filipeta (``shop.manage_orders``).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services.receipt_escpos import retention_receipt
+        from shopman.shop.services import no_show, storefront_links
+
+        order = Order.objects.filter(ref=ref).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        receipt = no_show.retention_receipt(order)
+        if receipt is None:
+            return Response({"detail": "Este pedido não tem valor retido pela loja."}, status=404)
+        reprint = _stamp_first_print(ref, "retention_receipt_printed_at")
+        payload = retention_receipt(
+            receipt, verify_url=storefront_links.order_tracking_url(ref), reprint=reprint,
+        )
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"recibo-retido:{ref}",
+                "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Print the delivery DANFE on the dispatch printer (relay), or return bytes for the station agent",
         responses={200: OpenApiResponse(description="DANFE payload.")},
     ),
@@ -5788,11 +6057,14 @@ class WorkOrderPlanView(_ProductionActionBase):
                 request,
                 "can_edit_suggested" if body["source"] == "suggested" else "can_edit_planned",
             )
+            if Decimal(str(body["quantity"])) == 0:
+                # Zerar tira o lote do plano: é cancelar, e cancelar é com quem
+                # pode cancelar (P0-1 do plano de excelência da Produção).
+                access = getattr(request, "production_access", None) or _resolved_production_access(request)
+                if not access.can_void:
+                    deny_production_capability("can_void", detail="Cancelar lote é com o gerente.")
             if force:
-                _shortage_override_reason(
-                    request,
-                    reason=body.get("reason", ""),
-                )
+                _authorize_shortage_override(request, body)
             _require_shortage_override_proof(body)
             output_sku, wo_ref, qty, result = production_service.apply_planned(
                 recipe_id=body["recipe_id"],
@@ -5861,6 +6133,8 @@ class WorkOrderStartView(_ProductionActionBase):
             committed_replay=body.get("_committed_replay", False),
         )
         try:
+            _require_short_lot_proof(body)
+            _require_material_shortage_proof(body)
             wo_ref, quantity = production_service.apply_start(
                 work_order_id=wo_id,
                 quantity=body["quantity"],
@@ -5870,12 +6144,17 @@ class WorkOrderStartView(_ProductionActionBase):
                 actor=_production_actor(request),
                 expected_rev=body["expected_rev"],
                 idempotency_key=body["idempotency_key"],
+                approved_short_lot=body.get("_approved_short_lot_snapshot"),
+                approved_material_shortage=body.get("_approved_material_shortage_snapshot"),
             )
         except ProductionError as exc:
             return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
                 projection_generated_at=body.get("projection_generated_at"),
+                override_proof=_shortage_override_proof(body, exc),
+                short_lot_action="start",
+                purchase_url=purchase_surface_url(request.user),
             )
         except ValueError as exc:
             return _production_validation_error_response(
@@ -5888,6 +6167,166 @@ class WorkOrderStartView(_ProductionActionBase):
                 "wo_ref": wo_ref,
                 "quantity": _production_quantity(quantity),
                 "current": _current_work_order_projection(wo_ref),
+            }
+        )
+
+
+def _shortage_auth_refusal(field: str, message: str) -> Response:
+    """A recusa da assinatura com a frase do problema no ``detail``.
+
+    O envelope de validação genérico diz "Corrija os campos indicados", e a tela de
+    quem autoriza mostraria isso no lugar de "PIN incorreto. Restam 3 tentativas".
+    """
+    return Response(
+        {
+            "detail": message,
+            "field": field,
+            "errors": {field: [message]},
+            "error": {
+                "code": "validation_error",
+                "issues": [{"field": field, "code": "invalid", "message": message}],
+            },
+        },
+        status=400,
+    )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Leave a purchase request for the Purchase app (material shortage)",
+        responses={200: OpenApiResponse(description="Purchase request recorded.")},
+    ),
+)
+class ProductionPurchaseRequestView(_ProductionActionBase):
+    """"Solicitar ao Compras": quem não opera o Compras deixa a falta para quem opera.
+
+    Recebe a prova que a recusa da falta devolveu (o lote e quanto falta de cada
+    insumo comprado) e grava a solicitação no cadastro de compra de cada insumo
+    (`purchase.internal_requests`). Nada sai para o fornecedor: o Compras vê a
+    linha no "Comprar" e decide o pedido. Decisão do dono ao aprovar o WP-F11 (26/11).
+    """
+
+    def post(self, request):
+        from django.core import signing
+        from shopman.craftsman.models import WorkOrder
+
+        from shopman.backstage.projections.production import _product_names
+        from shopman.backstage.services.purchase import (
+            ProductionPurchaseRequestItem,
+            request_purchase_from_production,
+        )
+
+        access = getattr(request, "production_access", None)
+        if access is not None and not (access.can_start or access.can_close_qc):
+            return _shortage_auth_refusal("purchase_request_proof", "Quem não abre nem fecha lote não solicita compra.")
+        serializer = ProductionPurchaseRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            field, messages = next(iter(serializer.errors.items()))
+            return _shortage_auth_refusal(field, str(messages[0]))
+        try:
+            snapshot = signing.loads(
+                serializer.validated_data["purchase_request_proof"],
+                salt=PURCHASE_REQUEST_SALT,
+                max_age=PURCHASE_REQUEST_MAX_AGE_SECONDS,
+            )
+        except signing.BadSignature:
+            return _shortage_auth_refusal(
+                "purchase_request_proof", "Este aviso de falta ficou antigo. Tente a ação de novo para ver a falta de agora."
+            )
+        work_order = WorkOrder.objects.select_related("recipe").filter(ref=snapshot.get("work_order_ref")).first()
+        if work_order is None:
+            return _shortage_auth_refusal("purchase_request_proof", "Este lote não existe mais. Atualize o painel.")
+        product = (
+            _product_names({work_order.output_sku}).get(work_order.output_sku)
+            or getattr(work_order.recipe, "name", "")
+            or work_order.output_sku
+        )
+        items = [
+            ProductionPurchaseRequestItem(sku=str(row["sku"]), quantity=Decimal(str(row["quantity"])), unit=str(row["unit"]))
+            for row in snapshot.get("items") or ()
+        ]
+        requested = request_purchase_from_production(
+            work_order_ref=work_order.ref,
+            product_name=product,
+            items=items,
+            user=request.user,
+        )
+        if not requested:
+            return _shortage_auth_refusal("purchase_request_proof", "Nenhum insumo desta falta tem cadastro de compra.")
+        logger.info(
+            "production_purchase_request operator=%s work_order=%s skus=%s",
+            _production_actor(request),
+            work_order.ref,
+            ",".join(requested),
+        )
+        return Response({"requested_skus": requested, "detail": "Solicitado ao Compras."})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Sign a material shortage with the PIN of who may authorize it",
+        responses={200: OpenApiResponse(description="Signed shortage proof.")},
+    ),
+)
+class ProductionShortageAuthorizationView(_ProductionActionBase):
+    """A Gerente ou o Dono assina a falta de insumo com o próprio PIN (D-042, WP-F11).
+
+    Recebe a prova que a recusa de fechamento devolveu, o usuário escolhido na
+    lista e o PIN dele. Devolve a MESMA prova assinada pelo nome de quem autorizou;
+    a tentativa de fechar segue pelo caminho de sempre (``force`` + ``override_proof``),
+    e o motivo sai do nome, não de texto livre (P1-24). PIN errado conta na
+    credencial da pessoa (trava progressiva, como no PDV).
+    """
+
+    required_production_capability = "can_close_qc"
+
+    def post(self, request):
+        from shopman.backstage.services import operator as operator_service
+
+        serializer = ProductionShortageAuthorizationSerializer(data=request.data)
+        if not serializer.is_valid():
+            field, messages = next(iter(serializer.errors.items()))
+            return _shortage_auth_refusal(field, str(messages[0]))
+        data = serializer.validated_data
+        proof = data["override_proof"]
+        snapshot = override_shortage_snapshot(proof)
+        if not snapshot or snapshot.get("kind") != "material_shortage":
+            return _shortage_auth_refusal("override_proof", "Esta autorização não é de falta de insumo. Atualize o painel.")
+        if data.get("badge"):
+            # O crachá é a posse no lugar do PIN, como no destrave e no PDV.
+            user = operator_service.resolve_operator_by_badge(
+                data["badge"], required_perm=operator_service.OVERRIDE_PRODUCTION_SHORTAGE
+            )
+            if user is None:
+                return _shortage_auth_refusal("badge", "Crachá não reconhecido, ou de quem não autoriza falta de insumo.")
+            return self._signed(proof, user, operator_service)
+        user = operator_service.shortage_authorizer(data.get("username", ""))
+        if user is None:
+            return _shortage_auth_refusal("username", "Esta pessoa não pode autorizar falta de insumo.")
+        locked_until = operator_service.pin_locked_until(user)
+        if locked_until is not None:
+            return _shortage_auth_refusal("pin", operator_service.pin_locked_message(locked_until))
+        if not operator_service.verify_shortage_authorizer_pin(user, data.get("pin", "")):
+            logger.warning(
+                "production_shortage_pin_wrong operator=%s authorizer=%s work_order=%s",
+                _production_actor(request),
+                user.get_username(),
+                snapshot.get("work_order_ref"),
+            )
+            return _shortage_auth_refusal("pin", operator_service.unlock_refusal_detail(user, badge=False))
+        return self._signed(proof, user, operator_service)
+
+    @staticmethod
+    def _signed(proof: str, user, operator_service) -> Response:
+        signed = authorized_override_proof(proof, authorized_by=user.get_username())
+        if signed is None:
+            return _shortage_auth_refusal("override_proof", "Autorização de exceção inválida.")
+        return Response(
+            {
+                "override_proof": signed,
+                "authorizer_name": operator_service.operator_card(user)["name"],
             }
         )
 
@@ -6022,10 +6461,7 @@ class WorkOrderFinishView(_ProductionActionBase):
         force = body["force"]
         try:
             if force:
-                _shortage_override_reason(
-                    request,
-                    reason=body.get("reason", ""),
-                )
+                _authorize_shortage_override(request, body)
             from shopman.craftsman.models import WorkOrder
 
             work_order = WorkOrder.objects.filter(pk=wo_id).first()
@@ -6049,6 +6485,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                         }
                     )
             _require_shortage_override_proof(body)
+            _require_short_lot_proof(body)
             current = _current_work_order_projection(wo_id)
             allow_implicit_start = bool(current and current["status"] == "planned")
             if allow_implicit_start:
@@ -6072,6 +6509,8 @@ class WorkOrderFinishView(_ProductionActionBase):
                 yield_deviation_reason=body.get("yield_deviation_reason", ""),
                 allow_implicit_start=allow_implicit_start,
                 approved_shortage=body.get("_approved_shortage_snapshot"),
+                approved_short_lot=body.get("_approved_short_lot_snapshot"),
+                authorized_by=body.get("_authorized_by", ""),
             )
         except ProductionError as exc:
             return _production_error_response(
@@ -6080,6 +6519,8 @@ class WorkOrderFinishView(_ProductionActionBase):
                 can_override_shortage=request.production_access.can_override_shortage,
                 projection_generated_at=body.get("projection_generated_at"),
                 override_proof=_shortage_override_proof(body, exc),
+                short_lot_action="finish",
+                purchase_url=purchase_surface_url(request.user),
             )
         except ValueError as exc:
             return _production_validation_error_response(
@@ -6269,10 +6710,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
         try:
             force = body["force"]
             if force:
-                _shortage_override_reason(
-                    request,
-                    reason=body.get("reason", ""),
-                )
+                _authorize_shortage_override(request, body)
             _require_shortage_override_proof(body)
             _, wo_ref, qty = production_service.apply_quick_finish(
                 recipe_id=body["recipe_id"],
@@ -6287,6 +6725,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 override_reason=body.get("reason", ""),
                 projected_action_proof=body["action_proof"],
                 approved_shortage=body.get("_approved_shortage_snapshot"),
+                authorized_by=body.get("_authorized_by", ""),
             )
         except ProductionError as exc:
             return _production_error_response(
@@ -6295,6 +6734,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 can_override_shortage=request.production_access.can_override_shortage,
                 projection_generated_at=body.get("projection_generated_at"),
                 override_proof=_shortage_override_proof(body, exc),
+                purchase_url=purchase_surface_url(request.user),
             )
         except ValueError as exc:
             return _production_validation_error_response(

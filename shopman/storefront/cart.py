@@ -183,6 +183,62 @@ class CartService:
             return False
 
     @staticmethod
+    def release_customer_pricing(request: HttpRequest) -> bool:
+        """Quem sai deixa a sacola, não o preço dela (OC-09).
+
+        O avesso de ``ensure_customer_pricing``: roda no logout, que é comando. A
+        sacola preservada perde a identidade de preço de quem saiu e é reprecificada
+        pelo mesmo ``reprice`` do login, então o próximo a usar o navegador lê o
+        preço público. Sem sacola, ou sacola já anônima, sai sem escrever nada.
+        Devolve ``True`` quando reprecificou.
+        """
+        session_key = CartService._get_session_key(request)
+        if not session_key:
+            return False
+        from shopman.shop.services import sessions as session_service
+
+        try:
+            if not session_service.release_customer(session_key=session_key, channel_ref=CHANNEL_REF):
+                return False
+            cart_mutations.reprice(session_key=session_key, channel_ref=CHANNEL_REF)
+            return True
+        except Exception:
+            # O sair nunca falha por isto, e o log grita: a sessão de quem saiu já
+            # acabou; o que sobra é o preço dela na sacola até o próximo login.
+            logger.error("cart.release_customer_pricing_failed", exc_info=True)
+            return False
+
+    @staticmethod
+    def _mark_experience(
+        request: HttpRequest,
+        session_key: str | None,
+        *,
+        session: Session | None = None,
+        customer_ref: str | None = None,
+    ) -> None:
+        """A sacola guarda de qual versão da loja veio (OC-22); o pedido herda no commit.
+
+        Roda em toda escrita da sacola e no login com a sacola aberta, que são
+        comandos; nunca numa leitura (``test_read_side_never_writes``). Quem decide
+        a versão é ``shop.services.experience``; aqui só se grava o que ele resolveu.
+        ``session`` é a sacola que a escrita acabou de devolver: com a marca igual,
+        nenhuma consulta a mais (sem experimento ligado, o caso de todo dia).
+        """
+        if not session_key:
+            return
+        from shopman.shop.services import experience as experience_service
+        from shopman.shop.services import sessions as session_service
+        from shopman.storefront.presentation.home import STOREFRONT_SURFACE
+
+        try:
+            mark = experience_service.order_mark(request, STOREFRONT_SURFACE, customer_ref=customer_ref)
+            if session is not None and (session.data or {}).get("experience") == (mark or None):
+                return
+            session_service.assign_experience(session_key=session_key, channel_ref=CHANNEL_REF, mark=mark)
+        except Exception:  # silêncio-deliberado: a marcação do experimento nunca impede a sacola; sem ela, o pedido conta como sem experimento
+            logger.warning("cart.mark_experience_failed", exc_info=True)
+
+    @staticmethod
     def _get_or_create_session(request: HttpRequest) -> tuple[Session, str]:
         """Return (cart_session, session_key). Creates if needed."""
         cart_session, session_key = cart_mutations.get_or_create_session(
@@ -203,8 +259,12 @@ class CartService:
         name: str = "",
         options: list[dict] | None = None,
         product=None,
+        chosen_date=None,
     ) -> Session:
         """Add item to cart. Merges with existing line if same SKU and same options.
+
+        ``chosen_date`` é o dia do "Para quando?" do cardápio (OC-33 B1); o
+        serviço da sacola o grava e reserva nele (``shop.services.cart``).
 
         ``options`` é a escolha do cliente no produto (``[{group, ref}]``);
         escolha que não fecha com o cadastro levanta ``OptionSelectionError``.
@@ -237,6 +297,7 @@ class CartService:
             name=name,
             options=options,
             product=product,
+            chosen_date=chosen_date,
         )
         request.session["cart_session_key"] = session_key
         if not existing_key and CartService._link_customer(request, session_key):
@@ -244,6 +305,7 @@ class CartService:
                 cart_mutations.reprice(session_key=session_key, channel_ref=CHANNEL_REF)
                 or session
             )
+        CartService._mark_experience(request, session_key, session=session)
         return session
 
     @staticmethod
@@ -254,6 +316,7 @@ class CartService:
         *,
         sku: str | None = None,
         whole_product: bool = False,
+        chosen_date=None,
     ) -> Session:
         """Update quantity of a cart item.
 
@@ -266,14 +329,17 @@ class CartService:
             raise ValueError("No active cart")
 
         CartService._link_customer(request, session_key)
-        return cart_mutations.update_qty(
+        session = cart_mutations.update_qty(
             session_key=session_key,
             channel_ref=CHANNEL_REF,
             line_id=line_id,
             qty=qty,
             sku=sku,
             whole_product=whole_product,
+            chosen_date=chosen_date,
         )
+        CartService._mark_experience(request, session_key, session=session)
+        return session
 
     @staticmethod
     def remove_item(
@@ -293,13 +359,15 @@ class CartService:
             raise ValueError("No active cart")
 
         CartService._link_customer(request, session_key)
-        return cart_mutations.remove_item(
+        session = cart_mutations.remove_item(
             session_key=session_key,
             channel_ref=CHANNEL_REF,
             line_id=line_id,
             sku=sku,
             whole_product=whole_product,
         )
+        CartService._mark_experience(request, session_key, session=session)
+        return session
 
     @staticmethod
     def set_line_notes(request: HttpRequest, *, line_id: str, notes: str) -> Session | None:
@@ -494,3 +562,24 @@ def reprice_cart_on_login(sender, request=None, user=None, **kwargs) -> None:
         return
     customer = auth_service.customer_by_uuid(customer_id)
     CartService.ensure_customer_pricing(request, customer)
+    # A sacola montada anônima passa a dizer a versão que a cliente vê dali em
+    # diante (OC-22): sem isto, quem entra e finaliza sem mexer na sacola levaria
+    # ao pedido a versão do anônimo.
+    CartService._mark_experience(
+        request,
+        session.get("cart_session_key"),
+        customer_ref=(getattr(customer, "ref", "") or "").strip() or None,
+    )
+
+
+def remark_experience(request: HttpRequest) -> None:
+    """A sacola aberta passa a dizer a versão que a pessoa vê a partir de agora.
+
+    Chamado por "Ver a versão de sempre" e pela volta (DEV-2026-096), que são
+    comandos: sem isto, quem troca de versão e finaliza sem mexer na sacola levaria
+    ao pedido a versão de antes. Sem sacola, nada.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    CartService._mark_experience(request, session.get("cart_session_key"))

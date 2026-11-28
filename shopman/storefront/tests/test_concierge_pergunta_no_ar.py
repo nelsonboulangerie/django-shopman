@@ -81,7 +81,9 @@ def baguettes(surface, settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = CONCIERGE_SETTINGS
     monkeypatch.setattr(intents, "_model", lambda: "modelo-de-teste")
     _listed("BAGUETTE", "Baguette de Tradition", description="Baguette de fermentação natural", stock="20")
-    _listed("JAMBON", "Jambon-Beurre", description="Baguette com presunto e manteiga", stock="20")
+    # Duas baguetes no nome: o Jambon-Beurre, que só cita "baguette" na descrição, deixou de ser
+    # candidato quando o pedido tem uma palavra que distingue (cartões da observação, #3591).
+    _listed("BVIEN", "Baguette Viennoise", description="Baguete de massa amanteigada", stock="20")
 
 
 @pytest.mark.django_db

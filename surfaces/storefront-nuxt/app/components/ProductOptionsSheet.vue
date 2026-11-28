@@ -34,6 +34,8 @@ const emit = defineEmits<{
 }>()
 
 const { addLineWithOptions } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDay = injectMenuDay()
 
 const selection = ref<OptionSelectionState>(initialOptionsState(props.optionGroups))
 const submitting = ref(false)
@@ -62,6 +64,12 @@ function setOpen (value: boolean) {
 
 async function submit () {
   if (!valid.value || submitting.value) return
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // E2: com a casa fechada e a sacola sem dia, a escolha segue para a folha "Quando".
+  if (menuDay?.ask(props.meta, 1, optionsPayload(selection.value, props.optionGroups))) {
+    emit('update:open', false)
+    return
+  }
   submitting.value = true
   optionError.value = ''
   try {
@@ -131,7 +139,7 @@ async function submit () {
         </div>
       </fieldset>
 
-      <p v-if="optionError" role="alert" class="text-sm text-destructive" data-product-options-error>{{ optionError }}</p>
+      <p v-if="optionError" role="alert" class="text-sm text-destructive" data-product-options-error data-decisive="error">{{ optionError }}</p>
     </div>
 
     <template #footer>

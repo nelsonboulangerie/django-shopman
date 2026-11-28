@@ -84,6 +84,11 @@ class POSProductProjection:
     # o número não vale como "restam": item sem rastreio de estoque, sem teto, só
     # com fornada futura (nada pronto na prateleira), esgotado, ou vendido por peso.
     units_left: int | None = None
+    # O item está ACABANDO (DEV-2026-077): o saldo chegou à porcentagem do SKU
+    # (``shop/services/running_low.py``, a mesma régua do "Últimas N un." da
+    # Cozinha). É só então que o tile mostra o ``units_left`` à vista; fora disso
+    # o número fica para o hover e o foco no PC.
+    running_low: bool = False
     # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
     # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
     # uma unidade. Ver ``shop/services/weighed_sale.py``.
@@ -1018,12 +1023,18 @@ def build_pos_availability() -> list[dict]:
     sold_out, units_left = _grid_stock(skus)
     without_box = _kits_without_box(skus)
     weighed = _weighed_skus(skus)
+    shown = {
+        sku: None if sku in without_box or sku in weighed else units_left.get(sku)
+        for sku in skus
+    }
+    low = _running_low(shown)
     return [
         {
             "sku": sku,
             "sold_out": sku in sold_out or sku in without_box,
             "sold_out_reason": "Sem caixa" if sku in without_box else "",
-            "units_left": None if sku in without_box or sku in weighed else units_left.get(sku),
+            "units_left": shown[sku],
+            "running_low": sku in low,
         }
         for sku in skus
     ]
@@ -1395,6 +1406,8 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
     skus = [p.sku for p, _ in entries]
     sold_out, units_left = _grid_stock(skus)
     without_box = _kits_without_box(skus)
+    # Vendido por peso: ``_product_projection`` já tira o número e o selo.
+    low = _running_low({sku: left for sku, left in units_left.items() if sku not in without_box})
     routes = _kitchen_routes(skus)
     promotion_prices = _promotion_prices(entries)
     return [
@@ -1403,6 +1416,7 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             sold_out=p.sku in sold_out or p.sku in without_box,
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
             units_left=None if p.sku in without_box else units_left.get(p.sku),
+            running_low=p.sku in low,
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
             kitchen_prep=bool((routes.get(p.sku) or {}).get("prep")),
@@ -2714,6 +2728,7 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
 def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
     units_left: int | None = None,
+    running_low: bool = False,
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
     kitchen_prep: bool = False,
@@ -2771,6 +2786,7 @@ def _product_projection(
         # O teto de quem vende por peso é em quilo, e "Restam 3" de pão por quilo
         # não diz nada ao balcão: o número fica só no que se conta por unidade.
         units_left=None if sold_out or sold_by_weight else units_left,
+        running_low=running_low and not sold_out and not sold_by_weight and bool(units_left),
         sold_by_weight=sold_by_weight,
         choice_group=product_choice_group(product),
         choice_group_label=product_choice_group_label(product),
@@ -2838,6 +2854,13 @@ def _weighed_skus(skus: list[str]) -> set[str]:
         sku for sku, unit in Product.objects.filter(sku__in=skus).values_list("sku", "unit")
         if weighed_sale.is_sold_by_weight(unit)
     }
+
+
+def _running_low(shown: dict[str, int | None]) -> set[str]:
+    """Os SKUs da grade que estão ACABANDO, medidos sobre o número que o tile mostra."""
+    from shopman.shop.services.running_low import running_low_skus
+
+    return running_low_skus({sku: left for sku, left in shown.items() if left})
 
 
 def _grid_stock(skus: list[str], *, target_date=None) -> tuple[set[str], dict[str, int]]:
@@ -3444,6 +3467,8 @@ def build_open_tab(session: Session) -> dict:
         # endereço — e ela pode ter mudado desde que o rascunho foi salvo.
         "delivery_fee_override_q": data.get("delivery_fee_override_q"),
         "order_notes": data.get("order_notes", ""),
+        # Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse.
+        "counter_service": str((data.get("pos") or {}).get("counter_service") or ""),
         "payment_method": payment.get("method", "cash"),
         "payment_collection": payment.get("collection", "terminal"),
         "payment_tenders": _tab_payload_payment_tenders(payment),

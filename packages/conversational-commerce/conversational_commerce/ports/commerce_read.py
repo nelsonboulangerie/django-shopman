@@ -20,6 +20,7 @@ OPERATIONS = (
     "read_item",
     "promise",
     "quote",
+    "requirements",
     "read_order",
     "read_customer",
     "read_policy",
@@ -59,6 +60,15 @@ class CommerceReadPort(Protocol):
     def promise(self, ctx: TrustedContext, ref: str, quantity: Quantity, when: str) -> PromiseReading: ...
 
     def quote(self, ctx: TrustedContext, cart_ref: str) -> TermsDocument: ...
+
+    def requirements(self, ctx: TrustedContext, cart_ref: str) -> Fact:
+        """O que os termos do carrinho ainda exigem, e as opções de cada condição.
+
+        ``Known(value={"missing": [código, ...], <código>: [opção, ...]})``: o código é a condição
+        obrigatória ausente (``payment_method``, ``delivery_address``), e as opções saem do canal,
+        nunca do texto. Sem nada faltando, ``missing`` é vazio.
+        """
+        ...
 
     def read_order(self, ctx: TrustedContext, ref: str) -> Fact: ...
 

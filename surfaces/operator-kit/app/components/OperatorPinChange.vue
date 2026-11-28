@@ -3,19 +3,29 @@
 // Proving the current PIN is the authorization (enforced by the backend). Used
 // voluntarily from the lock screen and forced after a manager reset (must-change).
 // Pure UI — the parent owns the network call (changePin) and passes busy/error.
-import { PIN_MIN_DIGITS, appendPinDigit } from "../presentation/operatorLock";
+import { PIN_DIGITS, PIN_MIN_DIGITS, appendPinDigit } from "../presentation/operatorLock";
+import { alertActions } from "../utils/alertActions";
 
 const props = defineProps<{
   operatorName: string;
   forced?: boolean;
   busy?: boolean;
   error?: string;
+  /** Na troca forçada: onde o gerente redefine o PIN (o Admin, Credenciais PIN). */
+  resetHref?: string;
 }>();
 
 const emit = defineEmits<{
   submit: [{ currentPin: string; newPin: string }];
   cancel: [];
+  /** Na troca forçada: "Não é você?" (quem pede encerra a sessão). */
+  switchUser: [];
 }>();
+
+// Na troca forçada a pessoa precisa saber DE QUEM é o PIN e ter saída (P0 de
+// 23/11, depois do #3337): a sessão pode ser de outra conta, e sem isto a tela
+// prendia quem não sabia o PIN dela.
+const forgot = ref(false);
 
 type Step = "current" | "new" | "confirm";
 const step = ref<Step>("current");
@@ -25,8 +35,9 @@ const confirmPin = ref("");
 const localError = ref("");
 
 const label = computed(() => {
-  if (step.value === "current")
-    return props.forced ? "PIN temporário" : "PIN atual";
+  // Forçada ou não, o primeiro passo é o PIN com que a pessoa entra hoje: o
+  // temporário do gerente ou o antigo, de antes dos 4 dígitos fixos (#3223).
+  if (step.value === "current") return "PIN atual";
   if (step.value === "new") return "Novo PIN";
   return "Repita o novo PIN";
 });
@@ -42,11 +53,18 @@ function setActive(v: string) {
   else confirmPin.value = v;
 }
 
-const canAdvance = computed(() => activeValue().trim().length >= PIN_MIN_DIGITS);
+// O PIN atual pode ser o antigo, de 4 a 8 dígitos. O NOVO tem exatamente 4
+// (#3223, decisão do dono): o campo para no quarto, e o servidor recusa o resto.
+const newStep = computed(() => step.value !== "current");
+const canAdvance = computed(() =>
+  newStep.value
+    ? activeValue().trim().length === PIN_DIGITS
+    : activeValue().trim().length >= PIN_MIN_DIGITS,
+);
 
 function press(d: string) {
   localError.value = "";
-  setActive(appendPinDigit(activeValue(), d));
+  setActive(newStep.value ? appendPinDigit(activeValue(), d, PIN_DIGITS) : appendPinDigit(activeValue(), d));
 }
 function backspace() {
   setActive(activeValue().slice(0, -1));
@@ -111,8 +129,8 @@ const shownError = computed(() => localError.value || props.error || "");
         <p class="text-sm text-muted-foreground">
           {{
             forced
-              ? "O gerente redefiniu seu PIN. Digite o PIN temporário e escolha um novo antes de operar."
-              : `${operatorName}, informe o PIN atual e escolha um novo.`
+              ? `${operatorName}, seu PIN precisa ser trocado antes de operar. Digite o PIN atual e escolha um novo, de 4 dígitos.`
+              : `${operatorName}, informe o PIN atual e escolha um novo, de 4 dígitos.`
           }}
         </p>
       </div>
@@ -125,6 +143,7 @@ const shownError = computed(() => localError.value || props.error || "");
       :error="shownError"
       :can-submit="canAdvance"
       :busy="busy"
+      :fixed-digits="newStep ? PIN_DIGITS : null"
       :submit-icon="step === 'confirm' ? 'i-lucide-check' : 'i-lucide-arrow-right'"
       :submit-label="step === 'confirm' ? 'Confirmar o novo PIN' : 'Continuar'"
       keyboard
@@ -142,6 +161,42 @@ const shownError = computed(() => localError.value || props.error || "");
         icon="i-lucide-chevron-left"
         :label="step === 'current' ? 'Cancelar' : 'Voltar'"
         @click="back"
+      />
+    </div>
+
+    <!-- Troca forçada: sempre há saída. Outra pessoa entra no lugar, ou quem não
+         lembra o PIN sabe o que fazer e a quem pedir. -->
+    <div v-if="forced" class="grid gap-2" data-pin-change-exits>
+      <div class="flex flex-wrap justify-center gap-x-2">
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-user-round"
+          :label="`Não é ${operatorName}? Trocar de usuário`"
+          data-pin-change-switch-user
+          @click="emit('switchUser')"
+        />
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-circle-help"
+          label="Esqueci meu PIN"
+          :aria-expanded="forgot ? 'true' : 'false'"
+          data-pin-change-forgot
+          @click="forgot = !forgot"
+        />
+      </div>
+      <NuxtAlert
+        v-if="forgot"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-key-round"
+        title="Peça a um gerente para redefinir o seu PIN"
+        description="No Admin, em Credenciais PIN, a ação Resetar PIN gera um PIN temporário. Digite esse PIN aqui como PIN atual e escolha o novo."
+        :actions="alertActions('info', [resetHref ? { label: 'Abrir no Admin', to: resetHref, target: '_blank', icon: 'i-lucide-external-link' } : null])"
+        close
+        data-pin-change-forgot-help
+        @update:open="forgot = false"
       />
     </div>
   </div>

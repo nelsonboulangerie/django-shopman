@@ -21,6 +21,7 @@ que aponta uma chave da `Evidence`:
 | `commitment` | um compromisso registrado | existe (promessa com dono e prazo) |
 | `policy` | uma linha do perfil ou regra da casa | existe |
 | `courtesy` | nada | saudação, agradecimento |
+| `reading` | a leitura que o agente repete (`Evidence.readings`) | "é isso?" do verificador em dúvida (`ask_clarification.confirm_reading`, ADR-051): o que o CLIENTE disse, nunca afirmação da casa |
 
 A `Evidence` também diz o **tipo** de cada lastro: `fact:<faceta>` (por exemplo
 `fact:factual` e `fact:promisable`, as leituras da promessa do F3), `receipt:<status>` e
@@ -40,7 +41,30 @@ ele é criado:
 
 O pacote traz só moldes genéricos mínimos (`GENERIC_TEMPLATES`), para os testes e como
 exemplo da forma. A voz e a língua da casa são do perfil e do adaptador. A formatação também
-(dinheiro, data e quantidade, por `formatters`); a padrão é neutra.
+(dinheiro, data e quantidade, por `formatters`); a padrão é neutra (`engine/format.py`:
+dinheiro, `done` para o estado do recibo, `items`, `fulfillment` e `conditions` dos termos).
+
+Moldes de efeito com mais de um lastro: `change_cart.done` afirma o efeito pelo recibo (`{done}`,
+o estado do recibo de sucesso) e mostra o carrinho pelos termos novos (`{items}`, `{total}`);
+`commit_order.done` diz o pedido pelo recibo (`{order}` e `{track}`, que a casa formata como o
+caminho dela para acompanhar) e o total pelo pedido lido depois do efeito (`{total}`);
+`present_terms.confirm` mostra `{items}`, `{total}`, `{fulfillment}` e `{conditions}` do mesmo
+fato dos termos. Com uma condição obrigatória ausente (`requirements.<carrinho>`, spec 03), a parte do
+`present_terms` pergunta por ela: `present_terms.needs_<código>` (`needs_payment_method`, com as
+opções do canal num espaço de LISTA lastreado no fato; `needs_delivery_address` e
+`needs_delivery_complement`, sem espaço; `needs_delivery_address_details`, com a lista do que falta) ou
+o genérico `present_terms.needs` (`{missing}`); os termos não se apresentam, e nenhuma pergunta de
+confirmação nasce.
+
+**Formatador de referência.** Há valor que o lastro carrega só como referência opaca, porque o texto é
+pessoal (o endereço da entrega: o recibo traz `address_ref`). Quem o diz em texto é um formatador da casa
+que resolve a referência, e ele segue quatro regras:
+- recebe só a referência do lastro, nunca texto vindo do modelo;
+- resolve só o que é do próprio sujeito da conversa;
+- o texto existe só no envio (o `ReplyPlan` grava espaços e referências, e o corpo vive só durante o
+  envio, em `bodies`);
+- quando não resolve, levanta `UnresolvedReference`: o espaço fica vazio, a verificação acha
+  `reference_unresolved` e SEGURA a mensagem. Nunca sai frase sem o valor, nem o valor de outro sujeito. O molde da casa mantém esses espaços, como todos.
 
 O adaptador entrega os moldes dele ao `Engine` em `house_templates`, pelo `template_id`. Cada molde
 da casa troca a frase de um molde do pacote e mantém o movimento e os espaços (nome, lastro aceito
@@ -84,7 +108,13 @@ Regras genéricas do pacote, estruturais e sem língua nenhuma:
 | `fact_unknown`, `fact_expired` | o fato não vale | segura (N02) |
 | `backing_kind_not_accepted` | o lastro existe, mas não é do tipo que o espaço aceita (o que se pode prometer não é unidade em mãos) | segura (K27) |
 | `number_without_fact` | dígito no texto livre, fora de um bloco travado | segura (N03, K23) |
-| `action_without_receipt` | parte de movimento que muda o negócio (`change_cart`, `commit_order`, `cancel_order`, `amend_order`, `grant_discount`) sem afirmação lastreada em recibo de **sucesso** | segura (K24) |
+| `template_not_in_voice` | com `voice` (o `Engine` com `house_voice_only`), a parte é de molde que a casa não assina: o texto neutro do pacote | segura |
+| `action_without_receipt` | parte de movimento que muda o negócio (`change_cart`, `set_fulfillment`, `commit_order`, `cancel_order`, `amend_order`, `grant_discount`) sem afirmação lastreada em recibo de **sucesso** | segura (K24) |
+
+**A voz da casa.** A casa que fala com moldes próprios liga `house_voice_only`: o `compose` passa a
+conferir cada parte contra os moldes da casa, e a parte que cairia no molde do pacote segura
+(`template_not_in_voice`). Vale onde a sombra não vê: a resposta depois do efeito (os termos de novo,
+a recusa no ponto de efeito, o pendente). Uma casa com voz própria nunca fala com a voz do pacote.
 
 Efeito pendente não é efeito. A resposta a um recibo `pending` é uma parte `wait`, com o
 prazo do compromisso de reconciliação, nunca a confirmação do pedido.

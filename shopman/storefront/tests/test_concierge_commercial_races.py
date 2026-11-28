@@ -188,24 +188,37 @@ def test_confirmation_waits_for_cart_edit_and_records_conflict_without_order(ctx
 
 @pytest.mark.parametrize("operation", ["update", "add", "remove"])
 def test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source(ctx, settings, monkeypatch, operation):
+    """O aceite (OC-15) trava a origem; a edição que chega no meio espera e encontra a sacola já levada."""
+    from shopman.shop.services import session_transfer
+
     settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "transfer_enabled": True}
     _pickup_ready(ctx)
     key = ctx.conversation.session_key
     line_id = Session.objects.get(session_key=key).items[0]["line_id"]
-    boundary, release = Event(), Event()
+    minted = []
 
-    def paused_mint(*args, **kwargs):
-        boundary.set()  # Origem/holds transferidos, ainda na transação de transferência.
-        assert release.wait(10)
+    def mint(*args, **kwargs):
+        minted.append(kwargs["metadata"][session_transfer.TRANSFER_METADATA_KEY])
         return SimpleNamespace(success=True, url="https://example.invalid/transfer", expires_at="")
 
-    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", paused_mint)
-    transfer = Worker(
-        lambda: tools.send_web_link(worker_tool_context(ctx.conversation), "checkout")
-    )
+    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", mint)
+    assert tools.send_web_link(ctx, "checkout")["ok"]
+    offer = session_transfer.TransferOffer.from_metadata(minted[0])
+    boundary, release = Event(), Event()
+    original_add = cart.add_item
+
+    def paused_add(**kwargs):
+        if kwargs.get("channel_ref") == "web" and not boundary.is_set():
+            boundary.set()  # Origem abandonada e reservas devolvidas, ainda na transação do aceite.
+            assert release.wait(10)
+        return original_add(**kwargs)
+
+    monkeypatch.setattr(cart, "add_item", paused_add)
+    destination = session_transfer.TransferDestination(customer_ref=ctx.conversation.customer_ref)
+    transfer = Worker(lambda: session_transfer.accept(offer, dest_context=destination, actor="storefront"))
     commands = {
         "update": lambda: cart.update_qty(session_key=key, channel_ref="whatsapp", line_id=line_id, sku=SKU, qty=3),
-        "add": lambda: cart.add_item(session_key=key, channel_ref="whatsapp", origin_channel="web", sku=SKU, qty=1, unit_price_q=90),
+        "add": lambda: original_add(session_key=key, channel_ref="whatsapp", origin_channel="web", sku=SKU, qty=1, unit_price_q=90),
         "remove": lambda: cart.remove_item(session_key=key, channel_ref="whatsapp", line_id=line_id, sku=SKU),
     }
     modify = Worker(commands[operation])
@@ -217,18 +230,19 @@ def test_transfer_and_site_edit_do_not_leave_reservations_on_abandoned_source(ct
             assert_database_wait(modify)
         finally:
             release.set()
-        result, refusal = transferred.result(20), modified.result(20)
-    assert result["ok"], result
+        receipt, refusal = transferred.result(20), modified.result(20)
+    assert isinstance(receipt, session_transfer.TransferReceipt), receipt
     assert refusal["code"] == "already_abandoned", refusal
     source = Session.objects.get(session_key=key)
-    target = Session.objects.get(session_key=result["resource_ref"])
+    target = Session.objects.get(session_key=receipt.dest_session_key)
     assert source.state == "abandoned" and target.state == "open"
     assert target.data["delivery_time_slot"] == "slot-12"
     assert Decimal(target.items[0]["qty"]) == Decimal(2)
     assert own_reserved(key) == 0
     assert own_reserved(target.session_key) == total_reserved() == Decimal(2)
     assert not Order.objects.exists()
-    assert IdempotencyKey.objects.filter(scope__startswith="concierge.transfer:", status="done").count() == 1
+    # O recibo da intenção mora na origem (X4), não numa chave de idempotência da conversa.
+    assert source.data["transfer_receipt"]["dest_session_key"] == target.session_key
 
 
 @pytest.mark.parametrize("operation", ["update", "add", "remove"])

@@ -350,6 +350,11 @@
     "TurnLimits": {
       "additionalProperties": false,
       "properties": {
+        "max_adjudications_per_turn": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "max_model_calls": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -371,6 +376,11 @@
         "max_steps": {
           "maximum": 9007199254740991,
           "minimum": 1,
+          "type": "integer"
+        },
+        "reading_context_turns": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
           "type": "integer"
         }
       },

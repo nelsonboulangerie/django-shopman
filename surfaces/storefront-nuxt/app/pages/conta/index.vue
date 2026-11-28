@@ -100,7 +100,10 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
            botão descia. Aqui a coluna da esquerda encolhe e o botão fica ancorado. -->
       <header class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
-          <h1 class="truncate shop-title">{{ greeting }}</h1>
+          <!-- O h1 diz o que a página é; a saudação segue visível no mesmo lugar,
+               mas não é o assunto da página (OC-32). -->
+          <h1 class="sr-only">Sua conta</h1>
+          <p class="truncate shop-title" data-account-greeting>{{ greeting }}</p>
           <p class="mt-0.5 shop-muted">
             <template v-if="pending">Carregando sua conta…</template>
             <template v-else>{{ countLabel }}</template>
@@ -108,6 +111,9 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
         </div>
         <UiButton variant="ghost" size="sm" icon="lucide:log-out" class="shrink-0" @click="logoutOpen = true">Sair</UiButton>
       </header>
+
+      <!-- O selo da versão de teste da equipe (DEV-2026-096): só com `team_preview` no shell. -->
+      <TeamPreviewNotice placement="account" />
 
       <!-- Travessia de navegador: só aparece quando o browser embutido atrapalha uma pessoa
            já identificada. Acesso rápido fica opt-in em Segurança, não como convite no fluxo. -->
@@ -122,7 +128,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>
-            <UiAlertDialogCancel :disabled="loggingOut">Ficar conectado</UiAlertDialogCancel>
+            <UiAlertDialogCancel :disabled="loggingOut">Continuar na conta</UiAlertDialogCancel>
             <UiAlertDialogAction :disabled="loggingOut" @click.prevent="logout">
               {{ loggingOut ? 'Saindo…' : 'Sair' }}
             </UiAlertDialogAction>
@@ -149,7 +155,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             :class="orderStatusAccentClass(order.status_tone)"
           >
             <div class="min-w-0">
-              <p class="flex items-center gap-2 font-semibold">
+              <p class="flex items-center gap-2 font-semibold" data-decisive="state">
                 <span class="size-2 shrink-0 rounded-full" :class="orderStatusDotClass(order.status_tone)" aria-hidden="true" />
                 {{ order.status_label }}
                 <span v-if="order.total_display" class="text-muted-foreground">· {{ order.total_display }}</span>

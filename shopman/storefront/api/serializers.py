@@ -8,6 +8,18 @@ from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH
 
 class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
+    # O dia do "Para quando?" do cardápio (OC-33 B1), ``AAAA-MM-DD``. Opcional:
+    # sem ele a sacola segue a régua de sempre. Quem o confere é o serviço da sacola.
+    date = serializers.CharField(required=False, allow_blank=True, max_length=10)
+
+
+class CartDaySerializer(serializers.Serializer):
+    # O "Trocar" do dia (OC-33 B1): a sacola inteira passa para ``date``.
+    # ``without``: os SKUs com que a cliente aceitou seguir sem ("seguir sem ele").
+    date = serializers.CharField(max_length=10)
+    without = serializers.ListField(
+        child=serializers.CharField(max_length=64), required=False, default=list, max_length=99,
+    )
 
 
 class CartLineOptionSerializer(serializers.Serializer):
@@ -21,6 +33,8 @@ class AddCartLineSerializer(serializers.Serializer):
     sku = serializers.CharField(max_length=64)
     qty = serializers.IntegerField(min_value=1, max_value=99)
     options = CartLineOptionSerializer(many=True, required=False, default=list)
+    # O dia do "Para quando?" do cardápio (OC-33 B1), como em ``SetSkuQtySerializer``.
+    date = serializers.CharField(required=False, allow_blank=True, max_length=10)
 
 
 class CartLineNotesSerializer(serializers.Serializer):
@@ -322,6 +336,8 @@ class ActionSerializer(serializers.Serializer):
     payload_schema = serializers.DictField(required=False)
     idempotency = serializers.CharField(required=False)
     confirmation = serializers.DictField(required=False)
+    # O que a ação `copy` copia (o copia-e-cola do Pix); vazio nas demais.
+    value = serializers.CharField(allow_blank=True, required=False)
 
 
 class OrderTrackingPromiseSerializer(serializers.Serializer):
@@ -454,6 +470,33 @@ class FiscalNoteSerializer(serializers.Serializer):
     note = serializers.CharField(allow_blank=True)
 
 
+class RetentionReceiptLineSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    qty_display = serializers.CharField()
+    value_display = serializers.CharField()
+    calculation_display = serializers.CharField()
+    retained_display = serializers.CharField()
+
+
+class RetentionReceiptRowSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    value_display = serializers.CharField()
+
+
+class RetentionReceiptSerializer(serializers.Serializer):
+    title = serializers.CharField()
+    issuer_lines = serializers.ListField(child=serializers.CharField())
+    order_line = serializers.CharField()
+    commitment_display = serializers.CharField(allow_blank=True)
+    closed_display = serializers.CharField(allow_blank=True)
+    lines = RetentionReceiptLineSerializer(many=True)
+    money_rows = RetentionReceiptRowSerializer(many=True)
+    retained_label = serializers.CharField()
+    retained_display = serializers.CharField()
+    nature = serializers.CharField()
+    not_fiscal = serializers.CharField()
+
+
 class TrackingDiscountLineSerializer(serializers.Serializer):
     label = serializers.CharField()
     amount_display = serializers.CharField()
@@ -462,6 +505,12 @@ class TrackingDiscountLineSerializer(serializers.Serializer):
 class TrackingGiftSerializer(serializers.Serializer):
     recipient_name = serializers.CharField(allow_blank=True)
     message = serializers.CharField(allow_blank=True)
+
+
+class TrackingLoginInviteSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    cta_label = serializers.CharField()
+    href = serializers.CharField()
 
 
 class OrderTrackingSerializer(serializers.Serializer):
@@ -503,6 +552,7 @@ class OrderTrackingSerializer(serializers.Serializer):
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
     # pede e-mail). ``None`` enquanto não há nota.
     fiscal_note = FiscalNoteSerializer(allow_null=True, required=False)
+    retention_receipt = RetentionReceiptSerializer(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.
@@ -532,6 +582,8 @@ class OrderTrackingSerializer(serializers.Serializer):
     tax_id_display = serializers.CharField(allow_blank=True, required=False)
     customer_notes = serializers.CharField(allow_blank=True, required=False)
     delivery_address = serializers.CharField(allow_blank=True, required=False)
+    access_mode = serializers.CharField(required=False, default="full")
+    login_invite = TrackingLoginInviteSerializer(allow_null=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()

@@ -1,7 +1,7 @@
 """O perfil de implantação da Nice no framework de comércio conversacional (N3).
 
 Monta o ``DeploymentProfile`` do ``conversational_commerce`` com as 21 linhas do plano do
-adaptador (seção 2), a partir dos valores que já existem:
+adaptador (seção 2) e a P22 (a validade da concessão, #3380), a partir dos valores que já existem:
 
 - o teto do desconto (P09) do ``ChannelConfig`` do canal da Concierge, pelo mesmo
   acessor que o desconto usa (``discount.max_percent``), nunca de constante;
@@ -32,11 +32,22 @@ PROFILE_VERSION = "1"
 CATALOG_VERSION = "1"
 POLICY_VERSION = "1"
 CHANNEL = "whatsapp"
+#: Uma leitura pela IA do perfil por turno (P04, D-040): o portão do Jev e a cortesia não contam,
+#: e o gasto passa pelo freio da casa (``ai_governor``). Estouro cai para a regra local.
+MODEL_CALLS_PER_TURN = 1
+#: Os turnos recentes que vão ao leitor com a fala (ADR-051): a pergunta no ar e o que veio antes dela.
+READING_CONTEXT_TURNS = 3
+#: A verificação da leitura no conflito (ADR-051): a leitura que não responde à pergunta no ar nem muda de assunto,
+#: ou o portão e a IA discordando. É a segunda chamada do turno, e só nesses turnos.
+ADJUDICATIONS_PER_TURN = 1
 
-# P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge.
-ENABLED_MOVES = ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "handoff")
+# P07: o que a Nice faz hoje. ``verify_with_staff`` entra com o WP-05 da Concierge. ``wait`` é o aviso do prazo
+# vencido de um compromisso com a equipe (K22, ``Engine.tick``): sem ele, o aviso nunca saía (#3417).
+ENABLED_MOVES = ("acknowledge", "inform", "cover_readings", "inform_limitation", "ask_clarification", "handoff",
+                 "wait")
 # P08: o pedido na conversa, em validação até o WP-14 da Concierge.
-ORDER_MOVES = ("present_terms", "change_cart", "commit_order")
+ORDER_MOVES = ("present_terms", "change_cart", "set_fulfillment", "set_delivery_address", "set_payment",
+               "commit_order")
 # Movimento → a linha de que depende (P08 a P13).
 LINE_OF_MOVE = {
     **dict.fromkeys(ORDER_MOVES, "commerce.order_in_conversation"),
@@ -47,8 +58,9 @@ LINE_OF_MOVE = {
 }
 LEVEL_OF_MOVE = {"acknowledge": "A0", "inform": "A0", "cover_readings": "A0", "inform_limitation": "A0",
                  "ask_clarification": "A0", "handoff": "A0", "present_terms": "A1", "change_cart": "A2",
+                 "set_fulfillment": "A2", "set_delivery_address": "A2", "set_payment": "A2",
                  "commit_order": "A3", "cancel_order": "A3", "amend_order": "A3", "grant_discount": "A4",
-                 "recommend": "A0"}
+                 "recommend": "A0", "wait": "A0"}
 # P03: o telefone do WhatsApp é identidade transportada. É com ela que a Nice atende,
 # cancela e acrescenta hoje (o cliente é o dono do número); o vínculo verificado
 # (``weak_verified``) é o que o fato pessoal pede, e está desligado no alpha.
@@ -128,6 +140,9 @@ def values(config: Mapping[str, Any] | None = None, *, environment: str = "shado
                         "accept_within_seconds": profile_lines.STAFF_ACCEPT_WITHIN_SECONDS,
                         "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS},
         "turn.limits": {"max_loops": MAX_LOOPS, "claim_seconds": 120},
+        "grant.validity_seconds": profile_lines.GRANT_VALIDITY_SECONDS,
+        "episode.inactivity_window_seconds": profile_lines.EPISODE_INACTIVITY_SECONDS,
+        "effect.reconciliation_deadline_seconds": profile_lines.RECONCILIATION_DEADLINE_SECONDS,
         "privacy": {"text": "redacted", "sensitive_leaves": False,
                     "observation_retention_days": str(observation.get("retention_days") or "")},
         "live.mode": {"operation_mode": str(config.get("operation_mode") or "assist"),
@@ -175,7 +190,10 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
         version=PROFILE_VERSION,
         adapters={"commerce": ("search", "read_item", "promise", "quote"),
                   "channel": ("normalize", "send", "delivery_status", "request_handoff"),
-                  "staff": ()},
+                  # A porta de equipe da Nice (``staff_port.NiceStaff``): perguntar e encaminhar (``ask``), o
+                  # compromisso (``open_or_update``) e a devolução (``return_conversation``). Sem elas, o motor não
+                  # prometia prazo, e "quero falar com uma pessoa" caía na limitação (#3419).
+                  "staff": ("ask", "open_or_update", "return_conversation")},
         catalog_version=CATALOG_VERSION, policy_version=POLICY_VERSION,
         house_rules_ref="shopman.storefront.concierge.house_rules.RULES",
         actions=actions,
@@ -189,8 +207,9 @@ def build_profile(*, environment: str = "shadow", config: Mapping[str, Any] | No
                      "accept_within_seconds": profile_lines.STAFF_ACCEPT_WITHIN_SECONDS,
                      "respond_within_seconds": profile_lines.STAFF_RESPOND_WITHIN_SECONDS,
                      "after_hours_contingency": "inform_when_team_returns"},
-        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": 0,
-                "max_spend": {"amount_minor": 0, "currency": "BRL"}},
+        limits={"max_steps": _max_steps(), "max_seconds": 120, "max_queries": 10, "max_model_calls": MODEL_CALLS_PER_TURN + ADJUDICATIONS_PER_TURN,
+                "max_spend": {"amount_minor": 0, "currency": "BRL"}, "reading_context_turns": READING_CONTEXT_TURNS,
+                "max_adjudications_per_turn": ADJUDICATIONS_PER_TURN},
         privacy={"purposes": ("service",), "retention_days": _retention(measured), "fields_by_recipient": {}},
     )
 
@@ -205,8 +224,16 @@ def _retention(measured: Mapping[str, Any]) -> dict[str, int]:
     return {"observation": days} if 1 <= days <= 30 else {}
 
 
-def _max_steps() -> int:
-    """O teto de passos do turno do framework: o ``MAX_LOOPS`` do handler (P16)."""
-    from .handler import MAX_LOOPS
+#: O teto de LEITURAS do turno do motor (P16, Engenharia). Não é o ``MAX_LOOPS`` do handler, que conta voltas da
+#: IA com ferramentas (e nenhuma leitura de ferramenta): o motor conta cada leitura do sistema de registro. Um
+#: fechamento lê a cotação, o que falta e o nome de cada item; cada efeito do turno (a sacola, o recebimento,
+#: o endereço, o pagamento) cota de novo e relê o que falta. Com o teto 5 de antes, "pra amanhã, pode fechar"
+#: já estourava (calibragem de 23/11, #3482), e uma sacola de 3 produtos estourava com um efeito só: o que falta
+#: ficava sem leitura, os termos não se apresentavam e a Nice dizia que não conseguia. 2 (cotação e o que
+#: falta) + 8 nomes + 4 efeitos × 2 + 2 de folga (catálogo, item consultado).
+MAX_READS_PER_TURN = 20
 
-    return int(MAX_LOOPS)
+
+def _max_steps() -> int:
+    """O teto de passos do turno do framework: as leituras do motor (P16)."""
+    return MAX_READS_PER_TURN

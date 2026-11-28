@@ -125,6 +125,34 @@ def test_repair_rules_fix_the_word_and_let_the_reply_go(before, after):
     assert reviewed.held == []
 
 
+@pytest.mark.parametrize("state", [
+    "O prazo para pagar acabou e cancelamos o pedido.",  # TRACKING_PAYMENT_EXPIRED (copy da página do pedido)
+    "O prazo para pagar acabou e nada foi cobrado. Se ainda quiser, é só fazer um novo pedido.",  # motivo
+])
+def test_r2_never_rewrites_a_house_state_phrase(state):
+    """#3503: a R2 é para produto ("para o cliente é só Indisponível"), não para o estado do pedido. Antes, "O prazo
+    para pagar acabou" virava "O prazo para pagar está indisponível", adulterando o estado."""
+    reviewed = house_rules.review([state])
+    assert reviewed.texts == [state] and reviewed.held == [] and reviewed.violations == []
+
+
+def test_r2_still_repairs_a_product_in_the_same_reply_as_a_house_state_phrase():
+    """Controle negativo: a frase da casa passa intacta, e a de produto na mesma resposta segue consertada."""
+    reviewed = house_rules.review(["O prazo para pagar acabou e cancelamos o pedido. O croissant acabou."])
+    assert reviewed.texts == ["O prazo para pagar acabou e cancelamos o pedido. O croissant está indisponível."]
+
+
+@pytest.mark.django_db
+def test_r2_leaves_alone_the_state_phrase_the_house_edited_in_the_admin():
+    from shopman.shop.models import OmotenashiCopy
+
+    OmotenashiCopy.objects.create(key="TRACKING_PAYMENT_EXPIRED", moment="*", audience="*",
+                                  message="Seu prazo de pagamento acabou, e o pedido foi cancelado.")
+    text = "Seu prazo de pagamento acabou, e o pedido foi cancelado."
+    assert house_rules.review([text]).texts == [text]
+    assert house_rules.review(["O pão de queijo acabou."]).texts == ["O pão de queijo está indisponível."]
+
+
 def test_r1_and_r5_hold_model_text_and_trust_house_text():
     """A resposta montada pelo código traz o preço da ficha; o modelo nunca digita preço."""
     text = "Croissant: R$ 13,00. Total: R$ 26,00."

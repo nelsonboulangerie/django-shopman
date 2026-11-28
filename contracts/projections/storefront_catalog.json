@@ -8,6 +8,21 @@
       "url": "/menu#paes"
     }
   ],
+  "days": {
+    "closed_weekdays": [
+      6
+    ],
+    "max_date": "<date>",
+    "next_days": [
+      "<tomorrow>",
+      "<date>",
+      "<date>",
+      "<date>"
+    ],
+    "selected": null,
+    "today": "<today>",
+    "today_open": true
+  },
   "empty_state": {
     "cta_href": "",
     "cta_label": "",
@@ -30,6 +45,7 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,
@@ -73,6 +89,19 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [
+        {
+          "expires_at": null,
+          "label": "Últimas 2 unidades",
+          "meta": {
+            "available": 2,
+            "sku": "CROISSANT-CONTRATO",
+            "threshold": 5
+          },
+          "priority": 1,
+          "type": "low_stock"
+        }
+      ],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,
@@ -87,7 +116,7 @@
         "day_label": "hoje",
         "kind": "ready",
         "ready_at": "10:30",
-        "text": "Pronto agora"
+        "text": "Disponível agora"
       },
       "qty_in_cart": 0,
       "quote": {
@@ -122,6 +151,7 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,
@@ -136,7 +166,7 @@
         "day_label": "hoje",
         "kind": "ready",
         "ready_at": "10:30",
-        "text": "Pronto agora"
+        "text": "Disponível agora"
       },
       "qty_in_cart": 0,
       "quote": {
@@ -171,6 +201,7 @@
       "choice_group_label": null,
       "dietary_info": [],
       "dietary_warnings": [],
+      "fomo_badges": [],
       "image_url": null,
       "is_favorite": false,
       "is_featured": false,

@@ -50,12 +50,27 @@ describe("managerAuth: o gerente lê o valor que assina", () => {
       .toBe(`Desconto acima de ${formatBRL(500)}.`);
   });
 
+  it("fechar o lote com falta de insumo diz o que falta, não a política (WP-F11)", () => {
+    expect(managerAuthTitle("production_shortage")).toBe("Autorizar fechar com falta");
+    expect(
+      managerAuthReason({ action: "production_shortage", detail: "Falta 300 g de manteiga." }),
+    ).toBe("Falta 300 g de manteiga.");
+    expect(managerAuthReason({ action: "production_shortage" })).toBe("Falta insumo para fechar o lote.");
+  });
+
   it("fechar o dia com produção aberta nomeia o ato e diz o que segue aberto", () => {
     expect(managerAuthTitle("day_closing_production")).toBe("Autorizar fechar o dia");
     expect(
       managerAuthReason({ action: "day_closing_production", detail: "3 ordens de produção seguem abertas." }),
     ).toBe("3 ordens de produção seguem abertas.");
     expect(managerAuthReason({ action: "day_closing_production" })).toBe("Há produção aberta.");
+    // O gesto em lote do fechamento (#2684) é um ato próprio, não "fechar o dia": o
+    // título diz o que a assinatura faz, e o detalhe diz quais pedidos.
+    expect(managerAuthTitle("day_closing_not_picked_up")).toBe("Encerrar como não retirado");
+    expect(
+      managerAuthReason({ action: "day_closing_not_picked_up", detail: "Um pedido pronto não foi retirado." }),
+    ).toBe("Um pedido pronto não foi retirado.");
+    expect(managerAuthReason({ action: "day_closing_not_picked_up" })).toBe("Pedido pronto que ninguém veio buscar.");
   });
 });
 

@@ -112,15 +112,18 @@ onBeforeUnmount(() => {
   >
     <!-- Barra de status: horário/status (esq) · telefone (dir). Ao rolar, o header
          inteiro desliza 2.25rem para cima e ela sai da tela por cima da navbar;
-         reexpande no topo. Ela ocupa a mesma altura no fluxo nos dois estados. -->
-    <div class="bg-ink text-ink-foreground" :aria-hidden="scrolled ? 'true' : undefined">
+         reexpande no topo. Ela ocupa a mesma altura no fluxo nos dois estados.
+         Fora da tela ela fica `inert`, não só `aria-hidden`: o "Ligar"/"WhatsApp" de
+         dentro saía do leitor de tela mas seguia na ordem do Tab, e o foco ia parar
+         num link invisível (axe aria-hidden-focus, OC-32). -->
+    <div class="bg-ink text-ink-foreground" :inert="scrolled ? true : undefined">
       <div class="shop-container flex h-9 items-center justify-between gap-3 text-sm">
         <span class="flex min-w-0 items-center gap-2 opacity-90">
           <Icon name="lucide:clock" class="size-3.5 shrink-0" />
           <!-- Na tela estreita o estado ("Fechado agora.") sai e a hora de abertura
                fica inteira; o leitor de tela ouve a frase toda. -->
-          <span v-if="statusParts.lead" class="sr-only sm:not-sr-only sm:truncate" data-shop-status-lead>{{ statusParts.lead }}</span>
-          <span class="whitespace-nowrap" data-shop-status-tail>{{ statusParts.tail || 'Confira nossos horários' }}</span>
+          <span v-if="statusParts.lead" class="sr-only sm:not-sr-only sm:truncate" data-shop-status-lead data-decisive="state">{{ statusParts.lead }}</span>
+          <span class="min-w-0" data-shop-status-tail data-decisive="state">{{ statusParts.tail || 'Confira nossos horários' }}</span>
         </span>
         <a
           v-if="statusOpen && shop?.phone_url"

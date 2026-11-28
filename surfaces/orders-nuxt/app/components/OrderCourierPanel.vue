@@ -142,12 +142,21 @@ const separating = ref(false);
 const separateChange = ref("");
 const separateMachines = computed(() => freeMachines(props.equipmentOptions ?? []));
 const separateMachine = ref("");
+// Reinicia o formulário só quando o que falta separar MUDA, não a cada releitura do
+// pedido: o SSE, o poll e a atualização ao montar trazem um objeto novo com o mesmo
+// conteúdo, e vigiar a identidade dele fechava o formulário aberto e apagava o troco
+// digitado no meio do gesto (#3623, achado pelo teste que caía na fila).
 watch(
-  toSeparate,
-  (missing) => {
+  () => {
+    const missing = toSeparate.value;
+    return missing ? `${missing.change_out_suggested_q}:${missing.needs_machine}` : "";
+  },
+  () => {
+    const missing = toSeparate.value;
     separating.value = false;
     separateChange.value = missing ? moneyInput(missing.change_out_suggested_q) : "";
-    separateMachine.value = "";
+    // Recomeça com a primeira maquininha livre, como na primeira abertura.
+    separateMachine.value = separateMachines.value[0]?.ref ?? "";
   },
   { immediate: true },
 );

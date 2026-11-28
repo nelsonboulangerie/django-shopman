@@ -22,16 +22,28 @@ FAILED = Template("effect.failed", "1", "inform_limitation",
 SHARED = (PENDING, FAILED)
 
 
+def known_with(state, key: str, *fields: str) -> bool:
+    """O fato lido depois do efeito vale e traz os campos que o molde cita (senão, o degrau de baixo)."""
+    from conversational_commerce.contracts import Known
+
+    fact = state.facts.get(key)
+    value = getattr(fact, "value", None)
+    return isinstance(fact, Known) and hasattr(value, "get") and all(value.get(name) is not None for name in fields)
+
+
 def commitment_id(command_id: str) -> str:
     return f"reconcile.{command_id}"
 
 
-def receipt_part(state, need, move: str, template_id: str, slot: str) -> PartSpec:
+def receipt_part(state, need, move: str, template_id: str, slot: str, *, also=None) -> PartSpec:
+    """A parte pelo recibo. ``also(receipt)``: os outros espaços do molde de sucesso (o fato lido depois
+    do efeito), com o recibo que existe, ou ``None`` sem recibo (o espaço aponta o que não há, e segura)."""
     receipt = state.receipts.get(need.need_id)
+    extra = dict(also(receipt)) if also is not None else {}
     if receipt is None:
-        return PartSpec(move, template_id, {slot: ("receipt", f"none.{need.need_id}")})
+        return PartSpec(move, template_id, {slot: ("receipt", f"none.{need.need_id}"), **extra})
     if receipt.status == "success":
-        return PartSpec(move, template_id, {slot: ("receipt", receipt.command_id)})
+        return PartSpec(move, template_id, {slot: ("receipt", receipt.command_id), **extra})
     if receipt.status == "failure":
         return PartSpec("inform_limitation", FAILED.template_id)
     return PartSpec("wait", PENDING.template_id, {"deadline": ("commitment", commitment_id(receipt.command_id))})

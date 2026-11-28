@@ -66,7 +66,8 @@ describe("OperatorPinChange — teclado físico em todos os passos (PDV-25)", ()
 
     expect(wrapper.text()).toContain("Novo PIN");
     // O que o leitor de tela ouve do campo do passo novo: os 4 dígitos chegaram.
-    expect(wrapper.find("[data-operator-pin-pad] [aria-live]").text()).toBe("4 de no mínimo 4 dígitos");
+    // O PIN novo tem 4 fixos (#3223): o campo diz "de 4".
+    expect(wrapper.find("[data-operator-pin-pad] [aria-live]").text()).toBe("4 de 4 dígitos");
     expect(wrapper.find("[data-operator-lock]").element.contains(document.activeElement)).toBe(true);
   });
 
@@ -98,3 +99,84 @@ describe("OperatorPinChange — PIN igual ao atual (PDV-26)", () => {
     expect(wrapper.findComponent(OperatorPinChange).emitted("submit")).toBeUndefined();
   });
 });
+
+describe("OperatorPinChange — o PIN novo tem 4 dígitos (#3223)", () => {
+  it("o atual pode ser o antigo, de 6; o novo para no quarto dígito", async () => {
+    const wrapper = await mount();
+    await type("123456");
+    await enter();
+    await type("567890");
+    await enter();
+    await type("5678");
+    await enter();
+
+    expect(wrapper.findComponent(OperatorPinChange).emitted("submit")).toEqual([
+      [{ currentPin: "123456", newPin: "5678" }],
+    ]);
+  });
+
+  it("com menos de 4 no PIN novo, não avança", async () => {
+    const wrapper = await mount();
+    await type("1234");
+    await enter();
+    await type("567");
+    await enter();
+
+    expect(wrapper.text()).toContain("Novo PIN");
+    expect(wrapper.text()).not.toContain("Repita o novo PIN");
+  });
+
+  it("a troca forçada não diz que foi o gerente: vale para o PIN antigo também", async () => {
+    mounted = await mountSuspended(InLock, {
+      attachTo: document.body,
+      props: { forced: true },
+      global: { stubs: { Icon: true } },
+    });
+    expect(mounted.text()).toContain("Bia Forno, seu PIN precisa ser trocado antes de operar.");
+    expect(mounted.text()).not.toContain("O gerente redefiniu");
+  });
+});
+
+
+// P0 de 23/11 (depois do #3337): a troca forçada não dizia de quem era o PIN e
+// não tinha saída. Agora diz o nome, deixa outra pessoa entrar e explica o
+// "esqueci".
+describe("OperatorPinChange — troca forçada tem nome e saída", () => {
+  async function mountForced(attrs: Record<string, unknown> = {}) {
+    mounted = await mountSuspended(OperatorPinChange, {
+      attachTo: document.body,
+      props: { operatorName: "Joyce", forced: true, resetHref: "https://admin.exemplo/admin/doorman/pincredential/", ...attrs },
+      global: { stubs: { Icon: true } },
+    });
+    return mounted;
+  }
+
+  it("diz de quem é o PIN", async () => {
+    const wrapper = await mountForced();
+    expect(wrapper.text()).toContain("Joyce, seu PIN precisa ser trocado antes de operar.");
+  });
+
+  it("'Não é Joyce?' pede a troca de usuário", async () => {
+    const wrapper = await mountForced();
+    const button = wrapper.find("[data-pin-change-switch-user]");
+    expect(button.text()).toBe("Não é Joyce? Trocar de usuário");
+    await button.trigger("click");
+    expect(wrapper.emitted("switchUser")).toHaveLength(1);
+  });
+
+  it("'Esqueci meu PIN' explica que o gerente redefine no Admin, com o link", async () => {
+    const wrapper = await mountForced();
+    expect(wrapper.find("[data-pin-change-forgot-help]").exists()).toBe(false);
+    await wrapper.find("[data-pin-change-forgot]").trigger("click");
+    const help = wrapper.find("[data-pin-change-forgot-help]");
+    expect(help.text()).toContain("Peça a um gerente para redefinir o seu PIN");
+    expect(help.text()).toContain("Resetar PIN");
+    expect(help.find('a[href="https://admin.exemplo/admin/doorman/pincredential/"]').exists()).toBe(true);
+  });
+
+  it("a troca voluntária não mostra essas saídas (ela já tem Cancelar)", async () => {
+    const wrapper = await mountForced({ forced: false });
+    expect(wrapper.find("[data-pin-change-exits]").exists()).toBe(false);
+  });
+});
+

@@ -83,6 +83,27 @@ def _assert_database_wait(worker: Worker) -> None:
     pytest.fail(f"Connection {worker.pid} did not wait for the Customer lock")
 
 
+def _bridge_checks_absent_then_waits(monkeypatch, value, barrier: Barrier, reached: list) -> None:
+    """Segura a ponte no instante em que ela conferiu que ninguém tem o contato.
+
+    Desde o OC-08 (D4) o ``bind_verified_handle`` confere os titulares do contato
+    direto (``IdentityResolver._holders``), e não mais pelo ``resolve``: o
+    ``resolve`` deixou de abrir a conta por contato sem prova, e o próprio contato
+    sem prova é justamente o que o vínculo vem provar. A conferência continua sendo
+    feita sem trava, ANTES da escrita, e é ela que a corrida precisa alcançar.
+    """
+    original_holders = IdentityResolver._holders.__func__
+
+    def holders_then_wait(cls, kind, candidate):
+        holder_ids, verified_ids = original_holders(cls, kind, candidate)
+        if candidate == value and not holder_ids:
+            reached.append("bridge")
+            barrier.wait(timeout=10)
+        return holder_ids, verified_ids
+
+    monkeypatch.setattr(IdentityResolver, "_holders", classmethod(holders_then_wait))
+
+
 def _change_phone_while_holding_customer(
     customer_pk,
     replacement,
@@ -110,16 +131,9 @@ def test_concurrent_verified_bind_has_one_owner_and_one_typed_conflict(
     second_kind,
 ):
     value = "+5543999990181"
-    both_resolved_absent = Barrier(2)
-    original_resolve = IdentityResolver.resolve
-
-    def synchronize_after_absent_resolve(resolver, kind, candidate, *, purpose="login"):
-        result = original_resolve(resolver, kind, candidate, purpose=purpose)
-        if candidate == value and result is None:
-            both_resolved_absent.wait(timeout=10)
-        return result
-
-    monkeypatch.setattr(IdentityResolver, "resolve", synchronize_after_absent_resolve)
+    both_checked_absent = Barrier(2)
+    reached: list[str] = []
+    _bridge_checks_absent_then_waits(monkeypatch, value, both_checked_absent, reached)
 
     def bind(subject_id, kind):
         try:
@@ -138,6 +152,9 @@ def test_concurrent_verified_bind_has_one_owner_and_one_typed_conflict(
         futures = [pool.submit(first), pool.submit(second)]
         results = [future.result(20) for future in futures]
 
+    # As duas pontes conferiram "ninguém tem" antes de qualquer escrita: a corrida
+    # aconteceu de verdade, e quem arbitra é o banco.
+    assert reached == ["bridge", "bridge"]
     views = [result for result in results if not isinstance(result, IdentityConflict)]
     conflicts = [result for result in results if isinstance(result, IdentityConflict)]
     assert len(views) == 1
@@ -158,22 +175,17 @@ def test_concurrent_bridge_bind_and_shop_phone_writer_share_canonical_claim(
 
     value = "+5543999990183"
     both_checked_absent = Barrier(2)
-    original_resolve = IdentityResolver.resolve
+    reached: list[str] = []
     original_owned = account_service._phone_belongs_to_someone_else
-
-    def bridge_absent_then_wait(resolver, kind, candidate, *, purpose="login"):
-        result = original_resolve(resolver, kind, candidate, purpose=purpose)
-        if candidate == value and result is None:
-            both_checked_absent.wait(timeout=10)
-        return result
+    _bridge_checks_absent_then_waits(monkeypatch, value, both_checked_absent, reached)
 
     def shop_absent_then_wait(shop_customer, candidate):
         result = original_owned(shop_customer, candidate)
         if candidate == value and result is False:
+            reached.append("shop")
             both_checked_absent.wait(timeout=10)
         return result
 
-    monkeypatch.setattr(IdentityResolver, "resolve", bridge_absent_then_wait)
     monkeypatch.setattr(
         account_service,
         "_phone_belongs_to_someone_else",
@@ -203,6 +215,8 @@ def test_concurrent_bridge_bind_and_shop_phone_writer_share_canonical_claim(
         futures = [pool.submit(worker) for worker in workers]
         results = [future.result(20) for future in futures]
 
+    # Os dois escritores conferiram "ninguém tem" antes de qualquer escrita.
+    assert sorted(reached) == ["bridge", "shop"]
     failures = [
         result
         for result in results
@@ -557,3 +571,48 @@ def test_deletion_wins_before_otp_reconciliation_cannot_restore_sent(customer):
     code.refresh_from_db()
     assert code.status == VerificationCode.Status.PENDING
     assert code.delivery_reconciled_at is None
+
+
+def test_claim_of_unproven_holder_skips_a_locked_customer_instead_of_waiting():
+    """Decisão D: o código certo entrega o cadastro sem prova, mas não espera por ele.
+
+    O ``create`` roda com o código já travado; a ordem da casa é cadastro antes de
+    código. Com o cadastro ocupado por outra transação (exclusão, troca de
+    contato), a entrega pula a trava (``skip_locked``) e cai no ``create`` comum,
+    que recusa com conflito: falha fechado, sem esperar e sem impasse.
+    """
+    value = "+5543999990191"
+    holder = Customer.objects.create(ref="BALCAO-PG", first_name="Ana", phone=value)
+    assert not ContactPoint.objects.filter(value_normalized=value, is_verified=True).exists()
+    locked, release = Event(), Event()
+
+    def hold_customer():
+        with transaction.atomic():
+            Customer.objects.select_for_update().get(pk=holder.pk)
+            locked.set()
+            assert release.wait(10)
+
+    def claim():
+        started = monotonic()
+        try:
+            result = IdentityResolver().create("phone", value)
+        except IdentityConflict as exc:
+            result = exc
+        return result, monotonic() - started
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        holding = pool.submit(Worker(hold_customer))
+        try:
+            assert locked.wait(10)
+            result, elapsed = pool.submit(Worker(claim)).result(20)
+        finally:
+            release.set()
+        holding.result(20)
+
+    assert isinstance(result, IdentityConflict)
+    assert elapsed < 5
+    assert Customer.objects.filter(phone=value).count() == 1
+
+    # Livre o cadastro, o mesmo código certo o recebe.
+    view = IdentityResolver().create("phone", value)
+    assert view.subject_id == holder.uuid

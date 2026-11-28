@@ -237,3 +237,28 @@ def test_rows_sort_by_eta_no_eta_last(recipe):
     )
     skus = [row.output_sku for row in build_production_forecast(target).rows]
     assert skus == ["PAO-TESTE", "TARDE", "NOVO"]
+
+
+def test_row_carries_the_output_unit_so_dough_reads_in_kilos(recipe):
+    """WP-F04 (P1-21): o Letreiro cravava "UN" em massa medida em quilo. A
+    unidade vem na projeção, declarada pela ficha, nunca deduzida na tela."""
+    target = timezone.localdate() + timedelta(days=1)
+    dough = Recipe.objects.create(
+        ref="massa-teste",
+        name="Massa Teste",
+        output_sku="MASSA-TESTE",
+        batch_size=Decimal("1000"),
+        is_active=True,
+        meta={"output_unit": "g"},
+    )
+    for item_recipe, quantity in ((recipe, "12"), (dough, "18500")):
+        WorkOrder.objects.create(
+            recipe=item_recipe,
+            output_sku=item_recipe.output_sku,
+            quantity=Decimal(quantity),
+            status=WorkOrder.Status.PLANNED,
+            target_date=target,
+        )
+    units = {row.output_sku: row.unit for row in build_production_forecast(target).rows}
+    assert units["MASSA-TESTE"] == "g"
+    assert units["PAO-TESTE"] in {"", "un"}

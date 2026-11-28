@@ -49,7 +49,7 @@ TRANSITIONS: dict[str, frozenset[str]] = {
 
 Window = Literal["respond", "accept"]
 EventKind = Literal["acknowledged", "accepted", "fulfilled", "deadline_passed", "escalated", "escalation_absent",
-                    "broken", "contingency", "customer_notified"]
+                    "broken", "contingency", "customer_notified", "customer_notify_failed", "customer_notify_gave_up"]
 
 
 class CommitmentRefused(Exception):

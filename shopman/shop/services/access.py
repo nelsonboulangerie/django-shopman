@@ -13,10 +13,73 @@ SOURCE_TO_ORIGIN = {
 }
 
 
+#: As audiências que a porta da loja (``/a`` → ``api/v1/auth/access/``) troca por sessão
+#: (OC-09). Cada uma nomeia um lugar da loja: a entrada geral (WhatsApp, ``#menu``,
+#: código NB, aviso, travessia de navegador, Concierge), o Finalizar (link pessoal de
+#: campanha, ``campaign_identity``) e a Conta. ``web_support`` não tem porta na loja:
+#: um link cunhado para suporte não abre sessão de cliente aqui.
+STORE_ENTRY_AUDIENCES = ("web_general", "web_checkout", "web_account")
+
+#: Teto do prazo de um link pedido pela API servidor a servidor (``api/auth/access/create/``).
+#: O mesmo teto do link de campanha (``campaign_identity.MAX_HOURS``): a mensagem fica no
+#: dispositivo para sempre, o crachá dentro dela não.
+S2S_LINK_MAX_TTL_MINUTES = 24 * 60
+
+
+def token_audience(token_str: str) -> str:
+    """A audiência do token, lida antes do resgate (``""`` quando o token não existe)."""
+    if not token_str:
+        return ""
+    try:
+        from shopman.doorman.models import AccessLink
+
+        token = AccessLink.get_by_token(token_str)
+        return getattr(token, "audience", "") or "" if token else ""
+    except Exception:
+        logger.exception("access_link_token_audience_failed")
+        return ""
+
+
+def s2s_link_request_error(*, ttl_minutes, audience) -> str:
+    """Por que a API servidor a servidor não cunha este link, ou ``""`` quando cunha.
+
+    Prazo acima do teto é RECUSADO, não truncado: quem chama é uma máquina configurada
+    uma vez (o External Request do ManyChat), e truncar em silêncio deixaria a
+    configuração errada viva para sempre, prometendo um prazo que o link não tem. O
+    contrato documentado não manda ``ttl_minutes`` (vale o padrão de 5 minutos), então
+    a entrada pelo WhatsApp não muda. Audiência sem porta na loja também é recusada
+    aqui, na hora de cunhar: um link que nenhuma porta aceita chegaria ao cliente como
+    "este link expirou".
+    """
+    if ttl_minutes is not None:
+        if isinstance(ttl_minutes, bool) or not isinstance(ttl_minutes, int | float):
+            return "ttl_minutes deve ser um número de minutos."
+        if ttl_minutes > S2S_LINK_MAX_TTL_MINUTES:
+            return f"ttl_minutes passa do teto de {S2S_LINK_MAX_TTL_MINUTES} minutos (24 horas)."
+    if audience is not None and audience not in STORE_ENTRY_AUDIENCES:
+        return "audience sem porta na loja: use " + ", ".join(STORE_ENTRY_AUDIENCES) + "."
+    return ""
+
+
 def exchange_token(token_str: str, request):
     from shopman.doorman import get_access_link_service
+    from shopman.doorman.error_codes import ErrorCode
+    from shopman.doorman.services.access_link import AuthResult
 
     from shopman.shop.services.customer_sign_in import mark_method
+
+    # A audiência é aplicada na troca (OC-09). O ``required_audience`` do doorman
+    # compara UMA audiência; a porta da loja aceita as suas (``STORE_ENTRY_AUDIENCES``),
+    # então a régua é lida aqui, antes do resgate. A audiência não muda depois de
+    # cunhada, então ler antes do lock não abre corrida.
+    audience = token_audience(token_str)
+    if audience and audience not in STORE_ENTRY_AUDIENCES:
+        logger.warning("access_link_exchange_wrong_audience audience=%s", audience)
+        return AuthResult(
+            success=False,
+            error="Wrong audience for the store entry.",
+            error_code=ErrorCode.TOKEN_INVALID,
+        )
 
     AccessLinkService = get_access_link_service()
     mark_method(request, "access_link")
@@ -25,6 +88,34 @@ def exchange_token(token_str: str, request):
         request=request,
         preserve_session_keys=["cart_session_key"],
     )
+
+
+def redeem_without_session(token_str: str) -> bool:
+    """Gasta o link de uso único SEM abrir sessão: o convite que leva só a sacola (OC-18, #3529).
+
+    A mesma régua da troca que abre sessão (``exchange_token``): a audiência da porta da
+    loja e o portão de validade do doorman (``Gates.access_link_validity``: usado, vencido),
+    sob a trava da linha do link. O link é marcado usado sem usuário: ninguém entrou. Quem
+    o recebe é a sacola, nunca a conta (condição 1); ele vale uma vez e no mesmo prazo do
+    convite de hoje (condição 2). ``False`` quando não vale, sem dizer por quê.
+    """
+    from django.db import transaction
+    from shopman.doorman.exceptions import GateError
+    from shopman.doorman.gates import Gates
+    from shopman.doorman.models import AccessLink
+
+    if not token_str:
+        return False
+    with transaction.atomic():
+        token = AccessLink.get_by_token(token_str, for_update=True)
+        if token is None or token.audience not in STORE_ENTRY_AUDIENCES:
+            return False
+        try:
+            Gates.access_link_validity(token)
+        except GateError:
+            return False
+        token.mark_used(None)
+    return True
 
 
 def token_metadata(token_str: str) -> dict:
@@ -132,6 +223,93 @@ def resolve_origin(result) -> str:
         logger.exception("access_link_resolve_origin_failed")
 
     return SOURCE_TO_ORIGIN.get(source, "web")
+
+
+# ── Login do site pelo WhatsApp: o destino fica com o navegador que começou ─────
+#
+# ⚠️ DEV-2026-092 (fala do dono): a cliente tocou em Finalizar, entrou pelo WhatsApp e
+# caiu fora do checkout, tendo de tocar em Finalizar de novo. O destino viaja com a
+# referência NB-… da mensagem pronta, e a referência é de uso único: a mesma mensagem
+# processada duas vezes (reenvio, repetição do External Request), o texto que não chega
+# ao ManyChat ou a referência vencida deixam o link da resposta só com o destino genérico
+# do ManyChat (``"/menu"``). O botão da resposta abre a loja numa aba nova do MESMO
+# navegador, e ali a sacola estava (o cookie é o mesmo), mas o destino não.
+#
+# Por isso o servidor guarda o destino também na SESSÃO do navegador que começou a
+# entrar, junto da tentativa (``WhatsAppVerifyStartView``). A troca do link lê esse
+# destino quando o link não traz o do site. Navegador que não começou a entrar não tem
+# nada guardado, e quem decide é o link, como sempre.
+LOGIN_DESTINATION_SESSION_KEY = "shopman:login-destination"
+#: Rotas que nunca são destino de volta: voltar para a entrada é um laço.
+_AUTH_ROUTES = ("/entrar", "/a")
+
+
+def _destination_path(raw: str) -> str:
+    """Só caminho interno da loja, e nunca a própria entrada."""
+    value = str(raw or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return ""
+    bare = value.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+    if any(bare == route or bare.startswith(f"{route}/") for route in _AUTH_ROUTES):
+        return ""
+    return value
+
+
+def remember_login_destination(request, next_path: str) -> None:
+    """Guarda na sessão deste navegador para onde a tentativa de entrar volta.
+
+    Vale pelo mesmo prazo da referência NB-… (``LINK_STATE_TTL_SECONDS``). Tentativa
+    sem destino apaga o anterior: o que vale é o último gesto da pessoa.
+    """
+    import time
+
+    from shopman.doorman.conf import get_doorman_settings
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    path = _destination_path(next_path)
+    if not path:
+        session.pop(LOGIN_DESTINATION_SESSION_KEY, None)
+        return
+    session[LOGIN_DESTINATION_SESSION_KEY] = {
+        "path": path,
+        "until": time.time() + get_doorman_settings().LINK_STATE_TTL_SECONDS,
+    }
+
+
+def pop_login_destination(request) -> str:
+    """O destino que este navegador guardou ao começar a entrar (uso único), ou ``""``."""
+    import time
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return ""
+    stored = session.pop(LOGIN_DESTINATION_SESSION_KEY, None)
+    if not isinstance(stored, dict):
+        return ""
+    try:
+        until = float(stored.get("until") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if until < time.time():
+        return ""
+    return _destination_path(str(stored.get("path") or ""))
+
+
+def link_carries_site_context(metadata) -> bool:
+    """O link nasceu da referência NB-… do site, resolvida (destino e sacola vieram nela).
+
+    A referência sempre deixa uma marca no link: ``site_return`` (login começado no
+    celular), ``released`` (a aba do computador ficou liberável) ou a sacola que viajou.
+    Sem nenhuma delas, o ``next`` do link é o genérico de quem o pediu (o ``"/menu"`` do
+    ManyChat), nunca o destino do site.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    return bool(
+        metadata.get("site_return") or metadata.get("released") or metadata.get("cart_session_key")
+    )
 
 
 # ── Login do site pelo WhatsApp: a aba de origem entra sozinha ──────────────────

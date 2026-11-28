@@ -29,7 +29,8 @@ from typing import Literal
 from .evidence import Evidence
 
 # Movimentos cuja parte afirma um efeito no negócio: exigem recibo de sucesso.
-EFFECT_MOVES = frozenset({"change_cart", "commit_order", "cancel_order", "amend_order", "grant_discount"})
+EFFECT_MOVES = frozenset({"change_cart", "set_fulfillment", "commit_order", "cancel_order", "amend_order",
+                          "grant_discount"})
 DIGIT = re.compile(r"\d")
 
 
@@ -56,6 +57,8 @@ class RenderedClaim:
     slot: str
     backing: str
     ref: str | None
+    # O formatador de referência da casa não resolveu o valor (``UnresolvedReference``): o espaço ficou vazio.
+    unresolved: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,13 +112,23 @@ def _part_kinds(part: RenderedPart, evidence: Evidence) -> set[str]:
 
 
 def verify(parts: Iterable[RenderedPart], evidence: Evidence, rules: Iterable[PhraseRule] = (),
-           accepted: dict[tuple[int, str], tuple[str, ...]] | None = None) -> VerifyResult:
-    """Confere cada parte. ``accepted``: (parte, espaço) → lastros que o molde aceita."""
+           accepted: dict[tuple[int, str], tuple[str, ...]] | None = None,
+           voice: frozenset[str] | None = None) -> VerifyResult:
+    """Confere cada parte. ``accepted``: (parte, espaço) → lastros que o molde aceita.
+
+    ``voice``: os moldes que a casa assina. Com ela, a parte por molde de fora (o texto neutro do pacote)
+    é achado ``template_not_in_voice`` e SEGURA: a casa com voz própria nunca fala com a do pacote.
+    """
     parts = tuple(parts)
     findings: list[Finding] = []
     repaired: list[RenderedPart] = []
     for index, part in enumerate(parts):
+        if voice is not None and part.template_id not in voice:
+            findings.append(Finding("template_not_in_voice", index))
         for claim in part.claims:
+            if claim.unresolved:
+                findings.append(Finding("reference_unresolved", index, claim.slot))
+                continue
             problem = evidence.problem(claim.backing, claim.ref)
             if problem is not None:
                 findings.append(Finding(problem, index, claim.slot))

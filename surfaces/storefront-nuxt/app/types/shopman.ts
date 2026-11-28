@@ -65,11 +65,32 @@ export interface ReadyPromise {
   text: string
 }
 
+// Dá para pedir agora, e para quando (OC-04), escrito pelo servidor
+// (`presentation/promise.py`, `OrderingProjection`): o resumo das MESMAS promessas
+// dos cards. 'now': algo tem horário hoje; 'preorder': o primeiro horário é de
+// outro dia (`next_date` ISO, `day_label` "amanhã, terça" | "quinta, 19/11");
+// 'none': nenhum item do cardápio pode ir à sacola, e a tela não oferece
+// finalização. A frase da home e da sacola escolhe por aqui, nunca por constante.
+export interface OrderingProjection {
+  state: 'now' | 'preorder' | 'none'
+  next_date: string | null
+  day_label: string
+}
+
 // A loja onde a cliente retira (nome e endereço, da `Shop`). A página do produto
 // a nomeia e o JSON-LD de Offer a declara como local de retirada (#2652).
 export interface PickupStoreProjection {
   name: string
   address: string
+}
+
+/** Um selo de urgência como o servidor o deriva (`presentation/fomo.py`). */
+export interface FomoBadgeProjection {
+  type: 'fresh' | 'low_stock' | 'promo_countdown' | 'demand' | 'sold_today' | string
+  label: string
+  priority: number
+  expires_at: string | null
+  meta: Record<string, unknown>
 }
 
 export interface CatalogItemProjection {
@@ -119,6 +140,8 @@ export interface CatalogItemProjection {
   option_groups?: ProductOptionGroup[]
   // Quando fica pronto (ver ReadyPromise). null = nada a prometer.
   promise?: ReadyPromise | null
+  // Selos de urgência (#2807): até dois, do mais urgente; a tela escreve o tempo.
+  fomo_badges?: FomoBadgeProjection[]
 }
 
 // O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o
@@ -160,6 +183,29 @@ export interface CatalogProjection {
   // Copy de vitrine vazia / busca sem resultado (backend); opcional + fallback na tela.
   empty_state?: EmptyStateCtaCopy | null
   search_empty_state?: EmptyStateCtaCopy | null
+  // O "Para quando?" (OC-33 B1): os dias que dá para escolher e o escolhido.
+  days?: CatalogDaysProjection | null
+}
+
+// O dia escolhido no cardápio (OC-33 B1). `label` é o dia como a loja o diz
+// ("amanhã, quarta", "quinta, 26/11"); `opens_at` ("HH:MM") é o primeiro horário do dia.
+export interface CatalogDayProjection {
+  date: string
+  label: string
+  opens_at: string
+}
+
+// Os dias que o "Para quando?" pode oferecer (OC-33 B1), lidos do calendário da casa.
+export interface CatalogDaysProjection {
+  today: string
+  // Hoje ainda tem horário (falso: encerrado ou casa fechada).
+  today_open: boolean
+  // Próximos dias em que a casa opera, depois de hoje (ISO).
+  next_days: string[]
+  max_date: string
+  // 0 = segunda.
+  closed_weekdays: number[]
+  selected: CatalogDayProjection | null
 }
 
 export interface ComponentProjection {
@@ -252,6 +298,8 @@ export interface ProductDetailProjection {
   option_groups?: ProductOptionGroup[]
   // Quando fica pronto: a mesma promessa do card (ver ReadyPromise).
   promise?: ReadyPromise | null
+  // Selos de urgência (#2807): até dois, do mais urgente; a tela escreve o tempo.
+  fomo_badges?: FomoBadgeProjection[]
   // Onde retirar; null quando a casa não tem endereço cadastrado.
   pickup_store?: PickupStoreProjection | null
 }
@@ -403,11 +451,77 @@ export interface CartProjection {
   // formato da casa ("19h18"; de outro dia, "18/11 às 19h18"). É o que diz a
   // quem abre a sacola depois do prazo que a reserva acabou. null com reserva viva.
   reservation_lapsed_display: string | null
+  // Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
+  // sincronização. Ausente ou vazio para visitante e para link encaminhado.
+  open_elsewhere?: CartOpenElsewhere[]
+  // "Continuar pelo WhatsApp" (OC-16): só vem quando a passagem para a conversa é
+  // possível agora (X1). Ausente ou null: a tela não oferece o gesto.
+  continue_in_conversation?: Action | null
+  // O que entrou vindo de outro canal ("Entraram 3 itens da sacola do WhatsApp.") e
+  // o que mudou, só se mudou (#3517).
+  transfer_arrival?: CartTransferArrival | null
+  // Só na sacola vazia (com itens, cada linha já diz quando fica pronta): null
+  // com a sacola cheia. Ver `OrderingProjection`.
+  ordering?: OrderingProjection | null
+  // Para que dia é a sacola, quando é de OUTRO dia (OC-33 B1): o dia em que ela
+  // reserva. null para hoje (o padrão não se anuncia).
+  day?: CartDayProjection | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
   upsell: { sku: string, name: string, unit_price_q: number, price_display: string, image_url: string | null } | null
   actions: Action[]
+}
+
+// O dia da sacola (OC-33 B1): `date` ISO e `label` como a loja diz ("quinta, 26/11").
+export interface CartDayProjection {
+  date: string
+  label: string
+}
+
+// A recusa do "Trocar" (OC-33 B1, 409 `cart_day_change_refused`): nada mudou; cada
+// item que não dá no dia novo vem nomeado, e a frase é a da casa.
+export interface CartDayChangeRefusal {
+  error_code: 'cart_day_change_refused'
+  title: string
+  detail: string
+  date: string
+  date_label: string
+  // `ref`: o que volta em `without` para seguir sem o item (o SKU, ou a linha de lote).
+  items: Array<{ ref: string, sku: string, name: string, requested_qty: number, available_qty: number }>
+}
+
+// A sacola aberta em outro canal (OC-17). `bring` é a ação de trazê-la para cá:
+// nasce desligada (`enabled: false`) até a passagem entre canais existir, e a
+// tela só oferece o gesto com ela ligada (X1).
+export interface CartOpenElsewhere {
+  channel: string
+  channel_label: string
+  items_count: number
+  items_phrase: string
+  subtotal_q: number
+  subtotal_display: string
+  bring: Action
+}
+
+export interface CartTransferArrival {
+  channel: string
+  title: string
+  lines: string[]
+}
+
+// Resposta de "Trazer a sacola do WhatsApp" (`/api/v1/cart/bring/`).
+export interface CartTransferResponse {
+  cart: CartProjection
+  cart_transfer?: { status: 'accepted' | 'refused' | string, code?: string, differences?: unknown[] }
+}
+
+// "Continuar pelo WhatsApp": a mensagem pronta com o código NB.
+export interface CartConversationStart {
+  code: string
+  message: string
+  deep_link: string
+  wa_number: string
 }
 
 export interface SocialLinkProjection {
@@ -463,6 +577,7 @@ export interface ShopDesignTokensProjection {
   bottomnav?: string
   cta?: string
   cta_foreground?: string
+  promotion?: string
   background_hex?: string
   theme_hex?: string
   heading_font?: string
@@ -753,6 +868,17 @@ export interface HomeProjection {
   featured_items: CatalogItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
+  ordering?: OrderingProjection
+}
+
+/**
+ * Uma versão que esta sessão vê de um experimento (R4 do release, OC-20).
+ * Quem decide é o servidor, pela coorte configurada no Admin; nada no cliente
+ * escolhe a versão. Experimento ausente da lista = versão padrão.
+ */
+export interface ExperienceProjection {
+  ref: string
+  variant: string
 }
 
 export interface StorefrontShellProjection {
@@ -766,6 +892,29 @@ export interface StorefrontShellProjection {
   faq: FAQItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
+  /**
+   * Opcional durante a convivência (campo aditivo). A tela lê por `useExperience`;
+   * `useStorefrontShell` torna privado o documento que traz versão fora da padrão.
+   * Ausente ou vazio = todos os experimentos na versão padrão.
+   */
+  experience?: ExperienceProjection[]
+  /**
+   * O selo da versão de teste da equipe (DEV-2026-096). Só vem para quem vê, ou veria sem
+   * ter pedido a versão de sempre, alguma versão fora do padrão por ser da equipe. Cliente
+   * comum e anônimo: ausente.
+   */
+  team_preview?: TeamPreviewProjection
+}
+
+export interface TeamPreviewProjection {
+  /** A pessoa pediu a versão de sempre (vale até sair da conta ou voltar). */
+  opted_out: boolean
+  /** A frase pronta, em linguagem de gente. */
+  message: string
+  /** As novidades em teste, sem código de experimento. */
+  features: string[]
+  /** "Ver a versão de sempre" ou "Voltar à versão de teste". */
+  action_label: string
 }
 
 export interface ShellResponse {
@@ -870,6 +1019,9 @@ export interface ProductMutationMeta {
   price_q: number
   price_display: string
   image_url: string | null
+  // O dia do "Para quando?" do cardápio (OC-33 B1, AAAA-MM-DD): vai com o
+  // Adicionar, e a reserva cai nele. Ausente fora do cardápio da variante B.
+  date?: string
 }
 
 // Alternativa em estoque oferecida quando o item escolhido falta. O backend
@@ -962,6 +1114,8 @@ export interface Action {
   payload_schema: Record<string, unknown>
   idempotency: 'none' | 'recommended' | 'required' | string
   confirmation: Record<string, unknown>
+  /** O que a ação `copy` copia (o copia-e-cola do Pix); vazio nas demais. */
+  value?: string
 }
 
 export interface CheckoutCopyProjection {
@@ -1207,6 +1361,23 @@ export interface FiscalNote {
   note: string
 }
 
+// O recibo do valor retido de uma encomenda não retirada (#3538). Texto pronto.
+export interface RetentionReceipt {
+  title: string
+  // Razão social (ou nome da loja) e CNPJ.
+  issuer_lines: string[]
+  order_line: string
+  commitment_display: string
+  closed_display: string
+  // "40% de R$ 89,00" em `calculation_display`, e o resultado em `retained_display`.
+  lines: { name: string, qty_display: string, value_display: string, calculation_display: string, retained_display: string }[]
+  money_rows: { label: string, value_display: string }[]
+  retained_label: string
+  retained_display: string
+  nature: string
+  not_fiscal: string
+}
+
 export interface TrackingResponse {
   convenience_pending?: string[]
   ref: string
@@ -1267,6 +1438,7 @@ export interface TrackingResponse {
   // A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
   // pede e-mail). Ausente/`null` enquanto não há nota.
   fiscal_note?: FiscalNote | null
+  retention_receipt?: RetentionReceipt | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string
@@ -1293,6 +1465,11 @@ export interface TrackingResponse {
   tax_id_display?: string
   customer_notes?: string
   delivery_address?: string
+  // Como a tela foi aberta (DEV-2026-093): `full` ou `capability` (só o link do
+  // aviso). Na capacidade o servidor já abreviou o endereço e tirou cancelar,
+  // avaliar e pedir de novo; `login_invite` é o convite que ocupa o lugar deles.
+  access_mode?: 'full' | 'capability'
+  login_invite?: { message: string, cta_label: string, href: string } | null
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string

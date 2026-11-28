@@ -174,9 +174,11 @@ useHead({ title: "Timers" });
           :key="entry.key"
           :entry="entry"
           :remaining="timers.remainingLabel(entry.key)"
+          :sound-off="timers.soundOff.value"
           @seen="timers.seen(entry.key)"
           @clear="clearTimer(entry.key)"
           @extend="(extra: number) => timers.extend(entry.key, extra)"
+          @enable-sound="timers.enableSound()"
         />
       </ul>
       <p

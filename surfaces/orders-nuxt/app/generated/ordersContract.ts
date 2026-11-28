@@ -58,6 +58,7 @@ export interface Action {
   payload_schema: Record<string, unknown>;
   idempotency: string;
   confirmation: Record<string, unknown>;
+  value: string;
 }
 
 /** IFoodNegotiationChoice(value: str, label: str) */
@@ -678,6 +679,7 @@ export interface OrderCardProjection {
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
   payment_lapsed: boolean;
+  awaits_online_payment: boolean;
   customer_whatsapp_url: string;
   advance_block_waits: boolean;
   promise: OrderPromiseProjection | null;
@@ -894,6 +896,8 @@ export interface OperatorOrderProjection {
   danfe_printed: boolean;
   danfe_state: string;
   danfe_problem: string;
+  retention_receipt_printable: boolean;
+  retention_receipt_printed: boolean;
   promise: OrderPromiseProjection | null;
 }
 

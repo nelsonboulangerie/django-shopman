@@ -20,13 +20,22 @@ from ..acts import CHANGE_ACTS
 MOVE = "inform_limitation"
 TEMPLATES = (
     Template("inform_limitation.offer_team", "1", MOVE, "I can't do that here. I can hand you to the team."),
+    # A parte que a sequência de efeitos não tentou (o efeito anterior não teve sucesso): não foi impossível,
+    # só fica para depois de acertar o passo anterior (spec 08 §5).
+    # O "sim" com uma mudança junto que não se concluiu: o pedido espera a sacola, não foi impossível.
+    Template("inform_limitation.confirm_after_change", "1", MOVE,
+             "I'll register it once your cart change is settled; then I'll show you the summary again."),
+    Template("inform_limitation.not_attempted", "1", MOVE,
+             "That part waits until the earlier step is settled; tell me again once it is."),
     # A recusa do cliente segura a oferta até ele mudar de ideia (F10).
     Template("inform_limitation.offers_declined", "1", MOVE,
              "You asked me not to make suggestions. Tell me if you'd like them again."),
 )
 LIMITED_ACTS = CHANGE_ACTS | {"complain", "request_human", "ask_recommendation"}
 # O movimento que faz cada pedido de mudança.
-HANDLED_BY = {"change_quantity": ("change_cart",), "place_order": ("present_terms",),
+HANDLED_BY = {"change_quantity": ("change_cart",), "choose_fulfillment": ("set_fulfillment",),
+              "choose_payment": ("set_payment",), "give_address": ("set_delivery_address",),
+              "place_order": ("present_terms",),
               "cancel_order": ("cancel_order",), "complain": ("open_case",), "request_human": ("handoff",),
               "ask_recommendation": ("recommend",)}
 
@@ -46,6 +55,8 @@ def _handled(state, need) -> bool:
     moves = registry()
     if state.answers_offer(need):
         names = ("commit_order", "present_terms")
+    elif state.changed_under_offer(need):
+        names = ("present_terms",)  # a mudança já feita com termos no ar: quem atende são os termos novos
     elif _fact_missing(state, need):
         names = ("verify_with_staff",)
     else:
@@ -63,6 +74,8 @@ def propose(state, need):
         return None
     if need.request_kind == "change" and len(need.readings) >= 2:
         return None  # pedido ambíguo: pergunta antes; não se sabe ainda o que foi pedido
+    if need.request_kind == "change" and state.situation(need).missing_required_field:
+        return None  # falta o campo sem o qual o pedido não se cumpre ("vou pagar"): pergunta antes
     if _handled(state, need):
         return None
     return Proposal(candidate_ref=f"{need.need_id}:{MOVE}", need_id=need.need_id, move=MOVE, content={},
@@ -70,6 +83,24 @@ def propose(state, need):
 
 
 def reply(state, need):
+    if state.refused.get(need.need_id) == "sequence_stopped":
+        return PartSpec(MOVE, "inform_limitation.not_attempted")
+    from .change_cart import eligible_change
+
+    if state.answers_offer(need) and eligible_change(state):
+        return PartSpec(MOVE, "inform_limitation.confirm_after_change")
+    if need.act == "choose_payment":
+        from .set_payment import limitation_part
+
+        part = limitation_part(state, need)
+        if part is not None:
+            return part  # a forma que o canal não oferece: diz que não, com as opções
+    if need.act == "give_address":
+        from .set_delivery_address import refusal_part
+
+        refused = refusal_part(state, need)
+        if refused is not None:
+            return refused  # fora da área, ou não se localiza: o cliente sabe o que fazer
     if need.act == "ask_recommendation" and state.declined_offers:
         return PartSpec(MOVE, "inform_limitation.offers_declined")
     return PartSpec(MOVE, "inform_limitation.offer_team")

@@ -1,16 +1,34 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
+  BOARD_NAME_MAX_CHARS,
   boardDisplay,
+  boardNameChars,
+  boardNameLines,
   boardQtyChars,
   boardQtyLabel,
+  boardRowSpoken,
+  boardStaleFlaps,
+  boardStaleNotice,
   isStale,
 } from "../app/presentation/production";
 
 describe("Letreiro — coluna de quantidade", () => {
   // Beta 05/11: "CROISSANT MANTEIGA 4200 U" perdia o N com 6 palhetas fixas.
   it("cabe a maior quantidade do dia, com a unidade", () => {
-    expect(boardQtyLabel("4200")).toBe("4200 UN");
-    expect(boardQtyChars([{ qty: "12" }, { qty: "4200" }])).toBe(7);
+    expect(boardQtyLabel("4200")).toBe("4.200 UN");
+    expect(boardQtyChars([{ qty: "12" }, { qty: "4200" }])).toBe(8);
+  });
+  // P1-21: massa medida em grama aparecia como "18500 UN".
+  it("diz a unidade que a projeção traz: massa sempre em quilo", () => {
+    expect(boardQtyLabel("12", "un")).toBe("12 UN");
+    expect(boardQtyLabel("12", "")).toBe("12 UN");
+    expect(boardQtyLabel("18500", "g")).toBe("18,5 KG");
+    expect(boardQtyLabel("800", "g")).toBe("0,8 KG");
+    expect(boardQtyLabel("3.25", "kg")).toBe("3,25 KG");
+    expect(boardQtyLabel("1500", "ml")).toBe("1,5 L");
+    expect(boardQtyChars([{ qty: "18500", unit: "g" }])).toBe(7);
   });
   it("nunca encolhe abaixo de 999 UN", () => {
     expect(boardQtyChars([])).toBe(6);
@@ -40,5 +58,77 @@ describe("isStale — honest degradation cue", () => {
     expect(isStale({ error: true, hasData: true })).toBe(true);
     expect(isStale({ error: true, hasData: false })).toBe(false); // nothing to be stale about
     expect(isStale({ error: false, hasData: true })).toBe(false); // fresh
+  });
+});
+
+describe("Letreiro — escala e nome", () => {
+  it("a coluna do nome mede o maior nome do dia, com piso e teto", () => {
+    expect(boardNameChars([])).toBe(12);
+    expect(boardNameChars([{ recipe_name: "Baguete" }])).toBe(12);
+    expect(boardNameChars([{ recipe_name: "Croissant de Amêndoas" }])).toBe(21);
+    expect(
+      boardNameChars([{ recipe_name: "Mini Focaccia Cebola, Bacon e Tomilho" }]),
+    ).toBe(BOARD_NAME_MAX_CHARS);
+  });
+
+  // P2-15: 22 palhetas fixas cortavam o nome. Nome longo quebra em duas linhas.
+  it("o nome longo quebra entre palavras em vez de ser cortado", () => {
+    expect(boardNameLines("Baguete", 22)).toEqual(["Baguete"]);
+    expect(boardNameLines("Mini Focaccia Cebola, Bacon e Tomilho", 22)).toEqual([
+      "Mini Focaccia Cebola,",
+      "Bacon e Tomilho",
+    ]);
+    expect(
+      boardNameLines("Pão de fermentação natural com castanhas brasileiras", 22),
+    ).toEqual(["Pão de fermentação", "natural com castanhas…"]);
+    for (const line of boardNameLines(
+      "Pão de fermentação natural com castanhas brasileiras e mel",
+      22,
+    )) {
+      expect(line.length).toBeLessThanOrEqual(22);
+    }
+    expect(boardNameLines("Supercalifragilístico", 10)).toEqual([
+      "Supercalif",
+      "ragilísti…",
+    ]);
+  });
+
+  it("a escala cresce com a altura até 48px na TV, sem o teto de tablet de 1,5rem", () => {
+    const css = readFileSync(resolve(__dirname, "../app/pages/board.vue"), "utf8");
+    const row = /--scale-row:\s*max\(([^;]+)\);/.exec(css)?.[1] ?? "";
+    expect(row).toContain("4.5vh");
+    expect(row).toContain("3rem");
+    expect(row).toContain("var(--row-chars)");
+    expect(css).not.toContain("clamp(1.05rem, 2vw, 1.5rem)");
+  });
+
+  it("a voz da linha diz a unidade certa", () => {
+    expect(
+      boardRowSpoken({
+        recipe_name: "Massa de Croissant",
+        qty: "18500",
+        unit: "g",
+        eta_display: "8h",
+        status_label: "Planejado",
+      }),
+    ).toBe("Massa de Croissant: 18,5 kg às 8h, Planejado");
+    expect(
+      boardRowSpoken({
+        recipe_name: "Baguete",
+        qty: "40",
+        unit: "un",
+        eta_display: "—",
+        status_label: "Planejado",
+      }),
+    ).toBe("Baguete: 40 unidades, Planejado");
+  });
+
+  it("o aviso de conexão diz de quando é o quadro", () => {
+    expect(boardStaleNotice("9h05")).toBe("Sem conexão. Lido às 9h05");
+    expect(boardStaleNotice("")).toBe("Sem conexão. Mostrando a última leitura");
+    // Nas palhetas: maiúsculas de painel, hora com o "h" minúsculo.
+    expect(boardStaleFlaps("6h42")).toBe("SEM CONEXÃO. LIDO ÀS 6h42");
+    expect(boardStaleFlaps("10h")).toBe("SEM CONEXÃO. LIDO ÀS 10h");
+    expect(boardStaleFlaps("")).toBe("SEM CONEXÃO. MOSTRANDO A ÚLTIMA LEITURA");
   });
 });

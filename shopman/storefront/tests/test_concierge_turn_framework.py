@@ -126,10 +126,263 @@ def test_the_judge_needs_a_switched_on_class_and_a_nice_template_for_every_part(
     assert turn_framework.judge(ok, enabled=frozenset({"inform"}), approved=approved).eligible
 
 
-def test_the_nice_templates_are_today_copy_and_a_broken_copy_drops_out(shop, monkeypatch):
+def _said(*acts):
+    return SimpleNamespace(acts=tuple(SimpleNamespace(act=act) for act in acts))
+
+
+@pytest.mark.parametrize(("acts", "moves", "template", "reason"), [
+    # "oi" respondido com "Nós que agradecemos" é falso: o cumprimento é o de hoje.
+    (("greet",), ["acknowledge"], "acknowledge.thanks", "today_answers:acknowledge.thanks"),
+    (("greet", "change_quantity"), ["acknowledge", "change_cart"], "acknowledge.thanks",
+     "today_answers:acknowledge.thanks"),
+    # "Quer que eu chame alguém da equipe?": o "sim" não chama ninguém pelo motor.
+    (("change_quantity",), ["inform_limitation"], "inform_limitation.offer_team",
+     "today_answers:inform_limitation.offer_team"),
+    # "Não entendi bem" a "quanto deu?", "vou pagar" e à pergunta da casa, que o caminho de hoje responde.
+    (("choose_payment",), ["ask_clarification"], "ask_clarification.more", "today_answers:ask_clarification.more"),
+    (("unknown",), ["ask_clarification"], "ask_clarification.more", "today_answers:ask_clarification.more"),
+    # O agradecimento ao agradecimento, e o "sim" (que a sombra julga sem a pergunta do turno vivo), seguem.
+    (("thank",), ["acknowledge"], "acknowledge.thanks", ""),
+    (("affirm",), ["acknowledge"], "acknowledge.thanks", ""),
+])
+def test_an_approved_phrase_that_would_be_false_in_this_turn_goes_to_today_path(acts, moves, template, reason):
+    """Calibragem do básico (23/11): a frase aprovada que, NESTE turno, mente ou não ajuda, cede ao caminho de hoje."""
+    reply = SimpleNamespace(text="x", template_ids=(template,) + (("change_cart.done",) if len(moves) > 1 else ()))
+    result = SimpleNamespace(chosen_moves=moves, reply=reply, understanding=_said(*acts))
+    approved = frozenset({template, "change_cart.done"})
+    verdict = turn_framework.judge(result, enabled=frozenset({"inform", "order"}), approved=approved)
+    assert verdict.reason == reason and verdict.eligible is (not reason)
+
+
+APPROVED = {  # prévia frase a frase de 22/11/2026: "sim" do dono (#3298)
+    "ask_clarification.more": "Desculpe, não entendi bem. Pode me dizer o que você gostaria?",
+    "effect.failed": ("Não consegui concluir esta ação. Suas escolhas foram preservadas. "
+                      "Se quiser, chamo alguém da equipe."),
+    "handoff.routed": ("Solicitei atendimento a {owner} e preservei suas escolhas. "
+                       "Se ninguém assumir até {deadline}, te aviso por aqui."),
+    "handoff.routed_no_deadline": ("Solicitei atendimento a {owner} e preservei suas escolhas. "
+                                   "A equipe continuará por aqui conforme a disponibilidade."),
+    "handoff.not_accepted": ("Solicitei atendimento humano e preservei suas escolhas. Enquanto ninguém "
+                             "assume, sigo com você por aqui e te dou notícia até {deadline}."),
+    # Aprovadas pelo dono em 23/11, no cartão do motor. O "total mudou" substitui o "não" de 22/11
+    # (a frase de antes pedia o código).
+    "present_terms.changed": "O total mudou; agora é {total}. Confira antes de confirmar.",
+    "commit_order.done": "Pedido {order} registrado. Total: {total}.\nAcompanhar: {track}",
+    "change_cart.done": ("{done}, sua sacola ficou assim:\n{items}\nTotal: {total}\nQuer mais alguma coisa? "
+                         "Quando terminar, é só escrever “pode fechar”."),
+    "present_terms.confirm": "{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?",
+    "acknowledge.terms_declined": ("Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, "
+                                   "se mudar de ideia."),
+    # Cartão 5 (pagamento), aprovadas pelo dono em 23/11: a pergunta de hoje e o "Combinado".
+    "set_payment.done": "Combinado: {method}.",
+    "present_terms.needs_payment_method": "Como você prefere pagar? {payment_method}",
+    # Cartão 2 (entrega): as perguntas de hoje e o "Combinado" aprovado em 23/11.
+    "set_delivery_address.done": "Combinado: entrega na {address}.",
+    "present_terms.needs_delivery_address": ("Qual é o endereço da entrega? Pode enviar a localização pelo "
+                                             "WhatsApp ou escrever rua, número, bairro e CEP."),
+    "present_terms.needs_delivery_address_details": "Para a entrega, me diga {delivery_address_details}.",
+    "set_delivery_address.not_delivered": ("Esse endereço está fora da nossa área de entrega. Qual é o endereço da "
+                                           "entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, "
+                                           "número, bairro e CEP."),
+    "set_delivery_address.not_located": ("Não consegui localizar esse endereço para calcular a entrega. Confira a "
+                                         "rua, o número e o bairro, ou envie sua localização pelo WhatsApp."),
+    "present_terms.needs_delivery_complement": ("Tem complemento (apartamento, bloco, fundos)? Se não tiver, "
+                                                "é só dizer \"sem complemento\"."),
+    "set_payment.not_offered": "Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {payment_method}",
+    "set_delivery_address.ask_mode": "Você vai retirar aqui na loja ou prefere entrega?",
+    # Os degraus de baixo dos efeitos (#3412), aprovados em 23/11.
+    "change_cart.done_receipt": "{done}, a sacola foi atualizada.",
+    "change_cart.done_total": "{done}, a sacola foi atualizada. Total: {total}.",  # #3488, coordenação 24/11
+    "ask_clarification.confirm_reading": "Só para confirmar: {reading}?",  # ADR-051, coordenação 24/11
+    "set_fulfillment.updated": "{noted}, atualizei o recebimento.",
+    "commit_order.done_order": "Pedido {order} registrado. Acompanhar: {track}",
+    # O endereço do cadastro (#3421): a MESMA oferta de hoje (``address.saved_offer``), e a pergunta de hoje.
+    "present_terms.needs_delivery_address_saved": "Entregamos no endereço do seu cadastro, {delivery_address_saved}?",
+    "present_terms.needs_delivery_address_saved_many": ("Entregamos no endereço do seu cadastro, "
+                                                        "{delivery_address_saved}? Se preferir outro endereço "
+                                                        "cadastrado, é só dizer qual."),
+    # O quando (#3482): as perguntas de hoje do fechamento, letra por letra; o horário com as opções do dia.
+    "present_terms.needs_fulfillment_date": "Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?",
+    "present_terms.needs_fulfillment_type": "Você vai retirar aqui na loja ou prefere entrega?",
+    "present_terms.needs_delivery_time_slot": "Qual horário de retirada fica melhor? {delivery_time_slot}",
+    "present_terms.needs_delivery_window": "Qual janela de entrega fica melhor? {delivery_window}",  # coord. 24/11
+    # O "outro" à oferta (#3454): a MESMA lista de hoje (``address.saved_listing``).
+    "present_terms.needs_delivery_address_saved_options": ("Seus endereços cadastrados: "
+                                                           "{delivery_address_saved_options}. Em qual entregamos?"),
+    "present_terms.needs_delivery_address_saved_declined": ("Qual é o endereço da entrega? Pode enviar a "
+                                                            "localização pelo WhatsApp ou escrever rua, número, "
+                                                            "bairro e CEP."),
+    # As esperas (#3328), aprovadas em 23/11.
+    "effect.pending": "Ainda estou concluindo isso. Te confirmo por aqui até {deadline}.",
+    "wait.overdue": "Desculpe a demora. Até {deadline}, {owner} te responde por aqui.",
+    "wait.overdue_no_deadline": ("Desculpe a demora. Ainda estou esperando {owner} e te aviso por aqui "
+                                 "assim que tiver a resposta."),
+    # Aprovada pelo dono em 23/11 (#3408): a limitação que o efeito recusado no ar faz dizer.
+    "inform_limitation.offer_team": "Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?",
+}
+REFUSED = ("ask_clarification.which", "inform.price", "cover_readings.prices")
+
+
+def test_the_nice_templates_are_the_approved_phrases_and_a_broken_copy_drops_out(shop, monkeypatch):
     found = turn_framework.nice_templates()
-    assert set(found) == {"acknowledge.got_it", "acknowledge.thanks"}
+    assert set(found) == {"acknowledge.got_it", "acknowledge.thanks", *APPROVED, *turn_framework.FULFILLMENT_TEMPLATES}
     assert found["acknowledge.thanks"].text == copy_message("CONCIERGE_SMALL_TALK_THANKS").strip()
+    for template_id, text in APPROVED.items():
+        assert found[template_id].text == text, template_id  # a frase aprovada, letra por letra
+    assert not set(REFUSED) & set(found)  # o "não" do dono: a classe fica com a frase de hoje
     monkeypatch.setattr("shopman.storefront.concierge.service.copy_message",
                         lambda key: "Fechamos às 19h." if key == "CONCIERGE_SMALL_TALK_THANKS" else "Combinado.")
-    assert set(turn_framework.nice_templates()) == {"acknowledge.got_it"}  # dígito no texto fixo: fora
+    assert "acknowledge.thanks" not in turn_framework.nice_templates()  # dígito no texto fixo: fora
+
+
+def test_who_answers_and_until_when_are_said_in_portuguese(settings):
+    from datetime import UTC, datetime, timedelta
+
+    from django.utils import timezone
+
+    assert turn_framework.owner_text("operator_on_duty") == "alguém da equipe"  # nunca o nome do papel
+    now = timezone.localtime()
+    tomorrow = (now + timedelta(days=1)).replace(hour=7, minute=10, second=0, microsecond=0)
+    assert turn_framework.deadline_text(tomorrow.isoformat()) == "amanhã às 7h10"
+    today = now.replace(hour=15, minute=0, second=0, microsecond=0)
+    assert turn_framework.deadline_text(today.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")) == "hoje às 15h"
+    later = datetime(2030, 3, 4, 9, 0, tzinfo=timezone.get_current_timezone())
+    assert turn_framework.deadline_text(later.isoformat()) == "04/03 às 9h"
+
+
+def test_the_tick_does_nothing_with_the_classes_off(shop, sent):
+    assert turn_framework.tick(channel=_channel())["skipped"] == "classes_off"
+    assert sent == []
+
+
+def test_the_tick_stays_silent_while_a_deadline_notice_has_no_nice_phrase(shop, sent, monkeypatch):
+    _switch(shop, inform=True, handoff=True)
+    without = {k: v for k, v in turn_framework.NICE_TEMPLATE_COPY.items() if k != "wait.overdue"}
+    monkeypatch.setattr(turn_framework, "NICE_TEMPLATE_COPY", without)
+    counts = turn_framework.tick(channel=_channel())
+    assert counts["skipped"] == "no_nice_template:wait.overdue" and counts["notices"] == 0
+    assert sent == []  # aviso em frase genérica do pacote nunca sai
+
+
+def test_every_wait_phrase_is_the_approved_one_and_the_tick_may_speak(shop):
+    """#3328: as frases de espera aprovadas em 23/11, letra por letra, iguais à copy; o tick já pode falar."""
+    from shopman.storefront.concierge.service import copy_message
+
+    found = turn_framework.nice_templates()
+    for template_id in ("effect.pending", "wait.overdue", "wait.overdue_no_deadline"):
+        key = turn_framework.NICE_TEMPLATE_COPY[template_id]
+        assert found[template_id].text == APPROVED[template_id] == copy_message(key).strip(), template_id
+    assert turn_framework.tick_templates_missing() == ()
+
+
+def test_the_engine_tick_command_runs_in_the_worker(shop):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("concierge_engine_tick", stdout=out)
+    assert '"skipped": "classes_off"' in out.getvalue()
+
+
+# ── os moldes do pedido com a frase de hoje (passo 4 do pedido pelo motor) ────────────────
+
+
+def test_the_order_templates_are_today_phrases(shop):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from shopman.storefront.concierge import order_closing
+    found = turn_framework.nice_templates()
+    tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+    formatters = turn_framework.nice_formatters()
+
+    def say(template_id, **values):
+        text = found[template_id].text
+        for slot, value in values.items():
+            text = text.replace("{" + slot + "}", formatters[slot](value))
+        return text
+
+    today_with_window = order_closing.noted({"day": tomorrow, "kind": "pickup", "slot": "A partir das 15h"},
+                                            copy=copy_message)
+    today_without = order_closing.noted({"day": tomorrow, "kind": "delivery", "slot": ""}, copy=copy_message)
+    assert say("set_fulfillment.done", mode="pickup", date=tomorrow, window="slot-15") == today_with_window \
+        == "Combinado: retirada amanhã, a partir das 15h."
+    assert say("set_fulfillment.done_day", mode="delivery", date=tomorrow) == today_without \
+        == "Combinado: entrega amanhã."
+    assert say("set_fulfillment.done_date", date=tomorrow) == "Combinado: para amanhã."
+    assert say("set_fulfillment.done_mode", mode="delivery") == "Combinado: entrega."
+    # A hora sem janela da grade: derivada das aprovadas (coordenação, 23/11).
+    assert say("set_fulfillment.done_time", mode="pickup", date=tomorrow, time="16:00") == \
+        "Combinado: retirada amanhã às 16h."
+    assert turn_framework.time_text("16:30") == "16h30"
+    # Os degraus de baixo (#3412): o efeito aconteceu, sem o que dizer depois dele. Frases aprovadas em 23/11.
+    formatters = turn_framework.nice_formatters()
+    assert found["set_fulfillment.updated"].text.replace("{noted}", formatters["noted"]("success")) == \
+        "Combinado, atualizei o recebimento."
+    assert found["change_cart.done_receipt"].text.replace("{done}", formatters["done"]("success")) == \
+        "Pronto, a sacola foi atualizada."
+    assert found["commit_order.done_order"].text == "Pedido {order} registrado. Acompanhar: {track}"
+
+
+def test_a_window_the_house_grid_does_not_know_never_leaks(shop):
+    assert turn_framework.window_text("manha") == "horário a confirmar"
+
+
+def test_the_judge_reads_an_effect_turn_by_its_templates():
+    from conversational_commerce.reply.verify import Finding
+
+    def shadow(findings, *, template="set_payment.done", move="set_payment"):
+        part = SimpleNamespace(move=move)
+        verification = SimpleNamespace(findings=tuple(findings), parts=(part,))
+        return SimpleNamespace(chosen_moves=[move], reply=SimpleNamespace(
+            text=None, template_ids=(template,), verification=verification))
+
+    outcomes = turn_framework.effect_outcomes("set_payment")
+    assert {"set_payment.done", "effect.failed", "effect.pending"} <= outcomes  # o pendente tem frase (#3328)
+    approved = frozenset(outcomes)
+    gap = [Finding("receipt_not_in_evidence", 0, "method")]
+    assert turn_framework.judge(shadow(gap), enabled=frozenset({"order"}), approved=approved).eligible
+    # Um desfecho sem frase da Nice: não vai ao ar.
+    without_failure = approved - {"effect.failed"}
+    assert turn_framework.judge(shadow(gap), enabled=frozenset({"order"}), approved=without_failure).reason == (
+        "no_nice_template:effect.failed")
+    # Outro achado, que não é o que a sombra não pode ter: segura.
+    other = gap + [Finding("number_without_fact", 0)]
+    assert turn_framework.judge(shadow(other), enabled=frozenset({"order"}), approved=approved).reason == (
+        "held:number_without_fact")
+
+
+def test_the_turn_reads_ceiling_fits_a_close_with_every_effect():
+    """P16 (#3482): o teto do motor conta LEITURAS, não as voltas da IA do caminho de hoje. Com 5, "pra amanhã,
+    pode fechar" estourava e os termos não se apresentavam. Cabe: cotação e o que falta, os nomes de uma sacola
+    grande, e cotar de novo e reler o que falta depois de cada efeito da sequência."""
+    from conversational_commerce.engine.turn import EFFECT_SEQUENCE
+
+    from shopman.storefront.concierge.profile import _max_steps
+
+    assert _max_steps() >= 2 + 8 + 2 * len(EFFECT_SEQUENCE)
+
+
+
+@pytest.mark.parametrize(("before", "closes", "expected"), [
+    # Depois de "?": frase nova, a primeira opção com maiúscula, as demais minúsculas, e o ponto que fecha.
+    ("Qual horário de retirada fica melhor? ", True, "A partir das 9h, a partir das 12h ou a partir das 15h."),
+    # No começo do texto: maiúscula também.
+    ("", False, "A partir das 9h, a partir das 12h ou a partir das 15h"),
+    # No meio da frase: tudo minúsculo.
+    ("Temos horários ", False, "a partir das 9h, a partir das 12h ou a partir das 15h"),
+])
+def test_grid_labels_follow_the_position_in_the_sentence(before, closes, expected):
+    """Regra do dono (coordenação, 24/11): maiúscula só em início de frase; dentro dela, minúscula. O rótulo da
+    grade não muda."""
+    labels = ["A partir das 9h", "A partir das 12h", "A partir das 15h"]
+    assert turn_framework.labels_in_sentence(labels, before=before, closes=closes) == expected
+    assert labels[0] == "A partir das 9h"
+
+
+def test_the_questions_say_the_grid_after_the_question_mark(db):
+    labels = ["A partir das 9h", "A partir das 15h"]
+    assert turn_framework.pickup_slots_text(None)(labels) == "A partir das 9h ou a partir das 15h."
+    assert turn_framework.delivery_windows_text(None)(labels) == "A partir das 9h ou a partir das 15h."

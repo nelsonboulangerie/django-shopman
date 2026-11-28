@@ -16,19 +16,28 @@ function parseLocalizedNumber(raw: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** Espaço não separável: o número e a unidade andam juntos ("7200 g", nunca "7200 / g"). */
+const NBSP = "\u00a0";
+const NUMBER_THEN_UNIT = /(\d)[ \t]+(?=[^\d\s])/g;
+
+/** Prende cada número à palavra que vem logo depois dele ("7200 g", "≈ 0,132 litros"). */
+export function keepNumberWithUnit(text: string | null | undefined): string {
+  return (text ?? "").replace(NUMBER_THEN_UNIT, `$1${NBSP}`);
+}
+
 /**
  * Formatação apenas. Não converte para gramas, não aplica ceiling e não
  * calcula tolerância: o número operacional pertence ao projection do servidor.
+ * O número e a unidade saem presos (#3656): a quantidade quebra inteira, ou não quebra.
  */
 export function projectedQuantityDisplay(display: string): string {
   const match = KG_DISPLAY.exec(display);
-  if (!match) return display;
-  const kilograms = parseLocalizedNumber(match[1] ?? "");
-  if (kilograms === null) return display;
+  const kilograms = match ? parseLocalizedNumber(match[1] ?? "") : null;
+  if (kilograms === null) return keepNumberWithUnit(display);
   return `${new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
-  }).format(kilograms)} kg`;
+  }).format(kilograms)}${NBSP}kg`;
 }
 
 /** `target_display` já vem operacional; quantity é somente fallback transitório. */
@@ -53,7 +62,7 @@ export function blindLabelsFromPrintDocument(
         ingredient.target_display,
         ingredient.quantity_display,
       ),
-      annotation: ingredient.annotation || "",
+      annotation: keepNumberWithUnit(ingredient.annotation),
       date: ticket.made_display || document.selected_date,
       key: `${ticket.ticket_ref}-${ingredient.sku}-${ticketIndex}-${ingredientIndex}`,
     })),
@@ -77,18 +86,18 @@ export function preparationLabelsFromPrintDocument(
   }));
 }
 
-/** Linha da balança no cartão do preparo. */
+/** Linha da balança no cartão do preparo (a mesma que vai para a etiqueta). */
 export interface WeighingRow {
   key: string;
   sku: string;
   name: string;
   target: string;
   annotation: string;
-  isOldDough: boolean;
+  /** A quantidade como o servidor a mostra: é ela que prende a marca de "Separado". */
+  quantity: string;
 }
 
 interface WeighingRowsTicket {
-  output_sku: string;
   ingredients: Array<{
     sku: string;
     name: string;
@@ -96,46 +105,65 @@ interface WeighingRowsTicket {
     quantity_display: string;
     annotation: string;
   }>;
-  old_dough?: {
-    old_dough_display: string;
-    lines: Array<{ sku: string; target_display: string }>;
-  } | null;
 }
 
 /**
- * As linhas que o padeiro pesa. Sem massa velha, a ficha do preparo (mistura
- * final + partes prontas). Com massa velha, a variante no teto que o servidor
- * já calculou (`final_mix_at_cap`): a massa velha primeiro, e cada insumo no
- * alvo encolhido. A ajuda de contagem ("≈ 7 ovos") é do peso cheio e sai.
+ * As linhas que o padeiro pesa: a ficha do preparo como o servidor mandou. A massa
+ * velha, quando a ficha usa, é um ingrediente com lote (ADR-027, item 12) e já vem
+ * na lista; a tela não monta outra receita.
  */
-export function weighingRows(
-  ticket: WeighingRowsTicket,
-  withOldDough: boolean,
-): WeighingRow[] {
-  const oldDough = withOldDough ? ticket.old_dough : null;
-  const atCap = new Map(
-    (oldDough?.lines ?? []).map((line) => [line.sku, line.target_display]),
-  );
-  const rows: WeighingRow[] = ticket.ingredients.map((ing) => ({
-    key: ing.sku,
+export function weighingRows(ticket: WeighingRowsTicket): WeighingRow[] {
+  return ticket.ingredients.map((ing, index) => ({
+    key: `${ing.sku}-${index}`,
     sku: ing.sku,
     name: ing.name,
-    target: projectedQuantityDisplay(
-      atCap.get(ing.sku) ??
-        operationalTargetDisplay(ing.target_display, ing.quantity_display),
-    ),
-    annotation: oldDough ? "" : ing.annotation,
-    isOldDough: false,
+    target: operationalTargetDisplay(ing.target_display, ing.quantity_display),
+    annotation: keepNumberWithUnit(ing.annotation),
+    quantity: ing.quantity_display,
   }));
-  if (oldDough?.old_dough_display) {
-    rows.unshift({
-      key: `old-dough-${ticket.output_sku}`,
-      sku: ticket.output_sku,
-      name: "Massa velha",
-      target: projectedQuantityDisplay(oldDough.old_dough_display),
-      annotation: "",
-      isOldDough: true,
-    });
-  }
-  return rows;
+}
+
+interface WeighingLabelTicket extends WeighingRowsTicket {
+  blind_code: string;
+}
+
+/**
+ * As etiquetas cegas da prévia, linha a linha da balança: o papel e a tela saem da
+ * mesma função (P1-26), e não há como uma pesar outra receita.
+ */
+export function weighingLabels<T extends WeighingLabelTicket>(
+  tickets: readonly T[],
+  identity: (ticket: T) => string,
+  dateDisplay: string,
+): ProductionBlindLabel[] {
+  return tickets.flatMap((ticket) =>
+    weighingRows(ticket).map((row) => ({
+      code: ticket.blind_code,
+      ingredient: row.name,
+      sku: row.sku,
+      weight: row.target,
+      annotation: row.annotation,
+      date: dateDisplay,
+      key: `${identity(ticket)}-${row.key}`,
+    })),
+  );
+}
+
+interface StockLine {
+  is_subrecipe: boolean;
+  is_short: boolean;
+  available_display: string;
+  missing_display: string;
+}
+
+/**
+ * O saldo e a falta de um insumo na Preparação. Pré-preparo nunca mostra saldo nem
+ * falta (decisão de 03/07): ele se faz na hora. A falta diz quanto ("Faltam 300 g"),
+ * com o número que o servidor calculou.
+ */
+export function stockFacts(line: StockLine): { available: string; shortage: string } {
+  if (line.is_subrecipe) return { available: "", shortage: "" };
+  const available = line.available_display ? projectedQuantityDisplay(line.available_display) : "";
+  if (!line.is_short || !line.missing_display) return { available, shortage: "" };
+  return { available, shortage: `Faltam ${projectedQuantityDisplay(line.missing_display)}` };
 }

@@ -6,8 +6,11 @@
 #   make admin       → valida tudo de Admin/Unfold
 #   make install     → instala deps + apps em modo editável
 
-# Python: usa venv se existir, senão o do PATH
-PYTHON := $(shell [ -f .venv/bin/python ] && echo $(CURDIR)/.venv/bin/python || echo python)
+# Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
+# principal — nunca o `python` do PATH, cujo pyenv pode ter editable installs de
+# worktrees mortas (CLAUDE.md). Ver o bloco "Worktree" logo abaixo.
+GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
 ADMIN_URL := $(strip $(or $(url),$(URL)))
 ADMIN_SCOPE_ARGS := $(if $(ADMIN_URL),--url $(ADMIN_URL),)
 COMPOSE ?= docker compose
@@ -17,6 +20,20 @@ NUXT_DIR := surfaces/storefront-nuxt
 PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
 SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman:$(CURDIR)/packages/conversational-commerce
+
+# ── Worktree: testar o código DESTA árvore ────────────────────────────────
+# Os editable installs do .venv apontam para a árvore principal. Medido em
+# 25/11/2026 (DEV-2026-098): numa worktree, `.venv/bin/python -c "import
+# shopman.orderman"` resolvia para o checkout PRINCIPAL — `make test-orderman`
+# passava testando outro código. Com a worktree à frente no PYTHONPATH, todo
+# `shopman.*` e `conversational_commerce` resolvem aqui (`python3
+# scripts/local_ci.py origin` prova). No checkout principal e na CI (onde o
+# checkout É a raiz) nada muda.
+ifneq ($(GIT_MAIN_ROOT),)
+ifneq ($(realpath $(CURDIR)),$(realpath $(GIT_MAIN_ROOT)))
+export PYTHONPATH := $(SHOPMAN_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONPATH),)
+endif
+endif
 
 .PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-conversational-commerce test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
@@ -258,13 +275,29 @@ SHOP_HEAVY_TESTS := \
 	shopman/shop/tests/test_setup_operators.py \
 	shopman/shop/tests/test_suggestion_stress.py
 
-test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard 1/2 do CI)
+test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard do CI)
 	@echo "── Shop (arquivos pesados) ──"
 	$(PYTHON) -m pytest $(SHOP_HEAVY_TESTS) -q -n auto
 
-test-shop-rest: ## Shop — todo o resto (shard 2/2 do CI)
+test-shop-rest: ## Shop — todo o resto (todas as partes juntas)
 	@echo "── Shop (resto) ──"
 	$(PYTHON) -m pytest shopman/shop/tests -q -n auto $(addprefix --ignore=,$(SHOP_HEAVY_TESTS))
+
+# ── shop rest partido por PESO MEDIDO (DEV-2026-098) ───────────────────────
+# Com o backstage partido (seed/rest), a vigia de tempo apontou na primeira
+# leitura (25/11) o `Shop rest` como o novo patamar do Runtime Gate: 12,3 min
+# p50 na fila, acima do teto de 12 de scripts/ci-time-budget.json. Mesmo
+# mecanismo do backstage, logo abaixo: scripts/test_shards.py parte o `rest`
+# pelos pesos de scripts/test-shard-weights.json (recursivo: o shop tem testes
+# em subpastas). A CI roda `rest-1..N`; o `test-shop-rest` inteiro segue local.
+# Mudar o número de partes: aqui E na matriz `tests-shop-shards` do
+# runtime-gate.yml E no COVERAGE_SHARDS do Coverage Gate (teste confere).
+SHOP_REST_PARTS := 2
+
+test-shop-rest-%: ## Shop rest, parte K de SHOP_REST_PARTS (CI): make test-shop-rest-1
+	@echo "── Shop (resto) parte $*/$(SHOP_REST_PARTS) ──"
+	@files="$$(python3 scripts/test_shards.py --part $*/$(SHOP_REST_PARTS) shopman/shop/tests $(addprefix --exclude ,$(SHOP_HEAVY_TESTS)))" && \
+		test -n "$$files" && $(PYTHON) -m pytest $$files -q -n auto
 
 test-storefront: ## Loja (API headless)
 	@echo "── Storefront ──"
@@ -314,9 +347,34 @@ BACKSTAGE_SEED_TESTS := \
 	shopman/backstage/tests/test_seed_flush_keeps_terminal_config.py \
 	shopman/backstage/tests/test_seed_forecast_history.py
 
-test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/3 do CI)
+test-backstage-seed: ## Backstage — só os testes que semeiam o banco (todas as partes juntas)
 	@echo "── Backstage (semeia o banco) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -q -n auto
+
+# ── seed e rest partidos por PESO MEDIDO (DEV-2026-098) ────────────────────
+# Benchmark de 25/11 (evidence/ci-dx-098/): com 8 vCPU o passo de teste do
+# `seed` acelerou 1,95x e o do `rest` 1,47x; os outros jobs quase nada. Dois
+# runners grátis de 4 vCPU somam os 8 de um pago: partir esses dois shards dá o
+# mesmo ganho sem custo. A CI roda `seed-1..N` e `rest-1..N` (matriz do
+# runtime-gate.yml); `test-backstage-seed`/`-rest` inteiros seguem para uso local.
+#
+# A partição é do `scripts/test_shards.py`: LPT guloso pelos segundos de
+# `scripts/test-shard-weights.json`, determinístico, união e disjunção por
+# construção, arquivo novo entra com o peso mediano, parte vazia é ERRO (pytest
+# sem argumento rodaria outra suíte). `scripts/check_test_cost.py` (`make
+# test-cost`) reprova shard desequilibrado (> 1,25x), peso de arquivo morto e
+# teste que chama o seed completo fora do `seed`/`heavy`. A vigia agendada
+# (ci-time-watch.yml) compara o relógio real com scripts/ci-time-budget.json.
+# Mudar o número de partes: aqui E na matriz do runtime-gate.yml e na lista do
+# Coverage Gate (scripts/tests/test_local_ci.py confere que os três concordam).
+BACKSTAGE_SEED_PARTS := 2
+BACKSTAGE_REST_PARTS := 2
+SHARD_SPLIT = python3 scripts/test_shards.py
+
+test-backstage-seed-%: ## Backstage seed, parte K de BACKSTAGE_SEED_PARTS (CI): make test-backstage-seed-1
+	@echo "── Backstage (semeia o banco) parte $*/$(BACKSTAGE_SEED_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_SEED_PARTS) $(BACKSTAGE_SEED_TESTS))" && test -n "$$files" && \
+		$(PYTHON) -m pytest $$files -q -n auto
 
 # ── Terceiro shard do backstage: os pesados do `rest` ─────────────────────
 # Em 06/11/2026 o `rest` estourou o teto de 30 min do step: o job 127686511444
@@ -363,13 +421,39 @@ BACKSTAGE_HEAVY_TESTS := \
 	shopman/backstage/tests/test_seed_preparation_shelf_life.py \
 	shopman/backstage/tests/test_seed_sem_futuro.py
 
-test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (shard 2/3 do CI)
+test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (todas as partes juntas)
 	@echo "── Backstage (arquivos pesados) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_HEAVY_TESTS) -q -n auto
 
-test-backstage-rest: ## Backstage — todo o resto (shard 3/3 do CI)
+# 25/11 (DEV-2026-098): com seed/rest do backstage e rest do shop partidos, o
+# `heavy` virou o job mais longo do Runtime Gate (12,6 min, run 45688139461).
+# Mesmo mecanismo: partido por peso medido; a CI roda heavy-1..N.
+BACKSTAGE_HEAVY_PARTS := 2
+
+test-backstage-heavy-%: ## Backstage heavy, parte K de BACKSTAGE_HEAVY_PARTS (CI): make test-backstage-heavy-1
+	@echo "── Backstage (arquivos pesados) parte $*/$(BACKSTAGE_HEAVY_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_HEAVY_PARTS) $(BACKSTAGE_HEAVY_TESTS))" && test -n "$$files" && \
+		$(PYTHON) -m pytest $$files -q -n auto
+
+test-backstage-rest: ## Backstage — todo o resto (todas as partes juntas)
 	@echo "── Backstage (resto) ──"
 	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS))
+
+test-backstage-rest-%: ## Backstage rest, parte K de BACKSTAGE_REST_PARTS (CI): make test-backstage-rest-1
+	@echo "── Backstage (resto) parte $*/$(BACKSTAGE_REST_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_REST_PARTS) shopman/backstage/tests $(addprefix --exclude ,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS)))" && \
+		test -n "$$files" && $(PYTHON) -m pytest $$files -q -n auto
+
+test-cost: ## Gate: seed completo contado, quem semeia no shard certo, shards partidos completos e equilibrados
+	python3 scripts/check_test_cost.py
+
+shard-weights: ## Re-mede os pesos dos shards com o junit de uma fila verde: make shard-weights run=<id do Runtime Gate>
+	@test -n "$(run)" || (echo 'uso: make shard-weights run=<id de um run verde do Runtime Gate no merge_group>' >&2; exit 2)
+	@dir="$$(mktemp -d)" && gh run download $(run) --pattern 'junit-*' -D "$$dir" && \
+		python3 scripts/test_shards.py --measure "$$dir"/*/*.xml && python3 scripts/check_test_cost.py
+
+print-%: ## Imprime uma variável do Makefile (as travas leem as listas daqui: uma fonte só)
+	@echo $($*)
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
@@ -523,6 +607,10 @@ ai-port: ## Gate: nenhuma chamada a modelo fora da porta de IA (ID3A)
 	$(PYTHON) scripts/check_ai_port.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_ai_port.py -q
 
+experiments: ## Gate: experimento vencido (anotação nas superfícies ou regra semeada) reprova (R4, OC-20)
+	$(PYTHON) scripts/check_experiments.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_experiments.py -q
+
 test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alpha-smoke)
 	$(PYTHON) scripts/check_workflow_budgets.py
 	$(PYTHON) -m pytest shopman/shop/tests/test_workflow_budget_gate.py -q
@@ -560,7 +648,7 @@ orchestrator-governance: ## Gate: inventário físico e unidades semânticas do 
 	$(PYTHON) scripts/check_orchestrator_units.py
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py scripts/tests/test_promotion_eligibility_policy.py -q
 
-.PHONY: test-instance-descriptors test-instance-contracts
+.PHONY: test-instance-descriptors test-instance-contracts experiments
 test-instance-contracts: ## Gate: soberania, composição e evolução de Instância
 	@echo "── Contratos de Instância ──"
 	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \
@@ -607,6 +695,9 @@ storefront-e2e: $(NUXT_DIR)/node_modules/.package-lock.json ## E2E Playwright: s
 
 storefront-journeys: ## Jornadas da cliente numa pilha própria (seed qa, Django, worker, proxy lento, loja e Gestor compilados); DATABASE_URL de um banco SÓ de jornada; filtro via args= (ex.: args="j7 --grep J7")
 	PYTHON="$(PYTHON)" bash scripts/run_storefront_journeys.sh $(args)
+
+experience-compare: ## Comparação A/B supervisionada (OC-23): as jornadas do §5.1 para A e B na pilha das jornadas, versão decidida pelo servidor; relatório em surfaces/storefront-nuxt/test-results/experience-compare/; DATABASE_URL de um banco SÓ de jornada
+	PYTHON="$(PYTHON)" bash scripts/run_experience_compare.sh $(args)
 
 pwa: ## PWA opt-in (app=storefront|pos|hub|orders|kds|production|marketing|purchase|bi)
 	@test -n "$(app)" || (echo "uso: make pwa app=<surface opt-in>" >&2; exit 2)
@@ -749,6 +840,41 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
 
+# ── Local primeiro: o que a CI vai reprovar, visto antes do push ──────────
+# DEV-2026-098, plano em docs/plans/CI-DX-LOCAL-FIRST-PLAN.md. Mesma
+# classificação de escopo da CI (scripts/ci_scope.py) e os MESMOS passos dos
+# workflows, lidos do YAML (scripts/local_ci.py). Trava de máquina: duas
+# worktrees não disputam os 8 núcleos; SQLite em memória por worker (como o job
+# de testes da CI) isola o banco. A evidência é chaveada pelo hash da ÁRVORE
+# testada, e o `ready` só enfileira o HEAD cuja árvore tem preflight verde.
+# O que só a CI executa sai listado como remoto, nunca como verde.
+.PHONY: check-fast check-impact preflight ci-local ready ci-plan venv-sync ci-baseline test-cost shard-weights
+
+check-fast: ## Iteração: pinos, origem dos imports, ruff e testes do que mudou (+ unit do app Nuxt tocado)
+	@python3 scripts/local_ci.py run fast
+
+check-impact: ## Paridade com o PR: o que o pull_request vai rodar para este diff
+	@python3 scripts/local_ci.py run impact
+
+preflight: ## Antes de promover: impacto + o pesado da fila que o diff alcança; grava a evidência do `ready`
+	@python3 scripts/local_ci.py run preflight
+
+ci-local: ## Tudo o que é executável nesta máquina, como diff de infraestrutura (lista o que só a CI roda)
+	@python3 scripts/local_ci.py run full
+
+ci-plan: ## Mostra o que cada nível rodaria (level=fast|impact|preflight|full), sem rodar
+	@python3 scripts/local_ci.py plan $(or $(level),preflight)
+
+ready: ## Enfileira com prova: make ready pr=<N> [sem_preflight="motivo"]; exige árvore limpa, push e preflight verde do HEAD
+	@test -n "$(pr)" || (echo 'uso: make ready pr=<N> [sem_preflight="motivo"]' >&2; exit 2)
+	@python3 scripts/local_ci.py ready $(pr) $(if $(sem_preflight),--sem-preflight "$(sem_preflight)",) $(if $(dry_run),--dry-run,)
+
+venv-sync: ## Alinha a .venv compartilhada ao constraints.txt (só os pinos divergentes, com trava de máquina)
+	@python3 scripts/local_ci.py pins --fix
+
+ci-baseline: ## Baseline da CI na API do GitHub (since=YYYY-MM-DD until=YYYY-MM-DD; leitura)
+	@python3 scripts/ci_baseline.py $(if $(since),--since $(since),) $(if $(until),--until $(until),) --cache $(or $(cache),.ci-baseline)
+
 # ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
 # O ledger é um arquivo por entrada em docs/coordination/commitments/
 # (DEV-AAAA-NNN.json): dois PRs nunca tocam o mesmo arquivo, e o merge de um não
@@ -793,7 +919,6 @@ commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [creat
 #   medição honesta de um banco vazio).
 # O ALVO (app vivo) se mede com `make production-readiness target=1`, que não lê
 # nada local: ver scripts/release_readiness_target.py.
-GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
 READINESS_PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
 READINESS_RUN = if [ ! -f .env ] && [ -z "$${DJANGO_SECRET_KEY:-}" ]; then \
 	export DJANGO_DEBUG=true DJANGO_SECRET_KEY=local-readiness-not-a-secret; \

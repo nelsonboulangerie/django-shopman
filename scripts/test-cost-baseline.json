@@ -1,0 +1,28 @@
+{
+ "_leia": [
+  "Chamadas de call_command('seed', ...) por arquivo de teste (25 a 75 s cada).",
+  "Crescer reprova em scripts/check_test_cost.py; só se regrava com --update, no PR, à vista do revisor."
+ ],
+ "seed_calls": {
+  "shopman/backstage/tests/test_apply_product_measurements_matches_seed.py": 2,
+  "shopman/backstage/tests/test_ficha_feita_na_hora.py": 1,
+  "shopman/backstage/tests/test_manual_labels_match_piece_weight.py": 2,
+  "shopman/backstage/tests/test_massa_de_cada_peca.py": 1,
+  "shopman/backstage/tests/test_nelson_seed_operational.py": 8,
+  "shopman/backstage/tests/test_refresh_seed_dates.py": 1,
+  "shopman/backstage/tests/test_seed_bootstrap_recipe_book.py": 1,
+  "shopman/backstage/tests/test_seed_flush_keeps_alias_curation.py": 1,
+  "shopman/backstage/tests/test_seed_flush_keeps_terminal_config.py": 3,
+  "shopman/backstage/tests/test_seed_forecast_history.py": 1,
+  "shopman/backstage/tests/test_seed_liquid_base_unit.py": 1,
+  "shopman/backstage/tests/test_seed_preparation_shelf_life.py": 2,
+  "shopman/backstage/tests/test_seed_sem_futuro.py": 1,
+  "shopman/shop/tests/test_apply_product_brands.py": 1,
+  "shopman/shop/tests/test_environment_guard.py": 1,
+  "shopman/shop/tests/test_external_adapter_debug_gate.py": 1,
+  "shopman/shop/tests/test_go_live_hardening.py": 3,
+  "shopman/shop/tests/test_seed_closing_in_minutes.py": 2,
+  "shopman/shop/tests/test_seed_rule_configs.py": 1,
+  "shopman/shop/tests/test_seed_sem_processo_das_massas.py": 1
+ }
+}

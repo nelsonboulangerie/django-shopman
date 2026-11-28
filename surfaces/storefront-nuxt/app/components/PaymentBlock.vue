@@ -121,7 +121,7 @@ const qrRecolhido = computed(() => Boolean(props.promise.pix_copy_paste) && !qrA
         <div class="flex size-48 max-w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
           <Icon name="lucide:qr-code" class="size-12 motion-safe:animate-pulse" />
         </div>
-        <p class="shop-meta text-center">{{ copy.pix_pending_note }}</p>
+        <p class="shop-meta text-center" data-decisive="state">{{ copy.pix_pending_note }}</p>
       </div>
 
       <!-- Pix com código (WP-L07, P1-09). O countdown do prazo já é mostrado no
@@ -155,7 +155,7 @@ const qrRecolhido = computed(() => Boolean(props.promise.pix_copy_paste) && !qrA
             data-pix-copy-field
             @focus="selectPixCode"
           />
-          <p v-if="copyState === 'failed'" class="shop-meta text-foreground" role="status" data-pix-copy-fallback>
+          <p v-if="copyState === 'failed'" class="shop-meta text-foreground" role="status" data-pix-copy-fallback data-decisive="error">
             Não deu para copiar por aqui. O código acima já está selecionado: toque e segure nele e escolha Copiar.
           </p>
           <p v-else class="sr-only" role="status">{{ copyState === 'copied' ? copy.pix_copied : '' }}</p>
@@ -187,7 +187,7 @@ const qrRecolhido = computed(() => Boolean(props.promise.pix_copy_paste) && !qrA
           </div>
         </div>
 
-        <p class="shop-meta">{{ copy.pix_auto_update_note }}</p>
+        <p class="shop-meta" data-decisive="state">{{ copy.pix_auto_update_note }}</p>
       </div>
 
       <!-- Cartão sem página do gateway (payment_mock): sem isto o bloco ficaria

@@ -684,3 +684,65 @@ def test_com_parte_pronta_as_duas_passam_a_dizer_outra_coisa(published_levain):
     )
     assert lens.final_mix_differs is True
     assert lens.bom_differs is True
+
+
+# ── Receitas que se leem (WP-F05) ────────────────────────────────────────────
+
+
+def test_a_nota_do_item_chega_a_lente_e_a_ficha():
+    """#2386: a anotação do item vive na fórmula, e a análise do Craftsman a descarta."""
+    formula = flour_formula()
+    formula["ingredients"][1]["note"] = "  a conferir com o fornecedor  "
+    lens = build_formula_lens(formula, "bread")
+    notes = {item.sku: item.note for item in lens.ingredients}
+    assert notes == {
+        "FARINHA-ANACONDA-PREMIUM": "",
+        "AGUA-FILTRADA": "a conferir com o fornecedor",
+        "SAL-REFINADO": "",
+    }
+    # Sem parte pronta, a ficha é a própria base, e a nota viaja com o insumo.
+    assert {item.sku: item.note for item in lens.bom}["AGUA-FILTRADA"] == "a conferir com o fornecedor"
+
+
+def test_comparar_diz_qual_e_a_publicada_e_de_quando():
+    """P2-20: os lados da comparação dizem o estado e a data, não só o número."""
+    entry = craftsman.create_entry(
+        ref="massa-rustica", name="Massa Rústica", kind="bread", output_sku="MASSA-RUSTICA"
+    )
+    first = craftsman.create_version(entry, formula=flour_formula(), yield_quantity="1.7", yield_unit="kg")
+    craftsman.publish_version(first)
+    craftsman.create_version(entry, formula=flour_formula(water=750), yield_quantity="1.7", yield_unit="kg")
+
+    compare = build_recipe_compare("massa-rustica@1", "massa-rustica@2")
+
+    assert (compare.a_status, compare.a_status_label, compare.a_is_current) == ("published", "Publicada", True)
+    assert compare.a_when_display.startswith("publicada ")
+    assert (compare.b_status, compare.b_status_label, compare.b_is_current) == ("draft", "Rascunho", False)
+    assert compare.b_when_display.startswith("criada ")
+
+
+def test_o_atalho_do_compras_so_para_quem_escreve_e_opera_compras(settings):
+    """#2390: o vazio da busca de insumo leva ao Compras; sem o Compras, sem atalho."""
+    from shopman.backstage.models import DayClosing
+
+    settings.SHOPMAN_SURFACE_URLS = {"purchase": "https://compras.exemplo.test"}
+    purchase = Permission.objects.get(
+        content_type=ContentType.objects.get_for_model(DayClosing), codename="operate_purchase"
+    )
+    change_recipe = Permission.objects.get(
+        content_type=ContentType.objects.get_for_model(Recipe), codename="change_recipe"
+    )
+    manager = grant_production_operator(User.objects.create_user("gerente", password="pw", is_staff=True))
+    manager.user_permissions.add(change_recipe, purchase)
+    manager = User.objects.get(pk=manager.pk)
+    editor_only = grant_production_operator(User.objects.create_user("so-receita", password="pw", is_staff=True))
+    editor_only.user_permissions.add(change_recipe)
+    editor_only = User.objects.get(pk=editor_only.pk)
+    # Quem só lê não cadastra insumo pela receita: nem com o Compras liberado.
+    reader = grant_production_operator(User.objects.create_user("leitor", password="pw", is_staff=True))
+    reader.user_permissions.add(purchase)
+    reader = User.objects.get(pk=reader.pk)
+
+    assert resolve_recipe_book_access(manager).purchase_url == "https://compras.exemplo.test"
+    assert resolve_recipe_book_access(editor_only).purchase_url == ""
+    assert resolve_recipe_book_access(reader).purchase_url == ""

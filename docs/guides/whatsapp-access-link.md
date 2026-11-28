@@ -37,6 +37,23 @@ Quem não usa WhatsApp cai no **fallback SMS** (Comtele), o fluxo OTP clássico
    (`cart_session_key`) + redireciona (`metadata.next`).
 ```
 
+### O destino fica também com o navegador que começou (DEV-2026-092)
+
+A referência `NB-XxXx` é de uso único. A mesma mensagem processada duas vezes (a
+cliente reenviou, o External Request repetiu), o texto que não chega ao External
+Request ou a referência vencida deixam o link da resposta só com o `next: "/menu"` do
+ManyChat. O botão abre a loja numa aba nova do MESMO navegador: a sacola estava lá (o
+cookie é o mesmo), o destino não, e quem tocou em Finalizar caía no cardápio.
+
+Por isso o `/start` guarda o destino também na sessão Django do navegador
+(`shopman:login-destination`, `{path, until}`, com o prazo da referência,
+`access.remember_login_destination`). Na troca de um link que é resposta do WhatsApp
+(`source=manychat`), sem pedido e sem o contexto da referência
+(`access.link_carries_site_context`), vale o destino guardado, e o aviso de "sacola que
+não veio" não sai quando a sacola está neste navegador. Navegador que não começou a
+entrar segue o link, como antes. Prova ponta a ponta: jornada J16
+(`surfaces/storefront-nuxt/tests/journeys/j16-finalizar-depois-de-entrar.spec.ts`).
+
 ### A aba de origem entra sozinha (26/09/2026)
 
 A queixa dos testadores que chegavam pelo site era a volta: "vai pro WhatsApp, envia uma
@@ -240,6 +257,97 @@ O prefixo do código (`NB-`) e o TTL (10 min) são do doorman
 > recebido no WhatsApp fica como reserva. Não há SSE; a aba consulta o `claim` com
 > backoff e também permite a conferência manual.
 
+## Continuar pelo WhatsApp: a sacola vai para a conversa (OC-16)
+
+O mesmo código `NB-` leva a sacola da loja para a conversa com a Nice, e não para outro
+navegador. A sacola oferece "Continuar pelo WhatsApp" só quando a ponte está ligada
+(`SHOPMAN_CONCIERGE_ENABLED` e `CONCIERGE_TRANSFER_ENABLED`) e a loja tem número (X1).
+
+```
+1. Sacola → POST /api/v1/cart/continue-in-conversation/
+   → session_transfer.offer(web → whatsapp) + estado NB {conversation_cart_transfer: oferta}
+   → { code, message, deep_link, wa_number }   (a sacola da loja não muda)
+2. wa.me abre "Olá! Quero continuar por aqui a sacola que montei no site (ref. NB-XxXx)"
+3. A mensagem chega à Nice (resposta padrão do ManyChat, NÃO o fluxo de login)
+4. A Nice lê o código, consome o estado e chama session_transfer.accept com o vínculo
+   verified_customer da conversa: a sacola anônima passa a ser do cliente verificado;
+   a sacola com dono só vai para o dono. A Nice diz que a sacola chegou e o que mudou.
+```
+
+⚠️ A mensagem NÃO contém "quero entrar no site" nem `#menu`, para não disparar o Flow de
+login no ManyChat. Ela precisa cair na automação que entrega a mensagem à Nice (a resposta
+padrão). Se cair no Flow de login por engano, o access link sai sem sacola: a troca do link
+ignora a chave `conversation_cart_transfer`, e a sacola continua na loja.
+
+## A Nice manda o site e diz onde a sacola está (OC-18)
+
+O caminho inverso, pela conversa (§4.4 do plano da Etapa II omnicanal). Tudo em
+`storefront/concierge/site_passage.py`, chamado em `service.run_turn` logo depois da
+chegada pelo código `NB-` e antes do motor; frase da casa, sem modelo. Com a ponte
+desligada, nada disto responde e o turno segue como antes.
+
+```
+1. "quero ver as fotos no site" / "manda o link do site" / "prefiro terminar pelo site"
+   → tools.send_web_link (checkout quando a conversa tem sacola, cardápio quando não)
+   → "Continue no site: <link>" + "Sua sacola vai junto."
+     (oferecer não tira a sacola daqui; a troca do link é o aceite)
+2. A mensagem seguinte, com a sacola aceita no site (Session.data["transferred_to"]):
+   a resposta do turno + "Sua sacola está no site, com 2 itens (R$ 1,80). Posso trazer
+   os itens para cá, se quiser."
+   Uma vez só (a conversa esquece a chave), e só com a sacola do site ainda aberta. A
+   oferta inversa só aparece quando é possível agora (ponte ligada, número verificado).
+3. "traz a sacola pra cá" / "prefiro pedir por aqui" → tools.bring_site_cart: oferta e
+   aceite no mesmo turno (session_transfer.offer + accept), a mesma régua do "Trazer
+   para cá" da loja. Com sacola aqui também, os itens entram nela (mescla, decisão do
+   dono de 24/11): "Trouxe os itens do site para cá."
+```
+
+**Pela entrada sem identificador de mensagem (ADR-050), decisão da Coordenação na #3529.**
+A entrada de hoje do ManyChat só dá a autoridade de sacola, e com ela o convite com a sacola
+vale em três condições, escritas no código e testadas em `test_ponte_da_nice.py`
+(`test_3529_condition_*`):
+
+1. **O link só leva a sacola.** A oferta é `items_only` (só itens, quantidades e a data e o
+   horário da fornada: nada de cliente, endereço, presente, observação, pagamento ou cupom) e
+   o `AccessLink` leva `cart_only`: a troca (`auth._exchange_cart_only`) gasta o link sem abrir
+   sessão (`access.redeem_without_session`), não confia no dispositivo e não devolve nome nem
+   telefone. A sacola chega sem dono; a prova de quem é acontece no site, no fechamento.
+2. **O mesmo crachá do convite de hoje.** O mesmo `AccessLink`, com a mesma audiência e o
+   mesmo prazo (`ACCESS_LINK_EXCHANGE_TTL_MINUTES`), de uso único pelo mesmo portão do doorman.
+3. **Só para aquele assinante.** O link só se cunha dentro do turno da conversa (a cerca do
+   turno e o vínculo, `assert_turn_authority`) e sai na resposta dela; a ferramenta não aceita
+   destinatário.
+
+Sem sacola, o link seria um acesso à conta, e por esta entrada vai o endereço público do
+cardápio. A volta acha a sacola que a conversa mandou pelo `transferred_to` dela, mesmo sem
+dono.
+
+O cliente que não pede o site nunca recebe o link (§5.3, C09). Frase com negação ("não
+quero o site", "o site não abre") não é pedido; a fala que só diz o canal ("prefiro pedir
+por aqui") recebe "Claro, seguimos por aqui." e a sacola, se houver.
+
+### Ligar a ponte no ambiente de testes
+
+A chave é `CONCIERGE_TRANSFER_ENABLED` (env de runtime, nível de app, lida em
+`config/settings.py` como `SHOPMAN_CONCIERGE["transfer_enabled"]`). Ela já existe: não
+se cria outra (ADR-042). Ligar é decisão da Coordenação, e muda o app vivo:
+
+1. `make deploy-spec-drift context=shopman-do-app-admin` (o versionado contra o vivo).
+2. `doctl apps spec get <APP_ID> --context shopman-do-app-admin > /tmp/spec-vivo.yaml`
+   (o contexto que lê databases; nunca aplicar `.do/app.alpha-subdomains.yaml` por cima).
+3. No bloco `envs:` do app, `CONCIERGE_TRANSFER_ENABLED` de `'false'` para `'true'`.
+4. `doctl apps update <APP_ID> --spec /tmp/spec-vivo.yaml --context shopman-do-app-admin --wait`
+   (env de runtime: sem rebuild).
+5. Espelhar o valor em `.do/app.alpha-subdomains.yaml` num PR, para o drift não acusar.
+
+⚠️ A chave liga as duas pontas: a Nice (este fluxo) **e** os gestos da loja do OC-16.
+"Continuar pelo WhatsApp" só aparece (e a API só aceita) para quem a Nice atende: cliente
+com vínculo na coorte (`CONCIERGE_ALLOWED_SUBSCRIBERS`), ou todo visitante quando a Nice
+atender todos (o mesmo predicado da home, OC-06). "Trazer a sacola do WhatsApp" só aparece
+quando há sacola aberta na conversa. Desligar é o passo 3 com `'false'`.
+
+Estado: ligada no alpha em 24/11/2026 pela Coordenação (decisão do dono, DEV-2026-085).
+
 ## Degradação da sacola (handoff_expired)
 
 Omotenashi: nunca sumir com a sacola em silêncio. Se o código veio mas **não resolveu**
@@ -276,6 +384,11 @@ POST /api/v1/auth/verify-code/   { "phone": "+55...", "code": "123456" }
   rate-limit por IP (10/min).
 - Token do access link: single-use, TTL 5 min, hash HMAC, exchange transacional
   (`select_for_update`). Ver `packages/doorman/.../services/access_link.py`.
+- Régua da loja no `create` (OC-09, `shopman/shop/views/access_link.py`): `ttl_minutes`
+  acima de 1440 (24 h) ou que não seja número é recusado com 400 `invalid_input`, sem
+  cunhar; `audience` fora de `web_general`/`web_checkout`/`web_account` também. O corpo
+  documentado acima não manda nenhum dos dois. A troca (`/a`) recusa audiência fora da
+  loja sem gastar o token.
 - Liberação da aba de origem: sob `sha256("doorman-origin:" + session_key)`, uso único,
   TTL do código. `claim` sem sessão ou de outra sessão responde `pending` e não revela
   nada. `revoke` apaga a sessão (`SESSION_ENGINE`) e desativa o `TrustedDevice`.

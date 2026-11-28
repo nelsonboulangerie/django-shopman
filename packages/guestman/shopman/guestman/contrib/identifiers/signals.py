@@ -15,6 +15,14 @@ nenhum dos dois sai. Nenhum chamador precisa lembrar.
 O identificador só fica se o mesmo cadastro ainda tiver outro contato da mesma
 família com o mesmo valor (telefone e WhatsApp são o mesmo número): apagar só o
 contato de voz de um número que segue como WhatsApp não tira a chave.
+
+O identificador do provedor de mensagens (ManyChat) também é chave, só que de
+outra porta: o ``sync_subscriber`` acha o cliente por ele ANTES de olhar o número.
+No WhatsApp o assinante é o número, e quem herda o número herda o assinante. Por
+isso, quando o Guestman avisa que o número saiu do cadastro
+(``contact_reassigned``), sai junto o identificador do assinante que asseverava
+aquele número (o ``verification_ref`` do contato). Instagram, CPF e iFood não são
+o número e ficam como estão.
 """
 
 from __future__ import annotations
@@ -66,9 +74,33 @@ def _retire_identifier_with_contact(sender, instance, **kwargs) -> None:
     )
 
 
+def retire_reassigned_provider_identifier(customer_id, verification_ref: str) -> int:
+    """Apaga o identificador ManyChat ``verification_ref`` do cliente que perdeu o número."""
+    from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, IdentifierType
+
+    if customer_id is None or not verification_ref:
+        return 0
+    deleted, _detail = CustomerIdentifier.objects.filter(
+        customer_id=customer_id,
+        identifier_type=IdentifierType.MANYCHAT,
+        identifier_value=verification_ref,
+    ).delete()
+    return deleted
+
+
+def _retire_provider_identifier_with_number(sender, customer_id=None, verification_ref="", **kwargs) -> None:
+    retire_reassigned_provider_identifier(customer_id, verification_ref)
+
+
 def connect() -> None:
     from django.db.models.signals import post_delete
     from shopman.guestman.models import ContactPoint
+    from shopman.guestman.signals import contact_reassigned
+
+    contact_reassigned.connect(
+        _retire_provider_identifier_with_number,
+        dispatch_uid="guestman_identifiers_retire_provider_with_number",
+    )
 
     post_delete.connect(
         _retire_identifier_with_contact,

@@ -54,6 +54,13 @@ KNOWLEDGE: dict[str, str] = {
     "payment_methods": "Card and cash.",
 }
 
+# Recebimento: os modos que o domínio sintético atende e a janela que ele dá ao dia sem hora.
+FULFILLMENT_MODES: tuple[str, ...] = ("pickup", "delivery")
+DAY_WINDOW = "window-afternoon"
+# Pagamento: as formas que o canal sintético oferece. Uma só por padrão (a escolha não é obrigatória); o
+# teste que exercita a pergunta liga as duas (``state.payment_methods = ("pix", "card")``).
+PAYMENT_METHODS: tuple[str, ...] = ("card",)
+
 
 @dataclass
 class SyntheticState:
@@ -68,3 +75,18 @@ class SyntheticState:
     versions: dict[str, int] = field(default_factory=lambda: {"cart-1": 1})
     # carrinho → hash dos termos vigentes (o último cotado, enquanto nada mudou)
     current_terms: dict[str, str] = field(default_factory=dict)
+    # carrinho → recebimento definido (``date``, ``mode``, ``time``), só o que já foi dito
+    fulfillment: dict[str, dict[str, str]] = field(default_factory=dict)
+    fulfillment_modes: tuple[str, ...] = FULFILLMENT_MODES
+    # carrinho → forma de pagamento escolhida; e as formas que o canal oferece
+    payment: dict[str, str] = field(default_factory=dict)
+    payment_methods: tuple[str, ...] = PAYMENT_METHODS
+    # carrinho → endereço da entrega (só no sistema de registro): o texto, a referência opaca e o que falta
+    address: dict[str, dict] = field(default_factory=dict)
+    # Os endereços do cadastro do sujeito, por carrinho (o texto; o padrão primeiro).
+    saved_addresses: dict[str, list[str]] = field(default_factory=dict)
+    # Os horários de retirada do canal. Com eles, o canal exige o quando (dia, modo, horário) antes dos
+    # termos, como o fechamento da casa; sem eles (o padrão), o falso não exige.
+    pickup_slots: tuple[str, ...] = ()
+    # As janelas de entrega do canal. Com elas, a entrega exige a janela depois do endereço.
+    delivery_windows: tuple[str, ...] = ()

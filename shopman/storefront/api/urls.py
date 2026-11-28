@@ -14,6 +14,7 @@ from .account import (
     AccountDeviceDetailView,
     AccountDeviceListView,
     AccountExportView,
+    AccountNotMeView,
     AccountPasskeyDetailView,
     AccountPasskeyListView,
     AccountStepUpView,
@@ -51,6 +52,7 @@ from .availability import (
     StockAlertManagementView,
     StockAlertSubscribeView,
 )
+from .cart_transfer import CartBringView, CartContinueInConversationView
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .continuum import CatalogStructureSnapshotView
 from .conversation import OrderConversationView
@@ -60,6 +62,7 @@ from .payment import OrderPaymentMockConfirmView
 from .shelf_events import storefront_shelf_events_view
 from .surface import (
     CartCouponView,
+    CartDayView,
     CartLineNotesView,
     CartLineQtyView,
     CartLinesView,
@@ -71,6 +74,7 @@ from .surface import (
     StorefrontCartView,
     StorefrontCatalogView,
     StorefrontCheckoutView,
+    StorefrontExperienceOptOutView,
     StorefrontHomeView,
     StorefrontLegalView,
     StorefrontMenuView,
@@ -87,6 +91,7 @@ from .surface import (
 from .telemetry import AddressEventView, ClientErrorView, ClientPwaUpdateView
 from .tracking import (
     OrderCancelView,
+    OrderCapabilityAccessView,
     OrderConfirmReceiptView,
     OrderContactRequestView,
     OrderPaymentCheckView,
@@ -113,6 +118,11 @@ urlpatterns = [
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
     path("storefront/shell/", StorefrontShellView.as_view(), name="api-storefront-shell"),
+    path(
+        "storefront/experience/opt-out/",
+        StorefrontExperienceOptOutView.as_view(),
+        name="api-storefront-experience-opt-out",
+    ),
     path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
     path("storefront/legal/", StorefrontLegalView.as_view(), name="api-storefront-legal"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),
@@ -171,9 +181,17 @@ urlpatterns = [
     # Cart
     path("cart/skus/<str:sku>/", CartSkuQtyView.as_view(), name="api-cart-sku-qty"),
     path("cart/lines/", CartLinesView.as_view(), name="api-cart-lines"),
+    path("cart/day/", CartDayView.as_view(), name="api-cart-day"),
     path("cart/lines/<str:line_id>/", CartLineQtyView.as_view(), name="api-cart-line-qty"),
     path("cart/lines/<str:line_id>/notes/", CartLineNotesView.as_view(), name="api-cart-line-notes"),
     path("cart/coupon/", CartCouponView.as_view(), name="api-cart-coupon"),
+    # A sacola entre a loja e a conversa com a Nice (OC-16)
+    path(
+        "cart/continue-in-conversation/",
+        CartContinueInConversationView.as_view(),
+        name="api-cart-continue-in-conversation",
+    ),
+    path("cart/bring/", CartBringView.as_view(), name="api-cart-bring"),
     # Checkout
     path("checkout/", views.CheckoutView.as_view(), name="api-checkout"),
     path("checkout/recover/", views.CheckoutRecoverView.as_view(), name="api-checkout-recover"),
@@ -205,6 +223,9 @@ urlpatterns = [
     path("catalog/collections/", CollectionListView.as_view(), name="api-catalog-collections"),
     # Tracking
     path("tracking/<str:ref>/", OrderTrackingView.as_view(), name="api-tracking"),
+    # O link do aviso (``/pedido/<ref>~<selo>``): a página troca o selo aqui antes de
+    # ler o pedido. Sem login e sem conta: só este pedido (DEV-2026-093).
+    path("tracking/<str:ref>/access/", OrderCapabilityAccessView.as_view(), name="api-tracking-access"),
     # Realtime — push instantâneo do acompanhamento (canal ``order-<ref>``).
     # order_events_view autoriza só o dono/staff (mesmo gate do ShopmanChannelManager)
     # e devolve 404 aos demais, então o EventSource do convidado falha limpo e o
@@ -266,6 +287,7 @@ urlpatterns = [
     path("account/phone/request/", PhoneChangeRequestView.as_view(), name="api-account-phone-request"),
     path("account/phone/confirm/", PhoneChangeConfirmView.as_view(), name="api-account-phone-confirm"),
     path("account/step-up/", AccountStepUpView.as_view(), name="api-account-step-up"),
+    path("account/not-me/", AccountNotMeView.as_view(), name="api-account-not-me"),
     path("account/export/", AccountExportView.as_view(), name="api-account-export"),
     path("account/delete/", AccountDeleteView.as_view(), name="api-account-delete"),
     # Geocoding (server-side — key stays on the server)

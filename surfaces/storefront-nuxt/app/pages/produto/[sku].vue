@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
-import { inCartWhenLine, pickupStoreLines, promiseAddLabel } from '~/presentation/promise'
+import { inCartWhenLine, pickupStoreLines, productPromiseLine, promiseAddLabel } from '~/presentation/promise'
 import {
   absoluteImage,
   breadcrumbJsonLd,
@@ -67,12 +68,22 @@ const meta = computed<ProductMutationMeta | null>(() => product.value
     }
   : null)
 const currentQty = computed(() => product.value ? qtyForSku(product.value.sku) : 0)
-const badge = computed(() => product.value ? tileBadge(product.value) : null)
+// Selos de urgência (#2807), os mesmos do card: o de estoque com o número
+// substitui o "Últimas unidades" genérico.
+const now = useMinuteClock()
+const fomo = computed(() => product.value && product.value.availability !== 'unavailable'
+  ? fomoBadgeViews(product.value.fomo_badges, now.value)
+  : [])
+const badge = computed(() => {
+  const base = product.value ? tileBadge(product.value) : null
+  return base && product.value?.availability === 'low_stock' && fomoCoversLowStock(product.value.fomo_badges) ? null : base
+})
 // Quando fica pronto e onde retirar (WP-L02, #2652): a promessa do servidor
 // como veio, e a loja da `Shop`. Tudo vem na resposta do produto, então sai no
 // HTML do servidor (o robô do Google lê sem JavaScript). Sem promessa, nada é
 // prometido: nem "hoje", nem a loja.
 const promise = computed(() => product.value?.promise || null)
+const promiseLine = computed(() => productPromiseLine(promise.value))
 const storeLines = computed(() => pickupStoreLines(promise.value, product.value?.pickup_store))
 const addLabel = computed(() => promiseAddLabel(promise.value))
 const inCartWhen = computed(() => inCartWhenLine(currentQty.value, promise.value))
@@ -259,7 +270,7 @@ useHead({
                     <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream +
                          marrom), harmonizando com a sépia, consistente com os cards. -->
                     <div v-if="product.availability === 'unavailable'" class="absolute bottom-3 left-3 z-10">
-                      <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
+                      <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm" data-decisive="availability">Indisponível</UiBadge>
                     </div>
                   </UiAspectRatio>
                   <template v-if="carouselImages.length">
@@ -303,11 +314,14 @@ useHead({
 
           </section>
 
-          <div class="min-w-0 p-4 sm:p-6">
+          <!-- Coluna única (até lg): a moldura da foto já deixa o respiro embaixo,
+               e o topo zerado evita o vão em dobro antes do nome (#3343). -->
+          <div class="min-w-0 px-4 pt-0 pb-4 sm:px-6 sm:pb-6 lg:pt-6">
 
-            <div v-if="(badge && product.availability !== 'unavailable') || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2">
-              <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal">{{ badge.label }}</UiBadge>
-              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="default" class="max-w-full truncate font-normal" :title="adjustmentLabel(adjustment)">{{ adjustmentLabel(adjustment) }}</UiBadge>
+            <div v-if="(badge && product.availability !== 'unavailable') || fomo.length || product.quote.adjustments.length" class="mb-2 flex flex-wrap gap-2" data-product-badges>
+              <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
+              <UiBadge v-if="badge && product.availability !== 'unavailable'" :variant="badge.variant" class="font-normal" data-decisive="availability">{{ badge.label }}</UiBadge>
+              <UiBadge v-for="adjustment in product.quote.adjustments" :key="adjustment.code" variant="promotion" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
             </div>
 
             <div class="flex items-start justify-between gap-3">
@@ -317,45 +331,32 @@ useHead({
               <h1 class="shop-title text-balance lg:line-clamp-3" :title="product.name">{{ product.name }}</h1>
               <FavoriteHeart :sku="product.sku" :name="product.name" :initial="product.is_favorite" class="-mr-1 shrink-0" />
             </div>
-            <p class="mt-2 line-clamp-3 shop-muted" :title="product.short_description">{{ product.short_description }}</p>
-            <p v-if="longDescription" class="mt-2 shop-muted">{{ longDescription }}</p>
-            <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
-
-            <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
-                 constantes da ficha. Não vai para o selo do card do cardápio: lá
-                 o slot é de exceção ("Últimas unidades", "Lista de espera"), e um
-                 selo permanente em ~1 de cada 4 produtos ensinaria o cliente a
-                 parar de ler justamente o aviso que o faz agir. -->
-            <div v-if="product.is_made_to_order && product.made_to_order_label" class="mt-3" data-pdp-made-to-order>
-              <UiBadge variant="outline">
-                <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
-                {{ product.made_to_order_label }}
-              </UiBadge>
-            </div>
-
+            <!-- Preço e promessa logo abaixo do nome (#3343): no celular o card
+                 flutuante de Adicionar cobre o pé da primeira tela, e o que vinha
+                 depois da descrição ficava atrás dele. Quanto custa e quando fica
+                 pronto são o que se decide primeiro; a descrição vem depois. -->
             <div class="mt-2 flex flex-wrap items-end justify-between gap-4">
               <div>
-                <!-- O risco mudo não dizia que o desconto já está no valor grande. -->
-                <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta">
-                  antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
-                </p>
+                <!-- O risco mudo não dizia que o desconto já está no valor grande. O "antes"
+                     vem na linha do preço, não acima dela: cada linha a mais empurra a
+                     promessa para trás do card flutuante no celular (#3343). -->
                 <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <p class="shop-price-strong">{{ quotePriceDisplay(product.quote) }}</p>
+                  <p class="shop-price-strong" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+                  <p v-if="quoteOriginalPriceDisplay(product.quote)" class="shop-meta" data-decisive="price">
+                    antes <span class="line-through">{{ quoteOriginalPriceDisplay(product.quote) }}</span>
+                  </p>
+                  <!-- "~70 g/un.", a mesma forma do cardápio (dono, 24/11/2026). -->
                   <p v-if="product.unit_weight_label" class="shop-meta">
-                    {{ product.unit_weight_label }}
+                    {{ compactUnitWeightLabel(product.unit_weight_label) }}
                   </p>
                 </div>
-                <p v-if="promise" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise>
+                <!-- Só quando a disponibilidade difere do normal: "Disponível a partir das
+                     15h", "Disponível amanhã, quarta, a partir das 7h". Disponível agora não
+                     se diz (dono, 24/11/2026). -->
+                <p v-if="promiseLine" class="mt-1 flex items-center gap-1 shop-body" data-pdp-ready-promise data-decisive="availability">
                   <Icon name="lucide:clock" class="size-3.5 shrink-0" />
-                  {{ promise.text }}
+                  {{ promiseLine }}
                 </p>
-                <div v-if="storeLines" class="mt-1 flex items-start gap-1 shop-meta" data-pdp-in-store-pickup>
-                  <Icon name="lucide:store" class="mt-0.5 size-3.5 shrink-0" />
-                  <p>
-                    <span class="block" :data-pdp-available-today="storeLines.availableToday">{{ storeLines.availability }}</span>
-                    <span class="block">{{ storeLines.address }}</span>
-                  </p>
-                </div>
                 <p v-if="inCartWhen" class="shop-meta" data-pdp-in-cart-when>{{ inCartWhen }}</p>
                 <p v-else-if="hasOptionGroups(product.option_groups) && currentQty" class="shop-meta" data-product-options-in-cart>
                   {{ formatCount(currentQty, 'na sacola', 'na sacola') }}
@@ -373,9 +374,34 @@ useHead({
                   :option-groups="product.option_groups"
                   :add-label="addLabel"
                 />
-                <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
+                <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta" data-decisive="availability">{{ unavailableReason }}</p>
               </div>
             </div>
+
+            <p class="mt-3 line-clamp-3 shop-muted" :title="product.short_description">{{ product.short_description }}</p>
+            <p v-if="longDescription" class="mt-2 shop-reading text-muted-foreground">{{ longDescription }}</p>
+            <DietaryWarningBadges :warnings="product.dietary_warnings" class="mt-3" />
+
+            <!-- Preparado na hora: o que o item É, ao lado dos outros atributos
+                 constantes da ficha. Não vai para o selo do card do cardápio: lá
+                 o slot é de exceção ("Últimas unidades", "Lista de espera"), e um
+                 selo permanente em ~1 de cada 4 produtos ensinaria o cliente a
+                 parar de ler justamente o aviso que o faz agir. -->
+            <div v-if="product.is_made_to_order && product.made_to_order_label" class="mt-3" data-pdp-made-to-order>
+              <UiBadge variant="outline">
+                <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
+                {{ product.made_to_order_label }}
+              </UiBadge>
+            </div>
+
+            <!-- A loja e o estado de hoje: só para cumprir o Google (#2652), sem destaque
+                 (dono, 24/11/2026: "Quero apenas cumpri-la, não dar destaque"). A ajuda do
+                 Google para páginas com disponibilidade na loja não pede posição nem tamanho:
+                 basta a página dizer a disponibilidade e a loja. Por isso fica no fim das
+                 informações, em texto de rodapé, sem ícone e sem endereço. -->
+            <p v-if="storeLines" class="mt-3 shop-meta" data-pdp-in-store-pickup>
+              <span :data-pdp-available-today="storeLines.availableToday" data-decisive="availability">{{ storeLines.availability }}</span>
+            </p>
 
             <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4">
               <UiAccordionItem v-if="product.components.length" value="components">
@@ -441,18 +467,30 @@ useHead({
         <div
           class="shop-action-dock mt-4 rounded-lg border border-ink bg-ink p-3 text-ink-foreground shadow-lg md:hidden"
           data-focus-obstruction
+          data-x11-exception="cartao-do-produto-3590"
         >
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <p class="line-clamp-2 shop-body">{{ product.name }}</p>
-              <p class="shop-price-strong text-ink-foreground">{{ quotePriceDisplay(product.quote) }}</p>
-              <p v-if="product.unit_weight_label" class="text-xs text-ink-foreground/70">
-                {{ compactUnitWeightLabel(product.unit_weight_label) }}
-              </p>
-              <p v-if="unavailableReason" class="mt-1 text-xs text-ink-foreground/70">{{ unavailableReason }}</p>
+          <!-- Com a fonte do sistema a 200 %, o botão (largo e sem encolher) espremia o nome
+               e o PREÇO até sumirem (X11, OC-30). A coluna tem piso de 4rem, que cresce com a
+               fonte, e o botão desce para a linha de baixo quando os dois não cabem. -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-16 flex-1 basis-0">
+              <!-- Uma linha: o nome inteiro está logo acima, na página, e cada linha
+                   a mais do card cobre mais da primeira tela (#3343). -->
+              <p class="truncate shop-body" :title="product.name">{{ product.name }}</p>
+              <!-- Peso ao lado do preço: uma linha a menos no card que cobre a tela (#3343).
+                   Sem espaço, ele desce sozinho (flex-wrap). -->
+              <div class="flex flex-wrap items-baseline gap-x-2">
+                <p class="shop-price-strong text-ink-foreground" data-decisive="price">{{ quotePriceDisplay(product.quote) }}</p>
+                <p v-if="product.unit_weight_label" class="text-sm text-ink-foreground/80">
+                  {{ compactUnitWeightLabel(product.unit_weight_label) }}
+                </p>
+              </div>
+              <p v-if="unavailableReason" class="mt-1 text-sm text-ink-foreground/80" data-decisive="availability">{{ unavailableReason }}</p>
             </div>
             <StockNotifyButton v-if="product.is_notifiable" :sku="product.sku" :name="product.name" :subscribed="product.is_notify_subscribed" compact inverted />
-            <UiButton v-else-if="deadEnd" variant="outline" size="sm" :to="similarItemsTo">Ver itens parecidos</UiButton>
+            <!-- Sobre o card escuro, o tom invertido, como as outras ações do card: o
+                 "outline" herdava letra e fundo claros e o botão sumia (#3558). -->
+            <UiButton v-else-if="deadEnd" variant="outline" size="sm" class="shop-action-inverted" :to="similarItemsTo">Ver itens parecidos</UiButton>
             <CartQuantityAction
               v-else
               :meta="meta"

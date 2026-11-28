@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { promiseAddLabel } from '~/presentation/promise'
 import { hasOptionGroups } from '~/presentation/productOptions'
@@ -11,7 +12,14 @@ const props = defineProps<{
   sectionLabel?: string
 }>()
 
-const badge = computed(() => tileBadge(props.item))
+// Selos de urgência (#2807) sobre a foto, empilhados com o de estado; o de estoque
+// com o número substitui o "Últimas unidades" genérico.
+const now = useMinuteClock()
+const fomo = computed(() => fomoBadgeViews(props.item.fomo_badges, now.value))
+const badge = computed(() => {
+  const base = tileBadge(props.item)
+  return base && props.item.availability === 'low_stock' && fomoCoversLowStock(props.item.fomo_badges) ? null : base
+})
 
 const { qtyForSku } = useCartState()
 const meta = computed<ProductMutationMeta>(() => ({
@@ -65,11 +73,22 @@ function productRoute (sku: string) {
             </UiButton>
             <!-- Indisponível: etiqueta de VIDRO translúcida em tokens da marca (cream +
                  marrom), harmonizando com a sépia; demais estados seguem o tileBadge. -->
-            <div v-if="item.availability === 'unavailable'" class="absolute left-2 top-2 z-20">
-              <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
+            <div v-if="item.availability === 'unavailable'" class="absolute inset-x-2 top-2 z-20 flex">
+              <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm" data-decisive="availability">Indisponível</UiBadge>
             </div>
-            <div v-else-if="badge" class="absolute left-2 top-2 z-20">
-              <UiBadge :variant="badge.variant" class="font-normal shadow-sm">{{ badge.label }}</UiBadge>
+            <!-- `inset-x-2` (e não só `left-2`): a caixa tem largura certa, e o selo quebra a
+                 linha dentro da foto em vez de vazar com a fonte grande (X11, OC-30). -->
+            <div v-else-if="badge || fomo.length" class="absolute inset-x-2 top-2 z-20 flex flex-col items-start gap-1" data-product-badges>
+              <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal shadow-sm" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
+              <!-- O selo "contorno" (fornada: "Fica pronto amanhã") não tem fundo e,
+                   sobre a foto, ficava ilegível; aqui ele ganha o fundo do cartão. -->
+              <UiBadge
+                v-if="badge"
+                :variant="badge.variant"
+                class="font-normal shadow-sm"
+                :class="badge.variant === 'outline' ? 'bg-background text-foreground' : ''"
+                data-decisive="availability"
+              >{{ badge.label }}</UiBadge>
             </div>
           </UiAspectRatio>
         </div>
@@ -90,19 +109,22 @@ function productRoute (sku: string) {
         </div>
 
         <div class="hidden flex-wrap gap-1 sm:flex">
-          <UiBadge v-for="adjustment in item.quote.adjustments" :key="adjustment.code" variant="default" class="max-w-full truncate font-normal" :title="adjustmentLabel(adjustment)">{{ adjustmentLabel(adjustment) }}</UiBadge>
+          <UiBadge v-for="adjustment in item.quote.adjustments" :key="adjustment.code" variant="promotion" class="font-normal" :title="adjustmentLabel(adjustment)" data-decisive="price">{{ adjustmentLabel(adjustment) }}</UiBadge>
           <UiBadge v-if="item.is_new" variant="secondary" class="font-normal">Novo</UiBadge>
           <UiBadge v-if="item.is_featured" variant="secondary" class="font-normal">Destaque</UiBadge>
           <!-- tags secundárias (dieta): mesma cor/peso/tamanho da descrição -->
-          <UiBadge v-for="tag in item.dietary_info.slice(0, 2)" :key="tag" variant="outline" class="border-muted-foreground/40 text-xs font-normal text-muted-foreground">{{ tag }}</UiBadge>
+          <UiBadge v-for="tag in item.dietary_info.slice(0, 2)" :key="tag" variant="outline" class="border-muted-foreground/40 font-normal text-muted-foreground">{{ tag }}</UiBadge>
         </div>
 
+        <!-- O preço tem largura mínima: com `min-w-0` ele encolhia até uma letra por
+             linha quando o botão era longo ("Encomendar para amanhã") num card
+             estreito (vitrine da home a 375 px, prévia do OC-04); assim o botão desce. -->
         <div class="flex flex-wrap items-end justify-between gap-x-3 gap-y-2">
-          <div class="min-w-0 flex-1">
-            <p v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta">
+          <div class="min-w-28 flex-1">
+            <p v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta" data-decisive="price">
               antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span>
             </p>
-            <p class="shop-price">{{ quotePriceDisplay(item.quote) }}</p>
+            <p class="shop-price" data-decisive="price">{{ quotePriceDisplay(item.quote) }}</p>
             <p v-if="item.unit_weight_label" class="shop-meta">
               {{ compactUnitWeightLabel(item.unit_weight_label) }}
             </p>

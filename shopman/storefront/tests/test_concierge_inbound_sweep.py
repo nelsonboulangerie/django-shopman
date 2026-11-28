@@ -100,3 +100,59 @@ def test_the_same_text_already_here_is_not_reingested(conversation, manychat):
 def test_the_round_has_a_ceiling(conversation, manychat):
     assert len(inbound_sweep.candidates(limit=0)) == 0
     assert len(inbound_sweep.candidates(limit=5)) == 1
+
+
+#: O ``getInfo`` real do contato do WhatsApp do dono (24/11/2026): a hora é a do Messenger, velha, e a do WhatsApp
+#: vem vazia. A mensagem chegou ao ManyChat e se perdeu no deploy das 20h10Z.
+LOST = "Boa tarde\nTudo bem?\nAinda tem pão champagne e folhado de maçã?"
+WHATSAPP_INFO = {"last_input_text": LOST, "last_interaction": "2024-06-11T08:12:12-03:00",
+                 "whatsapp_interaction": None, "last_seen": "2024-06-15T10:00:00-03:00",
+                 "whatsapp_phone": "+5543999990000"}
+
+
+def _ours(conversation, text, minutes_ago):  # noqa: F811
+    from shopman.storefront.tests.test_concierge_engine import _create_inbound
+
+    _create_inbound(conversation, text, f"nossa-{minutes_ago}")
+    binding = _binding(conversation)
+    ConversationBinding.objects.filter(pk=binding.pk).update(
+        last_inbound_at=timezone.now() - timedelta(minutes=minutes_ago))
+
+
+def test_whatsapp_lost_message_is_reingested_although_the_provider_time_is_stale(conversation, manychat):
+    """24/11: a mensagem do dono chegou ao ManyChat e não ao webhook; o ``last_interaction`` de 2024 fazia a
+    varredura pulá-la como velha. A fala do ManyChat que difere da nossa última, com a nossa na janela, volta."""
+    _ours(conversation, "obrigado", minutes_ago=40)
+    manychat["info"] = dict(WHATSAPP_INFO)
+
+    first = inbound_sweep.sweep()
+    again = inbound_sweep.sweep()
+
+    assert first["reingested"] == 1
+    assert again["reingested"] == 0, "idempotente: a nossa última agora é ela"
+    message = _inbound(conversation, LOST).get()
+    assert message.envelope.get("correlation_ref") == "inbound_sweep"
+    assert message.envelope.get("occurred_at_assurance") == "lower_bound"  # a hora é o piso, não inventada
+
+
+def test_whatsapp_same_text_as_our_last_is_not_reingested(conversation, manychat):
+    _ours(conversation, LOST, minutes_ago=5)
+    manychat["info"] = dict(WHATSAPP_INFO)
+
+    assert inbound_sweep.sweep()["reingested"] == 0
+    assert _inbound(conversation, LOST).count() == 1
+
+
+def test_whatsapp_with_our_last_outside_the_window_is_not_reingested(conversation, manychat):
+    _ours(conversation, "obrigado", minutes_ago=25 * 60)
+    manychat["info"] = dict(WHATSAPP_INFO)
+
+    assert inbound_sweep.sweep()["reingested"] == 0
+
+
+def test_whatsapp_time_when_the_provider_gives_it_is_used(conversation, manychat):
+    _ours(conversation, "obrigado", minutes_ago=40)
+    manychat["info"] = {**WHATSAPP_INFO, "whatsapp_interaction": (timezone.now() - timedelta(minutes=2)).isoformat()}
+
+    assert inbound_sweep.sweep()["reingested"] == 1
+    assert _inbound(conversation, LOST).get().envelope.get("occurred_at_assurance") == "provider_api"

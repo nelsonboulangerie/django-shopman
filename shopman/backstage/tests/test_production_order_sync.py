@@ -245,18 +245,19 @@ def test_finished_work_order_progress_is_projected_for_order(recipe):
 
 
 @pytest.mark.django_db
-def test_work_order_card_projects_committed_item_quantity(recipe):
+def test_work_order_card_does_not_publish_the_link(recipe):
+    """WP-F10: o cartão diz o prometido pela régua das reservas (``promised``);
+    o vínculo (``committed_order_refs``) segue só para as travas e o KDS, e não
+    vira mais número na tela."""
     wo = craft.plan(recipe, 10, date=date.today())
     first = _order("SYNC-ORD-4", qty=3)
-    second = _order("SYNC-ORD-4B", qty=10)
-    wo.meta = {WORK_ORDER_COMMITTED_ORDER_REFS_KEY: [first.ref, second.ref]}
+    wo.meta = {WORK_ORDER_COMMITTED_ORDER_REFS_KEY: [first.ref]}
     wo.save(update_fields=["meta", "updated_at"])
 
     card = build_work_order_card(wo.ref)
 
-    assert card.committed_qty == "13"
-    assert [item.ref for item in card.order_commitments] == [first.ref, second.ref]
-    assert [item.qty_required for item in card.order_commitments] == ["3", "10"]
+    assert not hasattr(card, "committed_qty")
+    assert not hasattr(card, "order_commitments")
 
 
 @pytest.mark.django_db
@@ -682,7 +683,7 @@ def test_reducing_planned_below_linked_orders_requires_force(recipe):
             actor="test",
             idempotency_key="plan-order-shortage-attempt",
         )
-    assert "8 un. comprometidas" in str(exc_info.value)
+    assert str(exc_info.value) == "Há 8 un. encomendadas neste lote. Para planejar menos, é preciso justificar."
     assert "pedido(s)" not in str(exc_info.value)
 
     apply_planned(

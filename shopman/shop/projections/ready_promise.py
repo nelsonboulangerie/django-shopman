@@ -136,6 +136,35 @@ def ready_window(
     return ReadyWindow(target=target, day=day, start=start, ready_at=ready_at)
 
 
+_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def day_label_for(day: date, *, today: date) -> str:
+    """O dia como a loja o diz: "hoje", "amanhã, terça", "quinta, 26/11".
+
+    Fonte única: a promessa da loja (``storefront/presentation/promise``) e a frase
+    da troca de dia da sacola (``policies.preorder_date``) dizem o dia daqui.
+    """
+    weekday = _WEEKDAYS[day.weekday()]
+    if day == today:
+        return "hoje"
+    if day == today + timedelta(days=1):
+        return f"amanhã, {weekday}"
+    return f"{weekday}, {day:%d/%m}"
+
+
+def opening_slot(day: date, *, now: datetime | None = None) -> time | None:
+    """O primeiro horário que o checkout oferece em ``day``, ou ``None`` (dia sem horário).
+
+    É a "abertura" do dia escolhido no cardápio (OC-33 B1): o item que fica
+    disponível nesse horário não ganha frase; o que fica depois diz a hora.
+    """
+    from django.utils import timezone
+
+    grid = _read_grid(day, now=now or timezone.now())
+    return grid[0] if grid else None
+
+
 def _read_grid(day: date, *, now: datetime) -> tuple[time, ...]:
     from shopman.shop.services import fulfillment_window
 
@@ -146,7 +175,7 @@ def _read_grid(day: date, *, now: datetime) -> tuple[time, ...]:
         return ()
     starts: list[time] = []
     for window in context.get("windows") or []:
-        start = fulfillment_window._window_start(window)
+        start = fulfillment_window.slot_start(window)
         if start is not None and window.get("enabled"):
             starts.append(start.replace(second=0, microsecond=0))
     return tuple(sorted(starts))

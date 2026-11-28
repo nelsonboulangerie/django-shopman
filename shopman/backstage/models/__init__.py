@@ -36,6 +36,7 @@ from .operation_episode import (
 from .oven_run import OvenRun
 from .plan_carry import PlanCarryNote
 from .pos import POSTab
+from .prep_checklist import PrepChecklistMark
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .recipe_favorite import OperatorRecipeFavorite
 from .recipe_rating import RecipeRatingCriterion, RecipeVersionRating, RecipeVersionRatingScore
@@ -52,6 +53,7 @@ __all__ = [
     "IncidentReaderCredential",
     "Workstation",
     "PlanCarryNote",
+    "PrepChecklistMark",
     "AdminTwoFactorEnrollment",
     "OperatorAlert",
     "AliasBenchmarkReport",

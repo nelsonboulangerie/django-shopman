@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   initialRefundAmount,
+  refundChargeOptions,
   refundDialogView,
   refundToast,
   type OrderRefundPreview,
@@ -122,5 +123,61 @@ describe("orderRefund: o aviso depois da tentativa", () => {
     expect(
       refundToast({ outcome: "refused", amount_q: 1250, refunded_q: 0, available_q: 2500, message }),
     ).toEqual({ tone: "error", text: message });
+  });
+});
+
+// Mais de uma cobrança (#3134, decisão da coordenação em 22/11/2026): o Gerente escolhe
+// qual estornar, vendo o valor de cada uma separado. A tela NUNCA mostra o total.
+const CHARGES = [
+  { intent_ref: "INT-1", method_label: "Pix", paid_q: 3000, paid_display: "R$ 30,00", returned_display: "", available_q: 3000, available_display: "R$ 30,00" },
+  { intent_ref: "INT-2", method_label: "Cartão", paid_q: 800, paid_display: "R$ 8,00", returned_display: "R$ 3,00", available_q: 500, available_display: "R$ 5,00" },
+];
+
+describe("orderRefund: mais de uma cobrança", () => {
+  const choosing = preview({
+    choose: true,
+    choose_reason: "Este pedido tem mais de uma cobrança. Escolha qual estornar.",
+    charges: CHARGES,
+    intent_ref: "",
+    paid_q: undefined,
+    paid_display: undefined,
+    returned_q: undefined,
+    returned_display: undefined,
+    available_q: undefined,
+    available_display: undefined,
+  });
+
+  it("sem escolha: só a pergunta, nenhum valor e nada a confirmar", () => {
+    const view = refundDialogView(choosing, { amount: "", confirmed: true });
+    expect(view.choosing).toBe(true);
+    expect(view.chooseLine).toBe("Este pedido tem mais de uma cobrança. Escolha qual estornar.");
+    expect([view.paidLine, view.returnedLine, view.availableLine]).toEqual(["", "", ""]);
+    expect(view.canConfirm).toBe(false);
+  });
+
+  it("cada cobrança com o valor dela, e o total do pedido em lugar nenhum", () => {
+    const options = refundChargeOptions(choosing);
+    expect(options).toEqual([
+      { value: "INT-1", label: "Pix · pago R$ 30,00", description: "Disponível: R$ 30,00" },
+      { value: "INT-2", label: "Cartão · pago R$ 8,00", description: "Já estornado: R$ 3,00. Disponível: R$ 5,00" },
+    ]);
+    const shown = JSON.stringify([options, refundDialogView(choosing, { amount: "", confirmed: false })]);
+    // R$ 38,00 (o pago somado) e R$ 35,00 (o disponível somado) nunca aparecem.
+    expect(shown).not.toContain("38,00");
+    expect(shown).not.toContain("35,00");
+  });
+
+  it("escolhida: o pago é desta cobrança, não do pedido", () => {
+    const chosen = preview({ charges: CHARGES, intent_ref: "INT-2", method_label: "Cartão", paid_display: "R$ 8,00", available_q: 500, available_display: "R$ 5,00" });
+    const view = refundDialogView(chosen, { amount: "5,00", confirmed: true });
+    expect(view.paidLine).toBe("Pago nesta cobrança: R$ 8,00 (Cartão)");
+    expect(view.canConfirm).toBe(true);
+  });
+
+  it("com uma cobrança só, não há escolha", () => {
+    expect(refundChargeOptions(preview())).toEqual([]);
+    expect(refundDialogView(preview(), { amount: "25,00", confirmed: true }).paidLine).toBe(
+      "Pago neste pedido: R$ 30,00 (Pix)",
+    );
   });
 });

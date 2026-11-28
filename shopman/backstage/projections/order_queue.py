@@ -47,13 +47,14 @@ from shopman.backstage.projections.order_attention import (
 from shopman.backstage.projections.preorders import CounterOrderProjection
 from shopman.backstage.services import order_danfe
 from shopman.backstage.services.courier_reminder import REMINDER_STATUSES, CourierReminderProjection, courier_reminder
+from shopman.shop.policies import order_payment as order_payment_policy
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
     TimelineEventProjection,
 )
 from shopman.shop.protocols import RideState
-from shopman.shop.services import operator_orders, order_composition, volume_check
+from shopman.shop.services import no_show, operator_orders, order_composition, volume_check
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type
@@ -610,6 +611,10 @@ class OrderCardProjection:
     # destravar sozinho, e a tela oferece o próximo passo pronto (cancelar com o
     # motivo "Pagamento não confirmado" já marcado), em vez de um botão morto.
     payment_lapsed: bool = False
+    # O pedido novo só espera o dinheiro online (Pix ou cartão que ainda não caiu):
+    # não pede ninguém até ele cair (DEV-2026-091). A mesma régua do aceite
+    # (``operator_orders.awaits_online_payment``).
+    awaits_online_payment: bool = False
     # O WhatsApp do cliente, SÓ no pedido que pede ação (a cobrança venceu, ou a
     # promessa está em risco) e só quando o pedido tem telefone que não é o relé do
     # iFood (decisão do dono, #2434, "1:b"): o cartão e a Tabela levam "Chamar no
@@ -914,6 +919,11 @@ class OperatorOrderProjection:
     danfe_printed: bool = False
     danfe_state: str = ""
     danfe_problem: str = ""
+    # Encomenda não retirada com dinheiro retido: o recibo do valor (#3538). Sai
+    # sozinho no fim do gesto; ``retention_receipt_printed`` diz que a próxima
+    # impressão é 2ª via.
+    retention_receipt_printable: bool = False
+    retention_receipt_printed: bool = False
     # A promessa do pedido, a MESMA do cartão (WP-G08). No detalhe as saídas são
     # as de verdade: a conversa com o cliente, o PDV e o cancelar de ``actions``.
     # ``None`` no contexto ``"pos"`` e quando a reserva está como deve estar.
@@ -1335,6 +1345,8 @@ def build_operator_order(order: Order, *, user=None, context: str = "orders") ->
         danfe_printed=danfe.printed,
         danfe_state=danfe.state,
         danfe_problem=danfe.problem,
+        retention_receipt_printable=no_show.retention_receipt(order) is not None,
+        retention_receipt_printed=bool((order.data or {}).get("retention_receipt_printed_at")),
         ifood_negotiations=negotiations(order, user=user),
         can_confirm=not operator_orders.confirmation_block_reason(order),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
@@ -2951,6 +2963,9 @@ def _build_card(
         fulfillment_type="delivery" if is_delivery else "pickup",
         delivery_address=delivery_address,
         can_confirm=not operator_orders.confirmation_block_reason(order, payment_reads=payment_reads, channel_config=channel_config, waitlist_state=batch_state),
+        awaits_online_payment=order_payment_policy.awaits_online_payment(
+            order, payment_reads=payment_reads, channel_config=channel_config,
+        ),
         can_advance=bool(next_status) and undo_block_allows_advance(order),
         next_status=next_status if undo_block_allows_advance(order) else "",
         undo=_undo_projection(order),
@@ -3385,16 +3400,31 @@ def _is_payment_pending(order: Order, method: str, payment_status: str) -> bool:
     return payment_status not in _PAYMENT_COMPLETE
 
 
+#: De quanto em quanto tempo o mesmo pedido sem forma de pagamento volta a gritar.
+_SCREAM_EVERY_SECONDS = 24 * 60 * 60
+
+
 def _report_order_without_payment(order: Order | None) -> None:
     """Pedido sem forma de pagamento não existe (decisão do dono, 06/11/2026, GES-03).
 
     Toda porta que cria pedido recusa sem ela (``policies.order_payment.PaymentMethodRule``
     no commit; o seed se confere no fim). Se um aparecer mesmo assim, é defeito de
     porta, e a tela não o maquia com um estado próprio: grita no Sentry com a ref.
+
+    Grita UMA vez por pedido a cada dia, não a cada leitura: o pedido sem forma é
+    estado, e a fila é lida a cada poucos segundos. Até 23/11/2026 um só pedido de
+    24/09 gerou 1,9 mil eventos e ajudou a esgotar a cota mensal do Sentry
+    (SHOPMAN-15); com a cota no fim, o erro novo de verdade deixa de ser registrado.
     """
-    logger.error(
-        "order_queue.order_without_payment order=%s", getattr(order, "ref", "?"),
-    )
+    from django.core.cache import cache
+
+    ref = getattr(order, "ref", "?")
+    try:
+        first_today = cache.add(f"order_queue:order_without_payment:{ref}", 1, timeout=_SCREAM_EVERY_SECONDS)
+    except Exception:
+        first_today = True
+    if first_today:
+        logger.error("order_queue.order_without_payment order=%s", ref)
 
 
 def _offline_payment_settled(payment_data: dict) -> bool:
@@ -4282,9 +4312,11 @@ _OUTSIDE_CHARGE_CAPTURE_LABEL = "Pix recebido numa cobrança já encerrada"
 _PAYMENT_EVENT_TYPES = frozenset({"payment.authorized", "payment.captured", "payment.refunded", "account_debt_reduced"})
 
 #: A mesma edição, com o rótulo de quem fez quando não foi o balcão. A Concierge
-#: acrescenta itens pelo MESMO serviço (``order_edit``) e a equipe lê no histórico.
+#: acrescenta itens e altera o pedido (data, item, endereço, OC-11) pelo MESMO
+#: serviço (``order_edit``), e a equipe lê no histórico.
 _EDIT_SOURCE_LABELS = {
     "concierge:add": "Itens acrescentados pela Concierge a pedido do cliente",
+    "concierge:amend": "Pedido alterado pela Concierge a pedido do cliente",
 }
 
 # Mudança de status, nas duas grafias que existem no banco: o model escreve
@@ -4544,7 +4576,7 @@ def _event_detail(payload: dict) -> str:
         # Reagendamento: "12/10 → 15/10", e o motivo quando houver.
         moved = f"{_short_date(payload.get('from_date'))} → {_short_date(payload.get('to_date'))}"
         return f"{moved}: {payload['reason']}" if payload.get("reason") else moved
-    if payload.get("source") in {"pos:edit", "concierge:add"} and payload.get("customer_note"):
+    if payload.get("source") in {"pos:edit", *_EDIT_SOURCE_LABELS} and payload.get("customer_note"):
         # Edição da encomenda: a MESMA frase que o cliente recebeu — o que
         # mudou, o total novo e o destino da diferença.
         return str(payload["customer_note"])

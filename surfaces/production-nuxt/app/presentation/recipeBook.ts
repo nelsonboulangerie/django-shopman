@@ -15,12 +15,15 @@ import type {
   IngredientRole,
   LensTone,
   RecipeCaptureDraftProjection,
+  RecipeCompareProjection,
   RecipeEntryCardProjection,
+  RecipeUsageProjection,
   RecipeKind,
   ReferenceRangeProjection,
   RecipeStepInput,
   RecipeStepProjection,
   VersionStatus,
+  VersionUsageProjection,
 } from "~/types/recipeBook";
 
 // ── Vocabulário (rótulos em pt-BR; identificador em inglês) ─────────────────
@@ -725,4 +728,58 @@ export function readStepTemperature(raw: string): { celsius: number | null; erro
     return { celsius: null, error: `Use uma temperatura entre ${min} e ${max} °C.` };
   }
   return { celsius: Math.round(celsius * 10) / 10, error: "" };
+}
+
+// ── Qual é qual: a comparação e o uso por versão ────────────────────────────
+
+export interface CompareSide {
+  key: "a" | "b";
+  title: string;
+  status: string;
+  statusLabel: string;
+  isCurrent: boolean;
+  when: string;
+}
+
+/** Os dois lados da comparação, cada um com o estado e de quando (P2-20). */
+export function compareSides(compare: RecipeCompareProjection): CompareSide[] {
+  return [
+    {
+      key: "a",
+      title: compare.a_title,
+      status: compare.a_status,
+      statusLabel: compare.a_status_label,
+      isCurrent: compare.a_is_current,
+      when: compare.a_when_display,
+    },
+    {
+      key: "b",
+      title: compare.b_title,
+      status: compare.b_status,
+      statusLabel: compare.b_status_label,
+      isCurrent: compare.b_is_current,
+      when: compare.b_when_display,
+    },
+  ];
+}
+
+/** O que a casa produziu com uma versão (lotes fechados), ou `null` sem lote. */
+export function versionUsage(
+  usage: RecipeUsageProjection | null | undefined,
+  number: number | null | undefined,
+): VersionUsageProjection | null {
+  if (!usage || number == null) return null;
+  return usage.versions.find((row) => row.version_number === number && row.batches > 0) ?? null;
+}
+
+/** A linha curta da linha do tempo: "12 lotes · aproveitamento 96%". */
+export function versionUsageLine(row: VersionUsageProjection | null): string {
+  if (!row) return "";
+  return row.yield_display ? `${row.batches_display} · aproveitamento ${row.yield_display}` : row.batches_display;
+}
+
+/** A Base · Insumos do Compras, onde insumo novo se cadastra; "" sem o Compras. */
+export function purchaseMaterialsHref(purchaseUrl: string): string {
+  const base = purchaseUrl.trim().replace(/\/+$/, "");
+  return base ? `${base}/base/materials` : "";
 }

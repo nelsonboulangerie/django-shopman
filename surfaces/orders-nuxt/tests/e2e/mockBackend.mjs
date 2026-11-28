@@ -274,8 +274,15 @@ function deliveriesProjection() {
  * "Separar de novo" (`courier-custody`) grava o corpo e a corrida deixa de pedir.
  */
 const CUSTODY_REF = "WEB-261116-R05";
-const custodyState = { body: null };
-function custodyOrder() {
+// Um estado por teste (cookie `e2e_ns`), como o das corridas da casa: um teste que
+// grava ou limpa a custódia não mexe na de outro que roda ao mesmo tempo (#3623).
+const custodyStores = new Map();
+function custodyStore(req) {
+  const ns = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_ns=([\w-]+)(?:;|$)/)?.[1] ?? "";
+  if (!custodyStores.has(ns)) custodyStores.set(ns, { body: null });
+  return custodyStores.get(ns);
+}
+function custodyOrder(custodyState) {
   const separated = custodyState.body !== null;
   return {
     ...CARD, ...DETAIL_EXTRA, ref: CUSTODY_REF, status: "ready", status_label: "Pronto", customer_name: "Rita Moraes",
@@ -686,6 +693,33 @@ function f4aDeliveries() {
   };
 }
 
+function awaitingPaymentCard(paid) {
+  return {
+    ...CARD,
+    ref: "WEB-20261125-0012",
+    status: "new",
+    status_label: "Novo",
+    customer_name: "Ana",
+    items_summary: "1× Bolo de cenoura · 2× Croissant",
+    items_count: 3,
+    total_display: "R$ 48,70",
+    created_at_iso: new Date(Date.now() - 2 * 60_000).toISOString(),
+    payment_method: "pix",
+    payment_method_label: "Pix",
+    payment_status: paid ? "captured" : "pending",
+    payment_pending: !paid,
+    can_confirm: paid,
+    can_advance: false,
+    next_status: "accepted",
+    actions: [],
+    awaits_online_payment: !paid,
+    attention: paid ? "confirm" : "",
+    attention_since_iso: paid ? new Date().toISOString() : "",
+    goal_minutes: paid ? 5 : 0,
+    goal_label: paid ? "meta 5 min" : "",
+  };
+}
+
 function queueCard(ref) {
   return Object.values(QUEUE.queue).flat().find((card) => card && typeof card === "object" && card.ref === ref);
 }
@@ -1060,6 +1094,16 @@ const server = createServer((req, res) => {
         ride_number: body.ride_number ?? null, ride_letter: "" });
     });
   }
+  // DEV-2026-091 (cookie `e2e_payment=awaiting`): um pedido novo que só espera o Pix
+  // cair. Sem `attention` e com `awaits_online_payment`: fica fora da Fila e da coluna
+  // Novos, recolhido na faixa "Aguardando pagamento". Com `e2e_payment=paid`, o mesmo
+  // pedido com o Pix caído: sobe para a Fila e para os Novos pedindo o aceite.
+  const paymentScenario = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_payment=(awaiting|paid)(?:;|$)/)?.[1] ?? "";
+  if (paymentScenario && /\/orders\/?(\?|$)/.test(url)) {
+    return json(res, 200, {
+      queue: { ...QUEUE.queue, intake: [awaitingPaymentCard(paymentScenario === "paid")], total_count: QUEUE.queue.total_count + 1 },
+    });
+  }
   const promiseVariant = (req.headers.cookie || "").match(/(?:^|;\s*)e2e_promise=(risk|closed)(?:;|$)/)?.[1] ?? "";
   const promiseScenario = Boolean(promiseVariant);
   if (promiseScenario && /\/e2e\/promise\/reset\/?(\?|$)/.test(url)) {
@@ -1103,6 +1147,7 @@ const server = createServer((req, res) => {
     return json(res, 200, { sent: [...cancelState.entries()].map(([key, value]) => ({ key, reason_id: value.sent })) });
   }
   const custodyScenario = /(?:^|;\s*)e2e_custody=on(?:;|$)/.test(req.headers.cookie || "");
+  const custodyState = custodyScenario ? custodyStore(req) : null;
   if (custodyScenario && /\/e2e\/custody\/?(\?|$)/.test(url)) {
     if (req.method === "DELETE") custodyState.body = null;
     return json(res, 200, { body: custodyState.body });
@@ -1111,10 +1156,10 @@ const server = createServer((req, res) => {
     if (req.method !== "POST") return json(res, 200, { outcome: custodyState.body ? "applied" : "not_found" });
     return void readBody(req).then((body) => {
       custodyState.body = { change_out: body.change_out ?? null, equipment: body.equipment ?? [] };
-      json(res, 200, { outcome: "applied", order: custodyOrder() });
+      json(res, 200, { outcome: "applied", order: custodyOrder(custodyState) });
     });
   }
-  if (custodyScenario && new RegExp(`/orders/${CUSTODY_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: custodyOrder() });
+  if (custodyScenario && new RegExp(`/orders/${CUSTODY_REF}/?(\\?|$)`).test(url)) return json(res, 200, { order: custodyOrder(custodyState) });
   const rideCancelPost = url.match(/\/orders\/([A-Z0-9-]+)\/courier-cancel\/?(\?|$)/);
   if (cancelScenario && rideCancelPost) {
     const fixture = RIDE_FIXTURES.find((item) => item.stops.some(([ref]) => ref === rideCancelPost[1]));

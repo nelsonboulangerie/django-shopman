@@ -82,7 +82,7 @@ framework.
 | P01 | Inquilino e ambiente | Nelson; `shadow` no N5, `live` só no N9 | Engenharia | aprovado |
 | P02 | Canal e capacidades | WhatsApp pelo ManyChat; janela de 24 h com prova; identidade do evento não verificada (`CONCIERGE_MANYCHAT_EVENT_ID_VERIFIED=false`) | Engenharia | aprovado |
 | P03 | Identidade por canal | Telefone do WhatsApp = `transported`; vínculo verificado de cliente = `weak_verified`, desligado no alpha (`CONCIERGE_IDENTITY_LINK_ENABLED=false`) | Engenharia | aprovado |
-| P04 | Leitor e modelo | Regra local primeiro; Jev no porteiro e DeepSeek na extração, só texto redigido, só conexão `customer_text_approved` | Dono (16/11, D-040) | aprovado |
+| P04 | Leitor e modelo | Regra local primeiro; Jev no porteiro e DeepSeek na extração, só texto redigido, só conexão `customer_text_approved`. Uma leitura pela IA por turno; uma segunda chamada só para verificar conflito (ADR-051) | Dono (16/11, D-040; adendo de 24/11) | aprovado |
 | P05 | Gasto com modelo | Freio e teto diário do `ai_governor` | Dono (D-039, item 5) | aprovado |
 | P06 | Regras da casa | `house_rules.RULES`, R1 a R14 | Dono (OBS0310-M, #1442) | aprovado |
 | P07 | Movimentos ligados | `acknowledge`, `inform`, `cover_readings`, `inform_limitation`, `ask_clarification`, `handoff`; `verify_with_staff` quando o WP-05 da Concierge entrar | Dono (comportamento atual) | aprovado |
@@ -94,7 +94,7 @@ framework.
 | P13 | Recomendação (`recommend`) | Não existe | Dono (15.5, movimentos comerciais) | ausente: a sombra calcula a candidata, nada sai |
 | P14 | Fontes de fato | Preço do canal (Offerman), promessa (Stockman, `PromiseDecision`), pedido (Orderman), horário e calendário (`Shop`), alérgenos (`concierge/allergens.py`); lidos ao vivo, valem para o turno | Engenharia | aprovado |
 | P15 | Fila humana | Sino do Gestor (`OperatorAlert`), prazos 10 e 30 min no `ChannelConfig` (dono, 16/11); fora do expediente a Nice diz quando a equipe atende; aceite nominal: quem estiver com o Gestor aberto assume pelo sino, com nome, em até 10 min no expediente; fora dele a Nice não muda nada sozinha | Dono (16/11 e 18/11, decisão 2) | aprovado |
-| P16 | Tetos do turno | `MAX_LOOPS` do `handler.py`, `claim_until`, teto do `ai_governor` | Engenharia | aprovado |
+| P16 | Tetos do turno | `MAX_LOOPS` do `handler.py` (caminho de hoje), `MAX_READS_PER_TURN` do `concierge/profile.py` (leituras do motor, 20; 24/11, #3482), `claim_until`, teto do `ai_governor` | Engenharia | aprovado |
 | P17 | Privacidade | Texto redigido (WP-03), `sensitive` nunca sai, nome e endereço não saem (WP-08), `/privacidade` declara quem recebe (WP-10), observação com 7 dias de retenção | Dono (D-039, D-040) | aprovado |
 | P18 | Memória além do episódio | Só memória declarada | Dono (Q6) | ausente |
 | P19 | Desfecho e janela | Só telemetria, nenhuma alegação de eficácia | Dono (Q1) | ausente |

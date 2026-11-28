@@ -40,8 +40,10 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     outputs:
       python: ${{ steps.scope.outputs.python }}
+      browser_runner: ${{ steps.browser-runner.outputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -49,17 +51,37 @@ jobs:
           sparse-checkout: |
             .github/actions
             scripts/ci_scope.py
+            scripts/ci_browser_runner.py
           sparse-checkout-cone-mode: false
       - name: Escopo
         id: scope
         uses: ./.github/actions/ci-scope
+      # Piloto DEV-2026-098 (plano §9.3): mesmo seletor do Surfaces Gate, com teto de gasto.
+      # Os jobs daqui só vão para o runner do piloto se o NOME deles estiver em
+      # CI_BROWSER_SURFACES ("omotenashi-browser-qa", "storefront-e2e"): eles usam
+      # contêiner de Postgres, que ainda não foi medido na Ubicloud.
+      - name: Runner dos jobs de navegador
+        id: browser-runner
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          CI_LINUX_RUNNER: ${{ vars.CI_LINUX_RUNNER }}
+          CI_BROWSER_RUNNER: ${{ vars.CI_BROWSER_RUNNER }}
+          CI_BROWSER_SINCE: ${{ vars.CI_BROWSER_SINCE }}
+          CI_BROWSER_BUDGET_USD: ${{ vars.CI_BROWSER_BUDGET_USD }}
+          CI_BROWSER_COST_PER_GROUP_USD: ${{ vars.CI_BROWSER_COST_PER_GROUP_USD }}
+        run: python3 scripts/ci_browser_runner.py >> "$GITHUB_OUTPUT"
 
   omotenashi-browser-qa:
     name: Browser QA (Nuxt store + Django operator)
     # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
     # verde ("pulado") com o mesmo nome, que é check obrigatório.
-    if: github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    # `needs: scope` só para o runner do piloto; `!cancelled()` para o scope que falha
+    # NUNCA pular este check obrigatório (pulado contaria verde): cai no grátis.
+    needs: scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ${{ (contains(fromJSON(vars.CI_BROWSER_SURFACES || '[]'), 'omotenashi-browser-qa') && needs.scope.outputs.browser_runner) || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -181,6 +203,7 @@ jobs:
             /tmp/shopman-omotenashi-qa-browser.json
             /tmp/shopman-omotenashi-browser-ci-django.log
             /tmp/shopman-omotenashi-browser-ci-nuxt.log
+            /tmp/shopman-omotenashi-browser-ci-builds.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -273,8 +296,10 @@ jobs:
     name: Storefront E2E (Playwright)
     # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
     # verde ("pulado") com o mesmo nome, que é check obrigatório.
-    if: github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    # Runner do piloto como no Browser QA acima (needs + !cancelled + fallback grátis).
+    needs: scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ${{ (contains(fromJSON(vars.CI_BROWSER_SURFACES || '[]'), 'storefront-e2e') && needs.scope.outputs.browser_runner) || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     # ⚠️ Este alvo existia e não rodava em lugar nenhum. Foi assim que a suíte

@@ -33,6 +33,8 @@ export interface PosAvailabilityEntry {
   sold_out_reason: string;
   /** Unidades que restam hoje (#2610); ausente ou `null` = o tile não diz número. */
   units_left?: number | null;
+  /** O item está acabando (DEV-2026-077): o saldo aparece à vista no tile. */
+  running_low?: boolean;
 }
 
 /**
@@ -41,7 +43,7 @@ export interface PosAvailabilityEntry {
  * mudou: a grade não redesenha a cada aviso de estoque que não a afeta. O SKU
  * que a leitura atual não tem fica de fora (sem preço, não está na grade).
  */
-export function mergeAvailability<T extends { sku: string; sold_out?: boolean; sold_out_reason?: string; units_left?: number | null }>(
+export function mergeAvailability<T extends { sku: string; sold_out?: boolean; sold_out_reason?: string; units_left?: number | null; running_low?: boolean }>(
   products: readonly T[],
   entries: readonly PosAvailabilityEntry[],
 ): readonly T[] {
@@ -55,13 +57,15 @@ export function mergeAvailability<T extends { sku: string; sold_out?: boolean; s
     // O saldo em número vem no MESMO aviso de estoque que o selo (#2610): a venda
     // de outro balcão baixa o "Restam 3" para "Restam 2" sem ninguém tocar.
     const left = entry.units_left ?? null;
+    const low = Boolean(entry.running_low);
     if (
       Boolean(product.sold_out) === soldOut
       && (product.sold_out_reason || "") === reason
       && (product.units_left ?? null) === left
+      && Boolean(product.running_low) === low
     ) return product;
     changed = true;
-    return { ...product, sold_out: soldOut, sold_out_reason: reason, units_left: left };
+    return { ...product, sold_out: soldOut, sold_out_reason: reason, units_left: left, running_low: low };
   });
   return changed ? next : products;
 }

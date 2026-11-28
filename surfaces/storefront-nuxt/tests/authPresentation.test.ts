@@ -160,6 +160,12 @@ describe('accessLinkLanding', () => {
     expect(accessLinkLanding('', true)).toBe('/entrar?welcome=1&next=%2F')
   })
 
+  it('never leaves the store, even if the response names another host', () => {
+    expect(accessLinkLanding('https://example.com/finalizar', false)).toBe('/')
+    expect(accessLinkLanding('//example.com', false)).toBe('/')
+    expect(accessLinkLanding('https://example.com', true)).toBe('/entrar?welcome=1&next=%2F')
+  })
+
   it('does not re-wrap a destination that is already the login screen', () => {
     expect(accessLinkLanding('/entrar?welcome=1&next=%2Ffinalizar', true)).toBe('/entrar?welcome=1&next=%2Ffinalizar')
   })

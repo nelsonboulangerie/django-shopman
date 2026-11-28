@@ -98,6 +98,8 @@ DigitalOcean ou do Sentry.
 | [`concierge_verification_sweep`](#concierge_verification_sweep) | storefront | Concierge | Os prazos do "vou verificar": aviso ao cliente no primeiro, conversa para a equipe no segundo (no `maintenance_worker`) |
 | [`record_usd_brl_quotes`](#record_usd_brl_quotes) | shop | B.I. | Grava a PTAX de venda final dos dias com gasto de IA, para o B.I. dizer o gasto em reais (no `maintenance_worker`; só lê a API quando falta dia) |
 | [`concierge_shadow_decisions`](#concierge_shadow_decisions) | storefront | Concierge | A decisão em sombra: o que o framework conversacional faria com cada entrada, e os pedidos do cliente em 24 h e 7 dias; nunca envia nem escreve no comércio |
+| [`concierge_eval`](#concierge_eval) | storefront | Concierge | O ensaio do leitor da Nice no ar: a bateria de 56 pedidos pela IA da rota `intents`, com teto de chamadas, sem efeito e sem escrita no banco |
+| [`concierge_engine_tick`](#concierge_engine_tick) | storefront | Concierge | Os prazos vencidos do motor do framework: avisa o cliente uma vez, só com classe ligada na Shop e frase da Nice para o aviso (no `maintenance_worker`) |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -1710,6 +1712,19 @@ leituras seguidas falhando no provedor abrem UM aviso `concierge_no_model` por c
 do Gestor, `AlertSpec.on_screen`); a causa que passou é resolvida. Nunca chama modelo. A mesma leitura é a sonda
 `concierge_reading` do Watchman (`storefront/watchman_checks.py`). Saída: `{"opened": n, "resolved": n}`.
 
+### concierge_keywords
+
+**Propósito:** As palavras-chave dos produtos, que a Concierge usa para achar o produto chamado por outro
+nome ("folhado de maçã" é o Chausson aux Pommes; dono, 24/11/2026). Sem `--write` só lê: quantos
+produtos publicados têm palavras-chave, quais não têm e o que a proposta
+(`shopman/storefront/concierge/keywords_proposal.json`) acrescentaria ou tiraria em cada um. Com
+`--write` grava a proposta. No ar, `--write` só com a aprovação do dono.
+
+```bash
+python manage.py concierge_keywords           # levantamento e o que mudaria
+python manage.py concierge_keywords --write   # grava (no ar, só com a aprovação do dono)
+```
+
 ### concierge_verification_sweep
 
 **Propósito:** O relógio do "vou verificar" da Concierge (WP-05/WP-06 do
@@ -1722,6 +1737,42 @@ cliente recebe UM aviso ("Ainda estou confirmando com a equipe..."); no segundo
 handoff, e o cliente recebe "Alguém da equipe continua com você por aqui.". Os prazos contam só tempo de loja
 aberta, e com a casa fechada nada corre. Cada passo é reivindicado sob trava antes do envio: sai uma vez só.
 Custo zero, nenhuma chamada de modelo. Imprime as contagens do ciclo em JSON.
+
+### concierge_eval
+
+**Propósito:** O ensaio do leitor da Nice (passo 5 do pedido pelo motor). Roda a bateria de 56 pedidos pelo leitor de verdade: o portão do Jev e a IA da rota `intents` (no ar, a DeepSeek), pelo freio e pelo medidor de gasto da casa. Imprime o placar por caso, a transcrição (o que a IA leu de cada fala), a latência p95 e o custo estimado.
+
+Nenhum efeito, nenhuma mensagem, nenhuma linha nova no banco: a conversa e a sacola são de memória. O produto é conferido pelo nome do item no catálogo.
+
+```bash
+python manage.py concierge_eval --battery                 # os 56, tetos de 150 chamadas e US$ 0,50
+python manage.py concierge_eval --battery --case frase    # só os casos cujo id contém "frase"
+python manage.py concierge_eval --battery --max-calls 20  # teto menor
+python manage.py concierge_eval --cards                   # os 5 cartões do WP-14 pelo motor, em memória
+```
+
+`--cards` roda os 5 cartões do WP-14 pelo motor da Nice, de ponta a ponta. Usa as regras, os moldes, os formatadores e o perfil dela, com o leitor de verdade. A sacola, a cotação, a execução, o pedido e os registros ficam em memória, com as portas falsas do pacote. O "sim" fecha um pedido de memória.
+
+Do Shopman vem só o que se lê: o cardápio, e o nome e o preço base de cada item. A linha P08 e a validade da concessão (`grant.validity_seconds`, 600 s, a do perfil de teste do pacote) são ligadas SÓ no perfil do ensaio.
+
+A transcrição, em texto puro, traz por turno:
+- a fala;
+- a resposta da Nice;
+- o que se leu;
+- os movimentos e os bloqueios;
+- quando o turno sairia, no ar, pelo caminho de hoje (molde sem frase da Nice).
+
+Sem conexão utilizável na rota `intents` (ou com o freio puxado), o comando falha antes de chamar. Sai com código diferente de zero, depois de imprimir o placar, quando um teto estoura (`--max-calls`, `--max-usd`) ou quando a IA recusa alguma fala, com o erro verdadeiro dela (aí o placar não mede o leitor).
+
+### concierge_engine_tick
+
+**Propósito:** Os prazos do motor do framework conversacional (#3298). Roda no `maintenance_worker`, depois do
+`concierge_shadow_decisions`. Não faz nada com as classes da Shop desligadas (`Shop.conversational_live_*`) nem
+enquanto algum molde do aviso de prazo (`wait.*`) não tem frase da Nice aprovada em
+`turn_framework.NICE_TEMPLATE_COPY`: aviso em frase genérica do pacote nunca sai. Ligado, cada conversa com
+compromisso do motor aberto e vencido ganha o próprio motor (contexto e envio dela) e `Engine.tick` avisa o
+cliente UMA vez (K22). A falha numa conversa não derruba as outras. Nenhuma chamada de modelo. Imprime as
+contagens em JSON (`conversations`, `notices`, `failed`, `skipped` com o motivo).
 
 ### concierge_shadow_decisions
 

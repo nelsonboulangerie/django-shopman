@@ -1,0 +1,12 @@
+{
+  "empty_cart": {
+    "day_label": "hoje",
+    "next_date": "<today>",
+    "state": "now"
+  },
+  "home": {
+    "day_label": "hoje",
+    "next_date": "<today>",
+    "state": "now"
+  }
+}
