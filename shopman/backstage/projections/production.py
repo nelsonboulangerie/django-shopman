@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
 
 from django.conf import settings
@@ -1094,6 +1094,8 @@ class ProductionLateWorkOrderProjection:
     operator_ref: str
     elapsed_minutes: int
     target_minutes: int
+    #: O nome de quem abriu o lote, nunca o login cru ("chef:ana").
+    operator_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -1120,6 +1122,14 @@ class ProductionDashboardProjection:
     loss_display: str = "0"
     # A frase sob a Perda fala só dos lotes fechados, como a própria perda.
     loss_hint: str = ""
+    #: A frase sob o Planejado conta os MESMOS lotes que o número soma (todos os do dia,
+    #: menos os cancelados). ``planned_orders`` conta só os que ainda esperam abrir.
+    planned_hint: str = ""
+    #: A perda do dia por grandeza (peça, quilo, litro em colunas separadas), com as
+    #: duas partes: a declarada e a diferença de rendimento. Mesma conta dos Relatórios.
+    loss_by_unit: tuple[DayLossByUnitProjection, ...] = ()
+    #: Os lotes fechados do dia com alguma perda ou diferença, com as partes.
+    loss_lots: tuple[WorkOrderReportRow, ...] = ()
     actions: tuple[ProductionActionProjection, ...] = ()
     generated_at: str = ""
     source_revision: str = ""
@@ -1331,6 +1341,46 @@ class ProductionReportFilters:
     status: str = ""
 
 
+#: O nome de cada parte da perda do lote (dono, 24/11: nenhuma tela esconde perda).
+LOSS_PART_LABELS = {
+    "declared": "Perda declarada",
+    "yield_shortfall": "Rendeu menos",
+    "yield_overshoot": "Rendeu mais",
+}
+#: A diferença que nenhum registro explica continua aparecendo, com este nome.
+LOSS_WITHOUT_CAUSE = "Sem causa registrada"
+
+
+@dataclass(frozen=True)
+class LossPartProjection:
+    """Uma parte da diferença do lote: o que foi, quanto, por quê, quem e quando.
+
+    ``counts_as_loss`` é falso só para "rendeu mais", que aparece com a causa e
+    nunca abate a perda (nem a de outro lote, nem a declarada do mesmo lote).
+    """
+
+    kind: str
+    kind_label: str
+    quantity: str
+    quantity_display: str
+    cause: str
+    who: str
+    at: str
+    counts_as_loss: bool
+
+
+@dataclass(frozen=True)
+class DayLossByUnitProjection:
+    """A perda do dia numa grandeza só (peça, massa ou volume), com as duas partes."""
+
+    unit_label: str
+    total_display: str
+    declared_display: str
+    shortfall_display: str
+    #: O nome da coluna: "Peças", "Massa" ou "Volume".
+    heading: str = ""
+
+
 @dataclass(frozen=True)
 class WorkOrderReportRow:
     """A work order history row for production audit reports."""
@@ -1352,6 +1402,23 @@ class WorkOrderReportRow:
     started_at: str
     finished_at: str
     duration_minutes: str
+    #: "17/11", não "2026-11-17" (``date`` fica ISO para ordenar e exportar).
+    date_display: str = ""
+    position_name: str = ""
+    #: Quem fechou o lote, pelo nome (o ator do fechamento; sem ele, quem o abriu).
+    operator_name: str = ""
+    #: Cada quantidade com a sua grandeza: peça e quilo nunca dividem um número.
+    unit_label: str = ""
+    qty_planned_display: str = ""
+    qty_started_display: str = ""
+    qty_finished_display: str = ""
+    #: A perda do lote = perda declarada + rendeu menos; ``qty_loss`` é a mesma soma.
+    qty_loss_display: str = ""
+    loss_declared: str = "0"
+    loss_shortfall: str = "0"
+    loss_overshoot: str = "0"
+    loss_parts: tuple[LossPartProjection, ...] = ()
+    duration_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -1364,6 +1431,13 @@ class OperatorProductivityRow:
     qty_total: str
     yield_avg: str
     duration_avg_minutes: str
+    #: O realizado escrito por grandeza (o CSV leva a frase; a tela, uma coluna cada).
+    qty_total_display: str = ""
+    duration_avg_display: str = ""
+    #: Peça, massa e volume em colunas separadas: nunca "1.955 un. · 167 kg" numa célula.
+    qty_count_display: str = ""
+    qty_mass_display: str = ""
+    qty_volume_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -1376,6 +1450,10 @@ class RecipeWasteRow:
     loss_total: str
     yield_avg: str
     capacity_utilization: str
+    unit_label: str = ""
+    loss_total_display: str = ""
+    loss_declared_display: str = ""
+    loss_shortfall_display: str = ""
 
 
 @dataclass(frozen=True)
@@ -2013,7 +2091,12 @@ def build_production_dashboard(
     access = access or _full_access()
     summary = craft.summary(date=selected_date, position_ref=position_ref or None)
 
-    wos = list(WorkOrder.objects.filter(target_date=selected_date).select_related("recipe").order_by("created_at"))
+    wos = list(
+        WorkOrder.objects.filter(target_date=selected_date)
+        .select_related("recipe")
+        .prefetch_related("events", _waste_items_prefetch())
+        .order_by("created_at")
+    )
     if position_ref:
         wos = [wo for wo in wos if wo.position_ref == position_ref]
 
@@ -2042,30 +2125,42 @@ def build_production_dashboard(
             loads.append(planned / capacity)
     capacity_percent = int(sum(loads, Decimal("0")) / len(loads) * 100) if loads else None
 
+    # A perda do dia é a MESMA conta dos Relatórios (P2-16): declarada + rendeu
+    # menos, lote a lote. Antes esta tela somava só as linhas de perda e
+    # escondia a de processo.
     closed = [wo for wo in live if wo.status == WorkOrder.Status.FINISHED and wo.finished is not None]
-    declared_loss = _declared_loss_by_work_order([wo.pk for wo in closed])
-    closed_base: list[tuple[str, Decimal]] = []
-    closed_finished: list[tuple[str, Decimal]] = []
+    lookup = _ReportLookup()
+    closed_rows = [(wo, _work_order_report_row(wo, lookup)) for wo in closed]
+    by_unit: dict[str, dict[str, list]] = {}
     closed_loss: list[tuple[str, Decimal]] = []
-    closed_shortfall: list[tuple[str, Decimal]] = []
-    for wo in closed:
+    for wo, row in closed_rows:
         unit = output_units.get(wo.recipe_id, "")
-        base = wo.started_qty if wo.started_qty is not None else wo.quantity
-        loss = declared_loss.get(wo.pk, Decimal("0"))
-        closed_base.append((unit, base))
-        closed_finished.append((unit, wo.finished))
-        closed_loss.append((unit, loss))
-        closed_shortfall.append((unit, max(base - wo.finished - loss, Decimal("0"))))
-    if closed:
-        loss_hint = (
-            f"Realizado {_amounts_display(closed_finished)} de "
-            f"{_amounts_display(closed_base)} previstos nos lotes fechados"
+        closed_loss.append((unit, Decimal(row.qty_loss)))
+        bucket = by_unit.setdefault(row.unit_label, {"unit": unit, "total": [], "declared": [], "shortfall": []})
+        bucket["total"].append((unit, Decimal(row.qty_loss)))
+        bucket["declared"].append((unit, Decimal(row.loss_declared)))
+        bucket["shortfall"].append((unit, Decimal(row.loss_shortfall)))
+    # A frase não junta peça e quilo (P2-05; cada grandeza tem a sua coluna na tabela
+    # logo abaixo) e diz quantos lotes tiveram perda, para bater com a lista ao lado.
+    with_loss = sum(1 for _wo, row in closed_rows if Decimal(row.qty_loss) > 0)
+    loss_hint = _loss_hint(with_loss, len(closed))
+    rank = {"un.": 0, "kg": 1, "l": 2}
+
+    def written(amounts, unit: str) -> str:
+        text = _amounts_display(amounts)
+        return text if text != "0" else _amount_display(unit, Decimal("0"))
+
+    loss_by_unit = tuple(
+        DayLossByUnitProjection(
+            unit_label=label,
+            total_display=written(data["total"], data["unit"]),
+            declared_display=written(data["declared"], data["unit"]),
+            shortfall_display=written(data["shortfall"], data["unit"]),
+            heading=_GRANDEZA_HEADINGS.get(label, label),
         )
-        shortfall_text = _amounts_display(closed_shortfall)
-        if shortfall_text != "0":
-            loss_hint += f" · rendeu menos {shortfall_text}"
-    else:
-        loss_hint = "Nenhum lote fechado no dia"
+        for label, data in sorted(by_unit.items(), key=lambda item: rank.get(item[0], 3))
+    )
+    loss_lots = tuple(row for _wo, row in closed_rows if row.loss_parts)
 
     late = tuple(_late_projection(wo) for wo in wos if _is_late_started(wo))
 
@@ -2073,6 +2168,7 @@ def build_production_dashboard(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
         planned_orders=summary.planned_orders,
+        planned_hint=_planned_hint(len(live)),
         started_orders=summary.started_orders,
         finished_orders=summary.finished_orders,
         void_orders=summary.void_orders,
@@ -2087,22 +2183,30 @@ def build_production_dashboard(
         planned_display=_amounts_display(planned_amounts),
         loss_display=_amounts_display(closed_loss),
         loss_hint=loss_hint,
+        loss_by_unit=loss_by_unit,
+        loss_lots=loss_lots,
     )
 
 
-def _declared_loss_by_work_order(work_order_ids: list[int]) -> dict[int, Decimal]:
-    """Perda declarada (linhas WASTE) por lote; "rendeu menos" não entra."""
-    if not work_order_ids:
-        return {}
-    from django.db.models import Sum
-    from shopman.craftsman.models import WorkOrderItem
+def _planned_hint(lots: int) -> str:
+    """Quantos lotes o número do Planejado soma, no plural certo."""
+    if lots == 0:
+        return "Nenhum lote no plano do dia"
+    if lots == 1:
+        return "1 lote no plano do dia"
+    return f"{lots} lotes no plano do dia"
 
-    rows = (
-        WorkOrderItem.objects.filter(work_order_id__in=work_order_ids, kind=WorkOrderItem.Kind.WASTE)
-        .values("work_order_id")
-        .annotate(total=Sum("quantity"))
-    )
-    return {row["work_order_id"]: row["total"] or Decimal("0") for row in rows}
+
+def _loss_hint(with_loss: int, closed: int) -> str:
+    """Quantos dos lotes fechados tiveram perda (declarada ou rendeu menos)."""
+    if closed == 0:
+        return "Nenhum lote fechado no dia"
+    if with_loss == 0:
+        return "Nenhum lote fechado teve perda" if closed > 1 else "O lote fechado não teve perda"
+    if closed == 1:
+        return "O lote fechado teve perda"
+    verb = "teve" if with_loss == 1 else "tiveram"
+    return f"{with_loss} dos {closed} lotes fechados {verb} perda"
 
 
 def _ptbr_number(value: Decimal, max_decimals: int = 2) -> str:
@@ -2667,15 +2771,16 @@ def build_production_reports(
     normalized = _normalize_report_filters(filters)
     qs = _report_queryset(normalized)
     work_orders = list(qs)
-    history_rows = tuple(_work_order_report_row(wo) for wo in work_orders)
+    lookup = _ReportLookup()
+    history_rows = tuple(_work_order_report_row(wo, lookup) for wo in work_orders)
 
     recipes, positions = _report_options()
 
     return ProductionReportsProjection(
         filters=normalized,
         history_rows=history_rows,
-        operator_rows=_operator_productivity_rows(work_orders),
-        waste_rows=_recipe_waste_rows(work_orders),
+        operator_rows=_operator_productivity_rows(work_orders, lookup),
+        waste_rows=_recipe_waste_rows(work_orders, lookup),
         quality_rows=_quality_report_rows(work_orders),
         available_recipes=recipes,
         available_positions=positions,
@@ -2825,7 +2930,8 @@ def build_production_report_page(
     if normalized.report_kind == "history":
         total = qs.count()
         page_qs = qs.order_by(*_history_ordering(sort))[offset : offset + page_size]
-        rows[field] = tuple(_work_order_report_row(work_order) for work_order in page_qs)
+        lookup = _ReportLookup()
+        rows[field] = tuple(_work_order_report_row(work_order, lookup) for work_order in page_qs)
     else:
         work_orders = qs.iterator(chunk_size=200)
         if normalized.report_kind == "operator_productivity":
@@ -2868,8 +2974,9 @@ def iter_production_report_rows(filters: dict, *, sort: str):
     normalized = _normalize_report_filters(filters)
     qs = _report_queryset(normalized)
     if normalized.report_kind == "history":
+        lookup = _ReportLookup()
         for work_order in qs.order_by(*_history_ordering(sort)).iterator(chunk_size=200):
-            yield _work_order_report_row(work_order)
+            yield _work_order_report_row(work_order, lookup)
     else:
         if normalized.report_kind == "quality":
             rows = _quality_report_rows_queryset(qs)
@@ -3554,11 +3661,23 @@ def _parse_date(value, default: date) -> date:
         return default
 
 
+def _waste_items_prefetch():
+    """As linhas de Perda do lote, para a perda declarada sair sem uma consulta por linha."""
+    from django.db.models import Prefetch
+    from shopman.craftsman.models import WorkOrderItem
+
+    return Prefetch(
+        "items",
+        queryset=WorkOrderItem.objects.filter(kind=WorkOrderItem.Kind.WASTE).order_by("pk"),
+        to_attr="report_waste_items",
+    )
+
+
 def _report_queryset(filters: ProductionReportFilters):
     qs = (
         WorkOrder.objects.filter(target_date__gte=filters.date_from, target_date__lte=filters.date_to)
         .select_related("recipe")
-        .prefetch_related("events")
+        .prefetch_related("events", _waste_items_prefetch())
         .order_by("target_date", "recipe__ref", "ref")
     )
     if filters.recipe_ref:
@@ -3572,16 +3691,214 @@ def _report_queryset(filters: ProductionReportFilters):
     return qs
 
 
-def _work_order_report_row(wo: WorkOrder) -> WorkOrderReportRow:
+class _ReportLookup:
+    """Os nomes que as linhas de relatório pedem, carregados uma vez por leitura.
+
+    Defeito, posto, grandeza da ficha e o nome de quem agiu: um dicionário cada,
+    preenchido sob demanda, para que a exportação em pedaços não pague uma
+    consulta por linha.
+    """
+
+    def __init__(self) -> None:
+        self._defects: dict[str, str] | None = None
+        self._positions: dict[str, str] | None = None
+        self._units: dict[int, str] = {}
+        self._names: dict[str, str] = {}
+
+    def defect_label(self, ref: str) -> str:
+        if self._defects is None:
+            from shopman.shop.models import QualityDefect
+
+            self._defects = dict(QualityDefect.objects.values_list("ref", "label"))
+        return self._defects.get(ref, "") if ref else ""
+
+    def position_name(self, ref: str) -> str:
+        if self._positions is None:
+            self._positions = dict(Position.objects.values_list("ref", "name"))
+        return self._positions.get(ref, ref) if ref else ""
+
+    def unit(self, recipe) -> str:
+        if recipe.pk not in self._units:
+            self._units.update(_recipe_output_units({recipe}))
+        return self._units.get(recipe.pk, "")
+
+    def who(self, actor: str) -> str:
+        actor = str(actor or "").strip()
+        if not actor:
+            return ""
+        if actor not in self._names:
+            self._names.update(_actor_display_names({actor}))
+        return self._names.get(actor, "") or _operator_display(actor)
+
+
+def _operator_display(actor: str) -> str:
+    """O login sem o prefixo do canal ("chef:ana" → "ana"); vazio para o sistema."""
+    actor = str(actor or "").strip()
+    if not actor or actor.startswith("system"):
+        return ""
+    return actor.split(":", 1)[1] if ":" in actor else actor
+
+
+def _amount_display(unit: str, quantity: Decimal | None) -> str:
+    """Uma quantidade com a sua grandeza ("12 un.", "3,5 kg"); zero diz "0 un."."""
+    if quantity is None:
+        return ""
+    text = _amounts_display([(unit, quantity)])
+    if text != "0":
+        return text
+    zero = {"kg": "g", "l": "ml"}.get(_unit_label(unit), _unit_label(unit))
+    return f"0 {zero}".strip()
+
+
+#: O nome de cada grandeza como coluna de tela.
+_GRANDEZA_HEADINGS = {"un.": "Peças", "kg": "Massa", "l": "Volume"}
+
+
+def _amounts_by_dimension(amounts) -> tuple[str, str, str]:
+    """``(peça, massa, volume)`` escritos cada um na sua coluna.
+
+    Peça e massa dizem o zero ("0 un.", "0 g") em vez de deixar a célula em branco;
+    volume fica vazio quando não há, e a tela só abre a coluna se alguém tiver.
+    """
+    buckets: dict[str, list] = {"un.": [], "kg": [], "l": []}
+    for unit, quantity in amounts:
+        buckets.setdefault(_unit_label(unit), []).append((unit, quantity))
+
+    def written(key: str, zero_unit: str) -> str:
+        text = _amounts_display(buckets[key]) if buckets[key] else "0"
+        return text if text != "0" else _amount_display(zero_unit, Decimal("0"))
+
+    volume = _amounts_display(buckets["l"]) if buckets["l"] else ""
+    return written("un.", "un"), written("kg", "g"), volume
+
+
+def _unit_label(unit: str) -> str:
+    """O rótulo curto da grandeza da ficha, o mesmo que ``_amounts_display`` escreve."""
+    dim = units.dimension(unit) if unit else units.COUNT
+    if dim == units.MASS:
+        return "kg"
+    if dim == units.VOLUME:
+        return "l"
+    if dim == units.COUNT:
+        return "un."
+    return unit
+
+
+def _duration_display(minutes: int | None) -> str:
+    if minutes is None:
+        return ""
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, rest = divmod(minutes, 60)
+    return f"{hours} h {rest} min" if rest else f"{hours} h"
+
+
+def _latest_event(wo: WorkOrder, kind: str):
+    prefetched = getattr(wo, "_prefetched_objects_cache", {}).get("events")
+    if prefetched is None:
+        return wo.events.filter(kind=kind).order_by("-seq").first()
+    candidates = [event for event in prefetched if event.kind == kind]
+    return max(candidates, key=lambda event: event.seq) if candidates else None
+
+
+def _waste_items(wo: WorkOrder) -> list:
+    prefetched = getattr(wo, "report_waste_items", None)
+    if prefetched is not None:
+        return list(prefetched)
+    from shopman.craftsman.models import WorkOrderItem
+
+    return list(wo.items.filter(kind=WorkOrderItem.Kind.WASTE).order_by("pk"))
+
+
+def _lot_loss(wo: WorkOrder, lookup: _ReportLookup) -> tuple[Decimal, Decimal, Decimal, tuple[LossPartProjection, ...]]:
+    """A perda do lote, aberta nas partes, cada uma com causa, quem e hora.
+
+    Regra do dono (24/11): a perda é previsto menos realizado, sempre, e se abre em
+    duas partes visíveis e somadas: a **perda declarada** (as linhas de Perda da
+    Finalização, com o defeito) e a **diferença de rendimento** ("rendeu menos", com
+    a causa do evento de fechamento, ``context.yield_deviation``). "Rendeu mais"
+    aparece com a causa e não abate nada. Diferença que nenhum registro explica
+    vira uma parte "Sem causa registrada": nunca some.
+
+    Devolve ``(declarada, rendeu_menos, rendeu_mais, partes)``.
+    """
+    zero = Decimal("0")
+    if wo.status != WorkOrder.Status.FINISHED or wo.finished is None:
+        return zero, zero, zero, ()
+    unit = lookup.unit(wo.recipe)
+    anchor = _wo_started_qty(wo) or wo.quantity
+    event = _latest_event(wo, WorkOrderEvent.Kind.FINISHED)
+    context = ((event.payload or {}).get("context") or {}) if event is not None else {}
+    deviation = context.get("yield_deviation") if isinstance(context, dict) else None
+    deviation = deviation if isinstance(deviation, dict) else {}
+    closed_by = lookup.who(event.actor if event is not None else wo.operator_ref)
+    closed_at = event.created_at if event is not None else wo.finished_at
+    at = format_clock(timezone.localtime(closed_at)) if closed_at else ""
+
+    def part(kind: str, quantity: Decimal, cause: str, *, counts: bool = True) -> LossPartProjection:
+        return LossPartProjection(
+            kind=kind,
+            kind_label=LOSS_PART_LABELS[kind],
+            quantity=_qty(quantity),
+            quantity_display=_amount_display(unit, quantity),
+            cause=cause or LOSS_WITHOUT_CAUSE,
+            who=closed_by,
+            at=at,
+            counts_as_loss=counts,
+        )
+
+    parts: list[LossPartProjection] = []
+    declared_by_cause: dict[str, Decimal] = {}
+    for item in _waste_items(wo):
+        cause = lookup.defect_label(item.quality_defect_ref) or str((item.meta or {}).get("reason") or "")
+        declared_by_cause[cause] = declared_by_cause.get(cause, zero) + (item.quantity or zero)
+    for cause, quantity in declared_by_cause.items():
+        if quantity:
+            parts.append(part("declared", quantity, cause))
+    declared = sum(declared_by_cause.values(), zero)
+
+    def recorded(kind: str) -> Decimal:
+        if deviation.get("kind") != kind:
+            return zero
+        try:
+            return Decimal(str(deviation.get("deviation_qty") or "0"))
+        except (InvalidOperation, ValueError):
+            return zero
+
+    recorded_short = recorded("yield_shortfall")
+    recorded_over = recorded("yield_overshoot")
+    reason = str(deviation.get("reason") or "")
+    residual = (anchor - wo.finished) - declared - recorded_short + recorded_over
+    if recorded_short:
+        parts.append(part("yield_shortfall", recorded_short, reason))
+    if residual > 0:
+        parts.append(part("yield_shortfall", residual, ""))
+    if recorded_over:
+        parts.append(part("yield_overshoot", recorded_over, reason, counts=False))
+    if residual < 0:
+        parts.append(part("yield_overshoot", -residual, "", counts=False))
+    shortfall = recorded_short + max(residual, zero)
+    overshoot = recorded_over + max(-residual, zero)
+    return declared, shortfall, overshoot, tuple(parts)
+
+
+def _work_order_report_row(wo: WorkOrder, lookup: _ReportLookup | None = None) -> WorkOrderReportRow:
+    lookup = lookup or _ReportLookup()
+    unit = lookup.unit(wo.recipe)
     started_qty = _wo_started_qty(wo) or Decimal("0")
     finished_qty = wo.finished or Decimal("0")
-    loss_qty = (
-        max((started_qty or wo.quantity) - finished_qty, Decimal("0")) if wo.finished is not None else Decimal("0")
-    )
+    declared, shortfall, overshoot, parts = _lot_loss(wo, lookup)
+    loss_qty = declared + shortfall
     yield_rate = ""
     if wo.finished is not None and (started_qty or wo.quantity):
         yield_rate = f"{int((finished_qty / (started_qty or wo.quantity)) * 100)}%"
+    assumed = _wo_started_assumed(wo)
     duration = _duration_minutes(wo.started_at, wo.finished_at)
+    finished_event = _latest_event(wo, WorkOrderEvent.Kind.FINISHED) if wo.finished is not None else None
+    operator_name = lookup.who(finished_event.actor if finished_event is not None else "") or lookup.who(
+        wo.operator_ref or ""
+    )
+    closed = wo.finished is not None
     return WorkOrderReportRow(
         ref=wo.ref,
         date=wo.target_date.isoformat() if wo.target_date else "",
@@ -3590,51 +3907,83 @@ def _work_order_report_row(wo: WorkOrder) -> WorkOrderReportRow:
         position_ref=wo.position_ref or "",
         qty_planned=_qty(wo.quantity),
         qty_started=_qty(started_qty) if started_qty else "",
-        started_assumed=_wo_started_assumed(wo),
-        qty_finished=_qty(finished_qty) if wo.finished is not None else "",
+        started_assumed=assumed,
+        qty_finished=_qty(finished_qty) if closed else "",
         qty_loss=_qty(loss_qty) if loss_qty else "0",
         yield_rate=yield_rate,
         operator_ref=wo.operator_ref or "",
         started_at=_format_datetime(wo.started_at) if wo.started_at else "",
         finished_at=_format_datetime(wo.finished_at) if wo.finished_at else "",
         duration_minutes=str(duration) if duration is not None else "",
+        date_display=wo.target_date.strftime("%d/%m") if wo.target_date else "",
+        position_name=lookup.position_name(wo.position_ref or ""),
+        operator_name=operator_name,
+        unit_label=_unit_label(unit),
+        qty_planned_display=_amount_display(unit, wo.quantity),
+        qty_started_display=_amount_display(unit, started_qty) if started_qty else "",
+        qty_finished_display=_amount_display(unit, finished_qty) if closed else "",
+        qty_loss_display=_amount_display(unit, loss_qty) if closed else "",
+        loss_declared=_qty(declared),
+        loss_shortfall=_qty(shortfall),
+        loss_overshoot=_qty(overshoot),
+        loss_parts=parts,
+        # Abertura implícita grava início igual ao fim: a duração não foi medida.
+        duration_display="" if assumed else _duration_display(duration),
     )
 
 
-def _operator_productivity_rows(work_orders: list[WorkOrder]) -> tuple[OperatorProductivityRow, ...]:
+def _operator_productivity_rows(work_orders, lookup: _ReportLookup | None = None) -> tuple[OperatorProductivityRow, ...]:
+    """Por quem FECHOU o lote (o ator do fechamento), não pelo nome declarado.
+
+    Lote fechado sem abertura (previsto assumido) não entra na média de duração:
+    o início foi gravado igual ao fim, e a média com zero mente.
+    """
+    lookup = lookup or _ReportLookup()
     grouped: dict[str, dict[str, object]] = {}
     for wo in work_orders:
         if wo.status != WorkOrder.Status.FINISHED:
             continue
-        operator = wo.operator_ref or "sem-operador"
+        event = _latest_event(wo, WorkOrderEvent.Kind.FINISHED)
+        operator = (event.actor if event is not None and event.actor else "") or wo.operator_ref or "sem-operador"
         bucket = grouped.setdefault(
             operator,
             {
                 "count": 0,
                 "qty": Decimal("0"),
+                "amounts": [],
                 "yield": _OnlineAverage(),
                 "duration": _OnlineAverage(),
             },
         )
         bucket["count"] = int(bucket["count"]) + 1
         bucket["qty"] = bucket["qty"] + (wo.finished or Decimal("0"))
+        bucket["amounts"].append((lookup.unit(wo.recipe), wo.finished or Decimal("0")))
         base = _wo_started_qty(wo) or wo.quantity
         if base:
             bucket["yield"].add((wo.finished or Decimal("0")) / base)
         duration = _duration_minutes(wo.started_at, wo.finished_at)
-        if duration is not None:
+        if duration is not None and not _wo_started_assumed(wo):
             bucket["duration"].add(duration)
-    return tuple(
-        OperatorProductivityRow(
-            operator_ref=operator,
-            operator_name=operator.replace("chef:", "").replace("production:", "") or "Sem operador",
-            wo_count=int(data["count"]),
-            qty_total=_qty(data["qty"]),
-            yield_avg=data["yield"].percent_display(),
-            duration_avg_minutes=data["duration"].integer_display(),
+    rows = []
+    for operator, data in sorted(grouped.items(), key=lambda item: item[0]):
+        average = data["duration"].integer_display()
+        count_display, mass_display, volume_display = _amounts_by_dimension(data["amounts"])
+        rows.append(
+            OperatorProductivityRow(
+                operator_ref=operator,
+                operator_name=lookup.who(operator) or "Sem registro de quem fechou",
+                wo_count=int(data["count"]),
+                qty_total=_qty(data["qty"]),
+                yield_avg=data["yield"].percent_display(),
+                duration_avg_minutes=average,
+                qty_total_display=_amounts_display(data["amounts"]),
+                duration_avg_display=_duration_display(int(average)) if average else "",
+                qty_count_display=count_display,
+                qty_mass_display=mass_display,
+                qty_volume_display=volume_display,
+            )
         )
-        for operator, data in sorted(grouped.items(), key=lambda item: item[0])
-    )
+    return tuple(rows)
 
 
 def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow, ...]:
@@ -3664,7 +4013,9 @@ def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow
     return _finalize_quality_rows(grouped, recipe_totals, grade_labels, defect_labels)
 
 
-def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ...]:
+def _recipe_waste_rows(work_orders, lookup: _ReportLookup | None = None) -> tuple[RecipeWasteRow, ...]:
+    """A perda por ficha, com a MESMA conta do lote: declarada + rendeu menos."""
+    lookup = lookup or _ReportLookup()
     grouped: dict[str, dict[str, object]] = {}
     for wo in work_orders:
         if wo.status != WorkOrder.Status.FINISHED:
@@ -3673,8 +4024,11 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
             wo.recipe.ref,
             {
                 "name": wo.recipe.name or wo.recipe.ref,
+                "unit": lookup.unit(wo.recipe),
                 "count": 0,
                 "loss": Decimal("0"),
+                "declared": Decimal("0"),
+                "shortfall": Decimal("0"),
                 "yield": _OnlineAverage(),
                 "planned": Decimal("0"),
                 "capacity": Decimal("0"),
@@ -3684,8 +4038,11 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
         bucket["count"] = int(bucket["count"]) + 1
         started = _wo_started_qty(wo) or wo.quantity
         finished = wo.finished or Decimal("0")
+        declared, shortfall, _overshoot, _parts = _lot_loss(wo, lookup)
         bucket["planned"] = bucket["planned"] + wo.quantity
-        bucket["loss"] = bucket["loss"] + max(started - finished, Decimal("0"))
+        bucket["declared"] = bucket["declared"] + declared
+        bucket["shortfall"] = bucket["shortfall"] + shortfall
+        bucket["loss"] = bucket["loss"] + declared + shortfall
         bucket["capacity"] = _decimal_meta(wo.recipe.meta, "capacity_per_day")
         if wo.target_date:
             bucket["dates"].add(wo.target_date)
@@ -3699,6 +4056,10 @@ def _recipe_waste_rows(work_orders: list[WorkOrder]) -> tuple[RecipeWasteRow, ..
             loss_total=_qty(data["loss"]),
             yield_avg=data["yield"].percent_display(),
             capacity_utilization=_capacity_utilization(data),
+            unit_label=_unit_label(str(data["unit"])),
+            loss_total_display=_amount_display(str(data["unit"]), data["loss"]),
+            loss_declared_display=_amount_display(str(data["unit"]), data["declared"]),
+            loss_shortfall_display=_amount_display(str(data["unit"]), data["shortfall"]),
         )
         for recipe_ref, data in grouped.items()
     ]
@@ -3763,6 +4124,7 @@ def _late_projection(wo: WorkOrder) -> ProductionLateWorkOrderProjection:
         operator_ref=wo.operator_ref or "",
         elapsed_minutes=elapsed_minutes,
         target_minutes=_target_minutes(wo),
+        operator_name=_operator_display(wo.operator_ref or ""),
     )
 
 

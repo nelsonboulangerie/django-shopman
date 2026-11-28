@@ -572,6 +572,59 @@ export interface ProductionBlindMapProjection {
   contract_version: number;
 }
 
+/** Uma parte da diferença do lote: o que foi, quanto, por quê, quem e quando. */
+export interface LossPartProjection {
+  kind: string;
+  kind_label: string;
+  quantity: string;
+  quantity_display: string;
+  cause: string;
+  who: string;
+  at: string;
+  counts_as_loss: boolean;
+}
+
+/** A perda do dia numa grandeza só (peça, massa ou volume), com as duas partes. */
+export interface DayLossByUnitProjection {
+  unit_label: string;
+  total_display: string;
+  declared_display: string;
+  shortfall_display: string;
+  heading: string;
+}
+
+/** A work order history row for production audit reports. */
+export interface WorkOrderReportRow {
+  ref: string;
+  date: string;
+  recipe_ref: string;
+  recipe_name: string;
+  position_ref: string;
+  qty_planned: string;
+  qty_started: string;
+  started_assumed: boolean;
+  qty_finished: string;
+  qty_loss: string;
+  yield_rate: string;
+  operator_ref: string;
+  started_at: string;
+  finished_at: string;
+  duration_minutes: string;
+  date_display: string;
+  position_name: string;
+  operator_name: string;
+  unit_label: string;
+  qty_planned_display: string;
+  qty_started_display: string;
+  qty_finished_display: string;
+  qty_loss_display: string;
+  loss_declared: string;
+  loss_shortfall: string;
+  loss_overshoot: string;
+  loss_parts: LossPartProjection[];
+  duration_display: string;
+}
+
 /** A started work order that exceeded its configured target window. */
 export interface ProductionLateWorkOrderProjection {
   pk: number;
@@ -581,6 +634,7 @@ export interface ProductionLateWorkOrderProjection {
   operator_ref: string;
   elapsed_minutes: number;
   target_minutes: number;
+  operator_name: string;
 }
 
 /** Top-level read model for the production dashboard. */
@@ -602,6 +656,9 @@ export interface ProductionDashboardProjection {
   planned_display: string;
   loss_display: string;
   loss_hint: string;
+  planned_hint: string;
+  loss_by_unit: DayLossByUnitProjection[];
+  loss_lots: WorkOrderReportRow[];
   actions: ProductionActionProjection[];
   generated_at: string;
   source_revision: string;
@@ -699,25 +756,6 @@ export interface ProductionReportFilters {
   status: string;
 }
 
-/** A work order history row for production audit reports. */
-export interface WorkOrderReportRow {
-  ref: string;
-  date: string;
-  recipe_ref: string;
-  recipe_name: string;
-  position_ref: string;
-  qty_planned: string;
-  qty_started: string;
-  started_assumed: boolean;
-  qty_finished: string;
-  qty_loss: string;
-  yield_rate: string;
-  operator_ref: string;
-  started_at: string;
-  finished_at: string;
-  duration_minutes: string;
-}
-
 /** Aggregated productivity by production operator. */
 export interface OperatorProductivityRow {
   operator_ref: string;
@@ -726,6 +764,11 @@ export interface OperatorProductivityRow {
   qty_total: string;
   yield_avg: string;
   duration_avg_minutes: string;
+  qty_total_display: string;
+  duration_avg_display: string;
+  qty_count_display: string;
+  qty_mass_display: string;
+  qty_volume_display: string;
 }
 
 /** Aggregated waste by recipe. */
@@ -736,6 +779,10 @@ export interface RecipeWasteRow {
   loss_total: string;
   yield_avg: string;
   capacity_utilization: string;
+  unit_label: string;
+  loss_total_display: string;
+  loss_declared_display: string;
+  loss_shortfall_display: string;
 }
 
 /** Partição de qualidade agregada por receita × grau × defeito (ADR-017). */

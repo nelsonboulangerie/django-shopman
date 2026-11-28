@@ -21,6 +21,7 @@ import {
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
 import {
+  REPORT_EMPTY,
   REPORT_HISTORY_COLUMNS,
   REPORT_KINDS,
   REPORT_NUM,
@@ -179,31 +180,65 @@ const sortItems = computed(() => [
 const NUM = REPORT_NUM;
 const SUPPORT_NUM = REPORT_SUPPORT_NUM;
 const lateColumns = [
-  { id: "ref", header: "OP", enableHiding: false },
+  { id: "ref", header: "Lote", enableHiding: false },
   { id: "product", header: "Produto" },
-  { accessorKey: "elapsed_minutes", header: "Tempo (min)", meta: NUM },
-  { accessorKey: "target_minutes", header: "Meta (min)", meta: SUPPORT_NUM },
-  { id: "operator", header: "Operador", meta: { supporting: true } },
+  { accessorKey: "elapsed_minutes", header: "Aberto há", meta: NUM },
+  { accessorKey: "target_minutes", header: "Meta", meta: SUPPORT_NUM },
+  { id: "operator", header: "Quem abriu", meta: { supporting: true } },
+];
+
+// A perda do dia, uma coluna por grandeza (peça, quilo e litro nunca somam), com as
+// duas partes: a declarada e a diferença de rendimento. Mesma conta dos Relatórios.
+const dayLossByUnit = computed(() => management.value?.loss_by_unit ?? []);
+const dayLossLots = computed(() => management.value?.loss_lots ?? []);
+// A chave da coluna é a posição ("g0", "g1"): "un." com ponto viraria caminho aninhado.
+const dayLossColumns = computed(() => [
+  { accessorKey: "label", header: "Parte", enableHiding: false },
+  ...dayLossByUnit.value.map((unit, index) => ({ accessorKey: `g${index}`, header: unit.heading, meta: NUM })),
+]);
+const dayLossRows = computed(() => {
+  const row = (label: string, pick: (unit: (typeof dayLossByUnit.value)[number]) => string) => ({
+    label,
+    ...Object.fromEntries(dayLossByUnit.value.map((unit, index) => [`g${index}`, pick(unit)])),
+  });
+  return [
+    row("Perda do dia", (unit) => unit.total_display),
+    row("Perda declarada", (unit) => unit.declared_display),
+    row("Rendeu menos", (unit) => unit.shortfall_display),
+  ];
+});
+const dayLossLotColumns = [
+  { id: "ref", header: "Lote", enableHiding: false },
+  { accessorKey: "recipe_name", header: "Ficha técnica" },
+  { id: "loss", header: "Perda", meta: { class: { th: "text-left", td: "align-top" } } },
 ];
 const historyColumns = REPORT_HISTORY_COLUMNS;
-const operatorColumns = [
-  { accessorKey: "operator_name", header: "Operador", enableHiding: false },
-  { accessorKey: "wo_count", header: "Ordens", meta: NUM },
-  { accessorKey: "qty_total", header: "Qtd realizada", meta: NUM },
+// O realizado numa coluna por grandeza: peça e massa nunca dividem uma célula.
+const operatorColumns = computed(() => [
+  { accessorKey: "operator_name", header: "Fechado por", enableHiding: false },
+  { accessorKey: "wo_count", header: "Lotes", meta: NUM },
+  { accessorKey: "qty_count_display", header: "Peças", meta: NUM },
+  { accessorKey: "qty_mass_display", header: "Massa", meta: NUM },
+  ...(operatorRows.value.some((row) => row.qty_volume_display)
+    ? [{ accessorKey: "qty_volume_display", header: "Volume", meta: NUM }]
+    : []),
   { id: "yield", header: "Aproveitamento médio", meta: SUPPORT_NUM },
-  { id: "duration", header: "Tempo médio (min)", meta: SUPPORT_NUM },
-];
+  { id: "duration", header: "Duração média", meta: SUPPORT_NUM },
+]);
 const qualityColumns = [
   { accessorKey: "recipe_name", header: "Ficha técnica", enableHiding: false },
   { accessorKey: "grade_label", header: "Grau" },
   { id: "defect", header: "Defeito" },
-  { accessorKey: "quantity", header: "Qtd", meta: NUM },
+  { accessorKey: "quantity", header: "Quantidade", meta: NUM },
   { accessorKey: "share", header: "% da receita", meta: SUPPORT_NUM },
 ];
+// A perda da ficha é a mesma conta do lote: declarada + rendeu menos, as duas à vista.
 const wasteColumns = [
   { accessorKey: "recipe_name", header: "Ficha técnica", enableHiding: false },
-  { accessorKey: "wo_count", header: "Ordens", meta: NUM },
-  { accessorKey: "loss_total", header: "Perda total", meta: NUM },
+  { accessorKey: "wo_count", header: "Lotes", meta: NUM },
+  { accessorKey: "loss_total_display", header: "Perda", meta: NUM },
+  { accessorKey: "loss_declared_display", header: "Perda declarada", meta: SUPPORT_NUM },
+  { accessorKey: "loss_shortfall_display", header: "Rendeu menos", meta: SUPPORT_NUM },
   { id: "yield", header: "Aproveitamento médio", meta: SUPPORT_NUM },
 ];
 const blindColumns = [
@@ -290,12 +325,12 @@ function refreshAll() {
       <div class="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4" data-reports-kpis>
         <OperatorMetric
           title="Aproveitamento médio"
-          :value="management?.average_yield_rate || '—'"
+          :value="management?.average_yield_rate || 'Sem lote fechado'"
           :hint="`Realizado ÷ previsto em ${management?.finished_orders ?? 0} lotes fechados`"
         />
         <OperatorMetric
           title="Capacidade"
-          :value="management?.capacity_percent != null ? `${management.capacity_percent}%` : '—'"
+          :value="management?.capacity_percent != null ? `${management.capacity_percent}%` : 'Sem capacidade'"
           :hint="
             management?.capacity_percent != null
               ? 'Do planejado sobre a capacidade diária'
@@ -305,7 +340,7 @@ function refreshAll() {
         <OperatorMetric
           title="Planejado"
           :value="management?.planned_display || '0'"
-          :hint="`${management?.planned_orders ?? 0} lotes planejados`"
+          :hint="management?.planned_hint || ''"
         />
         <!-- Grandezas por unidade, em pt-BR, e a frase só dos lotes fechados:
              o servidor escreve (beta 05/11: 159966.487 somava g com peças). -->
@@ -314,6 +349,36 @@ function refreshAll() {
           :value="management?.loss_display || '0'"
           :hint="management?.loss_hint || ''"
         />
+      </div>
+
+      <!-- A perda do dia por grandeza, com as duas partes; e os lotes que a fazem,
+           cada parte com a causa, quem e a hora (dono, 24/11: nenhuma tela esconde perda). -->
+      <div
+        v-if="dayLossByUnit.length"
+        class="mb-4 grid gap-3 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]"
+        data-reports-day-loss
+      >
+        <OperatorTable
+          :data="dayLossRows"
+          :columns="dayLossColumns"
+          :row-key="(row) => row.label"
+          caption="Perda do dia por grandeza"
+        />
+        <OperatorTable
+          v-if="dayLossLots.length"
+          :data="dayLossLots"
+          :columns="dayLossLotColumns"
+          :row-key="(row) => row.ref"
+          pinned="ref"
+          caption="Lotes do dia com perda ou diferença"
+        >
+          <template #ref-cell="{ row }">
+            <span class="font-mono text-xs">{{ row.original.ref }}</span>
+          </template>
+          <template #loss-cell="{ row }">
+            <ReportLossParts :row="row.original" />
+          </template>
+        </OperatorTable>
       </div>
 
       <div v-if="lateOrders.length" class="mb-4 grid gap-2" data-reports-late>
@@ -335,9 +400,10 @@ function refreshAll() {
             <span class="block text-xs text-muted-foreground">{{ row.original.output_sku }}</span>
           </template>
           <template #elapsed_minutes-cell="{ row }">
-            <span class="font-semibold text-warning">{{ row.original.elapsed_minutes }}</span>
+            <span class="font-semibold text-warning">{{ row.original.elapsed_minutes }} min</span>
           </template>
-          <template #operator-cell="{ row }">{{ row.original.operator_ref || "—" }}</template>
+          <template #target_minutes-cell="{ row }">{{ row.original.target_minutes }} min</template>
+          <template #operator-cell="{ row }">{{ row.original.operator_name || REPORT_EMPTY.operator }}</template>
         </OperatorTable>
       </div>
 
@@ -432,7 +498,7 @@ function refreshAll() {
         </p>
       </div>
 
-      <!-- Histórico por OP -->
+      <!-- Histórico por lote -->
       <OperatorTable
         v-if="activeKind === 'history'"
         :data="cursorStale ? [] : historyRows"
@@ -446,15 +512,17 @@ function refreshAll() {
         :empty-description="cursorStale ? '' : 'Ajuste o período ou os filtros acima.'"
         pinned="ref"
         view-key="production-report-history"
-        caption="Histórico por ordem de produção"
+        caption="Histórico por lote"
         @retry="refresh()"
       >
         <template #ref-cell="{ row }">
           <span class="font-mono text-xs">{{ row.original.ref }}</span>
         </template>
-        <template #position-cell="{ row }">{{ row.original.position_ref || "—" }}</template>
+        <template #date-cell="{ row }">{{ row.original.date_display }}</template>
+        <template #position-cell="{ row }">{{ row.original.position_name || REPORT_EMPTY.position }}</template>
+        <template #planned-cell="{ row }">{{ row.original.qty_planned_display }}</template>
         <template #started-cell="{ row }">
-          {{ row.original.qty_started || "—" }}
+          {{ row.original.qty_started_display || REPORT_EMPTY.started }}
           <!-- Finalização sem confirmação do previsto: o previsto não foi declarado, foi assumido igual
                ao planejado. A tela não o apresenta como fato. -->
           <NuxtBadge
@@ -465,10 +533,14 @@ function refreshAll() {
             title="Fechado sem confirmação do previsto: previsto assumido igual ao planejado"
           />
         </template>
-        <template #finished-cell="{ row }">{{ row.original.qty_finished || "—" }}</template>
-        <template #yield-cell="{ row }">{{ row.original.yield_rate || "—" }}</template>
-        <template #operator-cell="{ row }">{{ row.original.operator_ref || "—" }}</template>
-        <template #duration-cell="{ row }">{{ row.original.duration_minutes || "—" }}</template>
+        <template #finished-cell="{ row }">{{ row.original.qty_finished_display || REPORT_EMPTY.finished }}</template>
+        <template #loss-cell="{ row }">
+          <ReportLossParts v-if="row.original.qty_finished_display" :row="row.original" />
+          <span v-else class="text-muted-foreground">{{ REPORT_EMPTY.finished }}</span>
+        </template>
+        <template #yield-cell="{ row }">{{ row.original.yield_rate || REPORT_EMPTY.yield }}</template>
+        <template #operator-cell="{ row }">{{ row.original.operator_name || REPORT_EMPTY.operator }}</template>
+        <template #duration-cell="{ row }">{{ row.original.duration_display || REPORT_EMPTY.duration }}</template>
         <template v-if="historyRows.some((row) => row.started_assumed) || (pagination && pagination.total)" #footer>
           <p v-if="historyRows.some((row) => row.started_assumed)" class="mb-2 text-xs text-muted-foreground">
             <b class="font-medium text-warning">assumido</b>: o lote foi fechado sem confirmação do previsto, e o
@@ -499,14 +571,14 @@ function refreshAll() {
         caption="Produtividade por operador"
         @retry="refresh()"
       >
-        <template #yield-cell="{ row }">{{ row.original.yield_avg || "—" }}</template>
-        <template #duration-cell="{ row }">{{ row.original.duration_avg_minutes || "—" }}</template>
+        <template #yield-cell="{ row }">{{ row.original.yield_avg || REPORT_EMPTY.yield }}</template>
+        <template #duration-cell="{ row }">{{ row.original.duration_avg_display || REPORT_EMPTY.duration }}</template>
         <template v-if="pagination && pagination.total && !cursorStale" #footer>
           <ReportPagination :pagination="pagination" :pending="pending" @open="openCursor" />
         </template>
       </OperatorTable>
 
-      <!-- Qualidade: a partição do QC por receita × grau × defeito -->
+      <!-- Qualidade: a partição da Finalização por receita × grau × defeito -->
       <OperatorTable
         v-else-if="activeKind === 'quality'"
         :data="cursorStale ? [] : qualityRows"
@@ -522,7 +594,7 @@ function refreshAll() {
         caption="Qualidade por ficha, grau e defeito"
         @retry="refresh()"
       >
-        <template #defect-cell="{ row }">{{ row.original.defect_label || "—" }}</template>
+        <template #defect-cell="{ row }">{{ row.original.defect_label || REPORT_EMPTY.defect }}</template>
         <template v-if="pagination && pagination.total && !cursorStale" #footer>
           <ReportPagination :pagination="pagination" :pending="pending" @open="openCursor" />
         </template>
@@ -544,7 +616,7 @@ function refreshAll() {
         caption="Desperdício por ficha técnica"
         @retry="refresh()"
       >
-        <template #yield-cell="{ row }">{{ row.original.yield_avg || "—" }}</template>
+        <template #yield-cell="{ row }">{{ row.original.yield_avg || REPORT_EMPTY.yield }}</template>
         <template v-if="pagination && pagination.total && !cursorStale" #footer>
           <ReportPagination :pagination="pagination" :pending="pending" @open="openCursor" />
         </template>

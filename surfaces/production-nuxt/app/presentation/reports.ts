@@ -5,6 +5,7 @@
 // — esta camada só deriva rótulos, a query dos filtros e o link do CSV.
 
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
+import type { LossPartProjection } from "~/types/production";
 
 export type ReportKind =
   "history" | "operator_productivity" | "recipe_waste" | "quality";
@@ -21,7 +22,7 @@ export const REPORT_KINDS: readonly { kind: ReportKind; label: string }[] = [
   { kind: "history", label: "Histórico" },
   { kind: "operator_productivity", label: "Produtividade" },
   { kind: "recipe_waste", label: "Desperdício" },
-  // A partição do QC agregada por receita × grau × defeito (ADR-017 §8):
+  // A partição da Finalização agregada por receita × grau × defeito (ADR-017 §8):
   // é este relatório que diz se o forno 2 está queimando.
   { kind: "quality", label: "Qualidade" },
 ] as const;
@@ -155,18 +156,54 @@ export const REPORT_SUPPORT_NUM = { ...REPORT_NUM, supporting: true };
 
 /**
  * O Histórico cobre vários dias: a Data é chave e fica também no celular
- * (beta 05/11: lotes de 30/10 a 05/11 apareciam misturados, sem dia).
+ * (beta 05/11: lotes de 30/10 a 05/11 apareciam misturados, sem dia). Cada
+ * quantidade sai com a sua grandeza ("12 un.", "3,5 kg"): peça e quilo nunca
+ * dividem um número.
  */
 export const REPORT_HISTORY_COLUMNS = [
-  { id: "ref", header: "OP", enableHiding: false },
-  { accessorKey: "date", header: "Data" },
+  { id: "ref", header: "Lote", enableHiding: false },
+  { id: "date", header: "Data" },
   { accessorKey: "recipe_name", header: "Ficha técnica" },
   { id: "position", header: "Posto", meta: { supporting: true } },
-  { accessorKey: "qty_planned", header: "Planejado", meta: REPORT_SUPPORT_NUM },
+  { id: "planned", header: "Planejado", meta: REPORT_SUPPORT_NUM },
   { id: "started", header: "Previsto", meta: REPORT_SUPPORT_NUM },
   { id: "finished", header: "Realizado", meta: REPORT_NUM },
-  { accessorKey: "qty_loss", header: "Perda", meta: REPORT_NUM },
+  { id: "loss", header: "Perda", meta: { class: { th: "text-left", td: "align-top" } } },
   { id: "yield", header: "Aproveitamento", meta: REPORT_SUPPORT_NUM },
-  { id: "operator", header: "Operador", meta: { supporting: true } },
-  { id: "duration", header: "Tempo (min)", meta: REPORT_SUPPORT_NUM },
+  { id: "operator", header: "Fechado por", meta: { supporting: true } },
+  { id: "duration", header: "Duração", meta: REPORT_SUPPORT_NUM },
 ];
+
+/** O nome da parte e quanto ("Perda declarada 2 un."). */
+export function lossPartTitle(part: LossPartProjection): string {
+  return `${part.kind_label} ${part.quantity_display}`;
+}
+
+/**
+ * A causa, quem e a hora da parte ("Assou demais. Ana, 14h32"). "Rendeu mais"
+ * diz que não abate a perda, para ninguém ler a sobra como compensação.
+ */
+export function lossPartDetail(part: LossPartProjection): string {
+  const who = [part.who, part.at].filter(Boolean).join(", ");
+  const tail = part.counts_as_loss ? "" : " Não abate a perda.";
+  return `${part.cause}.${who ? ` ${who}.` : ""}${tail}`;
+}
+
+/** As partes que somam a perda; "rendeu mais" vem por último, à parte. */
+export function sortedLossParts(parts: readonly LossPartProjection[]): LossPartProjection[] {
+  return [...parts].sort((a, b) => Number(!a.counts_as_loss) - Number(!b.counts_as_loss));
+}
+
+/**
+ * O que a célula diz quando não há número. Nunca travessão (copy sem travessão) e
+ * nunca um zero escondido: cada vazio tem a sua razão escrita.
+ */
+export const REPORT_EMPTY = {
+  started: "Não aberto",
+  finished: "Em aberto",
+  yield: "Em aberto",
+  operator: "Sem registro",
+  position: "Sem posto",
+  duration: "Sem medida",
+  defect: "Sem defeito",
+} as const;

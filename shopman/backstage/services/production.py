@@ -4216,8 +4216,11 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
             [
                 "Receita",
                 "Nome",
-                "Ordens",
+                "Lotes",
+                "Unidade",
                 "Perda total",
+                "Perda declarada",
+                "Rendeu menos",
                 "Aproveitamento médio",
                 "Utilização capacidade",
             ]
@@ -4228,7 +4231,10 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
                     row.wo_count,
+                    _csv_safe(row.unit_label),
                     row.loss_total,
+                    _csv_safe(row.loss_declared_display),
+                    _csv_safe(row.loss_shortfall_display),
                     row.yield_avg,
                     row.capacity_utilization,
                 ]
@@ -4236,18 +4242,23 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
     else:
         yield writer.writerow(
             [
-                "Ref",
+                "Lote",
                 "Data",
                 "Receita",
                 "Nome da receita",
                 "Posição",
+                "Unidade",
                 "Qtd planejada",
                 "Qtd prevista",
                 "Previsto assumido",
                 "Qtd realizada",
                 "Perda",
+                "Perda declarada",
+                "Rendeu menos",
+                "Rendeu mais",
+                "Causas",
                 "Aproveitamento",
-                "Operador",
+                "Fechado por",
                 "Aberta em",
                 "Fechada em",
                 "Duração (min)",
@@ -4261,13 +4272,23 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
                     _csv_safe(row.position_ref),
+                    _csv_safe(row.unit_label),
                     row.qty_planned,
                     row.qty_started,
                     "sim" if row.started_assumed else "",
                     row.qty_finished,
                     row.qty_loss,
+                    row.loss_declared,
+                    row.loss_shortfall,
+                    row.loss_overshoot,
+                    _csv_safe(
+                        "; ".join(
+                            f"{part.kind_label} {part.quantity_display}: {part.cause}, {part.who} {part.at}".strip()
+                            for part in row.loss_parts
+                        )
+                    ),
                     row.yield_rate,
-                    _csv_safe(row.operator_ref),
+                    _csv_safe(row.operator_name or row.operator_ref),
                     _csv_safe(row.started_at),
                     _csv_safe(row.finished_at),
                     row.duration_minutes,
