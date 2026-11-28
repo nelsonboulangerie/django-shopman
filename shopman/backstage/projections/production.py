@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal
 
 from django.conf import settings
@@ -3862,7 +3862,7 @@ def _lot_loss(wo: WorkOrder, lookup: _ReportLookup) -> tuple[Decimal, Decimal, D
             return zero
         try:
             return Decimal(str(deviation.get("deviation_qty") or "0"))
-        except Exception:
+        except (InvalidOperation, ValueError):
             return zero
 
     recorded_short = recorded("yield_shortfall")
