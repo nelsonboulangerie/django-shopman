@@ -13,7 +13,7 @@ export interface BIOvenTimeRow {
   avg_planned_minutes: string;
 }
 
-/** Custo congelado e receita rastreada de uma fornada fechada. */
+/** Custo congelado e receita rastreada de um lote finalizado. */
 export interface BIProductionBatchMargin {
   ref: string;
   recipe: string;
@@ -29,7 +29,7 @@ export interface BIProductionBatchMargin {
   sells_until: string | null;
 }
 
-/** Um dia da série: produção fechada e o mix comercial da qualidade. */
+/** Um dia da série: produção finalizada e o mix comercial da qualidade. */
 export interface BIProductionDay {
   date: string;
   planned: string;
@@ -67,7 +67,7 @@ export interface BIProductionReport {
   batch_margins: BIProductionBatchMargin[];
 }
 
-/** Um lote fechado do produto no dia: o registro de onde o "fez" saiu. */
+/** Um lote finalizado do produto no dia: o registro de onde o "fez" saiu. */
 export interface BIOverShortLot {
   ref: string;
   finished_at: string;

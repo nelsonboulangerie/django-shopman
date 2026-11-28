@@ -193,7 +193,7 @@ function groupsText(groups: readonly BIOverShortAnswerGroup[]): string {
 export function overShortAnswer(
   report: Pick<BIOverShortReport, "rows"> & Partial<Pick<BIOverShortReport, "answer_short" | "answer_over">>,
 ): string {
-  if (!report.rows.length) return "Nenhum lote fechado neste dia: não há o que comparar.";
+  if (!report.rows.length) return "Nenhum lote finalizado neste dia: não há o que comparar.";
   if (report.answer_short?.length || report.answer_over?.length) {
     const parts: string[] = [];
     if (report.answer_short?.length) parts.push(`faltou ${groupsText(report.answer_short)}`);

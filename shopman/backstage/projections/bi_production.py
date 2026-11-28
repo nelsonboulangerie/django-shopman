@@ -7,13 +7,13 @@ leitura (ADR-021 §3): nenhuma tabela de agregação; janela limitada por defaul
 
 Honestidade da métrica: o tempo de forno só existe onde o par armar→Concluir
 foi declarado, e o relatório carrega a COBERTURA (fornadas medidas ÷ fornadas
-fechadas) em vez de fingir completude.
+finalizadas) em vez de fingir completude.
 
 Aproveitamento e perda seguem o vocabulário do lote (UX-PROD-AF): a base é o
 PREVISTO (``started_qty``, o que entrou em produção), nunca o planejado.
 Aproveitamento = realizado ÷ previsto; perda = previsto − realizado, por lote
 (a mesma conta de ``WorkOrder.loss``/``WorkOrder.yield_rate`` do Craftsman).
-Lote fechado sem abertura declarada tem o previsto assumido igual ao
+Lote finalizado sem confirmação declarada tem o previsto assumido igual ao
 planejado, e o relatório CONTA esses lotes (``batches_started_assumed``) em vez
 de apresentá-los como declarados.
 """
@@ -51,7 +51,7 @@ class BIOvenTimeRow:
 
 @dataclass(frozen=True)
 class BIProductionDay:
-    """Um dia da série: produção fechada e o mix comercial da qualidade."""
+    """Um dia da série: produção finalizada e o mix comercial da qualidade."""
 
     date: str
     planned: str
@@ -81,7 +81,7 @@ class BIProductionPrevious:
 
 @dataclass(frozen=True)
 class BIProductionBatchMargin:
-    """Custo congelado e receita rastreada de uma fornada fechada.
+    """Custo congelado e receita rastreada de um lote finalizado.
 
     A margem é da FORNADA INTEIRA (decisão do dono, 11/11/2026): a receita que a
     baixa do lote identifica, do fechamento até o lote encerrar, menos o custo
@@ -118,7 +118,7 @@ class BIProductionReport:
     oven_time_by_recipe: tuple[BIOvenTimeRow, ...]
     oven_time_by_oven: tuple[BIOvenTimeRow, ...]
     batches_finished: int
-    #: Lotes fechados sem abertura declarada: previsto assumido igual ao planejado.
+    #: Lotes finalizados sem confirmação declarada: previsto assumido igual ao planejado.
     batches_started_assumed: int
     batches_measured: int
     oven_coverage_percent: int
@@ -467,7 +467,7 @@ def _with_started_events(work_orders):
 
 
 def batch_outcome(wo) -> tuple[Decimal, Decimal, Decimal]:
-    """``(previsto, realizado, perda)`` de um lote fechado.
+    """``(previsto, realizado, perda)`` de um lote finalizado.
 
     Mesma conta de ``WorkOrder.loss``/``WorkOrder.yield_rate`` (Craftsman):
     previsto = quantidade da abertura (ou o planejado, quando ninguém a

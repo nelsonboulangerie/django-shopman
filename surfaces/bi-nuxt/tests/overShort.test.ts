@@ -161,7 +161,7 @@ describe("a resposta", () => {
   });
 
   it("dia sem lote e dia todo na medida têm frase própria", () => {
-    expect(overShortAnswer({ rows: [] })).toMatch(/Nenhum lote fechado/);
+    expect(overShortAnswer({ rows: [] })).toMatch(/Nenhum lote finalizado/);
     expect(overShortAnswer({ rows: [shokupan] })).toMatch(/^Tudo na medida/);
   });
 

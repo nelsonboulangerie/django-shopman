@@ -51,4 +51,22 @@ describe("indicador do lote no B.I.: aproveitamento, nunca rendimento", () => {
     expect(page).toContain("Aproveitamento do período");
     expect(page).not.toMatch(/\/\s*planned\b/);
   });
+
+  it("o lote é finalizado, nunca fechado nem aberto (dono, 28/11; #3696)", () => {
+    // A Produção diz "em produção" e "finalizado"; o B.I. lê o mesmo lote e não
+    // volta à nomenclatura vencida. Caixa, turno, gaveta e dia têm vocabulário
+    // próprio e ficam de fora: a trava só olha o lote.
+    const vencida = /\blotes?\s+(?:ainda\s+)?(?:n[aã]o\s+|j[aá]\s+|nunca\s+)?(?:abert|fechad)[oa]s?\b|\b(?:fechar|abrir)\s+(?:o\s+|os\s+)?lotes?\b/i;
+    const hits = FILES.flatMap((file) =>
+      readFileSync(file, "utf8")
+        .split("\n")
+        .map((line, index) => ({ line, index }))
+        .filter(({ line }) => vencida.test(line))
+        .map(({ index }) => `${relative(ROOT, file)}:${index + 1}`),
+    );
+    expect(hits).toEqual([]);
+    expect(readFileSync(join(ROOT, "app", "components", "ProductionLots.vue"), "utf8")).toContain(
+      "Nenhum lote finalizado no período",
+    );
+  });
 });

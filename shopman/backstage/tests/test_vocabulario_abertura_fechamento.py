@@ -126,6 +126,9 @@ LOT_TEXT_SOURCES = (
     "shopman/backstage/models/alerts.py",
     "shopman/backstage/projections/alerts.py",
     "shopman/shop/models/quality.py",
+    # O B.I. lê o lote finalizado (#3696): o mesmo texto na tela do gestor.
+    "shopman/backstage/projections/bi_over_short.py",
+    "shopman/backstage/projections/bi_production.py",
 )
 
 LOT_OPEN_CLOSED = re.compile(
