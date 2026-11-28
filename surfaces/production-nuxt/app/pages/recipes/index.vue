@@ -12,7 +12,6 @@ import { isStale } from "~/presentation/production";
 import {
   PRODUCTION_MODE_ALL,
   PRODUCTION_MODE_FILTER_OPTIONS,
-  PRODUCTION_MODE_MADE_TO_ORDER,
   favoriteActionHint,
   favoriteToggleLabel,
   filterEntries,
@@ -320,14 +319,18 @@ watch(
               class="grid min-w-0 flex-1 grid-cols-1 content-start gap-2 self-stretch p-3 transition hover:bg-accent/30"
             >
               <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="truncate font-bold">{{ entry.name }}</p>
-                  <p class="truncate font-mono text-xs text-muted-foreground">{{ entry.ref }}</p>
-                </div>
+                <p class="min-w-0 truncate font-bold">{{ entry.name }}</p>
                 <NuxtBadge color="neutral" class="shrink-0" :label="entry.kind_label" />
               </div>
 
-              <p class="flex items-center gap-1.5 text-sm">
+              <!-- KISS (dono, 28/11): o cartão é o nome, o tipo e o que pede atenção. O
+                   produto só aparece quando não é o mesmo nome da receita (ou falta);
+                   o código interno, a versão e a data moram na receita. -->
+              <p
+                v-if="!entry.output_sku || (entry.output_name && entry.output_name !== entry.name)"
+                class="flex items-center gap-1.5 text-sm"
+                data-recipe-output
+              >
                 <Icon name="lucide:tag" class="size-3.5 shrink-0 text-muted-foreground" />
                 <template v-if="entry.output_sku">
                   <span class="truncate">{{ entry.output_name || entry.output_sku }}</span>
@@ -339,11 +342,7 @@ watch(
               </p>
 
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span v-if="entry.current_version_number" class="tabular-nums">
-                  Versão atual <b class="text-foreground">{{ entry.current_version_number }}</b>
-                  <span v-if="entry.version_count > 1"> de {{ entry.version_count }}</span>
-                </span>
-                <span v-else>Sem versão publicada</span>
+                <span v-if="!entry.current_version_number">Sem versão publicada</span>
                 <span v-if="entry.hydration_display" class="tabular-nums">
                   Hidratação <b class="text-foreground">{{ entry.hydration_display }}</b>
                 </span>
@@ -359,12 +358,6 @@ watch(
                   color="warning"
                   :label="entry.draft_count === 1 ? 'Rascunho' : `${entry.draft_count} rascunhos`"
                 />
-                <NuxtBadge
-                  v-if="entry.production_mode === PRODUCTION_MODE_MADE_TO_ORDER"
-                  color="primary"
-                  icon="i-lucide-coffee"
-                  :label="entry.production_mode_label"
-                />
                 <NuxtBadge v-if="!entry.is_active" color="neutral" label="Arquivada" />
                 <!-- O selo é curto (sai em sentença); quem tomou o SKU vai na frase ao lado. -->
                 <NuxtBadge v-if="entry.ficha_status_label" color="neutral" :label="entry.ficha_status_label" />
@@ -377,9 +370,6 @@ watch(
                 />
               </div>
 
-              <p v-if="entry.updated_at_display" class="text-xs text-muted-foreground">
-                Atualizada {{ entry.updated_at_display }}
-              </p>
             </NuxtLink>
             <NuxtButton
               color="neutral"

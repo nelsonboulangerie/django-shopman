@@ -78,6 +78,20 @@ export function useStationSetupOffer(state: {
 
   const offerOpen = useStationSetupOfferOpen();
   watch(offer, (value) => { offerOpen.value = value; }, { immediate: true });
+
+  // KISS (dono, 28/11): a oferta aparece na liberação e, sem resposta, some ao trocar
+  // de tela (só nesta abertura; não vira lembrete). Antes ela seguia no topo de toda
+  // tela, ~110 px empurrando o trabalho para baixo. O pedido explícito (o "Vincular a
+  // um caixa" do PDV) não some assim: quem pediu está respondendo.
+  // Só a navegação de verdade, depois de montar: o `useRoute` do app.vue troca de
+  // caminho na hidratação e apagava a oferta antes de alguém vê-la.
+  let stopAfterEach: (() => void) | undefined;
+  onMounted(() => {
+    stopAfterEach = useRouter().afterEach((to, from) => {
+      if (to.path !== from.path && offer.value && !requested.value) dismiss({ remember: false });
+    });
+  });
+  onBeforeUnmount(() => stopAfterEach?.());
   onBeforeUnmount(() => { offerOpen.value = false; });
 
   /** "Usar sem vincular" (ou sem permissão para vincular): some, e fica lembrado aqui. */

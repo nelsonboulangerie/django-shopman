@@ -12,8 +12,6 @@ import type {
 import {
   alertsReleased,
   batchConfirmLabel,
-  cleanSummary,
-  closersSummary,
   exceptionBadge,
   exceptionReference,
   exceptionSegments,
@@ -70,18 +68,7 @@ const viewTabs = computed(() => [
   { value: "pending", label: "Para confirmar", count: pendingCount.value },
   { value: "reviewed", label: "Confirmados", count: gate.value.reviewed.length },
 ]);
-const summary = computed(() => cleanSummary(gate.value.clean));
-const closers = computed(() => closersSummary(gate.value.clean));
 const released = computed(() => alertsReleased(gate.value.clean));
-const CHIP_LIMIT = 4;
-const cleanChips = computed(() =>
-  showAllClean.value
-    ? gate.value.clean
-    : gate.value.clean.slice(0, CHIP_LIMIT),
-);
-const hiddenClean = computed(() =>
-  Math.max(0, gate.value.clean.length - cleanChips.value.length),
-);
 
 function matchesQuery(order: QCOrderCardProjection): boolean {
   const q = (props.query ?? "").trim().toLowerCase();
@@ -121,13 +108,23 @@ function oneReleased(order: QCOrderCardProjection): number {
 function closedLine(order: QCOrderCardProjection): string {
   const who = order.closed_by ? ` · finalizado por ${order.closed_by}` : "";
   const when = order.closed_at_display ? ` ${formatClock(order.closed_at_display)}` : "";
-  return `Lote ${order.ref}${who}${when}`;
+  // KISS (dono, 28/11): o código do lote é da Gerente no detalhe, não do chão.
+  return `${who}${when}`.replace(/^ · /, "");
 }
 
 </script>
 
 <template>
   <div class="grid grid-cols-1 gap-4" data-quality-gate>
+    <!-- Quem não confirma lê UMA vez quem confirma, no topo; os cartões não repetem. -->
+    <p
+      v-if="managerOnly && view === 'pending' && pendingCount"
+      class="flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-3 op-body text-muted-foreground"
+      data-quality-manager-only
+    >
+      <Icon name="lucide:user-check" class="size-4 shrink-0" aria-hidden="true" />
+      {{ MANAGER_ONLY_TEXT }}
+    </p>
     <NuxtTabs
       v-if="!hideTabs"
       v-model="view"
@@ -146,40 +143,35 @@ function closedLine(order: QCOrderCardProjection): string {
     >
       <!-- Coluna 1: o conjunto sem exceção (um ato) e os lotes fora do portão. -->
       <section class="grid grid-cols-1 gap-3" aria-labelledby="quality-clean-heading">
-        <h2
-          id="quality-clean-heading"
-          class="op-eyebrow text-muted-foreground"
-        >
-          Sem exceção
-          <span class="tabular-nums">{{ gate.clean.length }}</span>
-        </h2>
+        <h2 id="quality-clean-heading" class="sr-only">Sem exceção</h2>
 
         <div
           v-if="gate.clean.length"
           class="grid min-w-0 grid-cols-1 gap-4 rounded-xl border-2 border-primary bg-card p-5"
           data-quality-clean
         >
-          <div class="flex items-start gap-3">
-            <span
-              class="grid size-12 shrink-0 place-items-center rounded-full bg-success/15 text-success"
-            >
-              <Icon name="lucide:check-check" class="size-6" />
-            </span>
-            <div class="min-w-0">
-              <p class="op-display leading-tight">
-                {{ plural(gate.clean.length, "lote", "lotes") }}
-                {{ isToday ? "de hoje " : "" }}sem exceção
-              </p>
-              <p class="mt-1 op-body text-muted-foreground">
-                {{ summary }}
-              </p>
-            </div>
+          <!-- KISS (dono, 28/11): "16 lotes sem exceção [Ver] [Confirmar]". A lista
+               abre no Ver; quem finalizou e o "Me avise" vazio saíram (o aviso a
+               clientes, quando há, fica: é a consequência do gesto). -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="op-title">
+              {{ plural(gate.clean.length, "lote", "lotes") }} sem exceção
+            </p>
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              :label="showAllClean ? 'Ocultar' : 'Ver'"
+              :trailing-icon="showAllClean ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+              :aria-expanded="showAllClean"
+              data-quality-clean-toggle
+              @click="showAllClean = !showAllClean"
+            />
           </div>
 
-          <div class="grid gap-2 rounded-lg bg-muted/50 p-3">
+          <div v-if="showAllClean" class="rounded-lg bg-muted/50 p-3">
             <ul class="flex flex-wrap gap-2" aria-label="Lotes sem exceção">
               <li
-                v-for="order in cleanChips"
+                v-for="order in gate.clean"
                 :key="order.pk"
                 class="inline-flex min-h-8 items-center gap-2 rounded-full border border-border bg-card px-3.5 op-label font-semibold"
               >
@@ -188,68 +180,20 @@ function closedLine(order: QCOrderCardProjection): string {
                   lotQuantityLabel(order.full_price_qty, order.output_unit)
                 }}</span>
               </li>
-              <li
-                v-if="hiddenClean"
-                class="inline-flex min-h-8 items-center rounded-full border border-border bg-card px-3.5 op-label tabular-nums text-muted-foreground"
-              >
-                +{{ hiddenClean }}
-              </li>
             </ul>
-            <NuxtButton
-              v-if="gate.clean.length > CHIP_LIMIT"
-              color="neutral"
-              variant="ghost"
-              class="justify-self-start"
-              :label="showAllClean ? 'Mostrar menos' : `Ver os ${gate.clean.length} lotes`"
-              :trailing-icon="showAllClean ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-              :aria-expanded="showAllClean"
-              @click="showAllClean = !showAllClean"
-            />
-          </div>
-
-          <!-- A consequência antes do gesto: quem fechou e quem será avisado. -->
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div
-              v-if="closers.names"
-              class="rounded-lg border border-border p-3"
-              data-quality-closers
-            >
-              <p class="text-xs text-muted-foreground">Finalizados por</p>
-              <p class="font-semibold">{{ closers.names }}</p>
-              <p v-if="closers.window" class="text-sm text-muted-foreground">
-                {{ closers.window }}
-              </p>
-            </div>
-            <div
-              v-if="released"
-              class="rounded-lg border border-border p-3"
-              data-quality-released
-            >
-              <p class="text-xs text-muted-foreground">Ao confirmar</p>
-              <template v-if="released.people > 0">
-                <p class="flex items-center gap-1.5 font-semibold">
-                  <Icon name="lucide:bell-ring" class="size-4" />
-                  até {{ plural(released.people, "cliente avisado", "clientes avisados") }}
-                </p>
-                <p class="text-sm text-muted-foreground">
-                  “Me avise” de
-                  {{ plural(released.products, "produto", "produtos") }}
-                </p>
-              </template>
-              <p v-else class="font-semibold">
-                Nenhum cliente esperando no “Me avise”
-              </p>
-            </div>
           </div>
 
           <p
-            v-if="managerOnly"
-            class="text-center text-sm text-muted-foreground"
-            data-quality-manager-only
+            v-if="released && released.people > 0"
+            class="flex items-center gap-2 op-body"
+            data-quality-released
           >
-            {{ MANAGER_ONLY_TEXT }}
+            <Icon name="lucide:bell-ring" class="size-4 shrink-0" aria-hidden="true" />
+            Ao confirmar, até
+            {{ plural(released.people, "cliente do “Me avise” é avisado", "clientes do “Me avise” são avisados") }}.
           </p>
-          <div v-else class="grid gap-2">
+
+          <div v-if="!managerOnly" class="grid gap-2">
             <NuxtButton
               size="xl"
               block
@@ -326,7 +270,7 @@ function closedLine(order: QCOrderCardProjection): string {
               <p class="truncate text-lg font-semibold tracking-[-0.01em]">
                 {{ order.recipe_name }}
               </p>
-              <p class="truncate text-sm text-muted-foreground">
+              <p v-if="closedLine(order)" class="truncate text-sm text-muted-foreground">
                 {{ closedLine(order) }}
               </p>
             </div>
@@ -363,8 +307,7 @@ function closedLine(order: QCOrderCardProjection): string {
             </li>
           </ul>
 
-          <p class="flex items-start gap-1.5 text-sm text-muted-foreground">
-            <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
+          <p class="text-sm text-muted-foreground">
             <span>
               {{ exceptionReference(order) }}
               <template v-if="oneReleased(order) > 0">
@@ -375,14 +318,7 @@ function closedLine(order: QCOrderCardProjection): string {
             </span>
           </p>
 
-          <p
-            v-if="managerOnly"
-            class="text-sm text-muted-foreground"
-            data-quality-manager-only
-          >
-            {{ MANAGER_ONLY_TEXT }}
-          </p>
-          <div v-else class="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
+          <div v-if="!managerOnly" class="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
             <NuxtButton
               color="neutral"
               variant="outline"
@@ -413,14 +349,6 @@ function closedLine(order: QCOrderCardProjection): string {
           Nenhuma exceção para olhar.
         </p>
 
-        <p class="flex items-start gap-1.5 text-sm text-muted-foreground">
-          <Icon name="lucide:info" class="mt-0.5 size-4 shrink-0" />
-          <span>
-            Exceção é lote com perda, desconto, outro grau ou contagem diferente
-            do que entrou no forno. Corrigir reclassifica o estoque e pede
-            motivo.
-          </span>
-        </p>
       </section>
     </div>
 
