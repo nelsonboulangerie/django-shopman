@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  commitmentChipLabel,
   dayContextLine,
   formatQty,
   formatQtyUnit,
@@ -48,8 +47,6 @@ function order(over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProjec
     started_at_display: "",
     created_at_display: "",
     progress_pct: 0,
-    committed_qty: "6",
-    order_commitments: [],
     can_void: true,
     position_name: "",
     created_at_time: "",
@@ -98,30 +95,6 @@ describe("R07: número da bancada em português, com unidade", () => {
     expect(item).toBeGreaterThan(-1);
     expect(grid.indexOf("data-planned-separator")).toBeGreaterThan(item);
     expect(grid).toMatch(/class="pl-0\.5 text-muted-foreground max-sm:hidden"\s+aria-hidden="true"\s+data-planned-separator/);
-  });
-});
-
-describe("R05: a hora do compromisso no chip", () => {
-  it('"6 un. para 8h30" com a hora mais cedo; sem hora, só as unidades', () => {
-    const withTime = row({
-      planned_orders: [
-        order({
-          order_commitments: [
-            { ref: "P1", status: "", status_label: "", qty_required: "4", due_time: "12:00" },
-            { ref: "P2", status: "", status_label: "", qty_required: "2", due_time: "08:30" },
-          ],
-        }),
-      ],
-    });
-    expect(commitmentChipLabel(withTime)).toBe("6 un. para 8h30");
-    const noTime = row({
-      planned_orders: [
-        order({
-          order_commitments: [{ ref: "P1", status: "", status_label: "", qty_required: "6", due_time: "" }],
-        }),
-      ],
-    });
-    expect(commitmentChipLabel(noTime)).toBe("6 un.");
   });
 });
 

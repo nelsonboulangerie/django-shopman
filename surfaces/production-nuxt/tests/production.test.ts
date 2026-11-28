@@ -11,8 +11,6 @@ import {
   parseShortage,
   plannedWorkOrder,
   resolveDayRollover,
-  rowCommitments,
-  rowCommittedUnits,
   rowHasActivity,
   rowLabel,
   startableWorkOrder,
@@ -51,8 +49,6 @@ const wo = (
   started_at_display: "",
   created_at_display: "07:00",
   progress_pct: 0,
-  committed_qty: "0",
-  order_commitments: [],
   can_void: true,
   ...over,
 });
@@ -170,48 +166,6 @@ describe("grid helpers", () => {
     expect(matchesRowQuery(row({ planned_orders: [wo()] }), "wo-010")).toBe(
       true,
     );
-  });
-  it("rowCommitments dedupes order refs across open WOs", () => {
-    const commitment = (ref: string) => ({
-      ref,
-      status: "accepted",
-      status_label: "Confirmado",
-      qty_required: "5",
-    });
-    const r = row({
-      planned_orders: [
-        wo({ order_commitments: [commitment("O-1"), commitment("O-2")] }),
-      ],
-      started_orders: [
-        wo({ pk: 11, ref: "WO-011", order_commitments: [commitment("O-1")] }),
-      ],
-    });
-    expect(rowCommitments(r).map((c) => c.ref)).toEqual(["O-1", "O-2"]);
-    expect(rowCommitments(row())).toEqual([]);
-  });
-  it("rowCommittedUnits sums committed quantities across linked orders", () => {
-    const commitment = (ref: string, qty: string) => ({
-      ref,
-      status: "accepted",
-      status_label: "Confirmado",
-      qty_required: qty,
-    });
-    const r = row({
-      planned_orders: [
-        wo({
-          order_commitments: [commitment("O-1", "4"), commitment("O-2", "2,5")],
-        }),
-      ],
-      started_orders: [
-        wo({
-          pk: 11,
-          ref: "WO-011",
-          order_commitments: [commitment("O-1", "4")],
-        }),
-      ],
-    });
-    expect(rowCommittedUnits(r)).toBe(6.5);
-    expect(rowCommittedUnits(row())).toBe(0);
   });
   it("startableWorkOrder only resolves an unambiguous planned WO", () => {
     expect(startableWorkOrder(row())).toBeNull();

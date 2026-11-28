@@ -19,7 +19,7 @@ from shopman.craftsman.models import Recipe
 from shopman.orderman.models import Order
 from shopman.stockman.models import Hold, HoldStatus, Quant
 
-from shopman.backstage.projections.production import build_production_board, build_work_order_card
+from shopman.backstage.projections.production import build_production_board, build_qc_kiosk, build_work_order_card
 
 pytestmark = pytest.mark.django_db
 
@@ -161,3 +161,18 @@ def test_pedidos_vem_pela_hora_e_o_telefone_nao_vira_nome(recipe):
 
 def test_sem_plano_nem_pedido_nao_ha_prometido(recipe):
     assert _row(build_production_board(selected_date=_tomorrow())).promised is None
+
+
+def test_finalizacao_le_o_encomendado_da_data_pela_mesma_regua(recipe):
+    """WP-F10: o "N encomendadas" da Finalização sai da régua das reservas: o
+    lote de amanhã traz a encomenda de amanhã, o de hoje não traz nada."""
+    _plan(recipe, 20, _today())
+    _plan(recipe, 10, _tomorrow())
+    _order("ENC-QC", day=_tomorrow(), qty="1")
+
+    [today_card] = build_qc_kiosk(selected_date=_today()).orders
+    assert today_card.promised is not None
+    assert today_card.promised.ordered_qty == "0"
+    [tomorrow_card] = build_qc_kiosk(selected_date=_tomorrow()).orders
+    assert tomorrow_card.promised.ordered_qty == "1"
+    assert [order.customer_first_name for order in tomorrow_card.promised.orders] == ["Clara"]

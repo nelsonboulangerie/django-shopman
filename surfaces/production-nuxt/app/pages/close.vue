@@ -16,6 +16,8 @@ import {
   isStale,
   isoForOffset,
   matchLotCode,
+  orderedLabel,
+  orderedUnits,
 } from "~/presentation/production";
 import {
   periodAnchor,
@@ -760,7 +762,7 @@ function onTimerKeydown(event: KeyboardEvent) {
                   order.output_sku
                 }}</span>
               </p>
-              <!-- "Forno 2 · aberto às 05:10 · 6 comprometidas" (R17/R18): o forno pelo
+              <!-- "Forno 2 · aberto às 05:10 · 6 un. encomendadas" (R17/R18; WP-F10: a régua das reservas): o forno pelo
                    nome, sem o código do lote quebrando a linha (ele fica no ⋯ do
                    Finalizar e no leitor). -->
               <p class="op-label text-muted-foreground" data-close-card-line>
@@ -771,12 +773,10 @@ function onTimerKeydown(event: KeyboardEvent) {
                   >aberto às {{ order.started_at_display }}</template
                 >
                 <template v-else>ainda não aberto</template>
-                <template
-                  v-if="order.committed_qty && order.committed_qty !== '0'"
-                >
+                <template v-if="orderedUnits(order.promised) > 0">
                   ·
-                  <span class="text-primary"
-                    >{{ order.committed_qty }} comprometidas</span
+                  <span class="text-primary" data-close-card-ordered
+                    >{{ orderedLabel(orderedUnits(order.promised), order.output_unit) }}</span
                   >
                 </template>
               </p>

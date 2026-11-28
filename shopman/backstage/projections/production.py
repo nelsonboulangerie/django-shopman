@@ -123,20 +123,6 @@ class ProductionActionProjection:
 
 
 @dataclass(frozen=True)
-class OrderCommitmentProjection:
-    """A compact order commitment for a production work order."""
-
-    ref: str
-    status: str
-    status_label: str
-    qty_required: str
-    # Hora do compromisso ("08:30"): o começo da janela combinada com o cliente
-    # (``Order.data.delivery_time_slot`` lido por ``fulfillment_window``). Vazio
-    # quando o pedido não marcou hora. É o que ordena o lote ("6 un. para 08:30").
-    due_time: str = ""
-
-
-@dataclass(frozen=True)
 class PromisedOrderProjection:
     """Um pedido que conta no prometido de um produto numa data (WP-F08).
 
@@ -212,8 +198,6 @@ class WorkOrderCardProjection:
     started_at_display: str
     created_at_display: str
     progress_pct: int
-    committed_qty: str
-    order_commitments: tuple[OrderCommitmentProjection, ...]
     can_void: bool
     # Nome do posto (forno, bancada) onde o lote foi planejado; vazio sem posto.
     position_name: str = ""
@@ -1268,10 +1252,6 @@ class QCOrderCardProjection:
     partition: tuple[QCPartitionGroupProjection, ...]
     correction_count: int
     last_correction_at_display: str
-    # UNIDADES comprometidas com pedidos que aguardam esta fornada
-    # (production_order_sync): a pergunta do fournil é "quantos pães já têm
-    # dono", não "quantos pedidos existem" — um pedido de 6 pesa 6.
-    committed_qty: str
     # Partição da fornada fechada (a preço cheio / com desconto / perda) —
     # vazio enquanto aberta. É o que o cartão esmaecido mostra.
     full_price_qty: str
@@ -1301,6 +1281,10 @@ class QCOrderCardProjection:
     # termina (enfornou + duração armada), para qualquer tablet ler. Vazio sem
     # forno aberto. O timer segue lembrete local; isto é só o fato declarado.
     oven_until_display: str = ""
+    # O prometido do produto na data, pela régua das reservas (WP-F08/F10): o
+    # "6 un. encomendadas" do cartão aberto. None no lote fechado e quando a
+    # data não tem encomenda nem plano do produto.
+    promised: ProductionPromisedProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -1545,7 +1529,6 @@ def build_production_board(
 
     raw_suggestions = _production_suggestions(selected_date)
     _prime_base_recipe_usages([*(wo.recipe for wo in wos), *matrix_recipes, *(row.recipe for row in raw_suggestions)])
-    _prime_order_commitments(wos)
     promised = _promised_on(
         {*(recipe.output_sku for recipe in matrix_recipes), *(wo.output_sku for wo in wos), *(row.recipe.output_sku for row in raw_suggestions)},
         selected_date,
@@ -2365,7 +2348,10 @@ def build_qc_kiosk(
         )
         if _can_view_work_order(work_order, access)
     ]
-    _prime_order_commitments(work_orders)
+    promised = _promised_on(
+        {wo.output_sku for wo in work_orders if wo.status != WorkOrder.Status.FINISHED},
+        selected_date,
+    )
 
     partitions = _qc_closed_partitions(
         [wo.pk for wo in work_orders if wo.status == WorkOrder.Status.FINISHED],
@@ -2428,7 +2414,7 @@ def build_qc_kiosk(
             partition=effective_partition,
             correction_count=correction_count,
             last_correction_at_display=last_correction_at_display,
-            committed_qty="" if closed else _qty(_committed_units(wo)),
+            promised=None if closed else promised.get(wo.output_sku),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
             loss_qty=_qty(loss_qty) if loss_qty is not None else "",
@@ -2632,14 +2618,6 @@ def _qc_gate_facts(finished_orders: list[WorkOrder], *, selected_date: date) -> 
             "alert_waiting_count": None if waiting is None else int(waiting.get(wo.output_sku, 0)),
         }
     return facts
-
-
-def _committed_units(wo: WorkOrder) -> Decimal:
-    """Unidades já prometidas a pedidos que aguardam esta fornada."""
-    return sum(
-        (Decimal(item.qty_required) for item in _order_commitments_for_work_order(wo)),
-        Decimal("0"),
-    )
 
 
 def _qc_closed_partitions(
@@ -3070,40 +3048,6 @@ def _production_counts(
     )
 
 
-def _prime_order_commitments(work_orders: list[WorkOrder]) -> None:
-    """Attach all order commitments with one orders query for the board."""
-
-    refs = {ref for work_order in work_orders for ref in _linked_order_refs(work_order)}
-    if refs:
-        try:
-            from shopman.orderman.models import Order
-
-            orders = Order.objects.filter(ref__in=refs).prefetch_related("items")
-            by_ref = {order.ref: order for order in orders}
-        except Exception:
-            logger.debug("production.order_refs_batch_failed", exc_info=True)
-            by_ref = {}
-    else:
-        by_ref = {}
-
-    for work_order in work_orders:
-        commitments = []
-        for ref in _linked_order_refs(work_order):
-            order = by_ref.get(ref)
-            if order is None:
-                continue
-            commitments.append(
-                OrderCommitmentProjection(
-                    ref=order.ref,
-                    status=order.status,
-                    status_label=order_status_label(order.status),
-                    qty_required=_qty(_qty_required_for_order(order, work_order.output_sku)),
-                    due_time=_order_due_time(order),
-                )
-            )
-        work_order._production_order_commitments = tuple(commitments)
-
-
 def _order_due_time(order) -> str:
     """O começo da janela combinada com o cliente ("08:30"); vazio sem hora marcada."""
     slot = str((order.data or {}).get("delivery_time_slot") or "").strip()
@@ -3176,8 +3120,6 @@ def _build_wo_card(
     loss = ""
     yield_rate = ""
     base_usages = _base_recipe_usages(wo.recipe)
-    order_commitments = _order_commitments_for_work_order(wo)
-    committed_qty = sum((Decimal(item.qty_required) for item in order_commitments), Decimal("0"))
 
     if finished_qty is not None:
         base = started_qty or wo.quantity
@@ -3210,8 +3152,6 @@ def _build_wo_card(
         started_at_display=_format_datetime(wo.started_at) if hasattr(wo, "started_at") and wo.started_at else "",
         created_at_display=_format_datetime(wo.created_at),
         progress_pct=_work_order_progress_pct(wo),
-        committed_qty=_qty(committed_qty),
-        order_commitments=order_commitments,
         can_void=(access.can_void and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
         position_name=_position_names().get(wo.position_ref or "", ""),
         created_at_time=(
@@ -3568,45 +3508,6 @@ def _promised_order(order, qty: Decimal) -> PromisedOrderProjection:
         status=order.status,
         status_label=order_status_label(order.status),
     )
-
-
-def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentProjection, ...]:
-    if hasattr(wo, "_production_order_commitments"):
-        return wo._production_order_commitments
-    refs = _linked_order_refs(wo)
-    if not refs:
-        return ()
-
-    try:
-        from shopman.orderman.models import Order
-    except Exception:
-        logger.debug("production.order_ref_import_failed wo=%s", wo.ref, exc_info=True)
-        return ()
-
-    orders = Order.objects.filter(ref__in=refs).prefetch_related("items").order_by("created_at")
-    by_ref = {order.ref: order for order in orders}
-    result: list[OrderCommitmentProjection] = []
-    for ref in refs:
-        order = by_ref.get(ref)
-        if not order:
-            continue
-        result.append(
-            OrderCommitmentProjection(
-                ref=order.ref,
-                status=order.status,
-                status_label=order_status_label(order.status),
-                qty_required=_qty(_qty_required_for_order(order, wo.output_sku)),
-            )
-        )
-    return tuple(result)
-
-
-def _qty_required_for_order(order, sku: str) -> Decimal:
-    total = Decimal("0")
-    for item in order.items.all():
-        if item.sku == sku:
-            total += item.qty
-    return total
 
 
 def _work_order_progress_pct(wo: WorkOrder) -> int:
