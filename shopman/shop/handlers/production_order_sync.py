@@ -527,8 +527,16 @@ def _allocate_pending_links(
     operational_quantities: dict[str, Decimal] | None = None,
     preserve_existing: bool = False,
     preferred_work_order_ref: str = "",
+    date_bound_work_order_refs: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
-    """Allocate each active order/SKU to one WO without overcommitting it."""
+    """Allocate each active order/SKU to one WO without overcommitting it.
+
+    ``date_bound_work_order_refs``: lotes que só recebem encomenda da própria data
+    (#3682). As travas de abrir, fechar e reduzir dão ao lote medido capacidade
+    sem fim; sem esta régua ele absorvia as encomendas de todas as datas seguintes
+    (162 em vez de 60), e encomenda se mede só contra a fornada da data (dono,
+    18/11/2026, #2679).
+    """
     desired_orders_by_work_order: dict[str, list[str]] = {work_order.ref: [] for work_order in pending_work_orders}
     desired_work_orders_by_order: dict[str, list[str]] = {order.ref: [] for order in orders}
     fulfilled_order_skus = {
@@ -578,11 +586,17 @@ def _allocate_pending_links(
             required = _production_quantity(order, sku, shelf)
             if required <= 0:
                 continue
-            candidates = _ordered_candidate_work_orders(
-                pending_by_sku.get(sku, []),
-                target_date=_target_date(order),
-                strategy=strategy,
-            )
+            order_date = _target_date(order)
+            candidates = [
+                candidate
+                for candidate in _ordered_candidate_work_orders(
+                    pending_by_sku.get(sku, []),
+                    target_date=order_date,
+                    strategy=strategy,
+                )
+                if candidate.ref not in date_bound_work_order_refs
+                or (candidate.target_date or timezone.localdate()) == order_date
+            ]
             if preserve_existing:
                 order_refs = set((order.data or {}).get(ORDER_AWAITING_WO_REFS_KEY) or ())
                 explicit = [

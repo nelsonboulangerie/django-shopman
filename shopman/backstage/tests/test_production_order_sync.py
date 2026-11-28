@@ -1113,7 +1113,8 @@ def test_manual_order_matching_does_not_claim_unlinked_demand(recipe):
 
 
 @pytest.mark.django_db
-def test_today_work_order_must_cover_order_due_tomorrow(recipe):
+def test_today_work_order_does_not_answer_for_order_due_tomorrow(recipe):
+    """Encomenda de amanhã se mede na fornada de amanhã, nunca na de hoje (#3682, #2679)."""
     order = _order("SYNC-FUTURE-DEMAND", qty=8)
     order.data = {
         **order.data,
@@ -1121,18 +1122,17 @@ def test_today_work_order_must_cover_order_due_tomorrow(recipe):
     }
     order.save(update_fields=["data", "updated_at"])
 
-    with pytest.raises(ProductionOrderShortError) as exc_info:
-        apply_planned(
-            recipe_id=recipe.pk,
-            quantity="1",
-            target_date_value=date.today().isoformat(),
-            actor="test",
-            expected_rev=None,
-            idempotency_key="future-demand-shortage",
-        )
+    _, work_order_ref, quantity, _ = apply_planned(
+        recipe_id=recipe.pk,
+        quantity="1",
+        target_date_value=date.today().isoformat(),
+        actor="test",
+        expected_rev=None,
+        idempotency_key="future-demand-shortage",
+    )
 
-    assert exc_info.value.order_refs == (order.ref,)
-    assert exc_info.value.required == Decimal("8")
+    assert work_order_ref
+    assert quantity == Decimal("1")
 
 
 @pytest.mark.django_db
