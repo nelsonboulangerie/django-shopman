@@ -3953,6 +3953,8 @@ def _locked_work_order_order_shortage(
         operational_quantities={work_order.ref: Decimal("1e30")},
         preserve_existing=True,
         preferred_work_order_ref=work_order.ref,
+        # Com capacidade sem fim, o lote mede só as encomendas da própria data (#3682).
+        date_bound_work_order_refs=frozenset({work_order.ref}),
     )
     covered_orders = [order for order in orders if work_order.ref in desired_work_orders_by_order.get(order.ref, ())]
 
@@ -4529,6 +4531,7 @@ def _check_linked_order_coverage(
             operational_quantities={target_work_order.ref: Decimal("1e30")},
             preserve_existing=True,
             preferred_work_order_ref=target_work_order.ref,
+            date_bound_work_order_refs=frozenset({target_work_order.ref}),
         )
         covered_orders = [
             order for order in active_orders if target_work_order.ref in desired_work_orders_by_order.get(order.ref, ())
