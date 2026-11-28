@@ -37,8 +37,8 @@ class WorkOrder(models.Model):
 
     class Status(models.TextChoices):
         PLANNED = "planned", _("Planejada")
-        STARTED = "started", _("Aberta")
-        FINISHED = "finished", _("Fechada")
+        STARTED = "started", _("Em produção")
+        FINISHED = "finished", _("Finalizada")
         VOID = "void", _("Cancelada")
 
     ref = models.CharField(
@@ -97,12 +97,12 @@ class WorkOrder(models.Model):
     started_at = models.DateTimeField(
         null=True,
         blank=True,
-        verbose_name=_("Aberta em"),
+        verbose_name=_("Em produção desde"),
     )
     finished_at = models.DateTimeField(
         null=True,
         blank=True,
-        verbose_name=_("Fechada em"),
+        verbose_name=_("Finalizada em"),
     )
 
     # String refs (agnostic — no FK to external models)
