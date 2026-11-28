@@ -110,19 +110,6 @@ describe("PlanPromisedBand", () => {
     expect(button.attributes("disabled")).toBeDefined();
   });
 
-  it("com linha no dia que já conta as encomendas: o fato e Ir para a linha, sem Planejar", async () => {
-    const row = croissant([order()]);
-    (row as { suggestion: unknown }).suggestion = { quantity: "196" };
-    const w = mountBand([row]);
-    expect(w.get("[data-plan-promised-text]").text().replace(/\s+/g, " ")).toBe(
-      "Croissant: 12 encomendadas, já contadas na sugestão de 196",
-    );
-    expect(w.find("[data-plan-promised-plan]").exists()).toBe(false);
-    await w.get("[data-plan-promised-line]").trigger("click");
-    expect(w.emitted("line")).toHaveLength(1);
-    expect(w.emitted("plan")).toBeUndefined();
-  });
-
   it("sem nada a cobrir, a faixa não existe", () => {
     expect(mountBand([]).find("[data-plan-promised-band]").exists()).toBe(false);
   });

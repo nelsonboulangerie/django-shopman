@@ -2,10 +2,9 @@
 // O pedido à Produção (WP-F13, P1-04): no topo do Planejamento, a encomenda da data
 // que o plano não cobre, pela régua das reservas (`promised`, WP-F08). Sem lote:
 // "Encomendado sem lote: Croissant 12" com "Planejar 12"; acima do plano:
-// "Encomendado acima do plano: Croissant 3" com "Planejar mais 3". Quando o produto já
-// tem linha no dia com sugestão que conta as encomendas, a faixa não oferece número seu:
-// diz o fato ("Croissant Manteiga: 12 encomendadas, já contadas na sugestão de 196") e
-// leva até a linha (decisão da coordenação, 28/11). Planejar cobre a
+// "Encomendado acima do plano: Croissant 3" com "Planejar mais 3". Só chega aqui o que
+// nenhuma linha do dia cobre (`bandOrders`): a encomenda que a sugestão da linha já
+// conta fica no chip da linha (decisão da coordenação, 28/11). Planejar cobre a
 // encomenda e a faixa some. A Produção só planeja (D-042, item 2): não há recusar
 // aqui, e quem fala com o cliente é o Gestor ("Promessa em risco").
 // A conta mora em `presentation/production.ts` (`unbackedOrders`); o envio, na grade.
@@ -25,8 +24,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   plan: [item: UnbackedOrder];
   orders: [item: UnbackedOrder];
-  /** O produto já tem linha com número próprio: a faixa leva até ela. */
-  line: [item: UnbackedOrder];
 }>();
 
 /** Quem encomendou e quando: "Clara · amanhã 9h", "Marina e Bruno · amanhã, das 8h30 às 11h". */
@@ -88,16 +85,7 @@ function whoAndWhen(item: UnbackedOrder): string {
           @click="emit('orders', item)"
         />
         <NuxtButton
-          v-if="item.coveredBy"
-          color="primary"
-          variant="outline"
-          icon="i-lucide-arrow-down-to-line"
-          :label="item.actionLabel"
-          data-plan-promised-line
-          @click="emit('line', item)"
-        />
-        <NuxtButton
-          v-else-if="canPlan"
+          v-if="canPlan"
           color="primary"
           variant="solid"
           icon="i-lucide-calendar-plus"

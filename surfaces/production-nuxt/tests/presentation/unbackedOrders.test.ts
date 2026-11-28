@@ -4,7 +4,7 @@
 // planeja (D-042, item 2).
 import { describe, expect, it } from "vitest";
 
-import { unbackedOrders } from "~/presentation/production";
+import { bandOrders, unbackedOrders } from "~/presentation/production";
 import type {
   ProductionMatrixRowProjection,
   ProductionPromisedProjection,
@@ -87,28 +87,21 @@ describe("unbackedOrders: o que o plano da data não cobre", () => {
     ).toEqual([]);
   });
 
-  // Decisão da coordenação (28/11): dois "Planejar" com números diferentes para o mesmo
-  // produto eram armadilha. Com linha no dia cuja sugestão já conta as encomendas, a
-  // faixa diz o fato e leva à linha; nunca oferece um número seu.
-  it("com linha no dia que já conta as encomendas, a faixa não oferece número", () => {
+  // Decisão da coordenação (28/11): coberta numa linha do dia (a sugestão já conta as
+  // encomendas), a encomenda não vai para a faixa; o chip da linha basta. Dois "Planejar"
+  // com números diferentes para o mesmo produto eram armadilha.
+  it("coberta pela sugestão da linha do dia: fora da faixa", () => {
     const suggestion = { quantity: "196" } as ProductionMatrixRowProjection["suggestion"];
-    const [item] = unbackedOrders([row({ recipe_name: "Croissant Manteiga", suggestion, promised: promised() })]);
-    expect(item).toMatchObject({
-      kind: "no-lot",
-      coveredBy: "196",
-      headline: "Croissant Manteiga",
-      subject: "12 encomendadas, já contadas na sugestão de 196",
-      actionLabel: "Ir para a linha",
-    });
-    expect(item!.actionLabel).not.toMatch(/Planejar/);
+    const items = unbackedOrders([row({ recipe_name: "Croissant Manteiga", suggestion, promised: promised() })]);
+    expect(items[0]).toMatchObject({ kind: "no-lot", coveredBy: "196", subject: "Croissant Manteiga 12" });
+    expect(bandOrders(items)).toEqual([]);
   });
 
   it("sugestão abaixo do encomendado, ou sem sugestão, a faixa planeja o que falta", () => {
     const low = { quantity: "8" } as ProductionMatrixRowProjection["suggestion"];
-    expect(unbackedOrders([row({ suggestion: low, promised: promised() })])[0]).toMatchObject({
-      coveredBy: "",
-      actionLabel: "Planejar 12",
-    });
+    const items = unbackedOrders([row({ suggestion: low, promised: promised() })]);
+    expect(items[0]).toMatchObject({ coveredBy: "", actionLabel: "Planejar 12" });
+    expect(bandOrders(items)).toHaveLength(1);
     expect(unbackedOrders([row({ promised: promised() })])[0]!.actionLabel).toBe("Planejar 12");
   });
 
@@ -122,18 +115,7 @@ describe("unbackedOrders: o que o plano da data não cobre", () => {
       }),
     ]);
     expect(item).toMatchObject({ kind: "over-plan", coveredBy: "", actionLabel: "Planejar mais 3" });
-  });
-
-  it("concorda: uma encomendada, já contada; peso no masculino", () => {
-    const suggestion = { quantity: "40" } as ProductionMatrixRowProjection["suggestion"];
-    expect(
-      unbackedOrders([row({ suggestion, promised: promised({ ordered_qty: "1", over_plan_qty: "1" }) })])[0]!.subject,
-    ).toBe("1 encomendada, já contada na sugestão de 40");
-    expect(
-      unbackedOrders([
-        row({ suggestion, output_unit: "kg", promised: promised({ ordered_qty: "1.5", over_plan_qty: "1.5" }) }),
-      ])[0]!.subject,
-    ).toBe("1,5 kg encomendados, já contados na sugestão de 40 kg");
+    expect(bandOrders([item!])).toHaveLength(1);
   });
 
   it("peso diz a unidade; vários produtos em ordem alfabética", () => {
