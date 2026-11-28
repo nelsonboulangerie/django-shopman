@@ -721,7 +721,9 @@ function onTimerKeydown(event: KeyboardEvent) {
       <p v-if="openOrders.length" class="op-eyebrow text-muted-foreground">
         Para finalizar <span class="tnum">{{ openOrders.length }}</span>
       </p>
-      <div class="grid gap-2.5 lg:grid-cols-2">
+      <!-- Uma coluna em todo tamanho (dono, 28/11): a lista se lê de cima
+           para baixo, na ordem do forno, sem zigue-zague entre colunas. -->
+      <div class="grid gap-2.5" data-close-open-list>
         <!-- O toque no CARD abre o timer (a ação de toda hora); fechar a
              fornada é o botão quadrado do previsto, à direita. Alarmando, o
              card inteiro oscila em danger — visível do outro lado do fournil. -->
